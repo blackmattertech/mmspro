@@ -1,0 +1,39 @@
+:root {
+  /* Primary */
+  --color-primary: #E63946;
+  --color-primary-dark: #E91342;
+  --color-light-pink-1: #FFE8EC;
+  --color-light-pink-2: #FFF3F5;
+  --color-dark-navy: #111827;
+
+  /* Secondary */
+  --color-green: #22C55E;
+  --color-yellow: #FFB020;
+  --color-purple: #8B5CF6;
+  --color-blue: #3B82F6;
+  --color-gray-blue: #6B7280;
+
+  /* Neutral */
+  --color-white: #FFFFFF;
+  --color-off-white: #F8FAFC;
+  --color-light-gray-1: #F1F5F9;
+  --color-light-gray-2: #E5E7EB;
+  --color-light-gray-3: #CBD5E1;
+  --color-medium-gray: #94A3B8;
+
+  /* Typography */
+  --font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+
+  /* Shadows */
+  --shadow-xs: 0px 1px 2px rgba(16, 24, 40, 0.05);
+  --shadow-sm: 0px 2px 4px rgba(16, 24, 40, 0.06);
+  --shadow-md: 0px 4px 12px rgba(16, 24, 40, 0.08);
+  --shadow-lg: 0px 10px 24px rgba(16, 24, 40, 0.10);
+
+  /* Radius */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 24px;
+  --radius-xl: 32px;
+  --radius-pill: 9999px;
+}
