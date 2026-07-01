@@ -1,9 +1,10 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
 import { useOrg } from '../../hooks/useOrg'
 import { getNavItems } from '../../config/navigation'
 import NavIcon from './NavIcon'
+import LogoutButton from '../ui/LogoutButton'
 import './Sidebar.css'
 
 const formatRole = (role) => {
@@ -11,19 +12,31 @@ const formatRole = (role) => {
   return labels[role] ?? (role ? role.charAt(0).toUpperCase() + role.slice(1) : 'Member')
 }
 
+function findActiveParentId(navItems, pathname) {
+  for (const item of navItems) {
+    if (item.children?.some((child) => pathname === child.path || pathname.startsWith(`${child.path}/`))) {
+      return item.id
+    }
+  }
+  return null
+}
+
 export default function Sidebar({ collapsed = false, onToggle }) {
   const { user, signOut } = useAuth()
   const { org, orgRole } = useOrg()
   const location = useLocation()
-  const [openMenus, setOpenMenus] = useState(['work-orders', 'reports'])
-
   const navItems = org ? getNavItems(org.slug) : []
+  const [openMenu, setOpenMenu] = useState(null)
+
+  useEffect(() => {
+    if (!org) return
+    const items = getNavItems(org.slug)
+    setOpenMenu(findActiveParentId(items, location.pathname))
+  }, [location.pathname, org])
 
   const toggleMenu = (id) => {
     if (collapsed) return
-    setOpenMenus((prev) =>
-      prev.includes(id) ? prev.filter((m) => m !== id) : [...prev, id]
-    )
+    setOpenMenu((prev) => (prev === id ? null : id))
   }
 
   const companyName = org?.name ?? 'Company'
@@ -56,7 +69,7 @@ export default function Sidebar({ collapsed = false, onToggle }) {
       <nav className="sidebar__nav">
         {navItems.map((item) => {
           if (item.children) {
-            const isOpen = !collapsed && openMenus.includes(item.id)
+            const isOpen = !collapsed && openMenu === item.id
             const isChildActive = item.children.some((c) => location.pathname === c.path)
 
             return (
@@ -145,17 +158,7 @@ export default function Sidebar({ collapsed = false, onToggle }) {
               <span className="sidebar__user-role">{roleLabel}</span>
             </div>
           )}
-          <button
-            type="button"
-            className="sidebar__logout-btn"
-            onClick={signOut}
-            aria-label="Sign out"
-          >
-            <NavIcon name="logout" />
-            {collapsed && (
-              <span className="sidebar__tooltip" aria-hidden="true">Sign out</span>
-            )}
-          </button>
+          <LogoutButton onClick={signOut} className="sidebar__logout-btn" />
         </div>
       </div>
     </aside>

@@ -17,6 +17,9 @@ export const OrgRoute = ({ children }) => {
   if (authLoading || orgLoading) return <div className="loading">Loading...</div>
   if (!user) return <Navigate to="/login" replace />
   if (!org) return <Navigate to="/onboard" replace />
+  if (org.is_active === false) {
+    return <Navigate to="/login" replace state={{ error: 'Your organization has been disabled. Contact support.' }} />
+  }
   if (org.slug !== orgSlug) {
     return <Navigate to={`/${org.slug}/dashboard`} replace />
   }

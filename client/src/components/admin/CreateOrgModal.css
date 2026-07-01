@@ -1,0 +1,131 @@
+.admin-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(17, 24, 39, 0.5);
+}
+
+.admin-modal {
+  width: 100%;
+  max-width: 480px;
+  background: var(--color-white);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+}
+
+.admin-modal__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--color-light-gray-1);
+}
+
+.admin-modal__title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--color-dark-navy);
+}
+
+.admin-modal__close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  color: var(--color-gray-blue);
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.admin-modal__close:hover {
+  background: var(--color-light-gray-1);
+}
+
+.admin-modal__form {
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.admin-modal__field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.admin-modal__label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-dark-navy);
+}
+
+.admin-modal__input {
+  height: 40px;
+  padding: 0 12px;
+  font-size: 14px;
+  font-family: inherit;
+  color: var(--color-dark-navy);
+  background: var(--color-white);
+  border: 1px solid var(--color-light-gray-2);
+  border-radius: var(--radius-sm);
+  outline: none;
+}
+
+.admin-modal__input:focus {
+  border-color: var(--color-primary);
+}
+
+.admin-modal__hint {
+  font-size: 12px;
+  color: var(--color-medium-gray);
+}
+
+.admin-modal__error {
+  font-size: 13px;
+  color: var(--color-primary);
+}
+
+.admin-modal__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.admin-modal__btn {
+  height: 40px;
+  padding: 0 20px;
+  font-size: 14px;
+  font-weight: 600;
+  font-family: inherit;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  border: none;
+}
+
+.admin-modal__btn--secondary {
+  color: var(--color-gray-blue);
+  background: var(--color-light-gray-1);
+}
+
+.admin-modal__btn--primary {
+  color: var(--color-white);
+  background: var(--color-primary);
+}
+
+.admin-modal__btn--primary:hover:not(:disabled) {
+  background: #d42f3c;
+}
+
+.admin-modal__btn--primary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}

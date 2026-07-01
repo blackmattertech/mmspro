@@ -300,29 +300,14 @@
 }
 
 .sidebar__logout-btn {
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
   flex-shrink: 0;
-  width: 36px;
-  height: 36px;
   margin-left: auto;
-  color: var(--color-medium-gray);
-  background: none;
-  border: none;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  transition: color 0.15s ease, background 0.15s ease;
+  z-index: 1;
 }
 
 .sidebar--collapsed .sidebar__logout-btn {
   margin-left: 0;
-}
-
-.sidebar__logout-btn:hover {
-  color: var(--color-white);
-  background: rgba(255, 255, 255, 0.08);
+  align-self: center;
 }
 
 /* Tooltips — visible only when collapsed */
@@ -350,8 +335,7 @@
 
 .sidebar--collapsed .sidebar__link:hover .sidebar__tooltip,
 .sidebar--collapsed .sidebar__toggle:hover .sidebar__tooltip,
-.sidebar--collapsed .sidebar__avatar:hover .sidebar__tooltip,
-.sidebar--collapsed .sidebar__logout-btn:hover .sidebar__tooltip {
+.sidebar--collapsed .sidebar__avatar:hover .sidebar__tooltip {
   opacity: 1;
   visibility: visible;
   transform: translateY(-50%) translateX(0);

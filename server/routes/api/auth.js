@@ -8,6 +8,7 @@ import {
   sendPasswordResetEmail,
 } from '../../services/email.js'
 import { createOrgForUser } from '../../lib/createOrg.js'
+import { getPublicAppUrl } from '../../lib/appUrl.js'
 
 const router = Router()
 
@@ -80,24 +81,36 @@ router.post('/invite/accept', verifyAuth, async (req, res) => {
   res.json({ success: true })
 })
 
+const PASSWORD_RESET_MESSAGE =
+  'If an account exists for that email, a password reset link has been sent.'
+
 /**
  * POST /api/auth/password-reset
  * Trigger Supabase password reset + send branded email
  */
 router.post('/password-reset', async (req, res) => {
-  const { email } = req.body
+  const email = req.body?.email?.trim().toLowerCase()
+
+  if (!email) {
+    return res.status(400).json({ error: 'Email is required' })
+  }
+
+  const redirectTo = `${getPublicAppUrl()}/reset-password`
 
   const { data, error } = await supabaseAdmin.auth.admin.generateLink({
     type: 'recovery',
     email,
-    options: { redirectTo: `${process.env.CLIENT_URL}/reset-password` },
+    options: { redirectTo },
   })
 
-  if (error) return res.status(500).json({ error: error.message })
+  if (error) {
+    console.warn('password-reset:', error.message)
+    return res.json({ success: true, message: PASSWORD_RESET_MESSAGE })
+  }
 
   await sendPasswordResetEmail(email, { resetUrl: data.properties.action_link })
 
-  res.json({ success: true })
+  res.json({ success: true, message: PASSWORD_RESET_MESSAGE })
 })
 
 /**

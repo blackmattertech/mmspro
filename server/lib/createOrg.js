@@ -31,7 +31,11 @@ export async function createOrgForUser(userId, email, orgName, orgSlugInput) {
 
   const { data: org, error: orgError } = await supabaseAdmin
     .from('organizations')
-    .insert({ name: orgName.trim(), slug: orgSlug })
+    .insert({
+      name: orgName.trim(),
+      slug: orgSlug,
+      email: email?.trim().toLowerCase() || null,
+    })
     .select('id')
     .single()
 

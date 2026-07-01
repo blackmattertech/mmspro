@@ -14,7 +14,7 @@ export const useOrg = () => {
     const fetchOrg = async () => {
       const { data: profile } = await supabase
         .from('profiles')
-        .select('role, org_id, organizations(id, name, slug, plan)')
+        .select('role, org_id, organizations(id, name, slug, plan, is_active, logo_url)')
         .eq('id', user.id)
         .maybeSingle()
 

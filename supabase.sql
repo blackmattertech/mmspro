@@ -7,6 +7,7 @@ create table organizations (
   slug text unique not null,        -- URL path: mmspro.in/blackmatter/dashboard
   plan text default 'free'          -- free | pro | enterprise
     check (plan in ('free', 'pro', 'enterprise')),
+  is_active boolean default true not null,
   created_at timestamptz default now()
 );
 
@@ -22,19 +23,26 @@ create table profiles (
   created_at timestamptz default now()
 );
 
--- Auto-create profile on signup
-create or replace function handle_new_user()
-returns trigger as $$
+-- Auto-create profile on signup (runs when auth.users row is inserted)
+create or replace function public.handle_new_user()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
 begin
-  insert into profiles (id, email)
-  values (new.id, new.email);
+  insert into public.profiles (id, email)
+  values (new.id, new.email)
+  on conflict (id) do update
+    set email = coalesce(excluded.email, public.profiles.email);
   return new;
 end;
-$$ language plpgsql security definer;
+$$;
 
+drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created
   after insert on auth.users
-  for each row execute function handle_new_user();
+  for each row execute function public.handle_new_user();
 
 -- ══════════════════════════════════════════
 -- 3. FCM TOKENS (push notifications)
@@ -71,6 +79,19 @@ create policy "Users can view own profile"
 
 create policy "Users can update own profile"
   on profiles for update using (auth.uid() = id);
+
+-- Required for Supabase Auth signup + dashboard "Add user"
+drop policy if exists "Auth admin can insert profiles" on profiles;
+create policy "Auth admin can insert profiles"
+  on profiles for insert
+  to supabase_auth_admin
+  with check (true);
+
+drop policy if exists "Users can insert own profile" on profiles;
+create policy "Users can insert own profile"
+  on profiles for insert
+  to authenticated
+  with check (auth.uid() = id);
 
 -- fcm_tokens: users manage only their own
 alter table fcm_tokens enable row level security;
@@ -210,3 +231,46 @@ begin
     (p_org_id, p5, 'WO-1261', 'Pump vibration check', 'overdue', 'medium', now() - interval '2 days', now() - interval '4 days');
 end;
 $$ language plpgsql security definer;
+
+-- ══════════════════════════════════════════
+-- 10. MIGRATION: organizations.is_active
+--     Safe to re-run on existing databases
+-- ══════════════════════════════════════════
+alter table organizations
+  add column if not exists is_active boolean default true not null;
+
+-- ══════════════════════════════════════════
+-- 11. MIGRATION: fix user signup trigger
+--     Run if "Database error creating new user" in Supabase Auth
+-- ══════════════════════════════════════════
+create or replace function public.handle_new_user()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  insert into public.profiles (id, email)
+  values (new.id, new.email)
+  on conflict (id) do update
+    set email = coalesce(excluded.email, public.profiles.email);
+  return new;
+end;
+$$;
+
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row execute function public.handle_new_user();
+
+drop policy if exists "Auth admin can insert profiles" on profiles;
+create policy "Auth admin can insert profiles"
+  on profiles for insert
+  to supabase_auth_admin
+  with check (true);
+
+drop policy if exists "Users can insert own profile" on profiles;
+create policy "Users can insert own profile"
+  on profiles for insert
+  to authenticated
+  with check (auth.uid() = id);

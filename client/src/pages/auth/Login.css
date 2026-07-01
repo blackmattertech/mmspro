@@ -173,6 +173,12 @@
   background: transparent;
 }
 
+.login-panel--full {
+  flex: 1 1 100%;
+  padding: 32px 24px;
+  background: url('/Assets/images/logindesktop.png') center / cover no-repeat;
+}
+
 .login-card {
   position: relative;
   z-index: 1;

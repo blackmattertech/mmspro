@@ -53,6 +53,8 @@ export default defineConfig(({ mode }) => {
     server: {
       host: true,
       port: 5173,
+      // Allow ngrok / tunnel hostnames when testing password-reset emails
+      allowedHosts: mode === 'development' ? true : undefined,
       proxy: {
         '/api': 'http://127.0.0.1:5050',
         '/admin-api': 'http://127.0.0.1:5050',

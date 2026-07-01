@@ -1,10 +1,12 @@
 import express from 'express'
 import cors from 'cors'
 import 'dotenv/config'
+import { getCorsOrigins, getPublicAppUrl } from './lib/appUrl.js'
 import apiRoutes from './routes/api/index.js'
 import adminRoutes from './routes/admin/index.js'
 import notificationRoutes from './routes/api/notifications.js'
 import authRoutes from './routes/api/auth.js'
+import companyRoutes from './routes/api/company.js'
 
 const app = express()
 const PORT = Number(process.env.PORT) || 5050
@@ -17,10 +19,7 @@ if (PORT === 5000) {
   )
 }
 
-const allowedOrigins = (process.env.CLIENT_URL || '')
-  .split(',')
-  .map((o) => o.trim())
-  .filter(Boolean)
+const allowedOrigins = getCorsOrigins()
 
 const DEV_PORTS = new Set(['5173', '4173', '3000'])
 
@@ -56,8 +55,9 @@ app.use(
 )
 app.use(express.json())
 
-app.use('/api', apiRoutes)
 app.use('/api/auth', authRoutes)
+app.use('/api/company', companyRoutes)
+app.use('/api', apiRoutes)
 app.use('/api/notifications', notificationRoutes)
 app.use('/admin-api', adminRoutes)
 
@@ -70,5 +70,12 @@ app.listen(PORT, HOST, () => {
   }
   if (allowedOrigins.length) {
     console.log(`Configured CLIENT_URL origins: ${allowedOrigins.join(', ')}`)
+  }
+  const publicAppUrl = getPublicAppUrl()
+  console.log(`Email/auth redirect base URL: ${publicAppUrl}`)
+  if (!process.env.APP_PUBLIC_URL?.trim() && publicAppUrl.includes('localhost')) {
+    console.warn(
+      'APP_PUBLIC_URL is not set — password/invite links use localhost and will not work from email on other devices. Set APP_PUBLIC_URL in server/.env to your public domain, ngrok URL, or LAN IP.'
+    )
   }
 })

@@ -44,3 +44,106 @@ export function onboardOrg(orgName) {
     body: JSON.stringify({ orgName }),
   })
 }
+
+export function requestPasswordReset(email) {
+  return apiFetch('/api/auth/password-reset', {
+    method: 'POST',
+    body: JSON.stringify({ email }),
+  })
+}
+
+export function companyFetch(path, options = {}) {
+  return apiFetch(`/api/company${path}`, options)
+}
+
+export function getCompanyDetails() {
+  return companyFetch('')
+}
+
+export function updateCompanyDetails(data) {
+  return companyFetch('', { method: 'PATCH', body: JSON.stringify(data) })
+}
+
+export function getLocations() {
+  return companyFetch('/locations')
+}
+
+export function createLocation(data) {
+  return companyFetch('/locations', { method: 'POST', body: JSON.stringify(data) })
+}
+
+export function updateLocation(id, data) {
+  return companyFetch(`/locations/${id}`, { method: 'PATCH', body: JSON.stringify(data) })
+}
+
+export function deleteLocation(id) {
+  return companyFetch(`/locations/${id}`, { method: 'DELETE' })
+}
+
+export function getDepartments(locationId) {
+  const qs = locationId ? `?location_id=${locationId}` : ''
+  return companyFetch(`/departments${qs}`)
+}
+
+export function createDepartment(data) {
+  return companyFetch('/departments', { method: 'POST', body: JSON.stringify(data) })
+}
+
+export function updateDepartment(id, data) {
+  return companyFetch(`/departments/${id}`, { method: 'PATCH', body: JSON.stringify(data) })
+}
+
+export function deleteDepartment(id) {
+  return companyFetch(`/departments/${id}`, { method: 'DELETE' })
+}
+
+export function getDesignations(departmentId) {
+  const qs = departmentId ? `?department_id=${departmentId}` : ''
+  return companyFetch(`/designations${qs}`)
+}
+
+export function createDesignation(data) {
+  return companyFetch('/designations', { method: 'POST', body: JSON.stringify(data) })
+}
+
+export function updateDesignation(id, data) {
+  return companyFetch(`/designations/${id}`, { method: 'PATCH', body: JSON.stringify(data) })
+}
+
+export function reorderDesignations(ids) {
+  return companyFetch('/designations/reorder', { method: 'PUT', body: JSON.stringify({ ids }) })
+}
+
+export function deleteDesignation(id) {
+  return companyFetch(`/designations/${id}`, { method: 'DELETE' })
+}
+
+export function adminFetch(path, options = {}) {
+  return apiFetch(`/admin-api${path}`, options)
+}
+
+export function getAdminStats() {
+  return adminFetch('/stats')
+}
+
+export function getOrganizations() {
+  return adminFetch('/organizations')
+}
+
+export function createOrganization(data) {
+  return adminFetch('/organizations', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
+}
+
+export function updateOrganization(id, data) {
+  return adminFetch(`/organizations/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  })
+}
+
+export function getAdminUsers() {
+  return adminFetch('/users')
+}

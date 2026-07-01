@@ -1,9 +1,9 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import CreateWorkOrderModal from './CreateWorkOrderModal'
 import NotificationPanel from './NotificationPanel'
-import { useAuth } from '../../hooks/useAuth'
 import { useOrg } from '../../hooks/useOrg'
 import { useNotifications } from '../../hooks/useNotifications'
+import { getOrgAssetSignedUrl } from '../../lib/orgAssets'
 import './DashboardHeader.css'
 
 export default function DashboardHeader({
@@ -19,23 +19,52 @@ export default function DashboardHeader({
   const [showModal, setShowModal] = useState(false)
   const [showNotifications, setShowNotifications] = useState(false)
   const notifBtnRef = useRef(null)
-  const { user } = useAuth()
   const { org } = useOrg()
   const { unreadCount } = useNotifications()
+  const [logoUrl, setLogoUrl] = useState(null)
 
-  const greetingName =
-    user?.user_metadata?.full_name ||
-    user?.email?.split('@')[0] ||
-    'there'
+  useEffect(() => {
+    let cancelled = false
+
+    async function loadLogo() {
+      if (!org?.logo_url) {
+        setLogoUrl(null)
+        return
+      }
+      try {
+        const url = await getOrgAssetSignedUrl(org.logo_url)
+        if (!cancelled) setLogoUrl(url)
+      } catch {
+        if (!cancelled) setLogoUrl(null)
+      }
+    }
+
+    loadLogo()
+    return () => { cancelled = true }
+  }, [org?.logo_url])
+
+  const companyName = org?.name
+  const logoLetter = (companyName?.[0] || 'C').toUpperCase()
 
   return (
     <>
       <header className="dash-header">
         <div className="dash-header__left">
-          <h1 className="dash-header__title">Dashboard</h1>
-          <p className="dash-header__subtitle">
-            Welcome back{org?.name ? ` to ${org.name}` : ''}, {greetingName}
-          </p>
+          <div className="dash-header__brand">
+            <div className="dash-header__logo-wrap" aria-hidden={!logoUrl && !companyName}>
+              {logoUrl ? (
+                <img src={logoUrl} alt="" className="dash-header__logo" />
+              ) : (
+                <span className="dash-header__logo-fallback">{logoLetter}</span>
+              )}
+            </div>
+            <div className="dash-header__text">
+              <h1 className="dash-header__title">Dashboard</h1>
+              {companyName && (
+                <p className="dash-header__subtitle">{companyName}</p>
+              )}
+            </div>
+          </div>
         </div>
 
         <div className="dash-header__right">

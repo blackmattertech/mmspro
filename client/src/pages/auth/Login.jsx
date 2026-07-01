@@ -1,8 +1,8 @@
-import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useState, useEffect } from 'react'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
 import { supabase } from '../../lib/supabase'
-import { onboardOrg } from '../../lib/api'
+import { onboardOrg, requestPasswordReset } from '../../lib/api'
 import { generateOrgSlug } from '../../lib/slug'
 import './Login.css'
 
@@ -69,18 +69,46 @@ export default function Login() {
   const [companyName, setCompanyName] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [rememberMe, setRememberMe] = useState(true)
-  const [isSignUp, setIsSignUp] = useState(false)
+  const [formMode, setFormMode] = useState('signin')
   const [error, setError] = useState(null)
   const [success, setSuccess] = useState(null)
   const [loading, setLoading] = useState(false)
   const { signIn, signUp } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
+
+  useEffect(() => {
+    if (location.state?.error) {
+      setError(location.state.error)
+      navigate(location.pathname, { replace: true, state: {} })
+    }
+    if (location.state?.success) {
+      setSuccess(location.state.success)
+      navigate(location.pathname, { replace: true, state: {} })
+    }
+  }, [location, navigate])
+
+  const isSignUp = formMode === 'signup'
+  const isForgot = formMode === 'forgot'
 
   const switchMode = () => {
-    setIsSignUp((prev) => !prev)
+    setFormMode((prev) => (prev === 'signup' ? 'signin' : 'signup'))
     setError(null)
     setSuccess(null)
     setCompanyName('')
+  }
+
+  const openForgotMode = (e) => {
+    e.preventDefault()
+    setFormMode('forgot')
+    setError(null)
+    setSuccess(null)
+  }
+
+  const backToSignIn = () => {
+    setFormMode('signin')
+    setError(null)
+    setSuccess(null)
   }
 
   const getPostAuthPath = async (userId) => {
@@ -88,11 +116,18 @@ export default function Login() {
 
     const { data: profile } = await supabase
       .from('profiles')
-      .select('org_id, organizations(slug)')
+      .select('role, org_id, organizations(slug, is_active)')
       .eq('id', userId)
       .maybeSingle()
 
+    if (profile?.role === 'admin') {
+      return '/admin/dashboard'
+    }
+
     if (profile?.organizations?.slug) {
+      if (profile.organizations.is_active === false) {
+        throw new Error('Your organization has been disabled. Contact support.')
+      }
       return `/${profile.organizations.slug}/dashboard`
     }
     return '/onboard'
@@ -103,6 +138,17 @@ export default function Login() {
     setError(null)
     setSuccess(null)
     setLoading(true)
+
+    if (isForgot) {
+      try {
+        const { message } = await requestPasswordReset(email)
+        setSuccess(message || 'If an account exists for that email, a password reset link has been sent.')
+      } catch (err) {
+        setError(err.message)
+      }
+      setLoading(false)
+      return
+    }
 
     if (isSignUp) {
       if (!companyName.trim()) {
@@ -129,7 +175,7 @@ export default function Login() {
 
       setLoading(false)
       setSuccess('Account created. Check your email to confirm, then sign in.')
-      setIsSignUp(false)
+      setFormMode('signin')
       return
     }
 
@@ -139,7 +185,12 @@ export default function Login() {
       return setError(signInError.message)
     }
 
-    const path = await getPostAuthPath(data.user.id)
+    const path = await getPostAuthPath(data.user.id).catch((err) => {
+      setLoading(false)
+      setError(err.message)
+      return null
+    })
+    if (!path) return
     setLoading(false)
     navigate(path, { replace: true })
   }
@@ -209,10 +260,12 @@ export default function Login() {
 
           <div className="login-card__header">
             <h2 className="login-card__title">
-              {isSignUp ? 'Create Account' : 'Welcome Back!'}
+              {isForgot ? 'Forgot Password?' : isSignUp ? 'Create Account' : 'Welcome Back!'}
             </h2>
             <p className="login-card__subtitle">
-              {isSignUp ? (
+              {isForgot ? (
+                <>Enter your username and we&apos;ll send you a reset link.</>
+              ) : isSignUp ? (
                 <>Register to get started with <span className="text-primary">MMS PRO</span></>
               ) : (
                 <>Sign in to continue to <span className="text-primary">MMS PRO</span></>
@@ -269,38 +322,40 @@ export default function Login() {
               </div>
             )}
 
-            <div className="form-field">
-              <label htmlFor="password" className="form-field__label">Password</label>
-              <div className="form-field__input-wrap">
-                <span className="form-field__icon" aria-hidden="true">
-                  <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-                    <rect x="3.75" y="8.25" width="10.5" height="7.5" rx="1.5" stroke="currentColor" strokeWidth="1.5"/>
-                    <path d="M6 8.25V6C6 4.34 7.34 3 9 3C10.66 3 12 4.34 12 6V8.25" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                    <circle cx="9" cy="12" r="1" fill="currentColor"/>
-                  </svg>
-                </span>
-                <input
-                  id="password"
-                  type={showPassword ? 'text' : 'password'}
-                  className="form-field__input form-field__input--password"
-                  placeholder="Enter your password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                  autoComplete={isSignUp ? 'new-password' : 'current-password'}
-                />
-                <button
-                  type="button"
-                  className="form-field__toggle"
-                  onClick={() => setShowPassword(!showPassword)}
-                  aria-label={showPassword ? 'Hide password' : 'Show password'}
-                >
-                  <EyeIcon open={showPassword} />
-                </button>
+            {!isForgot && (
+              <div className="form-field">
+                <label htmlFor="password" className="form-field__label">Password</label>
+                <div className="form-field__input-wrap">
+                  <span className="form-field__icon" aria-hidden="true">
+                    <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+                      <rect x="3.75" y="8.25" width="10.5" height="7.5" rx="1.5" stroke="currentColor" strokeWidth="1.5"/>
+                      <path d="M6 8.25V6C6 4.34 7.34 3 9 3C10.66 3 12 4.34 12 6V8.25" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                      <circle cx="9" cy="12" r="1" fill="currentColor"/>
+                    </svg>
+                  </span>
+                  <input
+                    id="password"
+                    type={showPassword ? 'text' : 'password'}
+                    className="form-field__input form-field__input--password"
+                    placeholder="Enter your password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                    autoComplete={isSignUp ? 'new-password' : 'current-password'}
+                  />
+                  <button
+                    type="button"
+                    className="form-field__toggle"
+                    onClick={() => setShowPassword(!showPassword)}
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  >
+                    <EyeIcon open={showPassword} />
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
 
-            {!isSignUp && (
+            {formMode === 'signin' && (
               <div className="login-form__options">
                 <label className="checkbox">
                   <input
@@ -316,7 +371,7 @@ export default function Login() {
                   </span>
                   <span className="checkbox__label">Remember me</span>
                 </label>
-                <a href="#" className="login-form__forgot" onClick={(e) => e.preventDefault()}>
+                <a href="#" className="login-form__forgot" onClick={openForgotMode}>
                   Forgot Password?
                 </a>
               </div>
@@ -324,8 +379,8 @@ export default function Login() {
 
             <button type="submit" className="login-form__submit" disabled={loading}>
               {loading
-                ? (isSignUp ? 'Creating Account...' : 'Signing In...')
-                : (isSignUp ? 'Create Account' : 'Sign In')}
+                ? (isForgot ? 'Sending Reset Link...' : isSignUp ? 'Creating Account...' : 'Signing In...')
+                : (isForgot ? 'Send Reset Link' : isSignUp ? 'Create Account' : 'Sign In')}
               <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
                 <path d="M3.75 9H14.25M14.25 9L10.5 5.25M14.25 9L10.5 12.75" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
               </svg>
@@ -333,7 +388,14 @@ export default function Login() {
           </form>
 
           <p className="login-card__footer">
-            {isSignUp ? (
+            {isForgot ? (
+              <>
+                Remember your password?{' '}
+                <button type="button" className="login-card__link text-primary" onClick={backToSignIn}>
+                  Back to Sign In
+                </button>
+              </>
+            ) : isSignUp ? (
               <>
                 Already have an account?{' '}
                 <button type="button" className="login-card__link text-primary" onClick={switchMode}>
