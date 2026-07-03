@@ -2,10 +2,18 @@ import { useMemo, useState, useEffect, useRef } from 'react'
 import { useBackdropClose } from '../../hooks/useBackdropClose'
 import { getOrgAssetSignedUrl, validateLogoFile } from '../../lib/orgAssets'
 import CreatableSelect from './CreatableSelect'
+import EmployeeSelect from './EmployeeSelect'
 import GooToggle from '../ui/GooToggle'
 import LocationModal from './LocationModal'
 import DepartmentModal from './DepartmentModal'
 import DesignationModal from './DesignationModal'
+import PhoneInput from '../shared/PhoneInput'
+import ImageCropModal from '../shared/ImageCropModal'
+import {
+  departmentsForEmployeeLocation,
+  employeeMatchesDepartmentLocation,
+} from '../../lib/departmentLocation'
+import { validatePhoneE164 } from '../../lib/validation'
 import './CompanyShared.css'
 
 const EMPTY = {
@@ -13,10 +21,27 @@ const EMPTY = {
   name: '',
   mobile: '',
   email: '',
+  additional_emails: [],
   location_id: '',
   department_id: '',
   designation_id: '',
+  manager_id: '',
+  is_department_head: false,
   login_required: false,
+}
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+function normalizeAdditionalEmails(emails) {
+  const seen = new Set()
+  const normalized = []
+  for (const raw of emails || []) {
+    const email = raw?.trim().toLowerCase()
+    if (!email || seen.has(email)) continue
+    seen.add(email)
+    normalized.push(email)
+  }
+  return normalized
 }
 
 function filterDesignationsForDepartment(designations, departmentId) {
@@ -29,6 +54,7 @@ function filterDesignationsForDepartment(designations, departmentId) {
 
 export default function EmployeeModal({
   employee,
+  employees = [],
   locations,
   departments,
   designations,
@@ -44,12 +70,35 @@ export default function EmployeeModal({
   const [error, setError] = useState(null)
   const [photoFile, setPhotoFile] = useState(null)
   const [photoPreview, setPhotoPreview] = useState(null)
+  const [cropSource, setCropSource] = useState(null)
   const [nested, setNested] = useState(null)
   const photoInputRef = useRef(null)
   const handleBackdropClick = useBackdropClose(onClose)
 
   const activeLocations = locations.filter((l) => l.is_active !== false)
   const activeDepartments = departments.filter((d) => d.is_active !== false)
+  const activeEmployees = employees.filter((e) => e.is_active !== false)
+  const managerOptions = activeEmployees.filter((e) =>
+    e.id !== employee?.id && (!form.location_id || e.location_id === form.location_id),
+  )
+
+  const departmentsForLocation = useMemo(
+    () => departmentsForEmployeeLocation(activeDepartments, form.location_id),
+    [activeDepartments, form.location_id],
+  )
+
+  const selectedDepartment = useMemo(
+    () => activeDepartments.find((d) => d.id === form.department_id),
+    [activeDepartments, form.department_id],
+  )
+
+  const canBeDepartmentHead = Boolean(
+    form.department_id
+    && form.location_id
+    && selectedDepartment
+    && !selectedDepartment.per_location_heads
+    && employeeMatchesDepartmentLocation(form.location_id, selectedDepartment),
+  )
 
   const availableDesignations = useMemo(
     () => filterDesignationsForDepartment(designations, form.department_id),
@@ -63,9 +112,14 @@ export default function EmployeeModal({
         name: employee.name || '',
         mobile: employee.mobile || '',
         email: employee.email || '',
+        additional_emails: (employee.org_employee_emails || []).map((row) => row.email),
         location_id: employee.location_id || '',
         department_id: employee.department_id || '',
         designation_id: employee.designation_id || '',
+        manager_id: employee.manager_id || '',
+        is_department_head: (employee.headed_departments || []).some(
+          (dept) => dept.id === employee.department_id,
+        ),
         login_required: employee.login_required === true,
       })
       setPhotoPreview(employee.photo_signed_url || null)
@@ -84,6 +138,33 @@ export default function EmployeeModal({
     }
   }, [availableDesignations, form.designation_id])
 
+  useEffect(() => {
+    if (!form.department_id) return
+    const stillValid = departmentsForLocation.some((d) => d.id === form.department_id)
+    if (!stillValid) {
+      setForm((prev) => ({
+        ...prev,
+        department_id: '',
+        designation_id: '',
+        is_department_head: false,
+      }))
+    }
+  }, [departmentsForLocation, form.department_id])
+
+  useEffect(() => {
+    if (form.is_department_head && !canBeDepartmentHead) {
+      setForm((prev) => ({ ...prev, is_department_head: false }))
+    }
+  }, [canBeDepartmentHead, form.is_department_head])
+
+  useEffect(() => {
+    if (!form.manager_id) return
+    const stillValid = managerOptions.some((e) => e.id === form.manager_id)
+    if (!stillValid) {
+      setForm((prev) => ({ ...prev, manager_id: '' }))
+    }
+  }, [managerOptions, form.manager_id])
+
   const handlePhotoChange = (e) => {
     const file = e.target.files?.[0]
     e.target.value = ''
@@ -95,9 +176,24 @@ export default function EmployeeModal({
       return
     }
 
+    setError(null)
+    setCropSource({
+      url: URL.createObjectURL(file),
+      fileName: file.name,
+      mimeType: file.type,
+    })
+  }
+
+  const handleCropCancel = () => {
+    if (cropSource?.url) URL.revokeObjectURL(cropSource.url)
+    setCropSource(null)
+  }
+
+  const handleCropComplete = (file) => {
+    if (cropSource?.url) URL.revokeObjectURL(cropSource.url)
+    setCropSource(null)
     setPhotoFile(file)
     setPhotoPreview(URL.createObjectURL(file))
-    setError(null)
   }
 
   const handleSubmit = async (e) => {
@@ -110,7 +206,27 @@ export default function EmployeeModal({
     }
 
     if (form.login_required && !form.email.trim()) {
-      setError('Email is required when login is enabled')
+      setError('Primary email is required when login is enabled')
+      return
+    }
+
+    const primary = form.email.trim().toLowerCase()
+    const additionalEmails = normalizeAdditionalEmails(form.additional_emails)
+
+    for (const email of additionalEmails) {
+      if (!EMAIL_RE.test(email)) {
+        setError(`Invalid email: ${email}`)
+        return
+      }
+      if (primary && email === primary) {
+        setError('Additional emails cannot include the primary email')
+        return
+      }
+    }
+
+    const mobileError = validatePhoneE164(form.mobile)
+    if (mobileError) {
+      setError(mobileError)
       return
     }
 
@@ -120,9 +236,12 @@ export default function EmployeeModal({
         name: form.name,
         mobile: form.mobile,
         email: form.email,
+        additional_emails: additionalEmails,
         location_id: form.location_id || null,
         department_id: form.department_id || null,
         designation_id: form.designation_id || null,
+        manager_id: form.manager_id || null,
+        is_department_head: form.is_department_head,
         login_required: form.login_required,
       }, photoFile)
     } catch (err) {
@@ -146,6 +265,25 @@ export default function EmployeeModal({
     const created = await onCreateDesignation(payload)
     setForm((prev) => ({ ...prev, designation_id: created.id }))
     setNested(null)
+  }
+
+  const addAdditionalEmail = () => {
+    setForm((prev) => ({ ...prev, additional_emails: [...prev.additional_emails, ''] }))
+  }
+
+  const updateAdditionalEmail = (index, value) => {
+    setForm((prev) => {
+      const additional_emails = [...prev.additional_emails]
+      additional_emails[index] = value
+      return { ...prev, additional_emails }
+    })
+  }
+
+  const removeAdditionalEmail = (index) => {
+    setForm((prev) => ({
+      ...prev,
+      additional_emails: prev.additional_emails.filter((_, i) => i !== index),
+    }))
   }
 
   const avatarLetter = (form.name[0] || form.emp_id[0] || '?').toUpperCase()
@@ -230,31 +368,75 @@ export default function EmployeeModal({
             <div className="company-form__grid company-form__grid--2">
               <label className="company-form__field">
                 <span className="company-form__label">Mobile</span>
-                <input
-                  className="company-form__input"
+                <PhoneInput
                   value={form.mobile}
-                  onChange={(e) => setForm({ ...form, mobile: e.target.value })}
-                  placeholder="+91..."
+                  onChange={(mobile) => setForm({ ...form, mobile })}
+                  placeholder="Mobile number"
                 />
               </label>
               <label className="company-form__field">
-                <span className="company-form__label">Email</span>
+                <span className="company-form__label">Primary Email</span>
                 <input
                   type="email"
                   className="company-form__input"
                   value={form.email}
                   onChange={(e) => setForm({ ...form, email: e.target.value })}
+                  placeholder="Login & main contact email"
                 />
               </label>
+            </div>
+
+            <div className="company-employee-emails">
+              <div className="company-employee-emails__header">
+                <span className="company-form__label">Additional Emails</span>
+                <button
+                  type="button"
+                  className="company-btn company-btn--secondary company-btn--compact"
+                  onClick={addAdditionalEmail}
+                >
+                  + Add Email
+                </button>
+              </div>
+              {form.additional_emails.length === 0 ? (
+                <p className="company-employee-emails__empty">No additional emails yet.</p>
+              ) : (
+                <div className="company-employee-emails__list">
+                  {form.additional_emails.map((email, index) => (
+                    <div key={index} className="company-employee-emails__row">
+                      <input
+                        type="email"
+                        className="company-form__input"
+                        value={email}
+                        onChange={(e) => updateAdditionalEmail(index, e.target.value)}
+                        placeholder="name@company.com"
+                      />
+                      <button
+                        type="button"
+                        className="company-link company-link--danger"
+                        onClick={() => removeAdditionalEmail(index)}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             <CreatableSelect
               label="Location"
               value={form.location_id}
-              onChange={(location_id) => setForm({ ...form, location_id })}
+              onChange={(location_id) => setForm({
+                ...form,
+                location_id,
+                department_id: '',
+                designation_id: '',
+                manager_id: '',
+                is_department_head: false,
+              })}
               options={activeLocations}
               getOptionValue={(loc) => loc.id}
-              getOptionLabel={(loc) => loc.name}
+              getOptionLabel={(loc) => (loc.code ? `${loc.code} — ${loc.name}` : loc.name)}
               placeholder="Select location"
               onCreate={() => setNested('location')}
             />
@@ -262,11 +444,17 @@ export default function EmployeeModal({
             <CreatableSelect
               label="Department"
               value={form.department_id}
-              onChange={(department_id) => setForm({ ...form, department_id, designation_id: '' })}
-              options={activeDepartments}
+              onChange={(department_id) => setForm({
+                ...form,
+                department_id,
+                designation_id: '',
+                is_department_head: false,
+              })}
+              options={departmentsForLocation}
               getOptionValue={(dept) => dept.id}
-              getOptionLabel={(dept) => dept.name}
-              placeholder="Select department"
+              getOptionLabel={(dept) => (dept.code ? `${dept.code} — ${dept.name}` : dept.name)}
+              placeholder={form.location_id ? 'Select department' : 'Select location first'}
+              disabled={!form.location_id}
               onCreate={() => setNested('department')}
             />
 
@@ -280,6 +468,36 @@ export default function EmployeeModal({
               placeholder={form.department_id ? 'Select designation' : 'Select department first (optional)'}
               onCreate={() => setNested('designation')}
             />
+
+            <EmployeeSelect
+              label="Manager"
+              value={form.manager_id}
+              onChange={(manager_id) => setForm({ ...form, manager_id })}
+              options={managerOptions}
+              placeholder="None"
+              disabled={!form.location_id}
+            />
+
+            <div className="company-employee-photo__login">
+              <span className="company-employee-photo__login-label">Department Head</span>
+              <GooToggle
+                checked={form.is_department_head}
+                disabled={!canBeDepartmentHead}
+                onChange={(checked) => setForm({ ...form, is_department_head: checked })}
+                ariaLabel="Department head"
+              />
+              <p
+                className={`company-employee-photo__login-hint${
+                  canBeDepartmentHead ? '' : ' company-employee-photo__login-hint--enable'
+                }`}
+              >
+                {canBeDepartmentHead
+                  ? `Head of ${selectedDepartment?.code || selectedDepartment?.name || 'selected department'} at this location.`
+                  : selectedDepartment?.per_location_heads
+                    ? 'This department uses separate heads per location. Manage from the department form.'
+                    : 'Select a location and matching department first.'}
+              </p>
+            </div>
 
             {error && <p className="company-alert">{error}</p>}
             <div className="company-modal__actions">
@@ -308,9 +526,12 @@ export default function EmployeeModal({
           department={null}
           locations={activeLocations}
           departments={activeDepartments}
+          employees={activeEmployees}
           saving={nestedSaving}
+          nestedSaving={nestedSaving}
           onClose={() => setNested(null)}
           onSave={handleNestedDepartmentSave}
+          onCreateLocation={onCreateLocation}
         />
       )}
 
@@ -322,6 +543,17 @@ export default function EmployeeModal({
           saving={nestedSaving}
           onClose={() => setNested(null)}
           onSave={handleNestedDesignationSave}
+        />
+      )}
+
+      {cropSource && (
+        <ImageCropModal
+          nested
+          imageSrc={cropSource.url}
+          fileName={cropSource.fileName}
+          mimeType={cropSource.mimeType}
+          onCancel={handleCropCancel}
+          onComplete={handleCropComplete}
         />
       )}
     </>

@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useBackdropClose } from '../../hooks/useBackdropClose'
+import AddressAutocomplete from '../shared/AddressAutocomplete'
+import { validatePostalCode } from '../../lib/validation'
 import './CompanyShared.css'
 
 const EMPTY = {
@@ -37,6 +39,18 @@ export default function LocationModal({ location, saving, onClose, onSave, neste
     }
   }, [location])
 
+  const handleAddressSelect = (address) => {
+    setForm((prev) => ({
+      ...prev,
+      address_line1: address.address_line1 || prev.address_line1,
+      address_line2: address.address_line2 || prev.address_line2,
+      city: address.city || prev.city,
+      state: address.state || prev.state,
+      postal_code: address.postal_code || prev.postal_code,
+      country: address.country || prev.country,
+    }))
+  }
+
   const handleSubmit = async (e) => {
     e.preventDefault()
     setError(null)
@@ -44,6 +58,13 @@ export default function LocationModal({ location, saving, onClose, onSave, neste
       setError('Name and code are required')
       return
     }
+
+    const postalError = validatePostalCode(form.postal_code, form.country)
+    if (postalError) {
+      setError(postalError)
+      return
+    }
+
     try {
       await onSave(form)
     } catch (err) {
@@ -69,7 +90,12 @@ export default function LocationModal({ location, saving, onClose, onSave, neste
           </label>
           <label className="company-form__field">
             <span className="company-form__label">Address Line 1</span>
-            <input className="company-form__input" value={form.address_line1} onChange={(e) => setForm({ ...form, address_line1: e.target.value })} />
+            <AddressAutocomplete
+              value={form.address_line1}
+              onChange={(address_line1) => setForm((prev) => ({ ...prev, address_line1 }))}
+              onSelect={handleAddressSelect}
+              placeholder="Street, area, landmark..."
+            />
           </label>
           <label className="company-form__field">
             <span className="company-form__label">Address Line 2</span>
@@ -88,7 +114,12 @@ export default function LocationModal({ location, saving, onClose, onSave, neste
           <div className="company-form__grid company-form__grid--2">
             <label className="company-form__field">
               <span className="company-form__label">Postal Code</span>
-              <input className="company-form__input" value={form.postal_code} onChange={(e) => setForm({ ...form, postal_code: e.target.value })} />
+              <input
+                className="company-form__input"
+                value={form.postal_code}
+                onChange={(e) => setForm({ ...form, postal_code: e.target.value })}
+                placeholder={form.country?.toLowerCase().includes('india') ? '6-digit PIN' : 'Postal / ZIP code'}
+              />
             </label>
             <label className="company-form__field">
               <span className="company-form__label">Country</span>

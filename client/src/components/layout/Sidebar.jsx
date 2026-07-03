@@ -4,7 +4,7 @@ import { useAuth } from '../../hooks/useAuth'
 import { useOrg } from '../../hooks/useOrg'
 import { getNavItems } from '../../config/navigation'
 import NavIcon from './NavIcon'
-import LogoutButton from '../ui/LogoutButton'
+import SidebarUserFooter from './SidebarUserFooter'
 import './Sidebar.css'
 
 const formatRole = (role) => {
@@ -22,7 +22,7 @@ function findActiveParentId(navItems, pathname) {
 }
 
 export default function Sidebar({ collapsed = false, onToggle }) {
-  const { user, signOut } = useAuth()
+  const { signOut } = useAuth()
   const { org, orgRole } = useOrg()
   const location = useLocation()
   const navItems = org ? getNavItems(org.slug) : []
@@ -39,9 +39,7 @@ export default function Sidebar({ collapsed = false, onToggle }) {
     setOpenMenu((prev) => (prev === id ? null : id))
   }
 
-  const companyName = org?.name ?? 'Company'
   const roleLabel = formatRole(orgRole)
-  const avatarLetter = (companyName[0] || user?.email?.[0] || 'U').toUpperCase()
 
   return (
     <aside className={`sidebar ${collapsed ? 'sidebar--collapsed' : ''}`}>
@@ -145,21 +143,11 @@ export default function Sidebar({ collapsed = false, onToggle }) {
       </nav>
 
       <div className="sidebar__footer">
-        <div className="sidebar__user">
-          <div className="sidebar__avatar">
-            {avatarLetter}
-            {collapsed && (
-              <span className="sidebar__tooltip" aria-hidden="true">{companyName}</span>
-            )}
-          </div>
-          {!collapsed && (
-            <div className="sidebar__user-info">
-              <span className="sidebar__user-name">{companyName}</span>
-              <span className="sidebar__user-role">{roleLabel}</span>
-            </div>
-          )}
-          <LogoutButton onClick={signOut} className="sidebar__logout-btn" />
-        </div>
+        <SidebarUserFooter
+          collapsed={collapsed}
+          roleLabel={roleLabel}
+          onSignOut={signOut}
+        />
       </div>
     </aside>
   )

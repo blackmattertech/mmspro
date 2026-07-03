@@ -1,6 +1,6 @@
+-- QUERY NAME: 08-designations — Designations master (hierarchy 1..n)
 -- ══════════════════════════════════════════════════════════════
--- MMS PRO — Designations (org-wide, hierarchy 1..n)
--- Safe to re-run. Apply after 07-department-all-locations.sql
+-- MMS PRO patch | Safe to re-run | Apply after 07-department-all-locations.sql
 -- ══════════════════════════════════════════════════════════════
 
 create table if not exists public.designations (

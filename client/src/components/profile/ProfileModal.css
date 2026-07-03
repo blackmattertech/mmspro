@@ -1,0 +1,85 @@
+.profile-modal .company-modal__header {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.profile-modal__tabs {
+  padding: 0 24px 4px;
+}
+
+.profile-modal__avatar-section {
+  display: flex;
+  align-items: flex-start;
+  gap: 20px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--color-light-gray-1);
+}
+
+.profile-modal__avatar-preview {
+  flex-shrink: 0;
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  overflow: hidden;
+  background: var(--color-light-pink-1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.profile-modal__avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.profile-modal__avatar-placeholder {
+  font-size: 28px;
+  font-weight: 600;
+  color: var(--color-primary);
+}
+
+.profile-modal__avatar-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.profile-modal__password-wrap {
+  position: relative;
+}
+
+.profile-modal__password-wrap .company-form__input {
+  padding-right: 56px;
+}
+
+.profile-modal__password-toggle {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  padding: 4px 8px;
+  font-size: 12px;
+  font-weight: 500;
+  font-family: inherit;
+  color: var(--color-gray-blue);
+  background: none;
+  border: none;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+}
+
+.profile-modal__password-toggle:hover {
+  color: var(--color-dark-navy);
+  background: var(--color-light-gray-1);
+}
+
+.profile-modal__success {
+  margin: 0;
+  padding: 10px 12px;
+  font-size: 13px;
+  color: #166534;
+  background: #ecfdf3;
+  border-radius: var(--radius-sm);
+}

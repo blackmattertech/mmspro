@@ -4,6 +4,8 @@ import { requireOrgAccess, assertOrgOwnership } from '../../middleware/orgAccess
 import { requireOrgRole } from '../../middleware/orgRole.js'
 import { supabaseAdmin } from '../../services/supabase.js'
 import { provisionEmployeeLogin, disableEmployeeLogin } from '../../lib/provisionEmployeeLogin.js'
+import { validatePostalCode, validatePhoneE164, normalizePhoneE164 } from '../../lib/contactValidation.js'
+import { searchIndianAddresses } from '../../lib/addressGeocoder.js'
 
 const router = Router()
 const canManage = requireOrgRole('owner', 'admin')
@@ -17,6 +19,18 @@ const ORG_SELECT = `
 `
 
 router.use(verifyAuth, requireOrgAccess)
+
+router.get('/geocode', async (req, res) => {
+  const q = req.query.q?.trim()
+  if (!q || q.length < 3) return res.json([])
+
+  try {
+    const results = await searchIndianAddresses(q)
+    res.json(results)
+  } catch (err) {
+    res.status(500).json({ error: err.message || 'Address search failed' })
+  }
+})
 
 const ORG_ASSETS_BUCKET = 'org-assets'
 
@@ -77,6 +91,26 @@ router.patch('/', canManage, async (req, res) => {
     return res.status(400).json({ error: 'No valid fields to update' })
   }
 
+  if (updates.phone !== undefined) {
+    const phoneError = validatePhoneE164(updates.phone)
+    if (phoneError) return res.status(400).json({ error: phoneError })
+    updates.phone = normalizePhoneE164(updates.phone)
+  }
+
+  if (updates.postal_code !== undefined) {
+    let countryForPostal = updates.country
+    if (countryForPostal === undefined) {
+      const { data: currentOrg } = await supabaseAdmin
+        .from('organizations')
+        .select('country')
+        .eq('id', req.userProfile.org_id)
+        .single()
+      countryForPostal = currentOrg?.country
+    }
+    const postalError = validatePostalCode(updates.postal_code, countryForPostal)
+    if (postalError) return res.status(400).json({ error: postalError })
+  }
+
   updates.updated_at = new Date().toISOString()
 
   const { data, error } = await supabaseAdmin
@@ -114,6 +148,9 @@ router.post('/locations', canManage, async (req, res) => {
 
   const orgId = req.userProfile.org_id
   const normalizedCode = code.trim().toUpperCase()
+
+  const postalError = validatePostalCode(postal_code, country)
+  if (postalError) return res.status(400).json({ error: postalError })
 
   if (is_primary) {
     await supabaseAdmin
@@ -167,6 +204,21 @@ router.patch('/locations/:id', canManage, assertOrgOwnership('org_locations'), a
     return res.status(400).json({ error: 'No valid fields to update' })
   }
 
+  if (updates.postal_code !== undefined) {
+    let countryForPostal = updates.country
+    if (countryForPostal === undefined) {
+      const { data: currentLoc } = await supabaseAdmin
+        .from('org_locations')
+        .select('country')
+        .eq('id', req.params.id)
+        .eq('org_id', orgId)
+        .single()
+      countryForPostal = currentLoc?.country
+    }
+    const postalError = validatePostalCode(updates.postal_code, countryForPostal)
+    if (postalError) return res.status(400).json({ error: postalError })
+  }
+
   if (updates.is_primary) {
     await supabaseAdmin
       .from('org_locations')
@@ -208,10 +260,131 @@ router.delete('/locations/:id', canManage, assertOrgOwnership('org_locations'), 
 
 // ── Departments ──
 
+const DEPARTMENT_SELECT = `
+  *,
+  org_locations ( id, name, code ),
+  head_employee:head_employee_id ( id, emp_id, name, photo_url ),
+  department_location_heads (
+    id,
+    location_id,
+    head_employee_id,
+    org_locations:location_id ( id, name, code ),
+    head_employee:head_employee_id ( id, emp_id, name, photo_url )
+  )
+`
+
+async function formatDepartmentLocationHeadRow(row) {
+  if (!row) return row
+  const head_employee = row.head_employee
+    ? await attachEmployeePhotoUrl(row.head_employee)
+    : null
+  return {
+    location_id: row.location_id,
+    head_employee_id: row.head_employee_id,
+    org_locations: row.org_locations,
+    head_employee,
+  }
+}
+
+async function attachDepartmentHeadData(department) {
+  if (!department) return department
+
+  let result = { ...department }
+
+  if (department.head_employee) {
+    result.head_employee = await attachEmployeePhotoUrl(department.head_employee)
+  }
+
+  if (department.department_location_heads?.length) {
+    const location_heads = await Promise.all(
+      department.department_location_heads.map(formatDepartmentLocationHeadRow),
+    )
+    const { department_location_heads: _rows, ...rest } = result
+    result = { ...rest, location_heads }
+  }
+
+  return result
+}
+
+async function attachDepartmentHeadPhotos(departments) {
+  return Promise.all((departments || []).map(attachDepartmentHeadData))
+}
+
+async function syncDepartmentLocationHeads(orgId, departmentId, perLocationHeads, locationHeads = []) {
+  const { error: deleteError } = await supabaseAdmin
+    .from('department_location_heads')
+    .delete()
+    .eq('department_id', departmentId)
+    .eq('org_id', orgId)
+
+  if (deleteError) throw deleteError
+
+  if (!perLocationHeads) return
+
+  const rows = (locationHeads || [])
+    .filter((entry) => entry?.location_id && entry?.head_employee_id)
+    .map((entry) => ({
+      org_id: orgId,
+      department_id: departmentId,
+      location_id: entry.location_id,
+      head_employee_id: entry.head_employee_id,
+    }))
+
+  if (!rows.length) return
+
+  const { error: insertError } = await supabaseAdmin
+    .from('department_location_heads')
+    .insert(rows)
+
+  if (insertError) throw insertError
+}
+
+async function validateDepartmentHeadPayload(orgId, {
+  all_locations,
+  location_id,
+  per_location_heads,
+  head_employee_id,
+  location_heads,
+}) {
+  if (!all_locations) {
+    if (head_employee_id) {
+      await validateDepartmentHead(orgId, head_employee_id, { all_locations, location_id })
+    }
+    return
+  }
+
+  if (per_location_heads) {
+    for (const entry of location_heads || []) {
+      if (!entry?.head_employee_id) continue
+      await validateDepartmentHead(orgId, entry.head_employee_id, {
+        all_locations: false,
+        location_id: entry.location_id,
+      })
+    }
+    return
+  }
+
+  if (head_employee_id) {
+    await validateDepartmentHead(orgId, head_employee_id, { all_locations: true, location_id: null })
+  }
+}
+
+async function getDepartmentById(orgId, id) {
+  const { data, error } = await supabaseAdmin
+    .from('departments')
+    .select(DEPARTMENT_SELECT)
+    .eq('id', id)
+    .eq('org_id', orgId)
+    .single()
+
+  if (error) throw error
+  return attachDepartmentHeadData(data)
+}
+
 router.get('/departments', async (req, res) => {
   let query = supabaseAdmin
     .from('departments')
-    .select('*, org_locations(id, name, code)')
+    .select(DEPARTMENT_SELECT)
     .eq('org_id', req.userProfile.org_id)
     .order('name')
 
@@ -222,18 +395,29 @@ router.get('/departments', async (req, res) => {
   const { data, error } = await query
 
   if (error) return res.status(500).json({ error: error.message })
-  res.json(data || [])
+
+  const withHeadPhotos = await attachDepartmentHeadPhotos(data)
+  res.json(withHeadPhotos)
 })
 
 router.post('/departments', canManage, async (req, res) => {
-  const { name, description, location_id, parent_id, all_locations } = req.body
+  const {
+    name, code, description, location_id, parent_id, all_locations,
+    head_employee_id, per_location_heads, location_heads,
+  } = req.body
 
   if (!name?.trim()) {
     return res.status(400).json({ error: 'Name is required' })
   }
 
+  if (!code?.trim()) {
+    return res.status(400).json({ error: 'Code is required' })
+  }
+
   const orgId = req.userProfile.org_id
   const appliesToAll = Boolean(all_locations)
+  const usePerLocationHeads = appliesToAll && Boolean(per_location_heads)
+  const normalizedCode = code.trim().toUpperCase()
 
   if (!appliesToAll && location_id) {
     const { data: loc } = await supabaseAdmin
@@ -255,37 +439,67 @@ router.post('/departments', canManage, async (req, res) => {
     if (!parent) return res.status(400).json({ error: 'Invalid parent department' })
   }
 
+  try {
+    await validateDepartmentHeadPayload(orgId, {
+      all_locations: appliesToAll,
+      location_id: appliesToAll ? null : (location_id || null),
+      per_location_heads: usePerLocationHeads,
+      head_employee_id: usePerLocationHeads ? null : (head_employee_id || null),
+      location_heads,
+    })
+  } catch (err) {
+    return res.status(400).json({ error: err.message })
+  }
+
   const { data, error } = await supabaseAdmin
     .from('departments')
     .insert({
       org_id: orgId,
       name: name.trim(),
+      code: normalizedCode,
       description: description?.trim() || null,
       all_locations: appliesToAll,
       location_id: appliesToAll ? null : (location_id || null),
       parent_id: parent_id || null,
+      per_location_heads: usePerLocationHeads,
+      head_employee_id: usePerLocationHeads ? null : (head_employee_id || null),
     })
-    .select('*, org_locations(id, name, code)')
+    .select('id')
     .single()
 
-  if (error) return res.status(500).json({ error: error.message })
+  if (error) {
+    if (error.code === '23505') return res.status(400).json({ error: 'Department code already exists' })
+    return res.status(500).json({ error: error.message })
+  }
 
-  res.status(201).json(data)
+  try {
+    await syncDepartmentLocationHeads(orgId, data.id, usePerLocationHeads, location_heads)
+    const created = await getDepartmentById(orgId, data.id)
+    res.status(201).json(created)
+  } catch (err) {
+    return res.status(500).json({ error: err.message })
+  }
 })
 
 router.patch('/departments/:id', canManage, assertOrgOwnership('departments'), async (req, res) => {
   const orgId = req.userProfile.org_id
-  const allowed = ['name', 'description', 'location_id', 'parent_id', 'is_active', 'all_locations']
+  const allowed = [
+    'name', 'code', 'description', 'location_id', 'parent_id',
+    'is_active', 'all_locations', 'head_employee_id', 'per_location_heads',
+  ]
+
+  const locationHeads = req.body.location_heads
 
   const updates = {}
   for (const key of allowed) {
     if (req.body[key] !== undefined) {
-      if (typeof req.body[key] === 'string') updates[key] = req.body[key].trim()
+      if (key === 'code') updates[key] = String(req.body[key]).trim().toUpperCase()
+      else if (typeof req.body[key] === 'string') updates[key] = req.body[key].trim()
       else updates[key] = req.body[key]
     }
   }
 
-  if (!Object.keys(updates).length) {
+  if (!Object.keys(updates).length && locationHeads === undefined) {
     return res.status(400).json({ error: 'No valid fields to update' })
   }
 
@@ -319,19 +533,88 @@ router.patch('/departments/:id', canManage, assertOrgOwnership('departments'), a
     if (!parent) return res.status(400).json({ error: 'Invalid parent department' })
   }
 
+  const { data: existingDept, error: existingDeptError } = await supabaseAdmin
+    .from('departments')
+    .select('location_id, all_locations, head_employee_id, per_location_heads')
+    .eq('id', req.params.id)
+    .eq('org_id', orgId)
+    .single()
+
+  if (existingDeptError) return res.status(500).json({ error: existingDeptError.message })
+
+  const nextAllLocations = updates.all_locations ?? existingDept.all_locations
+  const nextLocationId = nextAllLocations ? null : (updates.location_id ?? existingDept.location_id)
+  const nextPerLocationHeads = nextAllLocations
+    ? (updates.per_location_heads ?? existingDept.per_location_heads)
+    : false
+  const nextHeadId = nextPerLocationHeads
+    ? null
+    : (updates.head_employee_id !== undefined
+      ? updates.head_employee_id
+      : existingDept.head_employee_id)
+
+  if (updates.head_employee_id === '') {
+    updates.head_employee_id = null
+  }
+
+  if (!nextAllLocations) {
+    updates.per_location_heads = false
+  } else if (updates.per_location_heads !== undefined) {
+    updates.per_location_heads = Boolean(updates.per_location_heads)
+  }
+
+  if (nextPerLocationHeads) {
+    updates.head_employee_id = null
+  } else if (nextAllLocations && updates.per_location_heads === false) {
+    updates.head_employee_id = nextHeadId
+  }
+
+  const shouldSyncLocationHeads = locationHeads !== undefined
+    || updates.per_location_heads !== undefined
+    || updates.all_locations !== undefined
+
+  try {
+    await validateDepartmentHeadPayload(orgId, {
+      all_locations: nextAllLocations,
+      location_id: nextLocationId,
+      per_location_heads: nextPerLocationHeads,
+      head_employee_id: nextPerLocationHeads ? null : nextHeadId,
+      location_heads: locationHeads,
+    })
+  } catch (err) {
+    return res.status(400).json({ error: err.message })
+  }
+
   updates.updated_at = new Date().toISOString()
 
-  const { data, error } = await supabaseAdmin
+  const { error } = await supabaseAdmin
     .from('departments')
     .update(updates)
     .eq('id', req.params.id)
     .eq('org_id', orgId)
-    .select('*, org_locations(id, name, code)')
-    .single()
 
-  if (error) return res.status(500).json({ error: error.message })
+  if (error) {
+    if (error.code === '23505') return res.status(400).json({ error: 'Department code already exists' })
+    return res.status(500).json({ error: error.message })
+  }
 
-  res.json(data)
+  try {
+    if (shouldSyncLocationHeads) {
+      await syncDepartmentLocationHeads(
+        orgId,
+        req.params.id,
+        nextPerLocationHeads,
+        locationHeads,
+      )
+    } else if (!nextAllLocations || !nextPerLocationHeads) {
+      await syncDepartmentLocationHeads(orgId, req.params.id, false, [])
+    }
+
+    const updated = await getDepartmentById(orgId, req.params.id)
+    res.json(updated)
+  } catch (err) {
+    return res.status(500).json({ error: err.message })
+  }
 })
 
 router.delete('/departments/:id', canManage, assertOrgOwnership('departments'), async (req, res) => {
@@ -340,11 +623,13 @@ router.delete('/departments/:id', canManage, assertOrgOwnership('departments'), 
     .update({ is_active: false, updated_at: new Date().toISOString() })
     .eq('id', req.params.id)
     .eq('org_id', req.userProfile.org_id)
-    .select('*, org_locations(id, name, code)')
+    .select(DEPARTMENT_SELECT)
     .single()
 
   if (error) return res.status(500).json({ error: error.message })
-  res.json(data)
+
+  const withHeadPhoto = await attachDepartmentHeadData(data)
+  res.json(withHeadPhoto)
 })
 
 // ── Designations ──
@@ -687,9 +972,104 @@ router.delete('/designations/:id', canManage, assertOrgOwnership('designations')
 const EMPLOYEE_SELECT = `
   *,
   designations ( id, name ),
-  departments ( id, name ),
-  org_locations ( id, name, code )
+  departments!department_id ( id, name, code ),
+  org_locations ( id, name, code ),
+  org_employee_emails ( id, email ),
+  manager:manager_id ( id, emp_id, name ),
+  headed_departments:departments!head_employee_id ( id, name, code )
 `
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+function normalizeEmailList(emails) {
+  const seen = new Set()
+  const normalized = []
+  for (const raw of emails || []) {
+    const email = raw?.trim().toLowerCase()
+    if (!email || seen.has(email)) continue
+    seen.add(email)
+    normalized.push(email)
+  }
+  return normalized
+}
+
+async function validateAdditionalEmails(orgId, employeeId, primaryEmail, additionalEmails) {
+  const primary = primaryEmail?.trim().toLowerCase() || ''
+  const normalized = normalizeEmailList(additionalEmails)
+
+  for (const email of normalized) {
+    if (!EMAIL_RE.test(email)) {
+      throw new Error(`Invalid email: ${email}`)
+    }
+    if (primary && email === primary) {
+      throw new Error('Additional emails cannot include the primary email')
+    }
+  }
+
+  if (!normalized.length) return normalized
+
+  const { data: employees, error: employeesError } = await supabaseAdmin
+    .from('org_employees')
+    .select('id, email')
+    .eq('org_id', orgId)
+
+  if (employeesError) throw employeesError
+
+  for (const emp of employees || []) {
+    if (emp.id === employeeId) continue
+    const empEmail = emp.email?.trim().toLowerCase()
+    if (empEmail && normalized.includes(empEmail)) {
+      throw new Error(`${empEmail} is already the primary email for another employee`)
+    }
+  }
+
+  const { data: conflicts, error: conflictsError } = await supabaseAdmin
+    .from('org_employee_emails')
+    .select('email, employee_id')
+    .eq('org_id', orgId)
+    .in('email', normalized)
+
+  if (conflictsError) throw conflictsError
+
+  for (const row of conflicts || []) {
+    if (row.employee_id !== employeeId) {
+      throw new Error(`${row.email} is already assigned to another employee`)
+    }
+  }
+
+  return normalized
+}
+
+async function syncEmployeeEmails(orgId, employeeId, additionalEmails) {
+  const normalized = normalizeEmailList(additionalEmails)
+
+  const { error: deleteError } = await supabaseAdmin
+    .from('org_employee_emails')
+    .delete()
+    .eq('employee_id', employeeId)
+    .eq('org_id', orgId)
+
+  if (deleteError) throw deleteError
+
+  if (!normalized.length) return
+
+  const rows = normalized.map((email) => ({
+    org_id: orgId,
+    employee_id: employeeId,
+    email,
+  }))
+
+  const { error: insertError } = await supabaseAdmin
+    .from('org_employee_emails')
+    .insert(rows)
+
+  if (insertError) {
+    if (insertError.code === '23505') {
+      throw new Error('One or more emails are already in use')
+    }
+    throw insertError
+  }
+}
 
 function isValidEmployeePhotoPath(path, orgId) {
   if (!path) return true
@@ -768,7 +1148,20 @@ async function handleEmployeeLoginAccess(orgId, employeeId, {
 }
 
 async function validateEmployeeRefs(orgId, refs) {
-  const { designation_id, department_id, location_id } = refs
+  const { designation_id, department_id, location_id, manager_id, employee_id } = refs
+
+  if (manager_id) {
+    if (employee_id && manager_id === employee_id) {
+      throw new Error('Employee cannot be their own manager')
+    }
+    const { data } = await supabaseAdmin
+      .from('org_employees')
+      .select('id')
+      .eq('id', manager_id)
+      .eq('org_id', orgId)
+      .maybeSingle()
+    if (!data) throw new Error('Invalid manager')
+  }
 
   if (location_id) {
     const { data } = await supabaseAdmin
@@ -801,6 +1194,84 @@ async function validateEmployeeRefs(orgId, refs) {
   }
 }
 
+async function validateDepartmentHead(orgId, headEmployeeId, department = null) {
+  if (!headEmployeeId) return
+
+  const { data: emp, error } = await supabaseAdmin
+    .from('org_employees')
+    .select('id, location_id')
+    .eq('id', headEmployeeId)
+    .eq('org_id', orgId)
+    .maybeSingle()
+
+  if (error) throw error
+  if (!emp) throw new Error('Invalid department head')
+
+  if (!department) return
+
+  if (department.all_locations) {
+    if (!emp.location_id) {
+      throw new Error('Department head must have a location assigned')
+    }
+    return
+  }
+
+  if (department.location_id && emp.location_id !== department.location_id) {
+    throw new Error('Department head must be at the same location as the department')
+  }
+}
+
+async function syncEmployeeDepartmentHead(orgId, employeeId, departmentId, isDepartmentHead) {
+  if (isDepartmentHead) {
+    if (!departmentId) {
+      throw new Error('Select a department before assigning as department head')
+    }
+
+    const { data: dept, error: deptError } = await supabaseAdmin
+      .from('departments')
+      .select('id, location_id, all_locations, per_location_heads')
+      .eq('id', departmentId)
+      .eq('org_id', orgId)
+      .single()
+
+    if (deptError || !dept) throw new Error('Invalid department')
+
+    if (dept.per_location_heads) {
+      throw new Error('Assign department heads from the department form for all-location departments')
+    }
+
+    await validateDepartmentHead(orgId, employeeId, dept)
+
+    await supabaseAdmin
+      .from('departments')
+      .update({ head_employee_id: null, updated_at: new Date().toISOString() })
+      .eq('org_id', orgId)
+      .eq('head_employee_id', employeeId)
+
+    const { error } = await supabaseAdmin
+      .from('departments')
+      .update({ head_employee_id: employeeId, updated_at: new Date().toISOString() })
+      .eq('id', departmentId)
+      .eq('org_id', orgId)
+
+    if (error) throw error
+    return
+  }
+
+  let clearQuery = supabaseAdmin
+    .from('departments')
+    .update({ head_employee_id: null, updated_at: new Date().toISOString() })
+    .eq('org_id', orgId)
+    .eq('head_employee_id', employeeId)
+
+  if (departmentId) {
+    clearQuery = clearQuery.eq('id', departmentId)
+  }
+
+  const { error } = await clearQuery
+  if (error) throw error
+}
+
 router.get('/employees', async (req, res) => {
   let query = supabaseAdmin
     .from('org_employees')
@@ -824,7 +1295,7 @@ router.post('/employees', canManage, async (req, res) => {
   const {
     emp_id, name, mobile, email,
     designation_id, department_id, location_id, photo_url,
-    login_required,
+    login_required, additional_emails, manager_id, is_department_head,
   } = req.body
 
   if (!emp_id?.trim() || !name?.trim()) {
@@ -838,7 +1309,9 @@ router.post('/employees', canManage, async (req, res) => {
   const orgId = req.userProfile.org_id
 
   try {
-    await validateEmployeeRefs(orgId, { designation_id, department_id, location_id })
+    await validateEmployeeRefs(orgId, {
+      designation_id, department_id, location_id, manager_id,
+    })
   } catch (err) {
     return res.status(400).json({ error: err.message })
   }
@@ -847,17 +1320,28 @@ router.post('/employees', canManage, async (req, res) => {
     return res.status(400).json({ error: 'Invalid photo path' })
   }
 
+  try {
+    await validateAdditionalEmails(orgId, null, email, additional_emails)
+  } catch (err) {
+    return res.status(400).json({ error: err.message })
+  }
+
+  const mobileError = validatePhoneE164(mobile)
+  if (mobileError) return res.status(400).json({ error: mobileError })
+  const normalizedMobile = normalizePhoneE164(mobile)
+
   const { data, error } = await supabaseAdmin
     .from('org_employees')
     .insert({
       org_id: orgId,
       emp_id: emp_id.trim(),
       name: name.trim(),
-      mobile: mobile?.trim() || null,
+      mobile: normalizedMobile,
       email: email?.trim() || null,
       designation_id: designation_id || null,
       department_id: department_id || null,
       location_id: location_id || null,
+      manager_id: manager_id || null,
       photo_url: photo_url || null,
       login_required: Boolean(login_required),
     })
@@ -870,6 +1354,9 @@ router.post('/employees', canManage, async (req, res) => {
   }
 
   try {
+    if (additional_emails !== undefined) {
+      await syncEmployeeEmails(orgId, data.id, additional_emails)
+    }
     if (login_required) {
       await handleEmployeeLoginAccess(orgId, data.id, {
         loginRequired: true,
@@ -878,6 +1365,14 @@ router.post('/employees', canManage, async (req, res) => {
         wasLoginRequired: false,
         emailChanged: true,
       })
+    }
+    if (is_department_head !== undefined) {
+      await syncEmployeeDepartmentHead(
+        orgId,
+        data.id,
+        department_id || null,
+        Boolean(is_department_head),
+      )
     }
     const withPhoto = await getEmployeeById(orgId, data.id)
     res.status(201).json(withPhoto)
@@ -890,13 +1385,13 @@ router.patch('/employees/:id', canManage, assertOrgOwnership('org_employees'), a
   const orgId = req.userProfile.org_id
   const allowed = [
     'emp_id', 'name', 'mobile', 'email',
-    'designation_id', 'department_id', 'location_id',
+    'designation_id', 'department_id', 'location_id', 'manager_id',
     'photo_url', 'is_active', 'login_required',
   ]
 
   const { data: current, error: currentError } = await supabaseAdmin
     .from('org_employees')
-    .select('login_required, email, name')
+    .select('login_required, email, name, department_id')
     .eq('id', req.params.id)
     .eq('org_id', orgId)
     .single()
@@ -913,13 +1408,31 @@ router.patch('/employees/:id', canManage, assertOrgOwnership('org_employees'), a
 
   const loginRequired = req.body.login_required
   const hasLoginChange = loginRequired !== undefined
+  const hasAdditionalEmailsChange = req.body.additional_emails !== undefined
+  const hasDepartmentHeadChange = req.body.is_department_head !== undefined
 
-  if (!Object.keys(updates).length && !hasLoginChange) {
+  if (!Object.keys(updates).length && !hasLoginChange && !hasAdditionalEmailsChange && !hasDepartmentHeadChange) {
     return res.status(400).json({ error: 'No valid fields to update' })
   }
 
   if (loginRequired && !(updates.email ?? current.email)?.trim()) {
     return res.status(400).json({ error: 'Email is required when login is enabled' })
+  }
+
+  if (updates.email !== undefined && updates.email?.trim()) {
+    const nextPrimary = updates.email.trim().toLowerCase()
+    const { data: emailConflicts, error: emailConflictError } = await supabaseAdmin
+      .from('org_employee_emails')
+      .select('employee_id')
+      .eq('org_id', orgId)
+      .ilike('email', nextPrimary)
+      .neq('employee_id', req.params.id)
+      .limit(1)
+
+    if (emailConflictError) return res.status(500).json({ error: emailConflictError.message })
+    if (emailConflicts?.length) {
+      return res.status(400).json({ error: 'This email is already assigned to another employee' })
+    }
   }
 
   if (updates.photo_url !== undefined) {
@@ -931,14 +1444,35 @@ router.patch('/employees/:id', canManage, assertOrgOwnership('org_employees'), a
     }
   }
 
+  if (updates.manager_id === '') {
+    updates.manager_id = null
+  }
+
+  if (updates.mobile !== undefined) {
+    const mobileError = validatePhoneE164(updates.mobile)
+    if (mobileError) return res.status(400).json({ error: mobileError })
+    updates.mobile = normalizePhoneE164(updates.mobile)
+  }
+
   try {
     await validateEmployeeRefs(orgId, {
       designation_id: updates.designation_id,
       department_id: updates.department_id,
       location_id: updates.location_id,
+      manager_id: updates.manager_id,
+      employee_id: req.params.id,
     })
   } catch (err) {
     return res.status(400).json({ error: err.message })
+  }
+
+  if (hasAdditionalEmailsChange) {
+    try {
+      const nextPrimary = (updates.email ?? current.email)?.trim()
+      await validateAdditionalEmails(orgId, req.params.id, nextPrimary, req.body.additional_emails)
+    } catch (err) {
+      return res.status(400).json({ error: err.message })
+    }
   }
 
   if (Object.keys(updates).length) {
@@ -957,6 +1491,9 @@ router.patch('/employees/:id', canManage, assertOrgOwnership('org_employees'), a
   }
 
   try {
+    if (hasAdditionalEmailsChange) {
+      await syncEmployeeEmails(orgId, req.params.id, req.body.additional_emails)
+    }
     if (hasLoginChange) {
       const nextEmail = (updates.email ?? current.email)?.trim()
       const emailChanged = updates.email !== undefined
@@ -969,6 +1506,15 @@ router.patch('/employees/:id', canManage, assertOrgOwnership('org_employees'), a
         wasLoginRequired: Boolean(current.login_required),
         emailChanged,
       })
+    }
+    if (hasDepartmentHeadChange) {
+      const nextDepartmentId = updates.department_id ?? current.department_id ?? null
+      await syncEmployeeDepartmentHead(
+        orgId,
+        req.params.id,
+        nextDepartmentId,
+        Boolean(req.body.is_department_head),
+      )
     }
 
     const withPhoto = await getEmployeeById(orgId, req.params.id)

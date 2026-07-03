@@ -1,6 +1,6 @@
+-- QUERY NAME: 04-org-assets-storage — Private org-assets storage bucket
 -- ══════════════════════════════════════════════════════════════
--- MMS PRO — Private org-assets storage bucket (logos, etc.)
--- Files live at: {org_id}/logo.{ext}
+-- MMS PRO patch | Safe to re-run | Files: {org_id}/logo.{ext}
 -- RLS: users only access their own org folder
 -- ══════════════════════════════════════════════════════════════
 

@@ -1,0 +1,35 @@
+-- QUERY NAME: patch-index — MMS PRO patch list (reference only, do not run)
+-- ══════════════════════════════════════════════════════════════
+-- In Supabase SQL Editor: save/rename each query using the QUERY NAME line
+-- from the matching file (first line of every supabase-patches/*.sql file).
+-- ══════════════════════════════════════════════════════════════
+--
+-- APPLY ORDER (existing projects):
+--   00-bootstrap.sql              → 00-bootstrap — Database bootstrap
+--   01-fix-profiles.sql           → 01-fix-profiles — Backfill profiles
+--   02-org-rls.sql                → 02-org-rls — Organization read policy
+--   03-company-masters.sql        → 03-company-masters — Company masters
+--   03-fix-user-signup-trigger.sql→ 03-fix-user-signup-trigger — Fix signup
+--   04-org-assets-storage.sql     → 04-org-assets-storage — Org assets bucket
+--   05-org-email-from-owner.sql   → 05-org-email-from-owner — Org email RPC
+--   06-drop-department-code.sql   → 06-drop-department-code — Drop dept code
+--   07-department-all-locations.sql → 07-department-all-locations
+--   08-designations.sql           → 08-designations — Designations master
+--   09-designation-departments.sql→ 09-designation-departments
+--   10-org-employees.sql          → 10-org-employees — Employees master
+--   11-employee-login.sql         → 11-employee-login — Employee login
+--   12-employee-emails.sql        → 12-employee-emails — Additional emails
+--   13-managers-department-heads-codes.sql → 13-managers-department-heads-codes
+--   14-department-location-heads.sql → 14-department-location-heads
+--   15-user-profile-fields.sql      → 15-user-profile-fields — Profile fields
+--   16-user-assets-storage.sql      → 16-user-assets-storage — User avatars
+--
+-- OTHER:
+--   supabase.sql                  → supabase — Full schema (new projects)
+--   supabase-dashboard.sql        → supabase-dashboard — Plants/work orders fix
+--   99-wipe-all.sql               → 99-wipe-all — Full wipe (destructive)
+--
+-- RENAME EXISTING "Untitled query" ENTRIES:
+--   Open each saved query → click the title → paste the QUERY NAME from its file.
+
+select 'MMS PRO patch index — reference only' as info;

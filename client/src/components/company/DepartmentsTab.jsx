@@ -1,13 +1,16 @@
 import { useState } from 'react'
 import { useDepartments } from '../../hooks/useDepartments'
 import { useLocations } from '../../hooks/useLocations'
+import { useEmployees } from '../../hooks/useEmployees'
 import GooToggle from '../ui/GooToggle'
 import DepartmentModal, { formatDepartmentLocation } from './DepartmentModal'
+import DepartmentHeadCell from './DepartmentHeadCell'
 import './CompanyShared.css'
 
 export default function DepartmentsTab({ canManage }) {
   const [locationFilter, setLocationFilter] = useState('')
-  const { locations } = useLocations()
+  const { locations, create: createLocation, saving: savingLocation } = useLocations()
+  const { employees } = useEmployees()
   const { departments, loading, saving, error, create, update, remove, toggleActive } = useDepartments(locationFilter)
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState(null)
@@ -93,8 +96,10 @@ export default function DepartmentsTab({ canManage }) {
           <table className="company-table master-table">
             <thead>
               <tr>
+                <th>Code</th>
                 <th>Name</th>
                 <th>Location</th>
+                <th>Department Head</th>
                 <th>Description</th>
                 {canManage && <th>Active</th>}
                 {canManage && <th>Actions</th>}
@@ -105,8 +110,10 @@ export default function DepartmentsTab({ canManage }) {
                 const isActive = dept.is_active !== false
                 return (
                   <tr key={dept.id} className={!isActive ? 'company-table__row--inactive' : undefined}>
+                    <td><code className="company-code">{dept.code || '—'}</code></td>
                     <td><span className="company-table__name">{dept.name}</span></td>
                     <td>{formatDepartmentLocation(dept)}</td>
+                    <td><DepartmentHeadCell department={dept} locationFilter={locationFilter} /></td>
                     <td>{dept.description || '—'}</td>
                     {canManage && (
                       <td>
@@ -148,9 +155,12 @@ export default function DepartmentsTab({ canManage }) {
           department={editing}
           locations={activeLocations}
           departments={activeDepartments}
+          employees={employees}
           saving={saving}
+          nestedSaving={savingLocation}
           onClose={() => setModalOpen(false)}
           onSave={handleSave}
+          onCreateLocation={createLocation}
         />
       )}
     </div>

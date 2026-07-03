@@ -1,7 +1,7 @@
+-- QUERY NAME: 99-wipe-all — Full database wipe (destructive)
 -- ══════════════════════════════════════════════════════════════
--- MMS PRO — Full database wipe (safe to re-run)
--- Drops all app tables, functions, and the signup trigger.
--- Run auth user deletion separately (see server/scripts/wipe-all.js).
+-- MMS PRO patch | Safe to re-run | DANGER: drops all app tables/functions
+-- Run auth user deletion separately (see server/scripts/wipe-all.js)
 -- ══════════════════════════════════════════════════════════════
 
 DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;

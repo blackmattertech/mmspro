@@ -1,5 +1,8 @@
--- Run this in Supabase SQL Editor if you already ran an older supabase.sql
+-- QUERY NAME: 01-fix-profiles — Backfill profiles and fix create_org_for_user
+-- ══════════════════════════════════════════════════════════════
+-- MMS PRO patch | Safe to re-run | Apply after older supabase.sql installs
 -- Fixes: missing profiles rows + updated create_org_for_user
+-- ══════════════════════════════════════════════════════════════
 
 -- 1. Backfill profiles for existing auth users
 insert into profiles (id, email)
