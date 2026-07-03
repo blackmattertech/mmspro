@@ -1,5 +1,8 @@
--- Run this if section 9 partially applied or you get "relation already exists"
--- Safe to re-run at any time
+-- QUERY NAME: supabase-dashboard — Plants and work orders (partial fix)
+-- ══════════════════════════════════════════════════════════════
+-- MMS PRO patch | Safe to re-run
+-- Use if section 9 partially applied or you get "relation already exists"
+-- ══════════════════════════════════════════════════════════════
 
 create table if not exists plants (
   id uuid default gen_random_uuid() primary key,

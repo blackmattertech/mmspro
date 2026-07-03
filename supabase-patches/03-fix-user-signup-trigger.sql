@@ -1,7 +1,8 @@
--- Run this in Supabase → SQL Editor
+-- QUERY NAME: 03-fix-user-signup-trigger — Fix signup trigger and profile insert
+-- ══════════════════════════════════════════════════════════════
+-- MMS PRO patch | Safe to re-run | Apply if user signup fails
 -- Fixes: "Failed to create user: Database error creating new user"
---
--- Cause: the signup trigger could not insert into profiles (RLS / search_path).
+-- ══════════════════════════════════════════════════════════════
 
 -- 1. Backfill any auth users missing a profile row
 insert into public.profiles (id, email)

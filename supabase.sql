@@ -1,3 +1,9 @@
+-- QUERY NAME: supabase — Full MMS PRO schema (fresh install)
+-- ══════════════════════════════════════════════════════════════
+-- MMS PRO | Use on a brand-new Supabase project only
+-- For existing projects, use numbered files in supabase-patches/ instead
+-- ══════════════════════════════════════════════════════════════
+
 -- ══════════════════════════════════════════
 -- 1. ORGANIZATIONS
 -- ══════════════════════════════════════════
@@ -18,6 +24,9 @@ create table profiles (
   id uuid references auth.users(id) on delete cascade primary key,
   org_id uuid references organizations(id) on delete cascade,
   email text,
+  full_name text,
+  avatar_url text,
+  phone text,
   role text default 'member'
     check (role in ('owner', 'admin', 'member')),
   created_at timestamptz default now()

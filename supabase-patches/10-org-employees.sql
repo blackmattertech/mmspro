@@ -1,6 +1,6 @@
+-- QUERY NAME: 10-org-employees — Org employees master
 -- ══════════════════════════════════════════════════════════════
--- MMS PRO — Org employees master (org-scoped)
--- Safe to re-run. Apply after 09-designation-departments.sql
+-- MMS PRO patch | Safe to re-run | Apply after 09-designation-departments.sql
 -- Profile photos: org-assets/{org_id}/employees/{employee_id}.{ext}
 -- ══════════════════════════════════════════════════════════════
 

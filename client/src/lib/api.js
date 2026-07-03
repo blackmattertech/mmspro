@@ -56,6 +56,10 @@ export function companyFetch(path, options = {}) {
   return apiFetch(`/api/company${path}`, options)
 }
 
+export function geocodeAddress(query) {
+  return companyFetch(`/geocode?q=${encodeURIComponent(query)}`)
+}
+
 export function getCompanyDetails() {
   return companyFetch('')
 }

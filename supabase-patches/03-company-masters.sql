@@ -1,6 +1,6 @@
+-- QUERY NAME: 03-company-masters — Company details, locations, departments
 -- ══════════════════════════════════════════════════════════════
--- MMS PRO — Company masters (details, locations, departments)
--- Safe to re-run. Apply after 00-bootstrap.sql
+-- MMS PRO patch | Safe to re-run | Apply after 00-bootstrap.sql
 -- ══════════════════════════════════════════════════════════════
 
 -- 1. EXTEND ORGANIZATIONS (company profile fields)

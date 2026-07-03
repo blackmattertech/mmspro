@@ -1,8 +1,7 @@
+-- QUERY NAME: 00-bootstrap — Database bootstrap (fresh or partial project)
 -- ══════════════════════════════════════════════════════════════
--- MMS PRO — Database bootstrap (safe to re-run)
--- Run in Supabase → SQL Editor on a fresh or partial project
--- Fixes: relation "profiles" does not exist
---        Database error creating new user
+-- MMS PRO patch | Safe to re-run | Run first on a new project
+-- Fixes: relation "profiles" does not exist, signup user creation errors
 -- ══════════════════════════════════════════════════════════════
 
 -- 1. ORGANIZATIONS
@@ -24,6 +23,9 @@ create table if not exists public.profiles (
   id uuid references auth.users(id) on delete cascade primary key,
   org_id uuid references public.organizations(id) on delete cascade,
   email text,
+  full_name text,
+  avatar_url text,
+  phone text,
   role text default 'member'
     check (role in ('owner', 'admin', 'member')),
   created_at timestamptz default now()

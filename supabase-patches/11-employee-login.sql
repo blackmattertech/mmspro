@@ -1,6 +1,6 @@
+-- QUERY NAME: 11-employee-login — Employee login access
 -- ══════════════════════════════════════════════════════════════
--- MMS PRO — Employee login access
--- Safe to re-run. Apply after 10-org-employees.sql
+-- MMS PRO patch | Safe to re-run | Apply after 10-org-employees.sql
 -- ══════════════════════════════════════════════════════════════
 
 alter table public.org_employees

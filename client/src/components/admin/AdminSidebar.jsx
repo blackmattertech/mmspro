@@ -1,15 +1,13 @@
-import { useState } from 'react'
 import { NavLink } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
 import { ADMIN_NAV_ITEMS } from '../../config/adminNavigation'
 import NavIcon from '../layout/NavIcon'
-import LogoutButton from '../ui/LogoutButton'
+import SidebarUserFooter from '../layout/SidebarUserFooter'
 import '../layout/Sidebar.css'
 import './AdminSidebar.css'
 
 export default function AdminSidebar({ collapsed = false, onToggle }) {
-  const { user, signOut } = useAuth()
-  const avatarLetter = (user?.email?.[0] || 'A').toUpperCase()
+  const { signOut } = useAuth()
 
   return (
     <aside className={`sidebar admin-sidebar ${collapsed ? 'sidebar--collapsed' : ''}`}>
@@ -53,21 +51,11 @@ export default function AdminSidebar({ collapsed = false, onToggle }) {
       </nav>
 
       <div className="sidebar__footer">
-        <div className="sidebar__user">
-          <div className="sidebar__avatar">
-            {avatarLetter}
-            {collapsed && (
-              <span className="sidebar__tooltip" aria-hidden="true">Platform Admin</span>
-            )}
-          </div>
-          {!collapsed && (
-            <div className="sidebar__user-info">
-              <span className="sidebar__user-name">Platform Admin</span>
-              <span className="sidebar__user-role">{user?.email}</span>
-            </div>
-          )}
-          <LogoutButton onClick={signOut} className="sidebar__logout-btn" />
-        </div>
+        <SidebarUserFooter
+          collapsed={collapsed}
+          roleLabel="Platform Admin"
+          onSignOut={signOut}
+        />
       </div>
     </aside>
   )

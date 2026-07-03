@@ -1,3 +1,8 @@
+-- QUERY NAME: 05-org-email-from-owner — Set org email from owner on signup
+-- ══════════════════════════════════════════════════════════════
+-- MMS PRO patch | Safe to re-run | Updates create_org_for_user RPC
+-- ══════════════════════════════════════════════════════════════
+
 -- Set organization email from owner on signup RPC
 create or replace function public.create_org_for_user(
   p_user_id uuid,

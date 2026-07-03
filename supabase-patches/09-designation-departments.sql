@@ -1,6 +1,6 @@
+-- QUERY NAME: 09-designation-departments — Map designations to departments
 -- ══════════════════════════════════════════════════════════════
--- MMS PRO — Map designations to departments
--- Safe to re-run. Apply after 08-designations.sql
+-- MMS PRO patch | Safe to re-run | Apply after 08-designations.sql
 -- ══════════════════════════════════════════════════════════════
 
 alter table public.designations

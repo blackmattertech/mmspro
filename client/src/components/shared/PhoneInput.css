@@ -1,0 +1,47 @@
+.phone-input {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  width: 100%;
+}
+
+.phone-input--disabled {
+  opacity: 0.7;
+}
+
+.phone-input__country {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 108px;
+  height: 40px;
+  padding: 0 10px;
+  border: 1px solid var(--color-light-gray-2);
+  border-radius: var(--radius-sm);
+  background: var(--color-white);
+}
+
+.phone-input__flag {
+  font-size: 18px;
+  line-height: 1;
+}
+
+.phone-input__dial-select {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.phone-input__dial {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-dark-navy);
+  white-space: nowrap;
+}
+
+.phone-input__number {
+  flex: 1;
+  min-width: 0;
+}

@@ -1,0 +1,61 @@
+.address-autocomplete {
+  position: relative;
+  width: 100%;
+}
+
+.address-autocomplete .company-form__input {
+  display: block;
+  width: 100%;
+}
+
+.address-autocomplete__list {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  margin: 0;
+  padding: 4px 0;
+  list-style: none;
+  background: var(--color-white);
+  border: 1px solid var(--color-light-gray-2);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.address-autocomplete__option {
+  display: block;
+  width: 100%;
+  padding: 10px 12px;
+  border: none;
+  background: transparent;
+  text-align: left;
+  font-size: 13px;
+  font-family: inherit;
+  color: var(--color-dark-navy);
+  cursor: pointer;
+}
+
+.address-autocomplete__option:hover {
+  background: var(--color-off-white);
+}
+
+.address-autocomplete__hint {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--color-gray-blue);
+}
+
+.address-autocomplete__option-main {
+  display: block;
+  font-weight: 500;
+}
+
+.address-autocomplete__option-sub {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--color-gray-blue);
+}

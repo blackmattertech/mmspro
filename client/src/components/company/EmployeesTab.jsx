@@ -6,23 +6,10 @@ import { useDepartments } from '../../hooks/useDepartments'
 import { useDesignations } from '../../hooks/useDesignations'
 import { uploadEmployeePhoto } from '../../lib/orgAssets'
 import GooToggle from '../ui/GooToggle'
+import EmployeeAvatar from './EmployeeAvatar'
 import EmployeeModal from './EmployeeModal'
+import { formatPhoneDisplay } from '../shared/PhoneInput'
 import './CompanyShared.css'
-
-function EmployeeAvatar({ employee }) {
-  if (employee.photo_signed_url) {
-    return (
-      <img
-        src={employee.photo_signed_url}
-        alt=""
-        className="company-employee-avatar"
-      />
-    )
-  }
-
-  const letter = (employee.name?.[0] || employee.emp_id?.[0] || '?').toUpperCase()
-  return <span className="company-employee-avatar company-employee-avatar--placeholder">{letter}</span>
-}
 
 export default function EmployeesTab({ canManage }) {
   const { org } = useOrg()
@@ -168,14 +155,16 @@ export default function EmployeesTab({ canManage }) {
           <table className="company-table master-table">
             <thead>
               <tr>
-                <th>Photo</th>
+                <th className="company-table__cell--photo">Photo</th>
                 <th>Emp ID</th>
                 <th>Employee Name</th>
                 <th>Mobile</th>
-                <th>Email</th>
+                <th>Email(s)</th>
                 <th>Designation</th>
                 <th>Department</th>
                 <th>Location</th>
+                <th className="company-table__cell--manager">Manager</th>
+                <th className="company-table__cell--dept-head">Dept Head</th>
                 {canManage && <th>Active</th>}
                 {canManage && <th>Actions</th>}
               </tr>
@@ -185,14 +174,57 @@ export default function EmployeesTab({ canManage }) {
                 const isActive = employee.is_active !== false
                 return (
                   <tr key={employee.id} className={!isActive ? 'company-table__row--inactive' : undefined}>
-                    <td><EmployeeAvatar employee={employee} /></td>
+                    <td className="company-table__cell--photo">
+                      <EmployeeAvatar employee={employee} />
+                    </td>
                     <td><code className="company-code">{employee.emp_id}</code></td>
                     <td><span className="company-table__name">{employee.name}</span></td>
-                    <td>{employee.mobile || '—'}</td>
-                    <td>{employee.email || '—'}</td>
+                    <td>{employee.mobile ? formatPhoneDisplay(employee.mobile) : '—'}</td>
+                    <td>
+                      <div className="company-employee-emails-cell">
+                        {employee.email ? (
+                          <span className="company-employee-emails-cell__primary">{employee.email}</span>
+                        ) : (
+                          '—'
+                        )}
+                        {(employee.org_employee_emails || []).map((row) => (
+                          <span key={row.id} className="company-employee-emails-cell__extra">
+                            {row.email}
+                          </span>
+                        ))}
+                      </div>
+                    </td>
                     <td>{employee.designations?.name || '—'}</td>
                     <td>{employee.departments?.name || '—'}</td>
                     <td>{employee.org_locations?.name || '—'}</td>
+                    <td className="company-table__cell--manager">
+                      {employee.manager ? (
+                        <span className="company-employee-ref">
+                          <EmployeeAvatar
+                            size="sm"
+                            employee={
+                              employees.find((e) => e.id === employee.manager.id) || employee.manager
+                            }
+                          />
+                          <span className="company-employee-ref__name">{employee.manager.name}</span>
+                        </span>
+                      ) : (
+                        '—'
+                      )}
+                    </td>
+                    <td className="company-table__cell--dept-head">
+                      {(employee.headed_departments || []).length ? (
+                        <div className="company-tag-list">
+                          {employee.headed_departments.map((dept) => (
+                            <span key={dept.id} className="company-badge company-badge--primary">
+                              {dept.name}
+                            </span>
+                          ))}
+                        </div>
+                      ) : (
+                        '—'
+                      )}
+                    </td>
                     {canManage && (
                       <td>
                         <GooToggle
@@ -231,6 +263,7 @@ export default function EmployeesTab({ canManage }) {
         <EmployeeModal
           key={editing?.id ?? 'new'}
           employee={editing}
+          employees={employees}
           locations={locations}
           departments={departments}
           designations={designations}

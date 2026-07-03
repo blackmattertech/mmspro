@@ -1,8 +1,10 @@
--- QUERY NAME: 06-drop-department-code — Remove unused department code column
+-- QUERY NAME: 15-user-profile-fields — User profile details on profiles table
 -- ══════════════════════════════════════════════════════════════
--- MMS PRO patch | Safe to re-run
+-- MMS PRO patch | Safe to re-run | Apply after 14-department-location-heads.sql
+-- Adds editable profile fields: full_name, avatar_url, phone
 -- ══════════════════════════════════════════════════════════════
 
--- Drop department code column (no longer used)
-alter table public.departments drop constraint if exists departments_org_id_code_key;
-alter table public.departments drop column if exists code;
+alter table public.profiles
+  add column if not exists full_name text,
+  add column if not exists avatar_url text,
+  add column if not exists phone text;
