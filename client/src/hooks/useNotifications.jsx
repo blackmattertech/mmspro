@@ -118,7 +118,7 @@ export function NotificationsProvider({ children }) {
       if (Notification.permission === 'granted') {
         new Notification(title, {
           body,
-          icon: '/Assets/images/logo.svg',
+          icon: '/favicon.svg',
         })
       }
     })

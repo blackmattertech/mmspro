@@ -13,7 +13,7 @@ export default function SidebarUserFooter({
   roleLabel,
   onSignOut,
 }) {
-  const { profile, avatarUrl, displayName, refresh } = useProfile()
+  const { profile, avatarUrl, displayName, employee, refresh } = useProfile()
   const [showProfile, setShowProfile] = useState(false)
 
   const resolvedRole = roleLabel ?? formatRole(profile?.role)
@@ -54,6 +54,7 @@ export default function SidebarUserFooter({
       {showProfile && (
         <ProfileModal
           profile={profile}
+          employee={employee}
           avatarUrl={avatarUrl}
           onClose={() => setShowProfile(false)}
           onUpdated={refresh}

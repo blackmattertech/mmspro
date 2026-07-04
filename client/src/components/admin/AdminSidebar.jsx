@@ -25,7 +25,7 @@ export default function AdminSidebar({ collapsed = false, onToggle }) {
           onClick={onToggle}
           aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
         >
-          <NavIcon name={collapsed ? 'panelOpen' : 'panelClose'} />
+          <NavIcon name={collapsed ? 'sidebarExpand' : 'sidebarCollapse'} />
           {collapsed && (
             <span className="sidebar__tooltip" aria-hidden="true">Expand sidebar</span>
           )}

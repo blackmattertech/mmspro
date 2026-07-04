@@ -52,6 +52,20 @@ const icons = {
       <path d="M15 9H6.75" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
     </svg>
   ),
+  sidebarCollapse: (
+    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
+      <rect x="2.75" y="3.25" width="12.5" height="11.5" rx="1.5" stroke="currentColor" strokeWidth="1.5"/>
+      <path d="M7.25 3.25V14.75" stroke="currentColor" strokeWidth="1.5"/>
+      <path d="M10.25 7.25L8.75 9L10.25 10.75" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  ),
+  sidebarExpand: (
+    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
+      <rect x="2.75" y="3.25" width="12.5" height="11.5" rx="1.5" stroke="currentColor" strokeWidth="1.5"/>
+      <path d="M7.25 3.25V14.75" stroke="currentColor" strokeWidth="1.5"/>
+      <path d="M8.75 7.25L10.25 9L8.75 10.75" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  ),
   panelClose: (
     <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
       <path d="M11.25 4.5L6.75 9L11.25 13.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>

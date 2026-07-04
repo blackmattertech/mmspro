@@ -10,14 +10,20 @@ import Onboard from './pages/auth/Onboard'
 import Dashboard from './pages/app/Dashboard'
 import Calendar from './pages/app/Calendar'
 import Company from './pages/app/Company'
+import Assets from './pages/app/Assets'
+import WorkOrdersRouteLayout from './components/workorders/WorkOrdersRouteLayout'
+import ManualWorkOrders from './pages/app/ManualWorkOrders'
+import ManualWorkOrderCreate from './pages/app/ManualWorkOrderCreate'
+import ReceivedWorkOrders from './pages/app/ReceivedWorkOrders'
+import AssignedWorkOrders from './pages/app/AssignedWorkOrders'
+import ScheduledWorkOrders from './pages/app/ScheduledWorkOrders'
 import PlaceholderPage from './pages/app/PlaceholderPage'
 import AdminDashboard from './pages/admin/Dashboard'
 import Organizations from './pages/admin/Organizations'
 import Users from './pages/admin/Users'
 
-const workOrderRoutes = ['received', 'assigned', 'scheduled', 'manual']
 const reportRoutes = ['daily-logs', 'plant-wise', 'open-logs', 'completed-logs', 'overdue']
-const masterRoutes = ['assets', 'order', 'activity']
+const masterRoutes = ['order', 'activity']
 const configRoutes = ['employees', 'roles', 'permission', 'settings']
 
 export default function App() {
@@ -43,9 +49,14 @@ export default function App() {
             <Route path="dashboard" element={<Dashboard />} />
             <Route path="calendar" element={<Calendar />} />
             <Route path="masters/company" element={<Company />} />
-            {workOrderRoutes.map((r) => (
-              <Route key={r} path={`work-orders/${r}`} element={<PlaceholderPage title={r} />} />
-            ))}
+            <Route path="masters/assets" element={<Assets />} />
+            <Route path="work-orders" element={<WorkOrdersRouteLayout />}>
+              <Route path="received" element={<ReceivedWorkOrders />} />
+              <Route path="assigned" element={<AssignedWorkOrders />} />
+              <Route path="scheduled" element={<ScheduledWorkOrders />} />
+              <Route path="manual" element={<ManualWorkOrders />} />
+              <Route path="manual/create" element={<ManualWorkOrderCreate />} />
+            </Route>
             {reportRoutes.map((r) => (
               <Route key={r} path={`reports/${r}`} element={<PlaceholderPage title={r} />} />
             ))}

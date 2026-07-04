@@ -1,6 +1,7 @@
 import { supabaseAdmin } from '../services/supabase.js'
 import { ensureUserProfile } from './profiles.js'
 import { generateOrgSlug, ensureUniqueSlug } from './slug.js'
+import { limitsForPlan } from './orgLimits.js'
 
 /**
  * Creates an organization and links the user as owner.
@@ -34,7 +35,9 @@ export async function createOrgForUser(userId, email, orgName, orgSlugInput) {
     .insert({
       name: orgName.trim(),
       slug: orgSlug,
+      plan: 'free',
       email: email?.trim().toLowerCase() || null,
+      ...limitsForPlan('free'),
     })
     .select('id')
     .single()

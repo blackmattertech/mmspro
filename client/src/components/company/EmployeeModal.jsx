@@ -65,6 +65,7 @@ export default function EmployeeModal({
   onCreateLocation,
   onCreateDepartment,
   onCreateDesignation,
+  onLimitExceeded,
 }) {
   const [form, setForm] = useState(EMPTY)
   const [error, setError] = useState(null)
@@ -250,15 +251,31 @@ export default function EmployeeModal({
   }
 
   const handleNestedLocationSave = async (payload) => {
-    const created = await onCreateLocation(payload)
-    setForm((prev) => ({ ...prev, location_id: created.id }))
-    setNested(null)
+    try {
+      const created = await onCreateLocation(payload)
+      setForm((prev) => ({ ...prev, location_id: created.id }))
+      setNested(null)
+    } catch (err) {
+      if (onLimitExceeded?.(err, 'Location')) {
+        setNested(null)
+        return
+      }
+      throw err
+    }
   }
 
   const handleNestedDepartmentSave = async (payload) => {
-    const created = await onCreateDepartment(payload)
-    setForm((prev) => ({ ...prev, department_id: created.id }))
-    setNested(null)
+    try {
+      const created = await onCreateDepartment(payload)
+      setForm((prev) => ({ ...prev, department_id: created.id }))
+      setNested(null)
+    } catch (err) {
+      if (onLimitExceeded?.(err, 'Department')) {
+        setNested(null)
+        return
+      }
+      throw err
+    }
   }
 
   const handleNestedDesignationSave = async (payload) => {

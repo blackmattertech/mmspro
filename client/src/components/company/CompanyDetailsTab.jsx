@@ -6,18 +6,21 @@ import PhoneInput from '../shared/PhoneInput'
 import { validatePostalCode, validatePhoneE164 } from '../../lib/validation'
 import './CompanyShared.css'
 
-const TEXT_FIELDS = [
+const TEXT_FIELDS_TOP = [
   { key: 'name', label: 'Company Name', required: true },
   { key: 'email', label: 'Organization Email', type: 'email' },
   { key: 'website', label: 'Website', type: 'url' },
   { key: 'tax_id', label: 'Tax ID / GSTIN' },
-  { key: 'address_line2', label: 'Address Line 2' },
+]
+
+const TEXT_FIELDS_BOTTOM = [
   { key: 'city', label: 'City' },
   { key: 'state', label: 'State' },
   { key: 'postal_code', label: 'Postal Code' },
   { key: 'country', label: 'Country' },
-  { key: 'currency', label: 'Currency' },
 ]
+
+const CURRENCY_FIELD = { key: 'currency', label: 'Currency' }
 
 export default function CompanyDetailsTab({ canManage }) {
   const { company, loading, saving, error, save, reload } = useCompanyDetails()
@@ -31,8 +34,9 @@ export default function CompanyDetailsTab({ canManage }) {
       const initial = {
         phone: company.phone ?? '',
         address_line1: company.address_line1 ?? '',
+        address_line2: company.address_line2 ?? '',
       }
-      for (const field of TEXT_FIELDS) initial[field.key] = company[field.key] ?? ''
+      for (const field of [...TEXT_FIELDS_TOP, ...TEXT_FIELDS_BOTTOM, CURRENCY_FIELD]) initial[field.key] = company[field.key] ?? ''
       setForm(initial)
       setLogoPath(company.logo_url || null)
     }
@@ -105,7 +109,7 @@ export default function CompanyDetailsTab({ canManage }) {
         )}
 
         <div className="company-form__grid">
-          {TEXT_FIELDS.map((field) => (
+          {TEXT_FIELDS_TOP.map((field) => (
             <label key={field.key} className="company-form__field">
               <span className="company-form__label">{field.label}</span>
               <input
@@ -115,18 +119,29 @@ export default function CompanyDetailsTab({ canManage }) {
                 onChange={(e) => handleChange(field.key, e.target.value)}
                 disabled={!canManage}
                 required={field.required && canManage}
-                placeholder={field.key === 'postal_code' ? 'Postal / PIN / ZIP code' : undefined}
               />
             </label>
           ))}
 
-          <label className="company-form__field company-form__field--full">
+          <label className="company-form__field">
             <span className="company-form__label">Phone</span>
             <PhoneInput
               value={form.phone ?? ''}
               onChange={(phone) => handleChange('phone', phone)}
               disabled={!canManage}
               placeholder="Organization phone"
+            />
+          </label>
+
+          <label className="company-form__field">
+            <span className="company-form__label">{CURRENCY_FIELD.label}</span>
+            <input
+              type="text"
+              className="company-form__input"
+              value={form.currency ?? ''}
+              onChange={(e) => handleChange('currency', e.target.value)}
+              disabled={!canManage}
+              placeholder="e.g. INR"
             />
           </label>
 
@@ -140,6 +155,32 @@ export default function CompanyDetailsTab({ canManage }) {
               placeholder="Street, area, landmark..."
             />
           </label>
+
+          <label className="company-form__field company-form__field--full">
+            <span className="company-form__label">Address Line 2</span>
+            <input
+              type="text"
+              className="company-form__input"
+              value={form.address_line2 ?? ''}
+              onChange={(e) => handleChange('address_line2', e.target.value)}
+              disabled={!canManage}
+            />
+          </label>
+
+          {TEXT_FIELDS_BOTTOM.map((field) => (
+            <label key={field.key} className="company-form__field">
+              <span className="company-form__label">{field.label}</span>
+              <input
+                type={field.type || 'text'}
+                className="company-form__input"
+                value={form[field.key] ?? ''}
+                onChange={(e) => handleChange(field.key, e.target.value)}
+                disabled={!canManage}
+                required={field.required && canManage}
+                placeholder={field.key === 'postal_code' ? 'Postal / PIN / ZIP code' : undefined}
+              />
+            </label>
+          ))}
         </div>
 
         {canManage && (

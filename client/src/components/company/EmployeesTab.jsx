@@ -4,10 +4,14 @@ import { useEmployees } from '../../hooks/useEmployees'
 import { useLocations } from '../../hooks/useLocations'
 import { useDepartments } from '../../hooks/useDepartments'
 import { useDesignations } from '../../hooks/useDesignations'
+import { useOrgLimits } from '../../hooks/useOrgLimits'
+import { useLimitExceeded } from '../../hooks/useLimitExceeded'
+import { isLimitError } from '../../lib/limitErrors'
 import { uploadEmployeePhoto } from '../../lib/orgAssets'
 import GooToggle from '../ui/GooToggle'
 import EmployeeAvatar from './EmployeeAvatar'
 import EmployeeModal from './EmployeeModal'
+import LimitExceededCard from '../shared/LimitExceededCard'
 import { formatPhoneDisplay } from '../shared/PhoneInput'
 import './CompanyShared.css'
 
@@ -33,6 +37,8 @@ export default function EmployeesTab({ canManage }) {
     locationId: locationFilter,
   })
 
+  const { isResourceAtLimit, reload: reloadLimits } = useOrgLimits()
+  const { visible: limitVisible, resource: limitResource, trigger: triggerLimit, tryHandleLimitError, dismiss: dismissLimit } = useLimitExceeded()
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState(null)
   const [togglingId, setTogglingId] = useState(null)
@@ -41,12 +47,17 @@ export default function EmployeesTab({ canManage }) {
   const activeDepartments = departments.filter((d) => d.is_active !== false)
   const activeCount = employees.filter((e) => e.is_active !== false).length
   const nestedSaving = savingLocation || savingDepartment || savingDesignation
+  const atEmployeeLimit = isResourceAtLimit('employees', 'employee_limit', activeCount)
 
   const refreshMasters = async () => {
-    await Promise.all([reloadLocations(), reloadDepartments(), reloadDesignations()])
+    await Promise.all([reloadLocations(), reloadDepartments(), reloadDesignations(), reloadLimits()])
   }
 
   const openCreate = () => {
+    if (atEmployeeLimit) {
+      triggerLimit('Employee')
+      return
+    }
     setEditing(null)
     setModalOpen(true)
   }
@@ -57,28 +68,47 @@ export default function EmployeesTab({ canManage }) {
   }
 
   const handleSave = async (payload, photoFile) => {
-    let saved
-    if (editing) saved = await update(editing.id, payload)
-    else saved = await create(payload)
+    try {
+      let saved
+      if (editing) saved = await update(editing.id, payload)
+      else saved = await create(payload)
 
-    if (photoFile && org?.id) {
-      const path = await uploadEmployeePhoto(org.id, saved.id, photoFile)
-      await update(saved.id, { photo_url: path })
+      if (photoFile && org?.id) {
+        const path = await uploadEmployeePhoto(org.id, saved.id, photoFile)
+        await update(saved.id, { photo_url: path })
+      }
+
+      await reloadLimits()
+      setModalOpen(false)
+    } catch (err) {
+      if (tryHandleLimitError(err, 'Employee')) {
+        setModalOpen(false)
+        return
+      }
+      throw err
     }
-
-    setModalOpen(false)
   }
 
   const handleCreateLocation = async (payload) => {
-    const created = await createLocation(payload)
-    await refreshMasters()
-    return created
+    try {
+      const created = await createLocation(payload)
+      await refreshMasters()
+      return created
+    } catch (err) {
+      tryHandleLimitError(err, 'Location')
+      throw err
+    }
   }
 
   const handleCreateDepartment = async (payload) => {
-    const created = await createDepartment(payload)
-    await refreshMasters()
-    return created
+    try {
+      const created = await createDepartment(payload)
+      await refreshMasters()
+      return created
+    } catch (err) {
+      tryHandleLimitError(err, 'Department')
+      throw err
+    }
   }
 
   const handleCreateDesignation = async (payload) => {
@@ -90,18 +120,22 @@ export default function EmployeesTab({ canManage }) {
   const handleDelete = async (employee) => {
     if (!window.confirm(`Delete employee "${employee.name}"?`)) return
     await remove(employee.id)
+    await reloadLimits()
   }
 
   const handleToggle = async (employee, isActive) => {
     setTogglingId(employee.id)
     try {
       await toggleActive(employee.id, isActive)
-    } catch {
-      // error shown in tab
+      await reloadLimits()
+    } catch (err) {
+      tryHandleLimitError(err, 'Employee')
     } finally {
       setTogglingId(null)
     }
   }
+
+  const showPlainError = error && !limitVisible && !isLimitError({ message: error })
 
   return (
     <div className="company-panel">
@@ -144,7 +178,7 @@ export default function EmployeesTab({ canManage }) {
         )}
       </div>
 
-      {error && <div className="company-alert">{error}</div>}
+      {showPlainError && <div className="company-alert">{error}</div>}
 
       {loading ? (
         <div className="company-loading">Loading employees...</div>
@@ -274,7 +308,12 @@ export default function EmployeesTab({ canManage }) {
           onCreateLocation={handleCreateLocation}
           onCreateDepartment={handleCreateDepartment}
           onCreateDesignation={handleCreateDesignation}
+          onLimitExceeded={tryHandleLimitError}
         />
+      )}
+
+      {limitVisible && (
+        <LimitExceededCard resource={limitResource} onClose={dismissLimit} />
       )}
     </div>
   )

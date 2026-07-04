@@ -9,6 +9,7 @@ import {
 } from '../../services/email.js'
 import { createOrgForUser } from '../../lib/createOrg.js'
 import { getPublicAppUrl } from '../../lib/appUrl.js'
+import { assertLoginSlotAvailable } from '../../lib/orgLimits.js'
 
 const router = Router()
 
@@ -65,6 +66,12 @@ router.post('/invite/accept', verifyAuth, async (req, res) => {
     .single()
 
   if (error || !invite) return res.status(400).json({ error: 'Invalid or expired invite' })
+
+  try {
+    await assertLoginSlotAvailable(invite.org_id, { email: req.user.email })
+  } catch (err) {
+    return res.status(err.status || 403).json({ error: err.message })
+  }
 
   // Link user to org
   await supabaseAdmin

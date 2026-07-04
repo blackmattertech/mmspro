@@ -60,6 +60,23 @@ export function useAdminOrganizations() {
     }
   }
 
+  const updateOrgLimits = async (id, payload) => {
+    setSaving(true)
+    setError(null)
+    try {
+      const updated = await updateOrganization(id, payload)
+      setOrganizations((prev) =>
+        prev.map((org) => (org.id === id ? updated : org))
+      )
+      return updated
+    } catch (err) {
+      setError(err.message)
+      throw err
+    } finally {
+      setSaving(false)
+    }
+  }
+
   return {
     organizations,
     loading,
@@ -67,6 +84,7 @@ export function useAdminOrganizations() {
     saving,
     createOrg,
     toggleOrgStatus,
+    updateOrgLimits,
     refresh: fetchOrganizations,
   }
 }

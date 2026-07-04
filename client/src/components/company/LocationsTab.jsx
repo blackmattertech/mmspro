@@ -1,16 +1,29 @@
 import { useState } from 'react'
 import { useLocations } from '../../hooks/useLocations'
+import { useOrgLimits } from '../../hooks/useOrgLimits'
+import { useLimitExceeded } from '../../hooks/useLimitExceeded'
+import { isLimitError } from '../../lib/limitErrors'
 import GooToggle from '../ui/GooToggle'
 import LocationModal from './LocationModal'
+import LimitExceededCard from '../shared/LimitExceededCard'
 import './CompanyShared.css'
 
 export default function LocationsTab({ canManage }) {
   const { locations, loading, saving, error, create, update, remove, toggleActive } = useLocations()
+  const { isResourceAtLimit, reload: reloadLimits } = useOrgLimits()
+  const { visible: limitVisible, resource: limitResource, trigger: triggerLimit, tryHandleLimitError, dismiss: dismissLimit } = useLimitExceeded()
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState(null)
   const [togglingId, setTogglingId] = useState(null)
 
+  const activeCount = locations.filter((l) => l.is_active !== false).length
+  const atLocationLimit = isResourceAtLimit('locations', 'location_limit', activeCount)
+
   const openCreate = () => {
+    if (atLocationLimit) {
+      triggerLimit('Location')
+      return
+    }
     setEditing(null)
     setModalOpen(true)
   }
@@ -24,29 +37,34 @@ export default function LocationsTab({ canManage }) {
     try {
       if (editing) await update(editing.id, payload)
       else await create(payload)
+      await reloadLimits()
       setModalOpen(false)
-    } catch {
-      // keep modal open; error shown in tab and modal
+    } catch (err) {
+      if (tryHandleLimitError(err, 'Location')) {
+        setModalOpen(false)
+      }
     }
   }
 
   const handleDelete = async (loc) => {
     if (!window.confirm(`Delete location "${loc.name}"?`)) return
     await remove(loc.id)
+    await reloadLimits()
   }
 
   const handleToggle = async (loc, isActive) => {
     setTogglingId(loc.id)
     try {
       await toggleActive(loc.id, isActive)
-    } catch {
-      // error shown in tab
+      await reloadLimits()
+    } catch (err) {
+      tryHandleLimitError(err, 'Location')
     } finally {
       setTogglingId(null)
     }
   }
 
-  const activeCount = locations.filter((l) => l.is_active !== false).length
+  const showPlainError = error && !limitVisible && !isLimitError({ message: error })
 
   return (
     <div className="company-panel">
@@ -61,7 +79,7 @@ export default function LocationsTab({ canManage }) {
         )}
       </div>
 
-      {error && <div className="company-alert">{error}</div>}
+      {showPlainError && <div className="company-alert">{error}</div>}
 
       {loading ? (
         <div className="company-loading">Loading locations...</div>
@@ -142,6 +160,10 @@ export default function LocationsTab({ canManage }) {
           onClose={() => setModalOpen(false)}
           onSave={handleSave}
         />
+      )}
+
+      {limitVisible && (
+        <LimitExceededCard resource={limitResource} onClose={dismissLimit} />
       )}
     </div>
   )
