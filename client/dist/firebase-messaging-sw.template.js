@@ -17,8 +17,8 @@ messaging.onBackgroundMessage((payload) => {
 
   self.registration.showNotification(title || 'MMS PRO', {
     body: body || '',
-    icon: icon || '/Assets/images/logo.svg',
-    badge: '/Assets/images/logo.svg',
+    icon: icon || '/favicon.svg',
+    badge: '/favicon.svg',
     data: payload.data,
   })
 })

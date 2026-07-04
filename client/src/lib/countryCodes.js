@@ -1,20 +1,6 @@
-export const COUNTRY_DIAL_CODES = [
-  { iso: 'IN', name: 'India', dial: '+91' },
-  { iso: 'US', name: 'United States', dial: '+1' },
-  { iso: 'GB', name: 'United Kingdom', dial: '+44' },
-  { iso: 'AE', name: 'United Arab Emirates', dial: '+971' },
-  { iso: 'AU', name: 'Australia', dial: '+61' },
-  { iso: 'CA', name: 'Canada', dial: '+1' },
-  { iso: 'SG', name: 'Singapore', dial: '+65' },
-  { iso: 'DE', name: 'Germany', dial: '+49' },
-  { iso: 'FR', name: 'France', dial: '+33' },
-  { iso: 'JP', name: 'Japan', dial: '+81' },
-  { iso: 'CN', name: 'China', dial: '+86' },
-  { iso: 'SA', name: 'Saudi Arabia', dial: '+966' },
-  { iso: 'QA', name: 'Qatar', dial: '+974' },
-  { iso: 'MY', name: 'Malaysia', dial: '+60' },
-  { iso: 'NZ', name: 'New Zealand', dial: '+64' },
-]
+import { COUNTRY_DIAL_CODES } from './countryDialCodesData'
+
+export { COUNTRY_DIAL_CODES }
 
 export function countryFlag(iso) {
   if (!iso || iso.length !== 2) return '🏳️'
@@ -24,7 +10,7 @@ export function countryFlag(iso) {
 }
 
 export function getCountryByIso(iso) {
-  return COUNTRY_DIAL_CODES.find((c) => c.iso === iso) || COUNTRY_DIAL_CODES[0]
+  return COUNTRY_DIAL_CODES.find((c) => c.iso === iso) || COUNTRY_DIAL_CODES.find((c) => c.iso === 'IN') || COUNTRY_DIAL_CODES[0]
 }
 
 export function parsePhoneE164(phone, defaultIso = 'IN') {
@@ -53,4 +39,21 @@ export function formatPhoneE164(iso, national) {
   const digits = String(national || '').replace(/\D/g, '')
   if (!digits) return ''
   return `${country.dial}${digits}`
+}
+
+export function filterCountries(query) {
+  const q = query.trim().toLowerCase()
+  if (!q) return COUNTRY_DIAL_CODES
+
+  const dialQuery = q.startsWith('+') ? q : `+${q.replace(/\D/g, '')}`
+
+  return COUNTRY_DIAL_CODES.filter((country) => {
+    const name = country.name.toLowerCase()
+    const iso = country.iso.toLowerCase()
+    const dial = country.dial.toLowerCase()
+    return name.includes(q)
+      || iso.includes(q)
+      || dial.includes(dialQuery)
+      || dial.replace('+', '').includes(q.replace(/\D/g, ''))
+  })
 }

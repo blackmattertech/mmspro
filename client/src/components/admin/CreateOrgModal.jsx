@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { generateOrgSlug } from '../../lib/slug'
+import { LIMIT_ITEMS, PLAN_DEFAULTS, formatLimitValue } from '../../lib/orgLimits'
 import './CreateOrgModal.css'
 
 const PLANS = [
@@ -101,6 +102,15 @@ export default function CreateOrgModal({ onClose, onSubmit, saving }) {
                 <option key={p.value} value={p.value}>{p.label}</option>
               ))}
             </select>
+            <span className="admin-modal__hint">
+              Default limits:{' '}
+              {LIMIT_ITEMS.map((item, index) => (
+                <span key={item.key}>
+                  {index > 0 ? ', ' : ''}
+                  {item.label} {formatLimitValue(PLAN_DEFAULTS[plan]?.[item.key])}
+                </span>
+              ))}
+            </span>
           </label>
 
           <label className="admin-modal__field">

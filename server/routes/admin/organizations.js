@@ -5,24 +5,64 @@ import {
   findOrCreateOwnerByEmail,
   sendOwnerAccessEmail,
 } from '../../lib/ensureOwnerUser.js'
+import {
+  limitsForPlan,
+  parseLimitUpdates,
+  getBulkOrgUsage,
+  LIMIT_FIELDS,
+} from '../../lib/orgLimits.js'
 
 const router = Router()
+const ORG_ASSETS_BUCKET = 'org-assets'
+
+const ORG_SELECT = `
+  id, name, slug, plan, is_active, created_at, logo_url,
+  location_limit, department_limit, employee_limit, login_limit
+`
+
+async function attachOrgLogoUrl(org) {
+  if (!org?.logo_url) return org
+
+  const { data, error } = await supabaseAdmin.storage
+    .from(ORG_ASSETS_BUCKET)
+    .createSignedUrl(org.logo_url, 3600)
+
+  if (!error && data?.signedUrl) {
+    return { ...org, logo_signed_url: data.signedUrl }
+  }
+  return org
+}
+
+async function attachOrgLogoUrls(orgs) {
+  return Promise.all((orgs || []).map(attachOrgLogoUrl))
+}
+
+function mergePlanLimits(plan, body) {
+  const defaults = limitsForPlan(plan)
+  const custom = parseLimitUpdates(body)
+  const hasCustom = LIMIT_FIELDS.some((field) => body[field] !== undefined)
+  return hasCustom ? { ...defaults, ...custom } : defaults
+}
 
 router.get('/', async (_req, res) => {
   const { data: orgs, error } = await supabaseAdmin
     .from('organizations')
-    .select('id, name, slug, plan, is_active, created_at')
+    .select(ORG_SELECT)
     .order('created_at', { ascending: false })
 
   if (error) return res.status(500).json({ error: error.message })
 
-  const { data: profiles, error: profilesError } = await supabaseAdmin
-    .from('profiles')
-    .select('org_id')
+  const orgIds = (orgs || []).map((org) => org.id)
+  const [usageByOrg, profilesResult] = await Promise.all([
+    getBulkOrgUsage(orgIds),
+    supabaseAdmin.from('profiles').select('org_id'),
+  ])
 
-  if (profilesError) return res.status(500).json({ error: profilesError.message })
+  if (profilesResult.error) {
+    return res.status(500).json({ error: profilesResult.error.message })
+  }
 
-  const memberCounts = (profiles || []).reduce((acc, row) => {
+  const memberCounts = (profilesResult.data || []).reduce((acc, row) => {
     if (row.org_id) acc[row.org_id] = (acc[row.org_id] || 0) + 1
     return acc
   }, {})
@@ -30,9 +70,15 @@ router.get('/', async (_req, res) => {
   const result = (orgs || []).map((org) => ({
     ...org,
     member_count: memberCounts[org.id] || 0,
+    usage: usageByOrg[org.id] || {
+      locations: 0,
+      departments: 0,
+      employees: 0,
+      logins: 0,
+    },
   }))
 
-  res.json(result)
+  res.json(await attachOrgLogoUrls(result))
 })
 
 router.post('/', async (req, res) => {
@@ -55,6 +101,7 @@ router.post('/', async (req, res) => {
     const slug = await ensureUniqueSlug(baseSlug)
     const orgName = name.trim()
     const normalizedEmail = ownerEmail.trim().toLowerCase()
+    const planLimits = mergePlanLimits(plan, req.body)
 
     const owner = await findOrCreateOwnerByEmail(normalizedEmail)
 
@@ -70,8 +117,9 @@ router.post('/', async (req, res) => {
         plan,
         is_active: true,
         email: normalizedEmail,
+        ...planLimits,
       })
-      .select('id, name, slug, plan, is_active, created_at')
+      .select(ORG_SELECT)
       .single()
 
     if (orgError) return res.status(500).json({ error: orgError.message })
@@ -106,27 +154,39 @@ router.post('/', async (req, res) => {
       `Organization created: ${org.slug} | owner: ${normalizedEmail} | new_account: ${owner.created} | email_sent: ${emailSent}`
     )
 
-    res.status(201).json({
-      ...org,
-      member_count: 1,
-      owner_created: owner.created,
-      owner_email: normalizedEmail,
-      email_sent: emailSent,
-    })
+  res.json({
+    ...(await attachOrgLogoUrl(org)),
+    member_count: 1,
+    usage: { locations: 0, departments: 0, employees: 0, logins: 1 },
+    owner_created: owner.created,
+    owner_email: normalizedEmail,
+    email_sent: emailSent,
+  })
   } catch (err) {
     console.error('Create organization failed:', err.message)
-    res.status(500).json({ error: err.message || 'Failed to create organization' })
+    const status = err.status || 500
+    res.status(status).json({ error: err.message || 'Failed to create organization' })
   }
 })
 
 router.patch('/:id', async (req, res) => {
   const { id } = req.params
-  const { is_active, name, plan } = req.body
+  const { is_active, name, plan, apply_plan_limits } = req.body
 
   const updates = {}
   if (typeof is_active === 'boolean') updates.is_active = is_active
   if (name?.trim()) updates.name = name.trim()
   if (plan && ['free', 'pro', 'enterprise'].includes(plan)) updates.plan = plan
+
+  try {
+    if (apply_plan_limits && plan) {
+      Object.assign(updates, limitsForPlan(plan))
+    } else {
+      Object.assign(updates, parseLimitUpdates(req.body))
+    }
+  } catch (err) {
+    return res.status(400).json({ error: err.message })
+  }
 
   if (!Object.keys(updates).length) {
     return res.status(400).json({ error: 'No valid fields to update' })
@@ -136,7 +196,7 @@ router.patch('/:id', async (req, res) => {
     .from('organizations')
     .update(updates)
     .eq('id', id)
-    .select('id, name, slug, plan, is_active, created_at')
+    .select(ORG_SELECT)
     .single()
 
   if (error) {
@@ -144,12 +204,19 @@ router.patch('/:id', async (req, res) => {
     return res.status(500).json({ error: error.message })
   }
 
-  const { count } = await supabaseAdmin
-    .from('profiles')
-    .select('*', { count: 'exact', head: true })
-    .eq('org_id', id)
+  const [usage, { count }] = await Promise.all([
+    getBulkOrgUsage([id]).then((map) => map[id]),
+    supabaseAdmin
+      .from('profiles')
+      .select('*', { count: 'exact', head: true })
+      .eq('org_id', id),
+  ])
 
-  res.json({ ...data, member_count: count || 0 })
+  res.json({
+    ...(await attachOrgLogoUrl(data)),
+    member_count: count || 0,
+    usage: usage || { locations: 0, departments: 0, employees: 0, logins: 0 },
+  })
 })
 
 export default router

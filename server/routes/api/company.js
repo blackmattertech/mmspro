@@ -6,6 +6,12 @@ import { supabaseAdmin } from '../../services/supabase.js'
 import { provisionEmployeeLogin, disableEmployeeLogin } from '../../lib/provisionEmployeeLogin.js'
 import { validatePostalCode, validatePhoneE164, normalizePhoneE164 } from '../../lib/contactValidation.js'
 import { searchIndianAddresses } from '../../lib/addressGeocoder.js'
+import {
+  assertUnderLimit,
+  assertUnderLimitIfReactivating,
+  assertLoginSlotAvailable,
+  getOrgLimitsSummary,
+} from '../../lib/orgLimits.js'
 
 const router = Router()
 const canManage = requireOrgRole('owner', 'admin')
@@ -61,7 +67,8 @@ router.get('/', async (req, res) => {
 
   if (error) return res.status(500).json({ error: error.message })
   const withLogo = await attachLogoSignedUrl(data)
-  res.json(withLogo)
+  const { limits, usage } = await getOrgLimitsSummary(req.userProfile.org_id)
+  res.json({ ...withLogo, limits, usage })
 })
 
 router.patch('/', canManage, async (req, res) => {
@@ -152,6 +159,12 @@ router.post('/locations', canManage, async (req, res) => {
   const postalError = validatePostalCode(postal_code, country)
   if (postalError) return res.status(400).json({ error: postalError })
 
+  try {
+    await assertUnderLimit(orgId, 'location')
+  } catch (err) {
+    return res.status(err.status || 403).json({ error: err.message })
+  }
+
   if (is_primary) {
     await supabaseAdmin
       .from('org_locations')
@@ -186,6 +199,16 @@ router.post('/locations', canManage, async (req, res) => {
 
 router.patch('/locations/:id', canManage, assertOrgOwnership('org_locations'), async (req, res) => {
   const orgId = req.userProfile.org_id
+
+  const { data: currentLocation, error: currentLocationError } = await supabaseAdmin
+    .from('org_locations')
+    .select('is_active')
+    .eq('id', req.params.id)
+    .eq('org_id', orgId)
+    .single()
+
+  if (currentLocationError) return res.status(500).json({ error: currentLocationError.message })
+
   const allowed = [
     'name', 'code', 'address_line1', 'address_line2',
     'city', 'state', 'postal_code', 'country', 'is_primary', 'is_active',
@@ -202,6 +225,19 @@ router.patch('/locations/:id', canManage, assertOrgOwnership('org_locations'), a
 
   if (!Object.keys(updates).length) {
     return res.status(400).json({ error: 'No valid fields to update' })
+  }
+
+  if (updates.is_active === true) {
+    try {
+      await assertUnderLimitIfReactivating(
+        orgId,
+        'location',
+        currentLocation.is_active,
+        true,
+      )
+    } catch (err) {
+      return res.status(err.status || 403).json({ error: err.message })
+    }
   }
 
   if (updates.postal_code !== undefined) {
@@ -451,6 +487,12 @@ router.post('/departments', canManage, async (req, res) => {
     return res.status(400).json({ error: err.message })
   }
 
+  try {
+    await assertUnderLimit(orgId, 'department')
+  } catch (err) {
+    return res.status(err.status || 403).json({ error: err.message })
+  }
+
   const { data, error } = await supabaseAdmin
     .from('departments')
     .insert({
@@ -483,6 +525,16 @@ router.post('/departments', canManage, async (req, res) => {
 
 router.patch('/departments/:id', canManage, assertOrgOwnership('departments'), async (req, res) => {
   const orgId = req.userProfile.org_id
+
+  const { data: currentDepartment, error: currentDepartmentError } = await supabaseAdmin
+    .from('departments')
+    .select('is_active')
+    .eq('id', req.params.id)
+    .eq('org_id', orgId)
+    .single()
+
+  if (currentDepartmentError) return res.status(500).json({ error: currentDepartmentError.message })
+
   const allowed = [
     'name', 'code', 'description', 'location_id', 'parent_id',
     'is_active', 'all_locations', 'head_employee_id', 'per_location_heads',
@@ -501,6 +553,19 @@ router.patch('/departments/:id', canManage, assertOrgOwnership('departments'), a
 
   if (!Object.keys(updates).length && locationHeads === undefined) {
     return res.status(400).json({ error: 'No valid fields to update' })
+  }
+
+  if (updates.is_active === true) {
+    try {
+      await assertUnderLimitIfReactivating(
+        orgId,
+        'department',
+        currentDepartment.is_active,
+        true,
+      )
+    } catch (err) {
+      return res.status(err.status || 403).json({ error: err.message })
+    }
   }
 
   if (updates.all_locations) {
@@ -1330,6 +1395,15 @@ router.post('/employees', canManage, async (req, res) => {
   if (mobileError) return res.status(400).json({ error: mobileError })
   const normalizedMobile = normalizePhoneE164(mobile)
 
+  try {
+    await assertUnderLimit(orgId, 'employee')
+    if (login_required) {
+      await assertLoginSlotAvailable(orgId, { email: email?.trim() })
+    }
+  } catch (err) {
+    return res.status(err.status || 403).json({ error: err.message })
+  }
+
   const { data, error } = await supabaseAdmin
     .from('org_employees')
     .insert({
@@ -1391,7 +1465,7 @@ router.patch('/employees/:id', canManage, assertOrgOwnership('org_employees'), a
 
   const { data: current, error: currentError } = await supabaseAdmin
     .from('org_employees')
-    .select('login_required, email, name, department_id')
+    .select('login_required, email, name, department_id, is_active')
     .eq('id', req.params.id)
     .eq('org_id', orgId)
     .single()
@@ -1417,6 +1491,27 @@ router.patch('/employees/:id', canManage, assertOrgOwnership('org_employees'), a
 
   if (loginRequired && !(updates.email ?? current.email)?.trim()) {
     return res.status(400).json({ error: 'Email is required when login is enabled' })
+  }
+
+  if (updates.is_active === true) {
+    try {
+      await assertUnderLimitIfReactivating(
+        orgId,
+        'employee',
+        current.is_active,
+        true,
+      )
+    } catch (err) {
+      return res.status(err.status || 403).json({ error: err.message })
+    }
+  }
+
+  if (hasLoginChange && loginRequired && !current.login_required) {
+    try {
+      await assertLoginSlotAvailable(orgId, { email: (updates.email ?? current.email)?.trim() })
+    } catch (err) {
+      return res.status(err.status || 403).json({ error: err.message })
+    }
   }
 
   if (updates.email !== undefined && updates.email?.trim()) {

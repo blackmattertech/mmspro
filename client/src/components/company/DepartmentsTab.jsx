@@ -2,9 +2,13 @@ import { useState } from 'react'
 import { useDepartments } from '../../hooks/useDepartments'
 import { useLocations } from '../../hooks/useLocations'
 import { useEmployees } from '../../hooks/useEmployees'
+import { useOrgLimits } from '../../hooks/useOrgLimits'
+import { useLimitExceeded } from '../../hooks/useLimitExceeded'
+import { isLimitError } from '../../lib/limitErrors'
 import GooToggle from '../ui/GooToggle'
 import DepartmentModal, { formatDepartmentLocation } from './DepartmentModal'
 import DepartmentHeadCell from './DepartmentHeadCell'
+import LimitExceededCard from '../shared/LimitExceededCard'
 import './CompanyShared.css'
 
 export default function DepartmentsTab({ canManage }) {
@@ -12,14 +16,22 @@ export default function DepartmentsTab({ canManage }) {
   const { locations, create: createLocation, saving: savingLocation } = useLocations()
   const { employees } = useEmployees()
   const { departments, loading, saving, error, create, update, remove, toggleActive } = useDepartments(locationFilter)
+  const { isResourceAtLimit, reload: reloadLimits } = useOrgLimits()
+  const { visible: limitVisible, resource: limitResource, trigger: triggerLimit, tryHandleLimitError, dismiss: dismissLimit } = useLimitExceeded()
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState(null)
   const [togglingId, setTogglingId] = useState(null)
 
   const activeLocations = locations.filter((l) => l.is_active !== false)
   const activeDepartments = departments.filter((d) => d.is_active !== false)
+  const activeCount = activeDepartments.length
+  const atDepartmentLimit = isResourceAtLimit('departments', 'department_limit', activeCount)
 
   const openCreate = () => {
+    if (atDepartmentLimit) {
+      triggerLimit('Department')
+      return
+    }
     setEditing(null)
     setModalOpen(true)
   }
@@ -33,29 +45,47 @@ export default function DepartmentsTab({ canManage }) {
     try {
       if (editing) await update(editing.id, payload)
       else await create(payload)
+      await reloadLimits()
       setModalOpen(false)
-    } catch {
-      // keep modal open; error shown in tab and modal
+    } catch (err) {
+      if (tryHandleLimitError(err, 'Department')) {
+        setModalOpen(false)
+      }
+    }
+  }
+
+  const handleCreateLocation = async (payload) => {
+    try {
+      const created = await createLocation(payload)
+      await reloadLimits()
+      return created
+    } catch (err) {
+      if (tryHandleLimitError(err, 'Location')) {
+        throw err
+      }
+      throw err
     }
   }
 
   const handleDelete = async (dept) => {
     if (!window.confirm(`Delete department "${dept.name}"?`)) return
     await remove(dept.id)
+    await reloadLimits()
   }
 
   const handleToggle = async (dept, isActive) => {
     setTogglingId(dept.id)
     try {
       await toggleActive(dept.id, isActive)
-    } catch {
-      // error shown in tab
+      await reloadLimits()
+    } catch (err) {
+      tryHandleLimitError(err, 'Department')
     } finally {
       setTogglingId(null)
     }
   }
 
-  const activeCount = activeDepartments.length
+  const showPlainError = error && !limitVisible && !isLimitError({ message: error })
 
   return (
     <div className="company-panel">
@@ -85,7 +115,7 @@ export default function DepartmentsTab({ canManage }) {
         )}
       </div>
 
-      {error && <div className="company-alert">{error}</div>}
+      {showPlainError && <div className="company-alert">{error}</div>}
 
       {loading ? (
         <div className="company-loading">Loading departments...</div>
@@ -160,8 +190,13 @@ export default function DepartmentsTab({ canManage }) {
           nestedSaving={savingLocation}
           onClose={() => setModalOpen(false)}
           onSave={handleSave}
-          onCreateLocation={createLocation}
+          onCreateLocation={handleCreateLocation}
+          onLimitExceeded={tryHandleLimitError}
         />
+      )}
+
+      {limitVisible && (
+        <LimitExceededCard resource={limitResource} onClose={dismissLimit} />
       )}
     </div>
   )

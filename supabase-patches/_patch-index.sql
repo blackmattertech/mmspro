@@ -23,6 +23,15 @@
 --   14-department-location-heads.sql → 14-department-location-heads
 --   15-user-profile-fields.sql      → 15-user-profile-fields — Profile fields
 --   16-user-assets-storage.sql      → 16-user-assets-storage — User avatars
+--   17-asset-fields.sql             → 17-asset-fields — Asset field definitions
+--   18-asset-field-dropdown.sql     → 18-asset-field-dropdown — Dropdown type
+--   19-manual-work-orders.sql       → 19-manual-work-orders — Manual WO form
+--   20-work-order-assets-storage.sql → 20-work-order-assets-storage — WO files bucket
+--   21-work-order-assignment.sql      → 21-work-order-assignment — Employee assignment
+--   22-work-order-multi-assignees.sql → 22-work-order-multi-assignees — Multiple assignees
+--   23-org-limits.sql               → 23-org-limits — Organization resource limits
+--   24-asset-field-dependencies.sql → 24-asset-field-dependencies — Conditional parent fields
+--   25-asset-section-icons.sql      → 25-asset-section-icons — Section PNG/SVG icons
 --
 -- OTHER:
 --   supabase.sql                  → supabase — Full schema (new projects)

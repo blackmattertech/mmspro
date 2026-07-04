@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import { useBackdropClose } from '../../hooks/useBackdropClose'
-import { profileDisplayName } from '../../hooks/useProfile'
+import { profileDisplayName, profileFormName, profileFormPhone } from '../../hooks/useProfile'
 import PhoneInput from '../shared/PhoneInput'
 import ImageCropModal from '../shared/ImageCropModal'
 import {
@@ -10,6 +10,8 @@ import {
   deleteUserAvatar,
   validateAvatarFile,
 } from '../../lib/userAssets'
+import { uploadEmployeePhoto } from '../../lib/orgAssets'
+import { updateMyProfile, updateMyEmployee } from '../../lib/api-profile'
 import { validatePhoneE164 } from '../../lib/validation'
 import '../company/CompanyShared.css'
 import './ProfileModal.css'
@@ -19,7 +21,7 @@ const TABS = [
   { id: 'password', label: 'Password' },
 ]
 
-export default function ProfileModal({ profile, avatarUrl, onClose, onUpdated }) {
+export default function ProfileModal({ profile, employee, avatarUrl, onClose, onUpdated }) {
   const { user, signIn } = useAuth()
   const [tab, setTab] = useState('profile')
   const [fullName, setFullName] = useState('')
@@ -46,13 +48,13 @@ export default function ProfileModal({ profile, avatarUrl, onClose, onUpdated })
   const handleBackdropClick = useBackdropClose(onClose)
 
   useEffect(() => {
-    setFullName(profile?.full_name || '')
-    setPhone(profile?.phone || '')
+    setFullName(profileFormName(profile, employee))
+    setPhone(profileFormPhone(profile, employee))
     setPhotoPreview(avatarUrl)
     setPhotoFile(null)
     setCropSource(null)
     setRemovePhoto(false)
-  }, [profile, avatarUrl])
+  }, [profile, employee, avatarUrl])
 
   useEffect(() => {
     if (!photoFile) return undefined
@@ -141,16 +143,29 @@ export default function ProfileModal({ profile, avatarUrl, onClose, onUpdated })
         avatar_url: avatarPath,
       }
 
-      const { error: updateError } = await supabase
-        .from('profiles')
-        .update(updates)
-        .eq('id', user.id)
+      let saved = await updateMyProfile(updates)
 
-      if (updateError) throw new Error(updateError.message)
+      if (employee?.id && profile?.org_id && (photoFile || removePhoto)) {
+        let employeePhotoPath = employee.photo_url ?? null
+
+        if (removePhoto) {
+          employeePhotoPath = null
+        } else if (photoFile) {
+          employeePhotoPath = await uploadEmployeePhoto(profile.org_id, employee.id, photoFile)
+        }
+
+        const updatedEmployee = await updateMyEmployee({
+          photo_url: employeePhotoPath,
+        })
+        saved = { ...saved, employee: updatedEmployee, avatar_url: updatedEmployee.photo_signed_url || saved.avatar_url }
+      }
 
       setSuccess('Profile updated.')
       setPhotoFile(null)
       setRemovePhoto(false)
+      setFullName(profileFormName(saved.profile, saved.employee))
+      setPhone(profileFormPhone(saved.profile, saved.employee))
+      setPhotoPreview(saved.avatar_url || null)
       await onUpdated?.()
     } catch (err) {
       setError(err.message)
@@ -204,8 +219,11 @@ export default function ProfileModal({ profile, avatarUrl, onClose, onUpdated })
     setPasswordSuccess('Password updated successfully.')
   }
 
-  const displayName = profileDisplayName(profile, user)
+  const displayName = profileDisplayName(profile, user, employee)
   const avatarLetter = (displayName[0] || 'U').toUpperCase()
+  const hasEmployeeDetails = Boolean(employee)
+  const additionalEmails = (employee?.org_employee_emails || []).map((row) => row.email)
+  const isDepartmentHead = (employee?.headed_departments || []).length > 0
 
   return (
     <div className="company-modal-overlay" onMouseDown={handleBackdropClick}>
@@ -257,7 +275,7 @@ export default function ProfileModal({ profile, avatarUrl, onClose, onUpdated })
                 >
                   {photoPreview ? 'Change Photo' : 'Upload Photo'}
                 </button>
-                {(photoPreview || profile?.avatar_url) && !removePhoto && (
+                {(photoPreview || profile?.avatar_url || employee?.photo_url) && !removePhoto && (
                   <button
                     type="button"
                     className="company-link company-link--danger"
@@ -288,7 +306,7 @@ export default function ProfileModal({ profile, avatarUrl, onClose, onUpdated })
               <input
                 type="email"
                 className="company-form__input"
-                value={profile?.email || user?.email || ''}
+                value={profile?.email || user?.email || employee?.email || ''}
                 disabled
               />
               <p className="company-modal__hint">Email is managed through your login account.</p>
@@ -298,6 +316,53 @@ export default function ProfileModal({ profile, avatarUrl, onClose, onUpdated })
               <span className="company-form__label">Phone</span>
               <PhoneInput value={phone} onChange={setPhone} disabled={saving} />
             </div>
+
+            {hasEmployeeDetails && (
+              <div className="profile-modal__company">
+                <h3 className="profile-modal__company-title">Company Details</h3>
+                <p className="profile-modal__company-intro">
+                  These details are maintained by your organization. You can update your name and phone above.
+                </p>
+                <dl className="profile-modal__company-grid">
+                  <div className="profile-modal__company-item">
+                    <dt>Employee ID</dt>
+                    <dd>{employee.emp_id || '—'}</dd>
+                  </div>
+                  <div className="profile-modal__company-item">
+                    <dt>Designation</dt>
+                    <dd>{employee.designations?.name || '—'}</dd>
+                  </div>
+                  <div className="profile-modal__company-item">
+                    <dt>Department</dt>
+                    <dd>{employee.departments?.name || '—'}</dd>
+                  </div>
+                  <div className="profile-modal__company-item">
+                    <dt>Location</dt>
+                    <dd>{employee.org_locations?.name || '—'}</dd>
+                  </div>
+                  <div className="profile-modal__company-item">
+                    <dt>Manager</dt>
+                    <dd>{employee.manager?.name || '—'}</dd>
+                  </div>
+                  {isDepartmentHead && (
+                    <div className="profile-modal__company-item profile-modal__company-item--full">
+                      <dt>Department Head</dt>
+                      <dd>
+                        <span className="profile-modal__dept-head-badge">
+                          {(employee.headed_departments || []).map((dept) => dept.name).join(', ')}
+                        </span>
+                      </dd>
+                    </div>
+                  )}
+                  {additionalEmails.length > 0 && (
+                    <div className="profile-modal__company-item profile-modal__company-item--full">
+                      <dt>Additional Emails</dt>
+                      <dd>{additionalEmails.join(', ')}</dd>
+                    </div>
+                  )}
+                </dl>
+              </div>
+            )}
 
             {error && <p className="company-alert" role="alert">{error}</p>}
             {success && <p className="profile-modal__success" role="status">{success}</p>}

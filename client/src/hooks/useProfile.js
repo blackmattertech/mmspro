@@ -1,23 +1,37 @@
 import { useState, useEffect, useCallback } from 'react'
-import { supabase } from '../lib/supabase'
 import { useAuth } from './useAuth'
-import { getUserAssetSignedUrl } from '../lib/userAssets'
+import { getMyProfile } from '../lib/api-profile'
 
-export function profileDisplayName(profile, user) {
+export function profileDisplayName(profile, user, employee) {
   if (profile?.full_name?.trim()) return profile.full_name.trim()
+  if (employee?.name?.trim()) return employee.name.trim()
   if (user?.email) return user.email.split('@')[0]
   return 'User'
+}
+
+export function profileFormName(profile, employee) {
+  if (profile?.full_name?.trim()) return profile.full_name.trim()
+  if (employee?.name?.trim()) return employee.name.trim()
+  return ''
+}
+
+export function profileFormPhone(profile, employee) {
+  if (profile?.phone?.trim()) return profile.phone.trim()
+  if (employee?.mobile?.trim()) return employee.mobile.trim()
+  return ''
 }
 
 export function useProfile() {
   const { user } = useAuth()
   const [profile, setProfile] = useState(null)
+  const [employee, setEmployee] = useState(null)
   const [avatarUrl, setAvatarUrl] = useState(null)
   const [loading, setLoading] = useState(true)
 
   const loadProfile = useCallback(async () => {
-    if (!user || !supabase) {
+    if (!user) {
       setProfile(null)
+      setEmployee(null)
       setAvatarUrl(null)
       setLoading(false)
       return
@@ -25,34 +39,19 @@ export function useProfile() {
 
     setLoading(true)
 
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('id, email, full_name, avatar_url, phone, role, org_id')
-      .eq('id', user.id)
-      .maybeSingle()
-
-    if (error) {
-      console.warn('Failed to load profile:', error.message)
+    try {
+      const data = await getMyProfile()
+      setProfile(data.profile)
+      setEmployee(data.employee)
+      setAvatarUrl(data.avatar_url || null)
+    } catch (err) {
+      console.warn('Failed to load profile:', err.message)
       setProfile(null)
+      setEmployee(null)
       setAvatarUrl(null)
+    } finally {
       setLoading(false)
-      return
     }
-
-    setProfile(data)
-
-    if (data?.avatar_url) {
-      try {
-        const url = await getUserAssetSignedUrl(data.avatar_url)
-        setAvatarUrl(url)
-      } catch {
-        setAvatarUrl(null)
-      }
-    } else {
-      setAvatarUrl(null)
-    }
-
-    setLoading(false)
   }, [user])
 
   useEffect(() => {
@@ -61,8 +60,9 @@ export function useProfile() {
 
   return {
     profile,
+    employee,
     avatarUrl,
-    displayName: profileDisplayName(profile, user),
+    displayName: profileDisplayName(profile, user, employee),
     loading,
     refresh: loadProfile,
   }

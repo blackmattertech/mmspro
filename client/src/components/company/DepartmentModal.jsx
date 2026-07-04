@@ -72,6 +72,7 @@ export default function DepartmentModal({
   onClose,
   onSave,
   onCreateLocation,
+  onLimitExceeded,
   nested = false,
 }) {
   const [form, setForm] = useState(EMPTY)
@@ -171,13 +172,21 @@ export default function DepartmentModal({
   }
 
   const handleNestedLocationSave = async (payload) => {
-    const created = await onCreateLocation(payload)
-    setForm((prev) => ({
-      ...prev,
-      locationScope: created.id,
-      ...resetHeadFields(),
-    }))
-    setShowLocationModal(false)
+    try {
+      const created = await onCreateLocation(payload)
+      setForm((prev) => ({
+        ...prev,
+        locationScope: created.id,
+        ...resetHeadFields(),
+      }))
+      setShowLocationModal(false)
+    } catch (err) {
+      if (onLimitExceeded?.(err, 'Location')) {
+        setShowLocationModal(false)
+        return
+      }
+      throw err
+    }
   }
 
   return (
