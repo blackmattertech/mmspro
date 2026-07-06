@@ -10,7 +10,7 @@
   width: var(--sidebar-width);
   height: 100vh;
   height: 100dvh;
-  background: var(--color-dark-navy);
+  background: #000000;
   color: var(--color-white);
   transition: width 0.2s ease;
 }
@@ -196,7 +196,7 @@
   z-index: 200;
   min-width: 180px;
   padding: 8px;
-  background: var(--color-dark-navy);
+  background: #000000;
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: var(--radius-sm);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
@@ -365,7 +365,7 @@
   opacity: 0;
   visibility: hidden;
   transform: translateY(-50%) translateX(-4px);
-  background: #1a2332;
+  background: #000000;
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 6px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
