@@ -6,19 +6,29 @@ import 'dotenv/config'
 const isPlaceholder = (value) => !value || /^your_/i.test(value)
 
 function loadServiceAccount() {
-  const jsonPath = process.env.FIREBASE_SERVICE_ACCOUNT_PATH
-  if (jsonPath && !isPlaceholder(jsonPath)) {
-    const absolutePath = resolve(jsonPath)
-    return JSON.parse(readFileSync(absolutePath, 'utf8'))
-  }
-
   const rawJson = process.env.FIREBASE_SERVICE_ACCOUNT_JSON
   if (rawJson && !isPlaceholder(rawJson)) {
     try {
       return JSON.parse(rawJson)
     } catch (error) {
       console.warn('FIREBASE_SERVICE_ACCOUNT_JSON is invalid JSON:', error.message)
-      return null
+    }
+  }
+
+  const jsonPath = process.env.FIREBASE_SERVICE_ACCOUNT_PATH
+  if (jsonPath && !isPlaceholder(jsonPath)) {
+    try {
+      const absolutePath = resolve(jsonPath)
+      return JSON.parse(readFileSync(absolutePath, 'utf8'))
+    } catch (error) {
+      if (error.code === 'ENOENT') {
+        console.warn(
+          `FIREBASE_SERVICE_ACCOUNT_PATH file not found (${jsonPath}). ` +
+          'On Vercel, set FIREBASE_SERVICE_ACCOUNT_JSON instead.'
+        )
+      } else {
+        console.warn('FIREBASE_SERVICE_ACCOUNT_PATH read failed:', error.message)
+      }
     }
   }
 
