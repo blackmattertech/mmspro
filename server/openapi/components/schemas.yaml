@@ -1,0 +1,977 @@
+ErrorResponse:
+  type: object
+  required: [error]
+  properties:
+    error:
+      type: string
+      example: Request failed
+
+SuccessResponse:
+  type: object
+  required: [success]
+  properties:
+    success:
+      type: boolean
+      example: true
+
+MessageResponse:
+  type: object
+  properties:
+    success:
+      type: boolean
+      example: true
+    message:
+      type: string
+      example: If an account exists for that email, a password reset link has been sent.
+
+HealthResponse:
+  type: object
+  required: [status]
+  properties:
+    status:
+      type: string
+      example: ok
+
+SupabaseUser:
+  type: object
+  properties:
+    id:
+      type: string
+      format: uuid
+    email:
+      type: string
+      format: email
+    app_metadata:
+      type: object
+    user_metadata:
+      type: object
+
+MeResponse:
+  type: object
+  properties:
+    user:
+      $ref: '#/components/schemas/SupabaseUser'
+
+OnboardRequest:
+  type: object
+  required: [orgName]
+  properties:
+    orgName:
+      type: string
+      example: Acme Maintenance Co.
+    orgSlug:
+      type: string
+      example: acme-maintenance
+
+OnboardResponse:
+  type: object
+  properties:
+    org_id:
+      type: string
+      format: uuid
+    slug:
+      type: string
+
+InviteRequest:
+  type: object
+  required: [email]
+  properties:
+    email:
+      type: string
+      format: email
+    role:
+      type: string
+      enum: [member, admin]
+      default: member
+
+InviteAcceptRequest:
+  type: object
+  required: [token]
+  properties:
+    token:
+      type: string
+      format: uuid
+
+PasswordResetRequest:
+  type: object
+  required: [email]
+  properties:
+    email:
+      type: string
+      format: email
+
+Profile:
+  type: object
+  properties:
+    id:
+      type: string
+      format: uuid
+    email:
+      type: string
+      format: email
+    full_name:
+      type: string
+      nullable: true
+    avatar_url:
+      type: string
+      nullable: true
+    phone:
+      type: string
+      nullable: true
+    role:
+      type: string
+      enum: [owner, admin, member]
+    org_id:
+      type: string
+      format: uuid
+      nullable: true
+    created_at:
+      type: string
+      format: date-time
+
+ProfileMeResponse:
+  type: object
+  properties:
+    profile:
+      $ref: '#/components/schemas/Profile'
+    employee:
+      $ref: '#/components/schemas/Employee'
+      nullable: true
+    avatar_url:
+      type: string
+      nullable: true
+
+ProfileMeUpdate:
+  type: object
+  properties:
+    full_name:
+      type: string
+      nullable: true
+    phone:
+      type: string
+      nullable: true
+    avatar_url:
+      type: string
+      nullable: true
+
+EmployeeProfileUpdate:
+  type: object
+  properties:
+    name:
+      type: string
+    mobile:
+      type: string
+    photo_url:
+      type: string
+      nullable: true
+
+Organization:
+  type: object
+  properties:
+    id:
+      type: string
+      format: uuid
+    name:
+      type: string
+    slug:
+      type: string
+    plan:
+      type: string
+      enum: [free, pro, enterprise]
+    is_active:
+      type: boolean
+    email:
+      type: string
+      nullable: true
+    phone:
+      type: string
+      nullable: true
+    website:
+      type: string
+      nullable: true
+    address_line1:
+      type: string
+      nullable: true
+    address_line2:
+      type: string
+      nullable: true
+    city:
+      type: string
+      nullable: true
+    state:
+      type: string
+      nullable: true
+    postal_code:
+      type: string
+      nullable: true
+    country:
+      type: string
+      nullable: true
+    tax_id:
+      type: string
+      nullable: true
+    currency:
+      type: string
+      nullable: true
+    logo_url:
+      type: string
+      nullable: true
+    logo_signed_url:
+      type: string
+      nullable: true
+    limits:
+      $ref: '#/components/schemas/OrgLimits'
+    usage:
+      $ref: '#/components/schemas/OrgUsage'
+    created_at:
+      type: string
+      format: date-time
+    updated_at:
+      type: string
+      format: date-time
+
+OrgLimits:
+  type: object
+  properties:
+    location_limit:
+      type: integer
+    department_limit:
+      type: integer
+    employee_limit:
+      type: integer
+    login_limit:
+      type: integer
+
+OrgUsage:
+  type: object
+  properties:
+    locations:
+      type: integer
+    departments:
+      type: integer
+    employees:
+      type: integer
+    logins:
+      type: integer
+
+CompanyUpdate:
+  type: object
+  properties:
+    name:
+      type: string
+    email:
+      type: string
+    phone:
+      type: string
+    website:
+      type: string
+    address_line1:
+      type: string
+    address_line2:
+      type: string
+    city:
+      type: string
+    state:
+      type: string
+    postal_code:
+      type: string
+    country:
+      type: string
+    tax_id:
+      type: string
+    currency:
+      type: string
+    logo_url:
+      type: string
+      nullable: true
+
+GeocodeResult:
+  type: object
+  properties:
+    display_name:
+      type: string
+    lat:
+      type: string
+    lon:
+      type: string
+    address:
+      type: object
+      additionalProperties:
+        type: string
+
+Location:
+  type: object
+  properties:
+    id:
+      type: string
+      format: uuid
+    org_id:
+      type: string
+      format: uuid
+    name:
+      type: string
+    code:
+      type: string
+    address_line1:
+      type: string
+      nullable: true
+    address_line2:
+      type: string
+      nullable: true
+    city:
+      type: string
+      nullable: true
+    state:
+      type: string
+      nullable: true
+    postal_code:
+      type: string
+      nullable: true
+    country:
+      type: string
+      nullable: true
+    is_primary:
+      type: boolean
+    is_active:
+      type: boolean
+    created_at:
+      type: string
+      format: date-time
+    updated_at:
+      type: string
+      format: date-time
+
+LocationCreate:
+  type: object
+  required: [name, code]
+  properties:
+    name:
+      type: string
+    code:
+      type: string
+    address_line1:
+      type: string
+    address_line2:
+      type: string
+    city:
+      type: string
+    state:
+      type: string
+    postal_code:
+      type: string
+    country:
+      type: string
+    is_primary:
+      type: boolean
+
+Department:
+  type: object
+  properties:
+    id:
+      type: string
+      format: uuid
+    org_id:
+      type: string
+      format: uuid
+    name:
+      type: string
+    code:
+      type: string
+    description:
+      type: string
+      nullable: true
+    location_id:
+      type: string
+      format: uuid
+      nullable: true
+    parent_id:
+      type: string
+      format: uuid
+      nullable: true
+    all_locations:
+      type: boolean
+    per_location_heads:
+      type: boolean
+    head_employee_id:
+      type: string
+      format: uuid
+      nullable: true
+    is_active:
+      type: boolean
+    location_heads:
+      type: array
+      items:
+        type: object
+
+DepartmentCreate:
+  type: object
+  required: [name, code]
+  properties:
+    name:
+      type: string
+    code:
+      type: string
+    description:
+      type: string
+    location_id:
+      type: string
+      format: uuid
+    parent_id:
+      type: string
+      format: uuid
+    all_locations:
+      type: boolean
+    head_employee_id:
+      type: string
+      format: uuid
+    per_location_heads:
+      type: boolean
+    location_heads:
+      type: array
+      items:
+        type: object
+        properties:
+          location_id:
+            type: string
+            format: uuid
+          head_employee_id:
+            type: string
+            format: uuid
+
+Designation:
+  type: object
+  properties:
+    id:
+      type: string
+      format: uuid
+    org_id:
+      type: string
+      format: uuid
+    name:
+      type: string
+    description:
+      type: string
+      nullable: true
+    hierarchy:
+      type: integer
+    all_departments:
+      type: boolean
+    is_active:
+      type: boolean
+    departments:
+      type: array
+      items:
+        type: object
+        properties:
+          id:
+            type: string
+            format: uuid
+          name:
+            type: string
+
+DesignationCreate:
+  type: object
+  required: [name]
+  properties:
+    name:
+      type: string
+    description:
+      type: string
+    all_departments:
+      type: boolean
+    department_ids:
+      type: array
+      items:
+        type: string
+        format: uuid
+
+DesignationReorder:
+  type: object
+  required: [ids]
+  properties:
+    ids:
+      type: array
+      items:
+        type: string
+        format: uuid
+
+Employee:
+  type: object
+  properties:
+    id:
+      type: string
+      format: uuid
+    org_id:
+      type: string
+      format: uuid
+    emp_id:
+      type: string
+    name:
+      type: string
+    mobile:
+      type: string
+      nullable: true
+    email:
+      type: string
+      nullable: true
+    photo_url:
+      type: string
+      nullable: true
+    photo_signed_url:
+      type: string
+      nullable: true
+    designation_id:
+      type: string
+      format: uuid
+      nullable: true
+    department_id:
+      type: string
+      format: uuid
+      nullable: true
+    location_id:
+      type: string
+      format: uuid
+      nullable: true
+    manager_id:
+      type: string
+      format: uuid
+      nullable: true
+    login_required:
+      type: boolean
+    is_active:
+      type: boolean
+    designations:
+      type: object
+      nullable: true
+    departments:
+      type: object
+      nullable: true
+    org_locations:
+      type: object
+      nullable: true
+    org_employee_emails:
+      type: array
+      items:
+        type: object
+        properties:
+          id:
+            type: string
+            format: uuid
+          email:
+            type: string
+
+EmployeeCreate:
+  type: object
+  required: [emp_id, name]
+  properties:
+    emp_id:
+      type: string
+    name:
+      type: string
+    mobile:
+      type: string
+    email:
+      type: string
+    designation_id:
+      type: string
+      format: uuid
+    department_id:
+      type: string
+      format: uuid
+    location_id:
+      type: string
+      format: uuid
+    manager_id:
+      type: string
+      format: uuid
+    photo_url:
+      type: string
+    login_required:
+      type: boolean
+    additional_emails:
+      type: array
+      items:
+        type: string
+        format: email
+    is_department_head:
+      type: boolean
+
+AssetField:
+  type: object
+  properties:
+    id:
+      type: string
+      format: uuid
+    org_id:
+      type: string
+      format: uuid
+    name:
+      type: string
+    kind:
+      type: string
+      enum: [section, parent, child]
+    field_type:
+      type: string
+      enum: [text, textarea, number, date, datetime, image, file, checkbox, dropdown]
+      nullable: true
+    section_id:
+      type: string
+      format: uuid
+      nullable: true
+    parent_id:
+      type: string
+      format: uuid
+      nullable: true
+    sort_order:
+      type: integer
+    is_active:
+      type: boolean
+    icon_path:
+      type: string
+      nullable: true
+    icon_signed_url:
+      type: string
+      nullable: true
+    dropdown_options:
+      type: array
+      items:
+        type: string
+    depends_on_parent_id:
+      type: string
+      format: uuid
+      nullable: true
+    depends_on_option:
+      type: string
+      nullable: true
+
+AssetFieldCreate:
+  type: object
+  required: [name]
+  properties:
+    name:
+      type: string
+    is_section:
+      type: boolean
+    section_id:
+      type: string
+      format: uuid
+    field_type:
+      type: string
+      enum: [text, textarea, number, date, datetime, image, file, checkbox, dropdown]
+    sort_order:
+      type: integer
+    icon_path:
+      type: string
+    dropdown_options:
+      type: array
+      items:
+        type: string
+    depends_on_parent_id:
+      type: string
+      format: uuid
+    depends_on_option:
+      type: string
+
+AssetFieldReorder:
+  type: object
+  required: [kind, ids]
+  properties:
+    kind:
+      type: string
+      enum: [section]
+    ids:
+      type: array
+      items:
+        type: string
+        format: uuid
+
+AssetFieldDeleteResponse:
+  type: object
+  properties:
+    id:
+      type: string
+      format: uuid
+    deleted:
+      type: boolean
+
+WorkOrderFormSchema:
+  type: object
+  properties:
+    sections:
+      type: array
+      items:
+        type: object
+        properties:
+          id:
+            type: string
+            format: uuid
+          name:
+            type: string
+          sort_order:
+            type: integer
+          icon_path:
+            type: string
+            nullable: true
+          icon_signed_url:
+            type: string
+            nullable: true
+          fields:
+            type: array
+            items:
+              type: object
+
+WorkOrderFormSettingsUpdate:
+  type: object
+  required: [settings]
+  properties:
+    settings:
+      type: array
+      items:
+        type: object
+        required: [field_id, is_visible]
+        properties:
+          field_id:
+            type: string
+            format: uuid
+          is_visible:
+            type: boolean
+
+ManualWorkOrderCreate:
+  type: object
+  properties:
+    status:
+      type: string
+      enum: [draft, created]
+      default: draft
+    values:
+      type: object
+      additionalProperties: true
+    assigned_employee_ids:
+      type: array
+      items:
+        type: string
+        format: uuid
+    assigned_to:
+      type: array
+      items:
+        type: string
+        format: uuid
+
+ManualWorkOrder:
+  type: object
+  properties:
+    id:
+      type: string
+      format: uuid
+    org_id:
+      type: string
+      format: uuid
+    status:
+      type: string
+      enum: [draft, created]
+    created_by:
+      type: string
+      format: uuid
+    created_at:
+      type: string
+      format: date-time
+    updated_at:
+      type: string
+      format: date-time
+    wo_number:
+      type: string
+    summary:
+      type: string
+    value_count:
+      type: integer
+    assignees:
+      type: array
+      items:
+        type: object
+    creator:
+      type: object
+      nullable: true
+    sections:
+      type: array
+      items:
+        type: object
+
+WorkOrderValuesUpdate:
+  type: object
+  required: [values]
+  properties:
+    values:
+      type: object
+      additionalProperties: true
+
+WorkOrderCounts:
+  type: object
+  properties:
+    received:
+      type: integer
+    assigned:
+      type: integer
+    scheduled:
+      type: integer
+    manual:
+      type: integer
+
+FcmTokenRequest:
+  type: object
+  required: [token]
+  properties:
+    token:
+      type: string
+
+NotificationSendRequest:
+  type: object
+  required: [title, body]
+  properties:
+    title:
+      type: string
+    body:
+      type: string
+    url:
+      type: string
+
+AdminStats:
+  type: object
+  properties:
+    totalOrganizations:
+      type: integer
+    activeOrganizations:
+      type: integer
+    totalUsers:
+      type: integer
+
+AdminUser:
+  type: object
+  properties:
+    id:
+      type: string
+      format: uuid
+    email:
+      type: string
+    role:
+      type: string
+    org_id:
+      type: string
+      format: uuid
+      nullable: true
+    created_at:
+      type: string
+      format: date-time
+    organizations:
+      type: object
+      nullable: true
+      properties:
+        name:
+          type: string
+        slug:
+          type: string
+
+AdminUserRoleUpdate:
+  type: object
+  required: [role]
+  properties:
+    role:
+      type: string
+      enum: [admin, user]
+
+AdminOrganization:
+  type: object
+  properties:
+    id:
+      type: string
+      format: uuid
+    name:
+      type: string
+    slug:
+      type: string
+    plan:
+      type: string
+      enum: [free, pro, enterprise]
+    is_active:
+      type: boolean
+    member_count:
+      type: integer
+    usage:
+      $ref: '#/components/schemas/OrgUsage'
+    location_limit:
+      type: integer
+    department_limit:
+      type: integer
+    employee_limit:
+      type: integer
+    login_limit:
+      type: integer
+    logo_url:
+      type: string
+      nullable: true
+    logo_signed_url:
+      type: string
+      nullable: true
+    created_at:
+      type: string
+      format: date-time
+
+AdminOrganizationCreate:
+  type: object
+  required: [name, ownerEmail]
+  properties:
+    name:
+      type: string
+    slug:
+      type: string
+    plan:
+      type: string
+      enum: [free, pro, enterprise]
+      default: free
+    ownerEmail:
+      type: string
+      format: email
+    location_limit:
+      type: integer
+    department_limit:
+      type: integer
+    employee_limit:
+      type: integer
+    login_limit:
+      type: integer
+
+AdminOrganizationUpdate:
+  type: object
+  properties:
+    is_active:
+      type: boolean
+    name:
+      type: string
+    plan:
+      type: string
+      enum: [free, pro, enterprise]
+    apply_plan_limits:
+      type: boolean
+    location_limit:
+      type: integer
+    department_limit:
+      type: integer
+    employee_limit:
+      type: integer
+    login_limit:
+      type: integer
+
+UuidPathParam:
+  name: id
+  in: path
+  required: true
+  schema:
+    type: string
+    format: uuid
+
+UserIdPathParam:
+  name: userId
+  in: path
+  required: true
+  schema:
+    type: string
+    format: uuid

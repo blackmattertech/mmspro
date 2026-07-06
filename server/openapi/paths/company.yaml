@@ -1,0 +1,607 @@
+/api/company/geocode:
+  get:
+    tags: [Company]
+    summary: Search Indian addresses
+    parameters:
+      - name: q
+        in: query
+        required: true
+        schema:
+          type: string
+          minLength: 3
+        description: Search query (min 3 characters)
+    responses:
+      '200':
+        description: Geocode results
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/GeocodeResult'
+      '401':
+        description: Unauthorized
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ErrorResponse'
+      '500':
+        description: Server error
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ErrorResponse'
+
+/api/company:
+  get:
+    tags: [Company]
+    summary: Get current organization details
+    responses:
+      '200':
+        description: Organization with limits and usage
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Organization'
+      '401':
+        description: Unauthorized
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ErrorResponse'
+      '403':
+        description: No org access
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ErrorResponse'
+      '500':
+        description: Server error
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ErrorResponse'
+  patch:
+    tags: [Company]
+    summary: Update organization details
+    description: Requires org owner or admin role.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/CompanyUpdate'
+    responses:
+      '200':
+        description: Updated organization
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Organization'
+      '400':
+        description: Validation error
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ErrorResponse'
+      '401':
+        description: Unauthorized
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ErrorResponse'
+      '403':
+        description: Forbidden
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ErrorResponse'
+      '500':
+        description: Server error
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ErrorResponse'
+
+/api/company/locations:
+  get:
+    tags: [Company]
+    summary: List locations
+    responses:
+      '200':
+        description: Location list
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/Location'
+      '401':
+        description: Unauthorized
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ErrorResponse'
+  post:
+    tags: [Company]
+    summary: Create location
+    description: Requires org owner or admin role.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/LocationCreate'
+    responses:
+      '201':
+        description: Location created
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Location'
+      '400':
+        description: Validation error
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ErrorResponse'
+      '403':
+        description: Limit reached or forbidden
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ErrorResponse'
+
+/api/company/locations/{id}:
+  patch:
+    tags: [Company]
+    summary: Update location
+    description: Requires org owner or admin role.
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/LocationCreate'
+              - type: object
+                properties:
+                  is_active:
+                    type: boolean
+    responses:
+      '200':
+        description: Updated location
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Location'
+      '400':
+        description: Validation error
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ErrorResponse'
+      '404':
+        description: Not found
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ErrorResponse'
+  delete:
+    tags: [Company]
+    summary: Soft-delete location
+    description: Requires org owner or admin role.
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    responses:
+      '200':
+        description: Deactivated location
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Location'
+      '404':
+        description: Not found
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ErrorResponse'
+
+/api/company/departments:
+  get:
+    tags: [Company]
+    summary: List departments
+    parameters:
+      - name: location_id
+        in: query
+        schema:
+          type: string
+          format: uuid
+    responses:
+      '200':
+        description: Department list
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/Department'
+      '401':
+        description: Unauthorized
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ErrorResponse'
+  post:
+    tags: [Company]
+    summary: Create department
+    description: Requires org owner or admin role.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/DepartmentCreate'
+    responses:
+      '201':
+        description: Department created
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Department'
+      '400':
+        description: Validation error
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ErrorResponse'
+      '403':
+        description: Limit reached or forbidden
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ErrorResponse'
+
+/api/company/departments/{id}:
+  patch:
+    tags: [Company]
+    summary: Update department
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/DepartmentCreate'
+              - type: object
+                properties:
+                  is_active:
+                    type: boolean
+                  location_heads:
+                    type: array
+                    items:
+                      type: object
+    responses:
+      '200':
+        description: Updated department
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Department'
+      '400':
+        description: Validation error
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ErrorResponse'
+      '404':
+        description: Not found
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ErrorResponse'
+  delete:
+    tags: [Company]
+    summary: Soft-delete department
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    responses:
+      '200':
+        description: Deactivated department
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Department'
+      '404':
+        description: Not found
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ErrorResponse'
+
+/api/company/designations:
+  get:
+    tags: [Company]
+    summary: List designations
+    parameters:
+      - name: department_id
+        in: query
+        schema:
+          type: string
+          format: uuid
+    responses:
+      '200':
+        description: Designation list
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/Designation'
+  post:
+    tags: [Company]
+    summary: Create designation
+    description: Requires org owner or admin role.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/DesignationCreate'
+    responses:
+      '201':
+        description: Designation created
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Designation'
+      '400':
+        description: Validation error
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ErrorResponse'
+
+/api/company/designations/reorder:
+  put:
+    tags: [Company]
+    summary: Reorder designations
+    description: Requires org owner or admin role. Must include all designation IDs.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/DesignationReorder'
+    responses:
+      '200':
+        description: Reordered designations
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/Designation'
+      '400':
+        description: Validation error
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ErrorResponse'
+
+/api/company/designations/{id}:
+  patch:
+    tags: [Company]
+    summary: Update designation
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/DesignationCreate'
+              - type: object
+                properties:
+                  hierarchy:
+                    type: integer
+                  is_active:
+                    type: boolean
+    responses:
+      '200':
+        description: Updated designation
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Designation'
+      '400':
+        description: Validation error
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ErrorResponse'
+      '404':
+        description: Not found
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ErrorResponse'
+  delete:
+    tags: [Company]
+    summary: Soft-delete designation
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    responses:
+      '200':
+        description: Deactivated designation
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Designation'
+      '404':
+        description: Not found
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ErrorResponse'
+
+/api/company/employees:
+  get:
+    tags: [Company]
+    summary: List employees
+    parameters:
+      - name: department_id
+        in: query
+        schema:
+          type: string
+          format: uuid
+      - name: location_id
+        in: query
+        schema:
+          type: string
+          format: uuid
+      - name: designation_id
+        in: query
+        schema:
+          type: string
+          format: uuid
+    responses:
+      '200':
+        description: Employee list
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/Employee'
+  post:
+    tags: [Company]
+    summary: Create employee
+    description: Requires org owner or admin role.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/EmployeeCreate'
+    responses:
+      '201':
+        description: Employee created
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Employee'
+      '400':
+        description: Validation error
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ErrorResponse'
+      '403':
+        description: Limit reached or forbidden
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ErrorResponse'
+
+/api/company/employees/{id}:
+  patch:
+    tags: [Company]
+    summary: Update employee
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/EmployeeCreate'
+              - type: object
+                properties:
+                  is_active:
+                    type: boolean
+                  is_department_head:
+                    type: boolean
+    responses:
+      '200':
+        description: Updated employee
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Employee'
+      '400':
+        description: Validation error
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ErrorResponse'
+      '404':
+        description: Not found
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ErrorResponse'
+  delete:
+    tags: [Company]
+    summary: Soft-delete employee
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    responses:
+      '200':
+        description: Deactivated employee
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Employee'
+      '404':
+        description: Not found
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ErrorResponse'

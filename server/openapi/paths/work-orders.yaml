@@ -1,0 +1,285 @@
+/api/work-orders/manual/form:
+  get:
+    tags: [WorkOrders]
+    summary: Get manual work order form schema
+    responses:
+      '200':
+        description: Form schema with sections and fields
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorkOrderFormSchema'
+      '401':
+        description: Unauthorized
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ErrorResponse'
+      '500':
+        description: Server error
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ErrorResponse'
+
+/api/work-orders/manual/form-settings:
+  get:
+    tags: [WorkOrders]
+    summary: Get work order field visibility settings
+    responses:
+      '200':
+        description: Field visibility settings
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                sections:
+                  type: array
+                  items:
+                    type: object
+  put:
+    tags: [WorkOrders]
+    summary: Update work order field visibility settings
+    description: Requires org owner or admin role.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/WorkOrderFormSettingsUpdate'
+    responses:
+      '200':
+        description: Updated settings
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                sections:
+                  type: array
+                  items:
+                    type: object
+      '400':
+        description: Validation error
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ErrorResponse'
+
+/api/work-orders/manual:
+  post:
+    tags: [WorkOrders]
+    summary: Create manual work order
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ManualWorkOrderCreate'
+    responses:
+      '201':
+        description: Work order created
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ManualWorkOrder'
+      '400':
+        description: Validation error
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ErrorResponse'
+
+/api/work-orders/manual/{id}/values:
+  patch:
+    tags: [WorkOrders]
+    summary: Update work order field values
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/WorkOrderValuesUpdate'
+    responses:
+      '200':
+        description: Values updated
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                id:
+                  type: string
+                  format: uuid
+                value_count:
+                  type: integer
+      '400':
+        description: Validation error
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ErrorResponse'
+      '404':
+        description: Not found
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ErrorResponse'
+
+/api/work-orders/counts:
+  get:
+    tags: [WorkOrders]
+    summary: Get work order counts by category
+    responses:
+      '200':
+        description: Work order counts
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorkOrderCounts'
+      '500':
+        description: Server error
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ErrorResponse'
+
+/api/work-orders/manual/orders:
+  get:
+    tags: [WorkOrders]
+    summary: List all manual work orders
+    responses:
+      '200':
+        description: Work order list
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/ManualWorkOrder'
+
+/api/work-orders/manual/orders/{id}:
+  get:
+    tags: [WorkOrders]
+    summary: Get manual work order detail
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    responses:
+      '200':
+        description: Work order detail with sections and values
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ManualWorkOrder'
+      '404':
+        description: Not found
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ErrorResponse'
+
+/api/work-orders/assigned:
+  get:
+    tags: [WorkOrders]
+    summary: List work orders assigned by current user to others
+    responses:
+      '200':
+        description: Assigned work orders
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/ManualWorkOrder'
+
+/api/work-orders/assigned/{id}:
+  get:
+    tags: [WorkOrders]
+    summary: Get assigned work order detail
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    responses:
+      '200':
+        description: Work order detail
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ManualWorkOrder'
+      '404':
+        description: Not found
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ErrorResponse'
+
+/api/work-orders/scheduled:
+  get:
+    tags: [WorkOrders]
+    summary: List scheduled work orders
+    description: Currently returns an empty array (placeholder).
+    responses:
+      '200':
+        description: Scheduled work orders
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/ManualWorkOrder'
+
+/api/work-orders/received:
+  get:
+    tags: [WorkOrders]
+    summary: List work orders received by current user
+    responses:
+      '200':
+        description: Received work orders
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/ManualWorkOrder'
+
+/api/work-orders/received/{id}:
+  get:
+    tags: [WorkOrders]
+    summary: Get received work order detail
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    responses:
+      '200':
+        description: Work order detail
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ManualWorkOrder'
+      '404':
+        description: Not found
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ErrorResponse'

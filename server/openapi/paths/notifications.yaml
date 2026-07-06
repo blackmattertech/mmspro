@@ -1,0 +1,108 @@
+/api/notifications/token:
+  post:
+    tags: [Notifications]
+    summary: Save FCM device token
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/FcmTokenRequest'
+    responses:
+      '200':
+        description: Token saved
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SuccessResponse'
+      '400':
+        description: Token required
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ErrorResponse'
+      '401':
+        description: Unauthorized
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ErrorResponse'
+      '403':
+        description: No org access
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ErrorResponse'
+
+/api/notifications/send/user/{userId}:
+  post:
+    tags: [Notifications]
+    summary: Send push notification to a user
+    parameters:
+      - name: userId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/NotificationSendRequest'
+    responses:
+      '200':
+        description: Notification sent
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SuccessResponse'
+      '401':
+        description: Unauthorized
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ErrorResponse'
+      '403':
+        description: No org access
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ErrorResponse'
+
+/api/notifications/send/org:
+  post:
+    tags: [Notifications]
+    summary: Send push notification to entire org
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [title, body]
+            properties:
+              title:
+                type: string
+              body:
+                type: string
+    responses:
+      '200':
+        description: Notifications sent
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SuccessResponse'
+      '401':
+        description: Unauthorized
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ErrorResponse'
+      '403':
+        description: No org access
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ErrorResponse'

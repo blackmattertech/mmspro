@@ -1,0 +1,44 @@
+openapi: 3.0.3
+info:
+  title: MMSPro API
+  description: |
+    REST API for MMSPro — maintenance management platform.
+
+    ## Authentication
+    Most endpoints require a Supabase JWT in the `Authorization` header:
+    `Authorization: Bearer <access_token>`
+
+    Obtain a token by signing in through the client app (Supabase Auth).
+
+    ## Public endpoints
+    - `GET /health`
+    - `POST /api/auth/password-reset`
+    - `GET /api/docs` and `GET /api/docs/openapi.json`
+  version: 1.0.0
+  contact:
+    name: MMSPro
+
+tags:
+  - name: Health
+    description: Service health check
+  - name: Auth
+    description: Authentication, onboarding, and invites
+  - name: User
+    description: Current authenticated user
+  - name: Profile
+    description: User profile and linked employee record
+  - name: Company
+    description: Organization details, locations, departments, designations, employees
+  - name: Assets
+    description: Asset field definitions
+  - name: WorkOrders
+    description: Manual work orders
+  - name: Notifications
+    description: FCM push notification tokens and sending
+  - name: Admin
+    description: Platform admin endpoints (requires platform admin role)
+
+security:
+  - bearerAuth: []
+
+paths: {}

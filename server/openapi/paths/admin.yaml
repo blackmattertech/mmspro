@@ -1,0 +1,204 @@
+/admin-api/stats:
+  get:
+    tags: [Admin]
+    summary: Get platform statistics
+    description: Requires platform admin role.
+    responses:
+      '200':
+        description: Platform stats
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminStats'
+      '401':
+        description: Unauthorized
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ErrorResponse'
+      '403':
+        description: Not a platform admin
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ErrorResponse'
+
+/admin-api/users:
+  get:
+    tags: [Admin]
+    summary: List all users
+    description: Requires platform admin role.
+    responses:
+      '200':
+        description: User list
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/AdminUser'
+      '401':
+        description: Unauthorized
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ErrorResponse'
+      '403':
+        description: Not a platform admin
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ErrorResponse'
+
+/admin-api/users/{id}/role:
+  patch:
+    tags: [Admin]
+    summary: Update user platform role
+    description: Requires platform admin role.
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/AdminUserRoleUpdate'
+    responses:
+      '200':
+        description: Updated user
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminUser'
+      '401':
+        description: Unauthorized
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ErrorResponse'
+      '403':
+        description: Not a platform admin
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ErrorResponse'
+      '500':
+        description: Server error
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ErrorResponse'
+
+/admin-api/organizations:
+  get:
+    tags: [Admin]
+    summary: List all organizations
+    description: Requires platform admin role.
+    responses:
+      '200':
+        description: Organization list
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/AdminOrganization'
+      '401':
+        description: Unauthorized
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ErrorResponse'
+      '403':
+        description: Not a platform admin
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ErrorResponse'
+  post:
+    tags: [Admin]
+    summary: Create organization with owner
+    description: Requires platform admin role.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/AdminOrganizationCreate'
+    responses:
+      '200':
+        description: Organization created
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/AdminOrganization'
+                - type: object
+                  properties:
+                    owner_created:
+                      type: boolean
+                    owner_email:
+                      type: string
+                    email_sent:
+                      type: boolean
+      '400':
+        description: Validation error
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ErrorResponse'
+      '403':
+        description: Not a platform admin
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ErrorResponse'
+
+/admin-api/organizations/{id}:
+  patch:
+    tags: [Admin]
+    summary: Update organization
+    description: Requires platform admin role.
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/AdminOrganizationUpdate'
+    responses:
+      '200':
+        description: Updated organization
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminOrganization'
+      '400':
+        description: Validation error
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ErrorResponse'
+      '404':
+        description: Not found
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ErrorResponse'
+      '403':
+        description: Not a platform admin
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ErrorResponse'
