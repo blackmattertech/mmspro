@@ -7,7 +7,8 @@
     "node": "20.x"
   },
   "scripts": {
-    "dev": "nodemon index.js",
+    "build": "node scripts/build-openapi.js",
+    "dev": "node scripts/build-openapi.js && nodemon index.js",
     "start": "node index.js",
     "wipe": "node scripts/wipe-all.js"
   },

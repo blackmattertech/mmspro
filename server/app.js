@@ -49,9 +49,16 @@ app.use(
 )
 app.use(express.json())
 
-const openApiSpec = loadOpenApiSpec()
-app.get('/api/docs/openapi.json', (_req, res) => res.json(openApiSpec))
-app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(openApiSpec))
+try {
+  const openApiSpec = loadOpenApiSpec()
+  app.get('/api/docs/openapi.json', (_req, res) => res.json(openApiSpec))
+  app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(openApiSpec))
+} catch (err) {
+  console.warn('Swagger UI disabled:', err.message)
+  app.get('/api/docs', (_req, res) => {
+    res.status(503).json({ error: 'API docs unavailable', detail: err.message })
+  })
+}
 
 app.use('/api/auth', authRoutes)
 app.use('/api/company', companyRoutes)
