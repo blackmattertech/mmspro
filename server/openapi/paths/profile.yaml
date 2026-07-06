@@ -1,0 +1,123 @@
+/api/profile/me:
+  get:
+    tags: [Profile]
+    summary: Get current user profile and linked employee
+    responses:
+      '200':
+        description: Profile data
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProfileMeResponse'
+      '401':
+        description: Unauthorized
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ErrorResponse'
+      '500':
+        description: Server error
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ErrorResponse'
+  patch:
+    tags: [Profile]
+    summary: Update current user profile
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ProfileMeUpdate'
+    responses:
+      '200':
+        description: Updated profile
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProfileMeResponse'
+      '400':
+        description: Validation error
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ErrorResponse'
+      '401':
+        description: Unauthorized
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ErrorResponse'
+      '500':
+        description: Server error
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ErrorResponse'
+
+/api/profile/employee:
+  get:
+    tags: [Profile]
+    summary: Get linked employee record
+    responses:
+      '200':
+        description: Employee record or null
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - $ref: '#/components/schemas/Employee'
+                - type: 'null'
+      '401':
+        description: Unauthorized
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ErrorResponse'
+      '500':
+        description: Server error
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ErrorResponse'
+  patch:
+    tags: [Profile]
+    summary: Update linked employee record
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/EmployeeProfileUpdate'
+    responses:
+      '200':
+        description: Updated employee
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Employee'
+      '400':
+        description: Validation error
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ErrorResponse'
+      '401':
+        description: Unauthorized
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ErrorResponse'
+      '404':
+        description: No linked employee
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ErrorResponse'
+      '500':
+        description: Server error
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ErrorResponse'

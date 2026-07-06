@@ -1,0 +1,171 @@
+/api/assets/fields:
+  get:
+    tags: [Assets]
+    summary: List asset fields
+    responses:
+      '200':
+        description: Asset field definitions
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/AssetField'
+      '401':
+        description: Unauthorized
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ErrorResponse'
+  post:
+    tags: [Assets]
+    summary: Create asset field
+    description: Requires org owner or admin role.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/AssetFieldCreate'
+    responses:
+      '201':
+        description: Field created
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssetField'
+      '400':
+        description: Validation error
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ErrorResponse'
+      '403':
+        description: Forbidden
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ErrorResponse'
+
+/api/assets/fields/reorder:
+  put:
+    tags: [Assets]
+    summary: Reorder asset sections
+    description: Requires org owner or admin role. Must include all section IDs.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/AssetFieldReorder'
+    responses:
+      '200':
+        description: Reordered fields
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/AssetField'
+      '400':
+        description: Validation error
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ErrorResponse'
+
+/api/assets/fields/{id}:
+  get:
+    tags: [Assets]
+    summary: Get asset field by ID
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    responses:
+      '200':
+        description: Asset field
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssetField'
+      '404':
+        description: Not found
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ErrorResponse'
+  patch:
+    tags: [Assets]
+    summary: Update asset field
+    description: Requires org owner or admin role.
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/AssetFieldCreate'
+              - type: object
+                properties:
+                  is_active:
+                    type: boolean
+    responses:
+      '200':
+        description: Updated field
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssetField'
+      '400':
+        description: Validation error
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ErrorResponse'
+      '404':
+        description: Not found
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ErrorResponse'
+  delete:
+    tags: [Assets]
+    summary: Delete asset field
+    description: Requires org owner or admin role.
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    responses:
+      '200':
+        description: Field deleted
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssetFieldDeleteResponse'
+      '400':
+        description: Cannot delete (has dependents)
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ErrorResponse'
+      '404':
+        description: Not found
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ErrorResponse'

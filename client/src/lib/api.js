@@ -9,6 +9,10 @@ function resolveApiUrl() {
   }
 
   if (typeof window !== 'undefined') {
+    console.error(
+      '[MMSPro] VITE_API_URL is not set. API calls will fail in production. ' +
+      'Set VITE_API_URL to your deployed server URL in Vercel environment variables and rebuild.'
+    )
     const { protocol, hostname } = window.location
     return `${protocol}//${hostname}:5050`
   }

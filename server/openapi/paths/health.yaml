@@ -1,0 +1,30 @@
+/health:
+  get:
+    tags: [Health]
+    summary: Health check
+    security: []
+    responses:
+      '200':
+        description: Service is healthy
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HealthResponse'
+
+/api/me:
+  get:
+    tags: [User]
+    summary: Get current authenticated user
+    responses:
+      '200':
+        description: Supabase auth user
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MeResponse'
+      '401':
+        description: Unauthorized
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ErrorResponse'
