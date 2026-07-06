@@ -14,7 +14,12 @@ function loadServiceAccount() {
 
   const rawJson = process.env.FIREBASE_SERVICE_ACCOUNT_JSON
   if (rawJson && !isPlaceholder(rawJson)) {
-    return JSON.parse(rawJson)
+    try {
+      return JSON.parse(rawJson)
+    } catch (error) {
+      console.warn('FIREBASE_SERVICE_ACCOUNT_JSON is invalid JSON:', error.message)
+      return null
+    }
   }
 
   return null

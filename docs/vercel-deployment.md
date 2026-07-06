@@ -9,9 +9,11 @@ Deploy MMSPro as **two separate Vercel projects**: one for the client (`client/`
 | Setting | Value |
 |---------|-------|
 | Root Directory | `server` |
-| Framework | Other |
-| Build Command | *(leave empty)* |
+| Framework | Express (auto-detected) |
+| Build Command | `npm run build` |
 | Output Directory | *(leave empty)* |
+
+Vercel auto-detects [`server/app.js`](server/app.js) as the Express entry point. Do **not** use a separate `api/index.js` handler.
 
 **Environment variables** (set in Vercel dashboard — do not commit `.env`):
 
