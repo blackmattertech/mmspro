@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import ws from 'ws'
 import 'dotenv/config'
 
 const isPlaceholder = (value) => !value || /^your_/i.test(value)
@@ -20,5 +21,8 @@ if (!isSupabaseAdminConfigured) {
 export const supabaseAdmin = createClient(
   supabaseUrl || 'https://placeholder.supabase.co',
   serviceRoleKey || 'placeholder-key',
-  { auth: { autoRefreshToken: false, persistSession: false } }
+  {
+    auth: { autoRefreshToken: false, persistSession: false },
+    realtime: { transport: ws },
+  }
 )
