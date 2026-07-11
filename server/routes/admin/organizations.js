@@ -11,9 +11,11 @@ import {
   getBulkOrgUsage,
   LIMIT_FIELDS,
 } from '../../lib/orgLimits.js'
+import { ACCOUNT_ROLES } from '../../lib/accountRoles.js'
 
 const router = Router()
 const ORG_ASSETS_BUCKET = 'org-assets'
+const LIST_SIGNED_URL_LIMIT = 25
 
 const ORG_SELECT = `
   id, name, slug, plan, is_active, created_at, logo_url,
@@ -44,11 +46,23 @@ function mergePlanLimits(plan, body) {
   return hasCustom ? { ...defaults, ...custom } : defaults
 }
 
-router.get('/', async (_req, res) => {
+function parsePagination(query, { defaultLimit = 50, maxLimit = 200 } = {}) {
+  const rawLimit = Number(query.limit)
+  const rawOffset = Number(query.offset)
+  const limit = Number.isFinite(rawLimit)
+    ? Math.max(1, Math.min(maxLimit, rawLimit))
+    : defaultLimit
+  const offset = Number.isFinite(rawOffset) ? Math.max(0, rawOffset) : 0
+  return { limit, offset }
+}
+
+router.get('/', async (req, res) => {
+  const { limit, offset } = parsePagination(req.query)
   const { data: orgs, error } = await supabaseAdmin
     .from('organizations')
     .select(ORG_SELECT)
     .order('created_at', { ascending: false })
+    .range(offset, offset + limit - 1)
 
   if (error) return res.status(500).json({ error: error.message })
 
@@ -78,7 +92,14 @@ router.get('/', async (_req, res) => {
     },
   }))
 
-  res.json(await attachOrgLogoUrls(result))
+  const pageResult = await attachOrgLogoUrls(result.slice(0, LIST_SIGNED_URL_LIMIT))
+  if (result.length <= LIST_SIGNED_URL_LIMIT) {
+    return res.json(pageResult)
+  }
+  res.json([
+    ...pageResult,
+    ...result.slice(LIST_SIGNED_URL_LIMIT),
+  ])
 })
 
 router.post('/', async (req, res) => {
@@ -126,7 +147,7 @@ router.post('/', async (req, res) => {
 
     const { error: assignError } = await supabaseAdmin
       .from('profiles')
-      .update({ org_id: org.id, role: 'owner' })
+      .update({ org_id: org.id, role: ACCOUNT_ROLES.ADMIN })
       .eq('id', owner.userId)
 
     if (assignError) {
@@ -137,7 +158,7 @@ router.post('/', async (req, res) => {
     const { error: inviteError } = await supabaseAdmin.from('org_invites').insert({
       org_id: org.id,
       email: normalizedEmail,
-      role: 'owner',
+      role: ACCOUNT_ROLES.ADMIN,
       accepted_at: new Date().toISOString(),
     })
 
@@ -146,8 +167,10 @@ router.post('/', async (req, res) => {
     }
 
     let emailSent = false
-    if (owner.created) {
+    try {
       emailSent = await sendOwnerAccessEmail(normalizedEmail, { orgName })
+    } catch (emailErr) {
+      console.warn('Owner access email failed:', emailErr.message)
     }
 
     console.log(

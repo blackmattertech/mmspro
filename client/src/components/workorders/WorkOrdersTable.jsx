@@ -46,7 +46,7 @@ export default function WorkOrdersTable({
         )
       case 'assignees':
       case 'assigned_with':
-        return formatAssignees(order.assignees)
+        return formatAssignees(order.assignees, order.assigned_department, order.assigned_location)
       case 'creator':
         return order.creator?.email || '—'
       case 'created_at':

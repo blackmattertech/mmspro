@@ -3,6 +3,7 @@ import { useLocations } from '../../hooks/useLocations'
 import { useDepartments } from '../../hooks/useDepartments'
 import { useEmployees } from '../../hooks/useEmployees'
 import EmployeeAvatar from '../company/EmployeeAvatar'
+import GooToggle from '../ui/GooToggle'
 import { formatPhoneDisplay } from '../shared/PhoneInput'
 import '../../components/company/CompanyShared.css'
 import './ManualWorkOrder.css'
@@ -96,14 +97,20 @@ function EmployeePicker({
   value,
   onChange,
   disabled,
+  assignToDepartment,
+  modeLabel,
 }) {
   const [search, setSearch] = useState('')
-  const { employees, loading } = useEmployees({ locationId, departmentId: department.id })
+  const { employees, loading } = useEmployees({
+    locationId,
+    departmentId: department?.id || undefined,
+    forAssignment: true,
+  })
   const selectedIds = Array.isArray(value) ? value : []
 
   useEffect(() => {
     setSearch('')
-  }, [department.id, locationId])
+  }, [department?.id, locationId])
 
   const filteredEmployees = useMemo(() => {
     const active = (employees || []).filter((emp) => emp.is_active !== false)
@@ -158,19 +165,25 @@ function EmployeePicker({
         )}
       </div>
 
-      <p className="wo-assignment__context">
-        Showing employees in <strong>{department.name}</strong> at <strong>{locationName}</strong>
-      </p>
+      <p className="wo-assignment__context">{modeLabel}</p>
 
       {loading ? (
         <p className="wo-assignment__empty">Loading employees...</p>
       ) : !filteredEmployees.length ? (
-        <p className="wo-assignment__empty">No employees found for this location and department.</p>
+        <p className="wo-assignment__empty">
+          {assignToDepartment
+            ? 'No employees in this department yet. The work order stays in the department pool.'
+            : department
+              ? 'No employees found for this location and department.'
+              : `No employees found at ${locationName || 'this location'}.`}
+        </p>
       ) : (
         <div className="wo-assignment__grid" role="group" aria-label="Assigned employees">
           {filteredEmployees.map((emp) => {
             const checked = selectedIds.includes(emp.id)
-            const showHeadBadge = isDepartmentHead(emp, department, locationId)
+            const showHeadBadge = department
+              ? isDepartmentHead(emp, department, locationId)
+              : false
 
             return (
               <button
@@ -206,21 +219,9 @@ function EmployeePicker({
 
                 <span className="wo-assignment__card-details">
                   <span className="wo-assignment__card-info">
-                    <DetailRow
-                      icon="department"
-                      label="Department"
-                      value={emp.departments?.name}
-                    />
-                    <DetailRow
-                      icon="designation"
-                      label="Designation"
-                      value={emp.designations?.name}
-                    />
-                    <DetailRow
-                      icon="location"
-                      label="Location"
-                      value={emp.org_locations?.name}
-                    />
+                    <DetailRow icon="department" label="Department" value={emp.departments?.name} />
+                    <DetailRow icon="designation" label="Designation" value={emp.designations?.name} />
+                    <DetailRow icon="location" label="Location" value={emp.org_locations?.name} />
                   </span>
 
                   <span className="wo-assignment__card-contact">
@@ -229,11 +230,7 @@ function EmployeePicker({
                       label="Mobile"
                       value={emp.mobile ? formatPhoneDisplay(emp.mobile) : null}
                     />
-                    <ContactBox
-                      icon="email"
-                      label="Email"
-                      value={emp.email}
-                    />
+                    <ContactBox icon="email" label="Email" value={emp.email} />
                   </span>
                 </span>
               </button>
@@ -248,12 +245,15 @@ function EmployeePicker({
 export default function WorkOrderAssignmentCard({
   value = [],
   onChange,
+  assignToDepartment = false,
+  onAssignToDepartmentChange,
+  onDepartmentTargetChange,
   disabled,
 }) {
   const [locationId, setLocationId] = useState('')
   const [departmentId, setDepartmentId] = useState('')
 
-  const { locations, loading: locationsLoading } = useLocations()
+  const { locations, loading: locationsLoading } = useLocations({ forAssignment: true })
   const { departments, loading: departmentsLoading } = useDepartments(locationId)
 
   const selectedIds = Array.isArray(value) ? value : []
@@ -261,11 +261,79 @@ export default function WorkOrderAssignmentCard({
   const activeDepartments = (departments || []).filter((dept) => dept.is_active !== false)
   const selectedDepartment = activeDepartments.find((dept) => dept.id === departmentId)
   const selectedLocation = activeLocations.find((loc) => loc.id === locationId)
-  const canSelectEmployees = Boolean(locationId && departmentId && selectedDepartment)
+  const hasLocation = Boolean(locationId)
+  const hasDepartment = Boolean(locationId && departmentId && selectedDepartment)
+  const assignmentComplete = Boolean(
+    locationId && (assignToDepartment || selectedIds.length > 0 || !departmentId),
+  )
 
   useEffect(() => {
     setDepartmentId('')
   }, [locationId])
+
+  useEffect(() => {
+    if (typeof onDepartmentTargetChange !== 'function') return
+    onDepartmentTargetChange({
+      departmentId: departmentId || null,
+      locationId: locationId || null,
+    })
+  }, [departmentId, locationId, onDepartmentTargetChange])
+
+  const clearAssignmentSelections = () => {
+    if (typeof onChange === 'function') onChange([])
+    if (assignToDepartment && typeof onAssignToDepartmentChange === 'function') {
+      onAssignToDepartmentChange(false)
+    }
+  }
+
+  const handleLocationChange = (nextLocationId) => {
+    clearAssignmentSelections()
+    setLocationId(nextLocationId)
+  }
+
+  const handleDepartmentChange = (nextDepartmentId) => {
+    clearAssignmentSelections()
+    setDepartmentId(nextDepartmentId)
+  }
+
+  const handleAssignToDepartment = (checked) => {
+    if (typeof onAssignToDepartmentChange === 'function') {
+      onAssignToDepartmentChange(checked)
+    }
+  }
+
+  let modeLabel = ''
+  if (hasDepartment && assignToDepartment) {
+    modeLabel = (
+      <>
+        Assigned to <strong>{selectedDepartment.name}</strong> at <strong>{selectedLocation?.name}</strong>
+        {' '}— department head / members can claim; optionally pick employees below.
+      </>
+    )
+  } else if (hasDepartment) {
+    modeLabel = (
+      <>
+        Showing employees in <strong>{selectedDepartment.name}</strong> at <strong>{selectedLocation?.name}</strong>
+      </>
+    )
+  } else if (hasLocation) {
+    modeLabel = (
+      <>
+        Location only: Location Head at <strong>{selectedLocation?.name}</strong> will route this work order.
+        Optionally pick employees at this location below.
+      </>
+    )
+  }
+
+  const countLabel = (() => {
+    if (!locationId) return null
+    if (selectedIds.length > 0 && departmentId) {
+      return assignToDepartment ? `Dept + ${selectedIds.length}` : `${selectedIds.length} selected`
+    }
+    if (selectedIds.length > 0) return `${selectedIds.length} selected`
+    if (departmentId) return assignToDepartment ? 'Department pool' : 'Department'
+    return 'Location pool'
+  })()
 
   return (
     <section className="wo-section wo-assignment">
@@ -280,14 +348,12 @@ export default function WorkOrderAssignmentCard({
           <div>
             <h2 className="wo-section__title">Assignment</h2>
             <p className="wo-section__desc">
-              Choose a location and department, then assign employees to this work order
+              Assign to any location, optionally a department, then employees — or leave for the Location / Department Head to route
             </p>
           </div>
         </div>
-        {selectedIds.length > 0 && (
-          <span className="wo-assignment__count">
-            {selectedIds.length} selected
-          </span>
+        {countLabel && (
+          <span className="wo-assignment__count">{countLabel}</span>
         )}
       </div>
 
@@ -297,16 +363,21 @@ export default function WorkOrderAssignmentCard({
           <span className="wo-assignment__step-divider" />
           <FilterStep step="2" label="Department" active={Boolean(locationId && !departmentId)} complete={Boolean(departmentId)} />
           <span className="wo-assignment__step-divider" />
-          <FilterStep step="3" label="Employees" active={canSelectEmployees} complete={selectedIds.length > 0} />
+          <FilterStep
+            step="3"
+            label="Assign"
+            active={hasLocation && !assignmentComplete}
+            complete={assignmentComplete}
+          />
         </div>
 
         <div className="wo-assignment__filters">
           <label className="company-form__field">
-            <span className="company-form__label">Location</span>
+            <span className="company-form__label">Location *</span>
             <select
               className="company-form__input company-form__input--select"
               value={locationId}
-              onChange={(e) => setLocationId(e.target.value)}
+              onChange={(e) => handleLocationChange(e.target.value)}
               disabled={disabled || locationsLoading}
             >
               <option value="">Select location...</option>
@@ -317,15 +388,15 @@ export default function WorkOrderAssignmentCard({
           </label>
 
           <label className="company-form__field">
-            <span className="company-form__label">Department</span>
+            <span className="company-form__label">Department (optional)</span>
             <select
               className="company-form__input company-form__input--select"
               value={departmentId}
-              onChange={(e) => setDepartmentId(e.target.value)}
+              onChange={(e) => handleDepartmentChange(e.target.value)}
               disabled={disabled || !locationId || departmentsLoading}
             >
               <option value="">
-                {!locationId ? 'Select location first' : 'Select department...'}
+                {!locationId ? 'Select location first' : 'Location Head will assign…'}
               </option>
               {activeDepartments.map((dept) => (
                 <option key={dept.id} value={dept.id}>{dept.name}</option>
@@ -334,19 +405,39 @@ export default function WorkOrderAssignmentCard({
           </label>
         </div>
 
-        {!canSelectEmployees ? (
+        {hasDepartment && (
+          <div className="wo-assignment__dept-toggle">
+            <div className="wo-assignment__dept-toggle-copy">
+              <span className="wo-assignment__dept-toggle-title">Assign to department pool</span>
+              <span className="wo-assignment__dept-toggle-hint">
+                Department head and members at {selectedLocation?.name} can claim or reassign.
+                Leave off and pick employees to assign directly.
+              </span>
+            </div>
+            <GooToggle
+              checked={assignToDepartment}
+              onChange={handleAssignToDepartment}
+              disabled={disabled}
+              ariaLabel="Assign to department pool"
+            />
+          </div>
+        )}
+
+        {!hasLocation ? (
           <p className="wo-assignment__empty">
-            Select a location and department to browse employees.
+            Select a location to continue. You can stop there for the Location Head, or add a department / employees.
           </p>
         ) : (
           <EmployeePicker
-            key={`${locationId}-${departmentId}`}
+            key={`${locationId}-${departmentId || 'loc'}`}
             locationId={locationId}
-            department={selectedDepartment}
+            department={selectedDepartment || null}
             locationName={selectedLocation?.name}
             value={value}
             onChange={onChange}
             disabled={disabled}
+            assignToDepartment={assignToDepartment}
+            modeLabel={modeLabel}
           />
         )}
       </div>

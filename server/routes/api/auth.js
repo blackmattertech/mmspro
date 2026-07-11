@@ -3,26 +3,25 @@ import { verifyAuth } from '../../middleware/auth.js'
 import { requireOrgAccess } from '../../middleware/orgAccess.js'
 import { supabaseAdmin } from '../../services/supabase.js'
 import {
-  sendWelcomeEmail,
   sendInviteEmail,
   sendPasswordResetEmail,
 } from '../../services/email.js'
-import { createOrgForUser } from '../../lib/createOrg.js'
 import { getPublicAppUrl } from '../../lib/appUrl.js'
 import { assertLoginSlotAvailable } from '../../lib/orgLimits.js'
+import { ACCOUNT_ROLES, canManageOrg } from '../../lib/accountRoles.js'
 
 const router = Router()
 
 /**
  * POST /api/auth/invite
- * Org owner/admin invites a team member
+ * Company Admin invites a team member
  */
 router.post('/invite', verifyAuth, requireOrgAccess, async (req, res) => {
-  const { email, role = 'member' } = req.body
+  const { email, role = ACCOUNT_ROLES.USER } = req.body
   const { org_id, role: inviterRole } = req.userProfile
 
-  if (!['owner', 'admin'].includes(inviterRole)) {
-    return res.status(403).json({ error: 'Only owners and admins can invite' })
+  if (!canManageOrg(inviterRole)) {
+    return res.status(403).json({ error: 'Only company admins can invite' })
   }
 
   // Get org name
@@ -118,42 +117,6 @@ router.post('/password-reset', async (req, res) => {
   await sendPasswordResetEmail(email, { resetUrl: data.properties.action_link })
 
   res.json({ success: true, message: PASSWORD_RESET_MESSAGE })
-})
-
-/**
- * POST /api/auth/onboard
- * After signup: create org + send welcome email
- */
-router.post('/onboard', verifyAuth, async (req, res) => {
-  const { orgName } = req.body
-
-  if (!orgName?.trim()) {
-    return res.status(400).json({ error: 'Company name is required' })
-  }
-
-  try {
-    const { orgId, orgSlug } = await createOrgForUser(
-      req.user.id,
-      req.user.email,
-      orgName,
-      req.body.orgSlug
-    )
-
-    try {
-      await sendWelcomeEmail(req.user.email, {
-        name: req.user.email.split('@')[0],
-        orgName: orgName.trim(),
-        orgSlug,
-      })
-    } catch (emailErr) {
-      console.warn('Welcome email skipped:', emailErr.message)
-    }
-
-    res.json({ org_id: orgId, slug: orgSlug })
-  } catch (err) {
-    console.error('onboard error:', err.message)
-    res.status(err.status || 500).json({ error: err.message })
-  }
 })
 
 export default router

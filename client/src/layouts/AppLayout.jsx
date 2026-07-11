@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Outlet } from 'react-router-dom'
 import { NotificationsProvider } from '../hooks/useNotifications'
+import { PermissionsProvider } from '../hooks/usePermissions'
 import Sidebar from '../components/layout/Sidebar'
 import './AppShell.css'
 
@@ -24,13 +25,15 @@ export default function AppLayout() {
   }, [collapsed])
 
   return (
-    <NotificationsProvider>
-      <div className={`app-shell ${collapsed ? 'app-shell--sidebar-collapsed' : ''}`}>
-        <Sidebar collapsed={collapsed} onToggle={() => setCollapsed((prev) => !prev)} />
-        <div className="app-shell__main">
-          <Outlet />
+    <PermissionsProvider>
+      <NotificationsProvider>
+        <div className={`app-shell ${collapsed ? 'app-shell--sidebar-collapsed' : ''}`}>
+          <Sidebar collapsed={collapsed} onToggle={() => setCollapsed((prev) => !prev)} />
+          <div className="app-shell__main">
+            <Outlet />
+          </div>
         </div>
-      </div>
-    </NotificationsProvider>
+      </NotificationsProvider>
+    </PermissionsProvider>
   )
 }

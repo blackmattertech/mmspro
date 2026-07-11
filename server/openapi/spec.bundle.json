@@ -15,7 +15,7 @@
     },
     {
       "name": "Auth",
-      "description": "Authentication, onboarding, and invites"
+      "description": "Authentication and invites"
     },
     {
       "name": "User",
@@ -832,66 +832,6 @@
           },
           "400": {
             "description": "Email required",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/auth/onboard": {
-      "post": {
-        "tags": [
-          "Auth"
-        ],
-        "summary": "Create organization after signup",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/OnboardRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Organization created",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/OnboardResponse"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Validation error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthorized",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Server error",
             "content": {
               "application/json": {
                 "schema": {
@@ -2924,34 +2864,6 @@
           }
         }
       },
-      "OnboardRequest": {
-        "type": "object",
-        "required": [
-          "orgName"
-        ],
-        "properties": {
-          "orgName": {
-            "type": "string",
-            "example": "Acme Maintenance Co."
-          },
-          "orgSlug": {
-            "type": "string",
-            "example": "acme-maintenance"
-          }
-        }
-      },
-      "OnboardResponse": {
-        "type": "object",
-        "properties": {
-          "org_id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "slug": {
-            "type": "string"
-          }
-        }
-      },
       "InviteRequest": {
         "type": "object",
         "required": [
@@ -2965,10 +2877,10 @@
           "role": {
             "type": "string",
             "enum": [
-              "member",
+              "user",
               "admin"
             ],
-            "default": "member"
+            "default": "user"
           }
         }
       },
@@ -3022,10 +2934,11 @@
           "role": {
             "type": "string",
             "enum": [
-              "owner",
+              "super_admin",
               "admin",
-              "member"
-            ]
+              "user"
+            ],
+            "default": "user"
           },
           "org_id": {
             "type": "string",
@@ -3324,6 +3237,35 @@
           "is_active": {
             "type": "boolean"
           },
+          "head_employee_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "head_employee": {
+            "type": "object",
+            "nullable": true,
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "emp_id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "photo_url": {
+                "type": "string",
+                "nullable": true
+              },
+              "photo_signed_url": {
+                "type": "string",
+                "nullable": true
+              }
+            }
+          },
           "created_at": {
             "type": "string",
             "format": "date-time"
@@ -3367,6 +3309,11 @@
           },
           "is_primary": {
             "type": "boolean"
+          },
+          "head_employee_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
           }
         }
       },
@@ -3948,6 +3895,16 @@
               "format": "uuid"
             }
           },
+          "assigned_department_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "assigned_location_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
           "assigned_to": {
             "type": "array",
             "items": {
@@ -3986,6 +3943,37 @@
           "updated_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "assigned_department_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "assigned_location_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "assigned_department": {
+            "type": "object",
+            "nullable": true,
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "name": {
+                "type": "string"
+              },
+              "location_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "location_name": {
+                "type": "string",
+                "nullable": true
+              }
+            }
           },
           "wo_number": {
             "type": "string"

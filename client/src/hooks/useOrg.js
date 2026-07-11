@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from './useAuth'
 
+let orgCacheByUserId = new Map()
+
 export const useOrg = () => {
   const { user } = useAuth()
   const [org, setOrg] = useState(null)
@@ -11,6 +13,14 @@ export const useOrg = () => {
   useEffect(() => {
     if (!user) { setLoading(false); return }
 
+    const cached = orgCacheByUserId.get(user.id)
+    if (cached) {
+      setOrg(cached.org)
+      setOrgRole(cached.orgRole)
+      setLoading(false)
+      return
+    }
+
     const fetchOrg = async () => {
       const { data: profile } = await supabase
         .from('profiles')
@@ -19,8 +29,11 @@ export const useOrg = () => {
         .maybeSingle()
 
       if (profile?.organizations) {
-        setOrg(profile.organizations)
-        setOrgRole(profile.role)
+        const orgData = profile.organizations
+        const roleData = profile.role
+        setOrg(orgData)
+        setOrgRole(roleData)
+        orgCacheByUserId.set(user.id, { org: orgData, orgRole: roleData })
       }
       setLoading(false)
     }

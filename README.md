@@ -46,9 +46,8 @@ Every table has an `org_id` column. Data is isolated at 3 levels:
 | Path | Access |
 |------|--------|
 | `/login` | Public |
-| `/onboard` | Authenticated, no org yet |
 | `/:orgSlug/*` | Authenticated + org member (e.g. `/blackmatter/dashboard`) |
-| `/admin/*` | Platform admin only |
+| `/admin/*` | Super Admin only |
 
 ## API Endpoints
 | Endpoint | Access | Description |

@@ -1,0 +1,177 @@
+.role-perm {
+  border: 1px solid var(--color-light-gray-1);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--color-white);
+}
+
+.role-perm__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.role-perm__table th,
+.role-perm__table td {
+  border-bottom: 1px solid var(--color-light-gray-1);
+  border-right: 1px solid var(--color-light-gray-1);
+  padding: 14px 16px;
+  text-align: center;
+  vertical-align: middle;
+}
+
+.role-perm__table th:last-child,
+.role-perm__table td:last-child {
+  border-right: none;
+}
+
+.role-perm__table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.role-perm__th-module,
+.role-perm__module {
+  text-align: left;
+  min-width: 220px;
+}
+
+.role-perm__th-action {
+  min-width: 110px;
+}
+
+.role-perm__module-cell {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--color-dark-navy);
+  font-weight: 500;
+}
+
+.role-perm__module-cell--group {
+  font-weight: 700;
+}
+
+.role-perm__module-cell--child {
+  padding-left: 28px;
+  font-weight: 500;
+  color: var(--color-gray-blue);
+}
+
+.role-perm__group-row td {
+  background: var(--color-off-white);
+}
+
+.role-perm__child-row td {
+  background: var(--color-white);
+}
+
+.role-perm__cell--group {
+  background: var(--color-off-white);
+}
+
+.role-perm__checkbox input:indeterminate + .role-perm__checkbox-box {
+  background: var(--color-dark-navy);
+  border-color: var(--color-dark-navy);
+}
+
+.role-perm__checkbox input:indeterminate + .role-perm__checkbox-box::after {
+  content: '';
+  position: absolute;
+  left: 3px;
+  top: 7px;
+  width: 10px;
+  height: 2px;
+  background: var(--color-white);
+  border: none;
+  transform: none;
+}
+
+.role-perm__col-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  font-weight: 600;
+  color: var(--color-dark-navy);
+  cursor: pointer;
+}
+
+.role-perm__col-toggle:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.role-perm__col-toggle-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--color-dark-navy);
+  color: var(--color-white);
+  font-size: 14px;
+  line-height: 1;
+}
+
+.role-perm__col-toggle--checked .role-perm__col-toggle-icon {
+  background: var(--color-primary);
+}
+
+.role-perm__checkbox {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.role-perm__checkbox--disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.role-perm__checkbox input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.role-perm__checkbox-box {
+  width: 18px;
+  height: 18px;
+  border: 1.5px solid #c5c9d0;
+  border-radius: 3px;
+  background: var(--color-white);
+  position: relative;
+}
+
+.role-perm__checkbox input:checked + .role-perm__checkbox-box {
+  background: var(--color-dark-navy);
+  border-color: var(--color-dark-navy);
+}
+
+.role-perm__checkbox input:checked + .role-perm__checkbox-box::after {
+  content: '';
+  position: absolute;
+  left: 5px;
+  top: 2px;
+  width: 5px;
+  height: 9px;
+  border: solid var(--color-white);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+.role-perm__na {
+  display: inline-block;
+  width: 18px;
+  height: 18px;
+}
+
+.role-perm__cell {
+  background: var(--color-white);
+}

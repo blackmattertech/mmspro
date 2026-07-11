@@ -1,0 +1,26 @@
+.role-editor {
+  width: 100%;
+  max-width: none;
+}
+
+.role-modal__form {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.role-modal__top {
+  display: grid;
+  gap: 16px;
+}
+
+.role-modal__permissions-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--color-dark-navy);
+  margin-bottom: 12px;
+}
+
+.role-modal__permissions {
+  padding-top: 4px;
+}

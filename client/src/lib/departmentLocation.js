@@ -10,6 +10,17 @@ export function employeeMatchesDepartmentLocation(employeeLocationId, department
   return employeeLocationId === department.location_id
 }
 
+export function employeesForLocationHead(employees, locationId, currentHeadId = '') {
+  if (!locationId) return []
+  const active = employees.filter((e) => e.is_active !== false)
+  let filtered = active.filter((e) => e.location_id === locationId)
+  if (currentHeadId && !filtered.some((e) => e.id === currentHeadId)) {
+    const current = active.find((e) => e.id === currentHeadId)
+    if (current) filtered = [current, ...filtered]
+  }
+  return filtered
+}
+
 export function employeesForDepartmentHead(employees, locationScope, currentHeadId = '') {
   const active = employees.filter((e) => e.is_active !== false)
   let filtered

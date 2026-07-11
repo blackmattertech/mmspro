@@ -1,7 +1,11 @@
 import { Router } from 'express'
 import { verifyAuth } from '../../middleware/auth.js'
 import { requireOrgAccess, assertOrgOwnership } from '../../middleware/orgAccess.js'
-import { requireOrgRole } from '../../middleware/orgRole.js'
+import {
+  requireModulePermission,
+  requireAnyModulePermission,
+  loadOrgPermissions,
+} from '../../middleware/modulePermission.js'
 import { supabaseAdmin } from '../../services/supabase.js'
 import { provisionEmployeeLogin, disableEmployeeLogin } from '../../lib/provisionEmployeeLogin.js'
 import { validatePostalCode, validatePhoneE164, normalizePhoneE164 } from '../../lib/contactValidation.js'
@@ -12,9 +16,68 @@ import {
   assertLoginSlotAvailable,
   getOrgLimitsSummary,
 } from '../../lib/orgLimits.js'
+import { getScopedLocationId, hasModulePermission } from '../../lib/orgPermissions.js'
+import { canManageOrg } from '../../lib/accountRoles.js'
 
 const router = Router()
-const canManage = requireOrgRole('owner', 'admin')
+
+const canReadCompany = requireAnyModulePermission([
+  ['company', 'read'],
+  ['locations', 'read'],
+  ['departments', 'read'],
+  ['designations', 'read'],
+  ['employees', 'read'],
+  ['employees', 'create'],
+  ['employees', 'update'],
+  ['assets', 'read'],
+  ['work_orders', 'read'],
+])
+const canUpdateCompany = requireModulePermission('company', 'update')
+
+const canReadLocations = requireAnyModulePermission([
+  ['locations', 'read'],
+  ['employees', 'read'],
+  ['employees', 'create'],
+  ['work_orders', 'read'],
+  ['work_orders', 'create'],
+])
+const canCreateLocations = requireModulePermission('locations', 'create')
+const canUpdateLocations = requireModulePermission('locations', 'update')
+const canDeleteLocations = requireModulePermission('locations', 'delete')
+
+const canReadDepartments = requireAnyModulePermission([
+  ['departments', 'read'],
+  ['employees', 'read'],
+  ['employees', 'create'],
+  ['work_orders', 'read'],
+  ['work_orders', 'create'],
+])
+const canCreateDepartments = requireModulePermission('departments', 'create')
+const canUpdateDepartments = requireModulePermission('departments', 'update')
+const canDeleteDepartments = requireModulePermission('departments', 'delete')
+
+const canReadDesignations = requireAnyModulePermission([
+  ['designations', 'read'],
+  ['employees', 'read'],
+  ['employees', 'create'],
+])
+const canCreateDesignations = requireModulePermission('designations', 'create')
+const canUpdateDesignations = requireModulePermission('designations', 'update')
+const canDeleteDesignations = requireModulePermission('designations', 'delete')
+
+const canListEmployees = requireAnyModulePermission([
+  ['employees', 'read'],
+  ['employees', 'create'],
+  ['employees', 'update'],
+  ['work_orders', 'read'],
+  ['work_orders', 'create'],
+  ['roles_access', 'read'],
+  ['roles_access', 'create'],
+  ['roles_access', 'update'],
+])
+const canCreateEmployees = requireModulePermission('employees', 'create')
+const canUpdateEmployees = requireModulePermission('employees', 'update')
+const canDeleteEmployees = requireModulePermission('employees', 'delete')
 
 const ORG_SELECT = `
   id, name, slug, plan, is_active,
@@ -24,7 +87,17 @@ const ORG_SELECT = `
   created_at, updated_at
 `
 
-router.use(verifyAuth, requireOrgAccess)
+router.use(verifyAuth, requireOrgAccess, loadOrgPermissions)
+
+function parsePagination(query, { defaultLimit = 50, maxLimit = 200 } = {}) {
+  const rawLimit = Number(query.limit)
+  const rawOffset = Number(query.offset)
+  const limit = Number.isFinite(rawLimit)
+    ? Math.max(1, Math.min(maxLimit, rawLimit))
+    : defaultLimit
+  const offset = Number.isFinite(rawOffset) ? Math.max(0, rawOffset) : 0
+  return { limit, offset }
+}
 
 router.get('/geocode', async (req, res) => {
   const q = req.query.q?.trim()
@@ -58,7 +131,7 @@ async function attachLogoSignedUrl(org) {
   return org
 }
 
-router.get('/', async (req, res) => {
+router.get('/', canReadCompany, async (req, res) => {
   const { data, error } = await supabaseAdmin
     .from('organizations')
     .select(ORG_SELECT)
@@ -71,7 +144,7 @@ router.get('/', async (req, res) => {
   res.json({ ...withLogo, limits, usage })
 })
 
-router.patch('/', canManage, async (req, res) => {
+router.patch('/', canUpdateCompany, async (req, res) => {
   const allowed = [
     'name', 'email', 'phone', 'website',
     'address_line1', 'address_line2', 'city', 'state', 'postal_code', 'country',
@@ -134,19 +207,62 @@ router.patch('/', canManage, async (req, res) => {
 
 // ── Locations ──
 
-router.get('/locations', async (req, res) => {
-  const { data, error } = await supabaseAdmin
+const LOCATION_SELECT = `
+  *,
+  head_employee:head_employee_id ( id, emp_id, name, photo_url )
+`
+
+async function attachLocationHeadPhoto(location) {
+  if (!location) return location
+  let result = { ...location }
+  if (location.head_employee) {
+    result.head_employee = await attachEmployeePhotoUrl(location.head_employee)
+  }
+  return result
+}
+
+async function validateLocationHead(orgId, locationId, headEmployeeId) {
+  if (!headEmployeeId) return
+
+  const { data: emp, error } = await supabaseAdmin
+    .from('org_employees')
+    .select('id, location_id, is_active')
+    .eq('id', headEmployeeId)
+    .eq('org_id', orgId)
+    .maybeSingle()
+
+  if (error) throw error
+  if (!emp || emp.is_active === false) throw new Error('Invalid location head')
+  if (emp.location_id !== locationId) {
+    throw new Error('Location head must be an employee at this location')
+  }
+}
+
+router.get('/locations', canReadLocations, async (req, res) => {
+  const { limit, offset } = parsePagination(req.query)
+  let query = supabaseAdmin
     .from('org_locations')
-    .select('*')
+    .select(LOCATION_SELECT)
     .eq('org_id', req.userProfile.org_id)
     .order('is_primary', { ascending: false })
     .order('name')
+    .range(offset, offset + limit - 1)
+
+  const scopedLocationId = getScopedLocationId(req.orgPermissions)
+  const forAssignment = req.query.for_assignment === '1'
+    && hasModulePermission(req.orgPermissions, 'work_orders', 'create')
+  if (scopedLocationId && !forAssignment) {
+    query = query.eq('id', scopedLocationId)
+  }
+
+  const { data, error } = await query
 
   if (error) return res.status(500).json({ error: error.message })
-  res.json(data || [])
+  const withHeads = await Promise.all((data || []).map(attachLocationHeadPhoto))
+  res.json(withHeads)
 })
 
-router.post('/locations', canManage, async (req, res) => {
+router.post('/locations', canCreateLocations, async (req, res) => {
   const { name, code, address_line1, address_line2, city, state, postal_code, country, is_primary } = req.body
 
   if (!name?.trim() || !code?.trim()) {
@@ -197,7 +313,7 @@ router.post('/locations', canManage, async (req, res) => {
   res.status(201).json(data)
 })
 
-router.patch('/locations/:id', canManage, assertOrgOwnership('org_locations'), async (req, res) => {
+router.patch('/locations/:id', canUpdateLocations, assertOrgOwnership('org_locations'), async (req, res) => {
   const orgId = req.userProfile.org_id
 
   const { data: currentLocation, error: currentLocationError } = await supabaseAdmin
@@ -223,8 +339,20 @@ router.patch('/locations/:id', canManage, assertOrgOwnership('org_locations'), a
     }
   }
 
+  if (req.body.head_employee_id !== undefined) {
+    updates.head_employee_id = req.body.head_employee_id || null
+  }
+
   if (!Object.keys(updates).length) {
     return res.status(400).json({ error: 'No valid fields to update' })
+  }
+
+  if (updates.head_employee_id !== undefined) {
+    try {
+      await validateLocationHead(orgId, req.params.id, updates.head_employee_id)
+    } catch (err) {
+      return res.status(400).json({ error: err.message })
+    }
   }
 
   if (updates.is_active === true) {
@@ -270,7 +398,7 @@ router.patch('/locations/:id', canManage, assertOrgOwnership('org_locations'), a
     .update(updates)
     .eq('id', req.params.id)
     .eq('org_id', orgId)
-    .select()
+    .select(LOCATION_SELECT)
     .single()
 
   if (error) {
@@ -278,27 +406,27 @@ router.patch('/locations/:id', canManage, assertOrgOwnership('org_locations'), a
     return res.status(500).json({ error: error.message })
   }
 
-  res.json(data)
+  res.json(await attachLocationHeadPhoto(data))
 })
 
-router.delete('/locations/:id', canManage, assertOrgOwnership('org_locations'), async (req, res) => {
+router.delete('/locations/:id', canDeleteLocations, assertOrgOwnership('org_locations'), async (req, res) => {
   const { data, error } = await supabaseAdmin
     .from('org_locations')
     .update({ is_active: false, updated_at: new Date().toISOString() })
     .eq('id', req.params.id)
     .eq('org_id', req.userProfile.org_id)
-    .select()
+    .select(LOCATION_SELECT)
     .single()
 
   if (error) return res.status(500).json({ error: error.message })
-  res.json(data)
+  res.json(await attachLocationHeadPhoto(data))
 })
 
 // ── Departments ──
 
 const DEPARTMENT_SELECT = `
   *,
-  org_locations ( id, name, code ),
+  org_locations!location_id ( id, name, code ),
   head_employee:head_employee_id ( id, emp_id, name, photo_url ),
   department_location_heads (
     id,
@@ -417,15 +545,19 @@ async function getDepartmentById(orgId, id) {
   return attachDepartmentHeadData(data)
 }
 
-router.get('/departments', async (req, res) => {
+router.get('/departments', canReadDepartments, async (req, res) => {
+  const { limit, offset } = parsePagination(req.query)
   let query = supabaseAdmin
     .from('departments')
     .select(DEPARTMENT_SELECT)
     .eq('org_id', req.userProfile.org_id)
     .order('name')
+    .range(offset, offset + limit - 1)
 
-  if (req.query.location_id) {
-    query = query.or(`location_id.eq.${req.query.location_id},all_locations.eq.true`)
+  const scopedLocationId = getScopedLocationId(req.orgPermissions)
+  const locationFilter = req.query.location_id || scopedLocationId
+  if (locationFilter) {
+    query = query.or(`location_id.eq.${locationFilter},all_locations.eq.true`)
   }
 
   const { data, error } = await query
@@ -436,7 +568,7 @@ router.get('/departments', async (req, res) => {
   res.json(withHeadPhotos)
 })
 
-router.post('/departments', canManage, async (req, res) => {
+router.post('/departments', canCreateDepartments, async (req, res) => {
   const {
     name, code, description, location_id, parent_id, all_locations,
     head_employee_id, per_location_heads, location_heads,
@@ -523,7 +655,7 @@ router.post('/departments', canManage, async (req, res) => {
   }
 })
 
-router.patch('/departments/:id', canManage, assertOrgOwnership('departments'), async (req, res) => {
+router.patch('/departments/:id', canUpdateDepartments, assertOrgOwnership('departments'), async (req, res) => {
   const orgId = req.userProfile.org_id
 
   const { data: currentDepartment, error: currentDepartmentError } = await supabaseAdmin
@@ -682,7 +814,7 @@ router.patch('/departments/:id', canManage, assertOrgOwnership('departments'), a
   }
 })
 
-router.delete('/departments/:id', canManage, assertOrgOwnership('departments'), async (req, res) => {
+router.delete('/departments/:id', canDeleteDepartments, assertOrgOwnership('departments'), async (req, res) => {
   const { data, error } = await supabaseAdmin
     .from('departments')
     .update({ is_active: false, updated_at: new Date().toISOString() })
@@ -846,16 +978,18 @@ async function moveDesignation(orgId, id, targetHierarchy) {
   return reordered
 }
 
-router.get('/designations', async (req, res) => {
+router.get('/designations', canReadDesignations, async (req, res) => {
+  const { limit, offset } = parsePagination(req.query)
   try {
     const data = await getDesignationsForOrg(req.userProfile.org_id, req.query.department_id)
-    res.json(data)
+    const pageData = data.slice(offset, offset + limit)
+    res.json(pageData)
   } catch (error) {
     res.status(500).json({ error: error.message })
   }
 })
 
-router.post('/designations', canManage, async (req, res) => {
+router.post('/designations', canCreateDesignations, async (req, res) => {
   const { name, description, all_departments, department_ids } = req.body
 
   if (!name?.trim()) {
@@ -906,7 +1040,7 @@ router.post('/designations', canManage, async (req, res) => {
   }
 })
 
-router.put('/designations/reorder', canManage, async (req, res) => {
+router.put('/designations/reorder', canUpdateDesignations, async (req, res) => {
   const { ids } = req.body
   const orgId = req.userProfile.org_id
 
@@ -933,7 +1067,7 @@ router.put('/designations/reorder', canManage, async (req, res) => {
   }
 })
 
-router.patch('/designations/:id', canManage, assertOrgOwnership('designations'), async (req, res) => {
+router.patch('/designations/:id', canUpdateDesignations, assertOrgOwnership('designations'), async (req, res) => {
   const orgId = req.userProfile.org_id
   const allowed = ['name', 'description', 'hierarchy', 'is_active', 'all_departments']
 
@@ -1009,7 +1143,7 @@ router.patch('/designations/:id', canManage, assertOrgOwnership('designations'),
   }
 })
 
-router.delete('/designations/:id', canManage, assertOrgOwnership('designations'), async (req, res) => {
+router.delete('/designations/:id', canDeleteDesignations, assertOrgOwnership('designations'), async (req, res) => {
   const orgId = req.userProfile.org_id
 
   const { data, error } = await supabaseAdmin
@@ -1038,10 +1172,11 @@ const EMPLOYEE_SELECT = `
   *,
   designations ( id, name ),
   departments!department_id ( id, name, code ),
-  org_locations ( id, name, code ),
+  org_locations!location_id ( id, name, code ),
   org_employee_emails ( id, email ),
   manager:manager_id ( id, emp_id, name ),
-  headed_departments:departments!head_employee_id ( id, name, code )
+  headed_departments:departments!head_employee_id ( id, name, code ),
+  access_role:access_role_id ( id, name )
 `
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
@@ -1154,6 +1289,78 @@ async function attachEmployeePhotoUrl(employee) {
   return employee
 }
 
+/** Merge per-location department heads and location-head flags onto employee rows. */
+async function attachEmployeeHeadMeta(orgId, employees) {
+  const list = (Array.isArray(employees) ? employees : [employees]).filter(Boolean)
+  if (!list.length) return employees
+
+  const ids = list.map((employee) => employee.id).filter(Boolean)
+  if (!ids.length) return employees
+
+  const [
+    { data: locationDeptHeads, error: locationDeptError },
+    { data: headedLocations, error: headedLocationsError },
+  ] = await Promise.all([
+    supabaseAdmin
+      .from('department_location_heads')
+      .select('head_employee_id, department_id, departments:department_id ( id, name, code )')
+      .eq('org_id', orgId)
+      .in('head_employee_id', ids),
+    supabaseAdmin
+      .from('org_locations')
+      .select('id, name, code, head_employee_id')
+      .eq('org_id', orgId)
+      .in('head_employee_id', ids),
+  ])
+
+  if (locationDeptError) throw locationDeptError
+  if (headedLocationsError) throw headedLocationsError
+
+  const headedDeptsByEmployee = new Map()
+  for (const row of locationDeptHeads || []) {
+    if (!row?.departments) continue
+    const existing = headedDeptsByEmployee.get(row.head_employee_id) || []
+    if (!existing.some((dept) => dept.id === row.departments.id)) {
+      existing.push(row.departments)
+    }
+    headedDeptsByEmployee.set(row.head_employee_id, existing)
+  }
+
+  const headedLocationsByEmployee = new Map()
+  for (const location of headedLocations || []) {
+    const existing = headedLocationsByEmployee.get(location.head_employee_id) || []
+    existing.push({ id: location.id, name: location.name, code: location.code })
+    headedLocationsByEmployee.set(location.head_employee_id, existing)
+  }
+
+  const enriched = list.map((employee) => {
+    const fromLocationHeads = headedDeptsByEmployee.get(employee.id) || []
+    const mergedDepartments = [...(employee.headed_departments || [])]
+    for (const dept of fromLocationHeads) {
+      if (!mergedDepartments.some((existing) => existing.id === dept.id)) {
+        mergedDepartments.push(dept)
+      }
+    }
+    const locations = headedLocationsByEmployee.get(employee.id) || []
+    const accessRoleName = employee.access_role?.name?.trim().toLowerCase() || ''
+    return {
+      ...employee,
+      headed_departments: mergedDepartments,
+      headed_locations: locations,
+      is_location_head: locations.length > 0 || accessRoleName === 'location head',
+    }
+  })
+
+  return Array.isArray(employees) ? enriched : enriched[0]
+}
+
+async function decorateEmployees(orgId, employees) {
+  const withPhotos = Array.isArray(employees)
+    ? await Promise.all(employees.map(attachEmployeePhotoUrl))
+    : await attachEmployeePhotoUrl(employees)
+  return attachEmployeeHeadMeta(orgId, withPhotos)
+}
+
 async function getEmployeeById(orgId, id) {
   const { data, error } = await supabaseAdmin
     .from('org_employees')
@@ -1163,7 +1370,7 @@ async function getEmployeeById(orgId, id) {
     .single()
 
   if (error) throw error
-  return attachEmployeePhotoUrl(data)
+  return decorateEmployees(orgId, data)
 }
 
 async function getOrgName(orgId) {
@@ -1181,6 +1388,7 @@ async function handleEmployeeLoginAccess(orgId, employeeId, {
   employeeName,
   wasLoginRequired,
   emailChanged,
+  forceEmail = false,
 }) {
   if (!loginRequired) {
     await disableEmployeeLogin(employeeId, orgId)
@@ -1191,7 +1399,21 @@ async function handleEmployeeLoginAccess(orgId, employeeId, {
     throw new Error('Email is required when login is enabled')
   }
 
-  const shouldSendEmail = !wasLoginRequired || emailChanged
+  const { data: employeeRow, error: employeeLookupError } = await supabaseAdmin
+    .from('org_employees')
+    .select('profile_id, login_required')
+    .eq('id', employeeId)
+    .eq('org_id', orgId)
+    .maybeSingle()
+
+  if (employeeLookupError) throw employeeLookupError
+
+  const needsProvision = !employeeRow?.profile_id
+  // Always email when login is turned back on (disable → enable), email changes,
+  // first-time provision, or an explicit force (e.g. employee reactivated).
+  const isLoginReEnable = Boolean(loginRequired) && !wasLoginRequired
+  const shouldSendEmail = forceEmail || isLoginReEnable || emailChanged || needsProvision
+
   if (!shouldSendEmail && wasLoginRequired) {
     await supabaseAdmin
       .from('org_employees')
@@ -1212,8 +1434,8 @@ async function handleEmployeeLoginAccess(orgId, employeeId, {
   return result
 }
 
-async function validateEmployeeRefs(orgId, refs) {
-  const { designation_id, department_id, location_id, manager_id, employee_id } = refs
+async function validateEmployeeRefs(orgId, refs, actor = null) {
+  const { designation_id, department_id, location_id, manager_id, employee_id, access_role_id } = refs
 
   if (manager_id) {
     if (employee_id && manager_id === employee_id) {
@@ -1257,6 +1479,20 @@ async function validateEmployeeRefs(orgId, refs) {
       .maybeSingle()
     if (!data) throw new Error('Invalid designation')
   }
+
+  if (access_role_id) {
+    const { data } = await supabaseAdmin
+      .from('org_access_roles')
+      .select('id, created_by')
+      .eq('id', access_role_id)
+      .eq('org_id', orgId)
+      .maybeSingle()
+    if (!data) throw new Error('Invalid access role')
+    // Non-admins may only assign roles they created (admins see/assign all).
+    if (actor && !canManageOrg(actor.role) && data.created_by !== actor.id) {
+      throw new Error('You can only assign access roles you created')
+    }
+  }
 }
 
 async function validateDepartmentHead(orgId, headEmployeeId, department = null) {
@@ -1287,6 +1523,15 @@ async function validateDepartmentHead(orgId, headEmployeeId, department = null) 
 }
 
 async function syncEmployeeDepartmentHead(orgId, employeeId, departmentId, isDepartmentHead) {
+  const { data: employee, error: employeeError } = await supabaseAdmin
+    .from('org_employees')
+    .select('id, location_id, department_id')
+    .eq('id', employeeId)
+    .eq('org_id', orgId)
+    .single()
+
+  if (employeeError || !employee) throw new Error('Employee not found')
+
   if (isDepartmentHead) {
     if (!departmentId) {
       throw new Error('Select a department before assigning as department head')
@@ -1301,11 +1546,50 @@ async function syncEmployeeDepartmentHead(orgId, employeeId, departmentId, isDep
 
     if (deptError || !dept) throw new Error('Invalid department')
 
-    if (dept.per_location_heads) {
-      throw new Error('Assign department heads from the department form for all-location departments')
-    }
-
     await validateDepartmentHead(orgId, employeeId, dept)
+
+    if (dept.per_location_heads) {
+      if (!employee.location_id) {
+        throw new Error('Department head must have a location assigned')
+      }
+
+      const { error: clearSelfError } = await supabaseAdmin
+        .from('department_location_heads')
+        .delete()
+        .eq('org_id', orgId)
+        .eq('department_id', departmentId)
+        .eq('head_employee_id', employeeId)
+
+      if (clearSelfError) throw clearSelfError
+
+      const { error: clearLocationError } = await supabaseAdmin
+        .from('department_location_heads')
+        .delete()
+        .eq('org_id', orgId)
+        .eq('department_id', departmentId)
+        .eq('location_id', employee.location_id)
+
+      if (clearLocationError) throw clearLocationError
+
+      const { error: insertError } = await supabaseAdmin
+        .from('department_location_heads')
+        .insert({
+          org_id: orgId,
+          department_id: departmentId,
+          location_id: employee.location_id,
+          head_employee_id: employeeId,
+        })
+
+      if (insertError) throw insertError
+
+      await supabaseAdmin
+        .from('departments')
+        .update({ head_employee_id: null, updated_at: new Date().toISOString() })
+        .eq('org_id', orgId)
+        .eq('head_employee_id', employeeId)
+
+      return
+    }
 
     await supabaseAdmin
       .from('departments')
@@ -1333,34 +1617,58 @@ async function syncEmployeeDepartmentHead(orgId, employeeId, departmentId, isDep
     clearQuery = clearQuery.eq('id', departmentId)
   }
 
-  const { error } = await clearQuery
-  if (error) throw error
+  const { error: clearDeptError } = await clearQuery
+  if (clearDeptError) throw clearDeptError
+
+  let clearLocationHeads = supabaseAdmin
+    .from('department_location_heads')
+    .delete()
+    .eq('org_id', orgId)
+    .eq('head_employee_id', employeeId)
+
+  if (departmentId) {
+    clearLocationHeads = clearLocationHeads.eq('department_id', departmentId)
+  }
+
+  const { error: clearHeadsError } = await clearLocationHeads
+  if (clearHeadsError) throw clearHeadsError
 }
 
-router.get('/employees', async (req, res) => {
+router.get('/employees', canListEmployees, async (req, res) => {
+  const { limit, offset } = parsePagination(req.query)
   let query = supabaseAdmin
     .from('org_employees')
     .select(EMPLOYEE_SELECT)
     .eq('org_id', req.userProfile.org_id)
     .order('name')
+    .range(offset, offset + limit - 1)
 
   if (req.query.department_id) query = query.eq('department_id', req.query.department_id)
-  if (req.query.location_id) query = query.eq('location_id', req.query.location_id)
   if (req.query.designation_id) query = query.eq('designation_id', req.query.designation_id)
+
+  const scopedLocationId = getScopedLocationId(req.orgPermissions)
+  const forAssignment = req.query.for_assignment === '1'
+    && hasModulePermission(req.orgPermissions, 'work_orders', 'create')
+  if (scopedLocationId && !forAssignment) {
+    query = query.eq('location_id', scopedLocationId)
+  } else if (req.query.location_id) {
+    query = query.eq('location_id', req.query.location_id)
+  }
 
   const { data, error } = await query
 
   if (error) return res.status(500).json({ error: error.message })
 
-  const withPhotos = await Promise.all((data || []).map(attachEmployeePhotoUrl))
+  const withPhotos = await decorateEmployees(req.userProfile.org_id, data || [])
   res.json(withPhotos)
 })
 
-router.post('/employees', canManage, async (req, res) => {
+router.post('/employees', canCreateEmployees, async (req, res) => {
   const {
     emp_id, name, mobile, email,
     designation_id, department_id, location_id, photo_url,
     login_required, additional_emails, manager_id, is_department_head,
+    access_role_id,
   } = req.body
 
   if (!emp_id?.trim() || !name?.trim()) {
@@ -1373,10 +1681,19 @@ router.post('/employees', canManage, async (req, res) => {
 
   const orgId = req.userProfile.org_id
 
+  const scopedLocationId = getScopedLocationId(req.orgPermissions)
+  let resolvedLocationId = location_id || null
+  if (scopedLocationId) {
+    if (resolvedLocationId && resolvedLocationId !== scopedLocationId) {
+      return res.status(403).json({ error: 'You can only create employees at your location' })
+    }
+    resolvedLocationId = scopedLocationId
+  }
+
   try {
     await validateEmployeeRefs(orgId, {
-      designation_id, department_id, location_id, manager_id,
-    })
+      designation_id, department_id, location_id: resolvedLocationId, manager_id, access_role_id,
+    }, req.userProfile)
   } catch (err) {
     return res.status(400).json({ error: err.message })
   }
@@ -1414,10 +1731,12 @@ router.post('/employees', canManage, async (req, res) => {
       email: email?.trim() || null,
       designation_id: designation_id || null,
       department_id: department_id || null,
-      location_id: location_id || null,
+      location_id: resolvedLocationId || null,
       manager_id: manager_id || null,
+      access_role_id: access_role_id || null,
       photo_url: photo_url || null,
-      login_required: Boolean(login_required),
+      // Set true only after password email succeeds (see handleEmployeeLoginAccess).
+      login_required: false,
     })
     .select(EMPLOYEE_SELECT)
     .single()
@@ -1431,15 +1750,19 @@ router.post('/employees', canManage, async (req, res) => {
     if (additional_emails !== undefined) {
       await syncEmployeeEmails(orgId, data.id, additional_emails)
     }
+
+    let loginEmailSent = false
     if (login_required) {
-      await handleEmployeeLoginAccess(orgId, data.id, {
+      const loginResult = await handleEmployeeLoginAccess(orgId, data.id, {
         loginRequired: true,
         email: email?.trim(),
         employeeName: name.trim(),
         wasLoginRequired: false,
         emailChanged: true,
       })
+      loginEmailSent = Boolean(loginResult?.emailSent)
     }
+
     if (is_department_head !== undefined) {
       await syncEmployeeDepartmentHead(
         orgId,
@@ -1448,24 +1771,28 @@ router.post('/employees', canManage, async (req, res) => {
         Boolean(is_department_head),
       )
     }
+
     const withPhoto = await getEmployeeById(orgId, data.id)
-    res.status(201).json(withPhoto)
+    res.status(201).json({
+      ...withPhoto,
+      ...(login_required ? { login_email_sent: loginEmailSent } : {}),
+    })
   } catch (loginError) {
     res.status(400).json({ error: loginError.message })
   }
 })
 
-router.patch('/employees/:id', canManage, assertOrgOwnership('org_employees'), async (req, res) => {
+router.patch('/employees/:id', canUpdateEmployees, assertOrgOwnership('org_employees'), async (req, res) => {
   const orgId = req.userProfile.org_id
   const allowed = [
     'emp_id', 'name', 'mobile', 'email',
     'designation_id', 'department_id', 'location_id', 'manager_id',
-    'photo_url', 'is_active', 'login_required',
+    'photo_url', 'is_active', 'login_required', 'access_role_id',
   ]
 
   const { data: current, error: currentError } = await supabaseAdmin
     .from('org_employees')
-    .select('login_required, email, name, department_id, is_active')
+    .select('login_required, email, name, department_id, is_active, location_id')
     .eq('id', req.params.id)
     .eq('org_id', orgId)
     .single()
@@ -1478,6 +1805,14 @@ router.patch('/employees/:id', canManage, assertOrgOwnership('org_employees'), a
       if (typeof req.body[key] === 'string') updates[key] = req.body[key].trim()
       else updates[key] = req.body[key]
     }
+  }
+
+  const scopedLocationId = getScopedLocationId(req.orgPermissions)
+  if (scopedLocationId && current.location_id !== scopedLocationId) {
+    return res.status(403).json({ error: 'You can only update employees at your location' })
+  }
+  if (scopedLocationId && updates.location_id && updates.location_id !== scopedLocationId) {
+    return res.status(403).json({ error: 'You can only assign employees to your location' })
   }
 
   const loginRequired = req.body.login_required
@@ -1543,6 +1878,10 @@ router.patch('/employees/:id', canManage, assertOrgOwnership('org_employees'), a
     updates.manager_id = null
   }
 
+  if (updates.access_role_id === '') {
+    updates.access_role_id = null
+  }
+
   if (updates.mobile !== undefined) {
     const mobileError = validatePhoneE164(updates.mobile)
     if (mobileError) return res.status(400).json({ error: mobileError })
@@ -1555,8 +1894,9 @@ router.patch('/employees/:id', canManage, assertOrgOwnership('org_employees'), a
       department_id: updates.department_id,
       location_id: updates.location_id,
       manager_id: updates.manager_id,
+      access_role_id: updates.access_role_id,
       employee_id: req.params.id,
-    })
+    }, req.userProfile)
   } catch (err) {
     return res.status(400).json({ error: err.message })
   }
@@ -1589,19 +1929,43 @@ router.patch('/employees/:id', canManage, assertOrgOwnership('org_employees'), a
     if (hasAdditionalEmailsChange) {
       await syncEmployeeEmails(orgId, req.params.id, req.body.additional_emails)
     }
-    if (hasLoginChange) {
-      const nextEmail = (updates.email ?? current.email)?.trim()
-      const emailChanged = updates.email !== undefined
-        && updates.email?.trim().toLowerCase() !== current.email?.trim().toLowerCase()
 
-      await handleEmployeeLoginAccess(orgId, req.params.id, {
-        loginRequired: Boolean(loginRequired),
+    let loginEmailSent = false
+    const nextEmail = (updates.email ?? current.email)?.trim()
+    const nextName = (updates.name ?? current.name)?.trim()
+    const nextLoginRequired = hasLoginChange
+      ? Boolean(loginRequired)
+      : Boolean(current.login_required)
+
+    const emailChanged = updates.email !== undefined
+      && updates.email?.trim().toLowerCase() !== current.email?.trim().toLowerCase()
+
+    const isReactivating = updates.is_active === true && current.is_active === false
+
+    if (hasLoginChange) {
+      const loginResult = await handleEmployeeLoginAccess(orgId, req.params.id, {
+        loginRequired: nextLoginRequired,
         email: nextEmail,
-        employeeName: (updates.name ?? current.name)?.trim(),
+        employeeName: nextName,
         wasLoginRequired: Boolean(current.login_required),
         emailChanged,
+        // Disable → enable must always send a fresh password setup email.
+        forceEmail: Boolean(nextLoginRequired) && !current.login_required,
       })
+      loginEmailSent = Boolean(loginResult?.emailSent)
+    } else if (isReactivating && nextLoginRequired && nextEmail) {
+      // Active toggle off → on: resend login email when login is still required.
+      const loginResult = await handleEmployeeLoginAccess(orgId, req.params.id, {
+        loginRequired: true,
+        email: nextEmail,
+        employeeName: nextName,
+        wasLoginRequired: true,
+        emailChanged: false,
+        forceEmail: true,
+      })
+      loginEmailSent = Boolean(loginResult?.emailSent)
     }
+
     if (hasDepartmentHeadChange) {
       const nextDepartmentId = updates.department_id ?? current.department_id ?? null
       await syncEmployeeDepartmentHead(
@@ -1613,13 +1977,18 @@ router.patch('/employees/:id', canManage, assertOrgOwnership('org_employees'), a
     }
 
     const withPhoto = await getEmployeeById(orgId, req.params.id)
-    res.json(withPhoto)
+    res.json({
+      ...withPhoto,
+      ...((hasLoginChange && nextLoginRequired) || (isReactivating && loginEmailSent)
+        ? { login_email_sent: loginEmailSent }
+        : {}),
+    })
   } catch (loginError) {
     res.status(400).json({ error: loginError.message })
   }
 })
 
-router.delete('/employees/:id', canManage, assertOrgOwnership('org_employees'), async (req, res) => {
+router.delete('/employees/:id', canDeleteEmployees, assertOrgOwnership('org_employees'), async (req, res) => {
   const { data, error } = await supabaseAdmin
     .from('org_employees')
     .update({ is_active: false, updated_at: new Date().toISOString() })
@@ -1631,7 +2000,8 @@ router.delete('/employees/:id', canManage, assertOrgOwnership('org_employees'), 
   if (error) return res.status(500).json({ error: error.message })
 
   const withPhoto = await attachEmployeePhotoUrl(data)
-  res.json(withPhoto)
+  const decorated = await attachEmployeeHeadMeta(req.userProfile.org_id, withPhoto)
+  res.json(decorated)
 })
 
 export default router

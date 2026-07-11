@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { getLocations, createLocation, updateLocation, deleteLocation } from '../lib/api'
 
-export function useLocations() {
+export function useLocations({ forAssignment = false } = {}) {
   const [locations, setLocations] = useState([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -11,14 +11,14 @@ export function useLocations() {
     if (!silent) setLoading(true)
     setError(null)
     try {
-      const data = await getLocations()
+      const data = await getLocations({ forAssignment })
       setLocations(data)
     } catch (err) {
       setError(err.message)
     } finally {
       if (!silent) setLoading(false)
     }
-  }, [])
+  }, [forAssignment])
 
   useEffect(() => {
     load()

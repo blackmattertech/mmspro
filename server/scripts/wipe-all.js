@@ -102,8 +102,8 @@ async function main() {
   console.log('\nDone! Database is clean and ready.')
   console.log('\nNext steps:')
   console.log('  1. Sign up a new account via the app or Supabase Auth')
-  console.log("  2. Make yourself platform admin:")
-  console.log("     update public.profiles set role = 'admin' where email = 'your@email.com';")
+  console.log("  2. Make yourself Super Admin:")
+  console.log("     update public.profiles set role = 'super_admin' where email = 'your@email.com';")
 }
 
 main().catch((err) => {

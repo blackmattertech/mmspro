@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useOrg } from '../../hooks/useOrg'
 import { useManualWorkOrderForm } from '../../hooks/useManualWorkOrderForm'
 import { useWorkOrderToolbar } from '../../hooks/useWorkOrderToolbar'
+import { usePermissions } from '../../hooks/usePermissions'
 import { orgPath } from '../../config/navigation'
 import WorkOrderForm from '../../components/workorders/WorkOrderForm'
 import WorkOrderAssignmentCard from '../../components/workorders/WorkOrderAssignmentCard'
@@ -36,9 +37,11 @@ function WorkOrderSettingsIcon() {
 
 export default function ManualWorkOrderCreate() {
   const navigate = useNavigate()
-  const { org, orgRole, loading: orgLoading } = useOrg()
+  const { org, loading: orgLoading } = useOrg()
   const { setToolbar, clearToolbar } = useWorkOrderToolbar()
-  const canManage = orgRole === 'owner' || orgRole === 'admin'
+  const { canCreate, canUpdate } = usePermissions()
+  const canManage = canUpdate('work_orders_manual') || canUpdate('work_orders')
+  const canCreateWorkOrders = canCreate('work_orders_manual') || canCreate('work_orders')
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [settingsLoading, setSettingsLoading] = useState(false)
 
@@ -48,6 +51,9 @@ export default function ManualWorkOrderCreate() {
     values,
     assignedEmployeeIds,
     setAssignedEmployeeIds,
+    assignToDepartment,
+    setAssignToDepartment,
+    setDepartmentTarget,
     loading,
     saving,
     error,
@@ -113,7 +119,7 @@ export default function ManualWorkOrderCreate() {
           type="button"
           className="company-btn company-btn--secondary"
           onClick={() => handleSubmit('draft')}
-          disabled={saving}
+          disabled={saving || !canCreateWorkOrders}
         >
           {saving ? 'Saving...' : 'Save as Draft'}
         </button>
@@ -128,7 +134,7 @@ export default function ManualWorkOrderCreate() {
       </>
     )
 
-    const toolbarRight = (
+    const toolbarRight = canCreateWorkOrders ? (
       <button
         type="button"
         className="company-btn company-btn--primary"
@@ -137,11 +143,12 @@ export default function ManualWorkOrderCreate() {
       >
         {saving ? 'Creating...' : 'Create Work Order'}
       </button>
-    )
+    ) : null
 
     setToolbar(toolbarLeft, toolbarRight)
     return clearToolbar
   }, [
+    canCreateWorkOrders,
     canManage,
     clearToolbar,
     goBack,
@@ -154,6 +161,14 @@ export default function ManualWorkOrderCreate() {
 
   if (orgLoading || loading) {
     return <div className="company-loading">Loading...</div>
+  }
+
+  if (!canCreateWorkOrders) {
+    return (
+      <div className="company-empty">
+        You do not have permission to create work orders.
+      </div>
+    )
   }
 
   return (
@@ -174,6 +189,9 @@ export default function ManualWorkOrderCreate() {
       <WorkOrderAssignmentCard
         value={assignedEmployeeIds}
         onChange={setAssignedEmployeeIds}
+        assignToDepartment={assignToDepartment}
+        onAssignToDepartmentChange={setAssignToDepartment}
+        onDepartmentTargetChange={setDepartmentTarget}
         disabled={saving}
       />
 

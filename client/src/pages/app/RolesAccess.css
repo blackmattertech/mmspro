@@ -1,0 +1,228 @@
+.roles-page {
+  min-height: 100vh;
+  background: var(--color-off-white);
+}
+
+.roles-page__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 24px 28px;
+  background: var(--color-white);
+  border-bottom: 1px solid var(--color-light-gray-1);
+}
+
+.roles-page__title {
+  font-size: 24px;
+  font-weight: 600;
+  color: var(--color-dark-navy);
+  margin-bottom: 4px;
+}
+
+.roles-page__subtitle {
+  font-size: 14px;
+  color: var(--color-gray-blue);
+}
+
+.roles-page__content {
+  padding: 24px 28px 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.roles-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 16px;
+}
+
+.role-card {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  min-height: 220px;
+  background: var(--color-white);
+  border: 2px solid transparent;
+  border-radius: 22px;
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+  text-align: center;
+  font-family: inherit;
+  overflow: visible;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+}
+
+.role-card:hover {
+  box-shadow: var(--shadow-md);
+  transform: translateY(-2px);
+}
+
+.role-card--selected {
+  border-color: var(--color-dark-navy);
+  box-shadow: 0 0 0 1px var(--color-dark-navy), var(--shadow-md);
+}
+
+.role-card__top {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 34%;
+  min-height: 68px;
+  padding: 16px 14px;
+  background: var(--color-white);
+  border-radius: 20px 20px 0 0;
+}
+
+.role-card__name {
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1.2;
+  color: #000;
+  letter-spacing: -0.02em;
+}
+
+.role-card__bottom {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  flex: 1;
+  padding: 18px 14px 22px;
+  background: var(--color-primary);
+  color: var(--color-white);
+  border-radius: 0 0 20px 20px;
+}
+
+.role-card__location {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.2;
+  color: var(--color-white);
+}
+
+.role-card__pin {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+.role-card__avatars {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 48px;
+  position: relative;
+  z-index: 1;
+}
+
+.role-card__avatar {
+  position: relative;
+  display: inline-flex;
+  margin-left: -10px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px var(--color-primary);
+}
+
+.role-card__avatar:first-child {
+  margin-left: 0;
+}
+
+.role-card__avatar:hover {
+  z-index: 2;
+}
+
+.role-card__avatar .company-employee-avatar {
+  width: 48px;
+  height: 48px;
+  font-size: 16px;
+  background: var(--color-white);
+  color: var(--color-primary);
+}
+
+.role-card__avatar::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 8px);
+  transform: translateX(-50%) translateY(4px);
+  padding: 5px 8px;
+  border-radius: 6px;
+  background: var(--color-dark-navy);
+  color: var(--color-white);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.2;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.15s ease, transform 0.15s ease, visibility 0.15s ease;
+  z-index: 5;
+  box-shadow: var(--shadow-sm);
+}
+
+.role-card__avatar:hover::after,
+.role-card__avatar:focus-within::after {
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(-50%) translateY(0);
+}
+
+.role-card__more {
+  margin-left: 10px;
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--color-white);
+  letter-spacing: -0.03em;
+}
+
+.role-card__empty {
+  font-size: 12px;
+  font-weight: 500;
+  opacity: 0.85;
+}
+
+.roles-detail__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
+.roles-detail__title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--color-dark-navy);
+}
+
+.roles-detail__desc {
+  font-size: 13px;
+  color: var(--color-gray-blue);
+  margin-top: 4px;
+}
+
+.roles-detail__actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.roles-detail__perm-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--color-light-gray-1);
+}

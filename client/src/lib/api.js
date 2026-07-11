@@ -21,32 +21,55 @@ function resolveApiUrl() {
 }
 
 const API_URL = resolveApiUrl()
+let cachedAccessToken = null
+let cachedTokenExpiresAt = 0
+
+export function syncAccessToken(session) {
+  cachedAccessToken = session?.access_token || null
+  cachedTokenExpiresAt = session?.expires_at || 0
+}
+
+export function clearAccessTokenCache() {
+  cachedAccessToken = null
+  cachedTokenExpiresAt = 0
+}
+
+async function getAccessToken({ forceRefresh = false } = {}) {
+  if (forceRefresh) clearAccessTokenCache()
+
+  const now = Math.floor(Date.now() / 1000)
+  if (cachedAccessToken && cachedTokenExpiresAt - now > 30) {
+    return cachedAccessToken
+  }
+  const session = supabase ? (await supabase.auth.getSession()).data.session : null
+  syncAccessToken(session)
+  return cachedAccessToken
+}
 
 export async function apiFetch(path, options = {}) {
-  const session = supabase ? (await supabase.auth.getSession()).data.session : null
-  const token = session?.access_token
+  const { _retried, ...fetchOptions } = options
+  const token = await getAccessToken({ forceRefresh: Boolean(_retried) })
 
   const res = await fetch(`${API_URL}${path}`, {
-    ...options,
+    ...fetchOptions,
     headers: {
       'Content-Type': 'application/json',
       ...(token && { Authorization: `Bearer ${token}` }),
-      ...options.headers,
+      ...fetchOptions.headers,
     },
   })
 
   const data = await res.json().catch(() => ({}))
   if (!res.ok) {
-    throw new Error(data.error || `Request failed (${res.status})`)
+    const message = data.error || `Request failed (${res.status})`
+    // Stale module-level token after logout/login — refresh once from session.
+    if (res.status === 401 && !_retried && token) {
+      clearAccessTokenCache()
+      return apiFetch(path, { ...fetchOptions, _retried: true })
+    }
+    throw new Error(message)
   }
   return data
-}
-
-export function onboardOrg(orgName) {
-  return apiFetch('/api/auth/onboard', {
-    method: 'POST',
-    body: JSON.stringify({ orgName }),
-  })
 }
 
 export function requestPasswordReset(email) {
@@ -72,8 +95,9 @@ export function updateCompanyDetails(data) {
   return companyFetch('', { method: 'PATCH', body: JSON.stringify(data) })
 }
 
-export function getLocations() {
-  return companyFetch('/locations')
+export function getLocations({ forAssignment = false } = {}) {
+  const qs = forAssignment ? '?for_assignment=1' : ''
+  return companyFetch(`/locations${qs}`)
 }
 
 export function createLocation(data) {
@@ -134,8 +158,8 @@ export function getAdminStats() {
   return adminFetch('/stats')
 }
 
-export function getOrganizations() {
-  return adminFetch('/organizations')
+export function getOrganizations({ limit = 50, offset = 0 } = {}) {
+  return adminFetch(`/organizations?limit=${limit}&offset=${offset}`)
 }
 
 export function createOrganization(data) {
@@ -152,6 +176,6 @@ export function updateOrganization(id, data) {
   })
 }
 
-export function getAdminUsers() {
-  return adminFetch('/users')
+export function getAdminUsers({ limit = 50, offset = 0 } = {}) {
+  return adminFetch(`/users?limit=${limit}&offset=${offset}`)
 }

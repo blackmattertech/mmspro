@@ -1,7 +1,10 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useBackdropClose } from '../../hooks/useBackdropClose'
 import AddressAutocomplete from '../shared/AddressAutocomplete'
 import { validatePostalCode } from '../../lib/validation'
+import { employeesForLocationHead } from '../../lib/departmentLocation'
+import EmployeeSelect from './EmployeeSelect'
+import GooToggle from '../ui/GooToggle'
 import './CompanyShared.css'
 
 const EMPTY = {
@@ -14,12 +17,25 @@ const EMPTY = {
   postal_code: '',
   country: '',
   is_primary: false,
+  head_employee_id: '',
 }
 
-export default function LocationModal({ location, saving, onClose, onSave, nested = false }) {
+export default function LocationModal({
+  location,
+  employees = [],
+  saving,
+  onClose,
+  onSave,
+  nested = false,
+}) {
   const [form, setForm] = useState(EMPTY)
   const [error, setError] = useState(null)
   const handleBackdropClick = useBackdropClose(onClose)
+
+  const headOptions = useMemo(
+    () => employeesForLocationHead(employees, location?.id, form.head_employee_id),
+    [employees, location?.id, form.head_employee_id],
+  )
 
   useEffect(() => {
     if (location) {
@@ -33,11 +49,20 @@ export default function LocationModal({ location, saving, onClose, onSave, neste
         postal_code: location.postal_code || '',
         country: location.country || '',
         is_primary: Boolean(location.is_primary),
+        head_employee_id: location.head_employee_id || '',
       })
     } else {
       setForm(EMPTY)
     }
   }, [location])
+
+  useEffect(() => {
+    if (!location?.id || !form.head_employee_id) return
+    const stillValid = headOptions.some((emp) => emp.id === form.head_employee_id)
+    if (!stillValid) {
+      setForm((prev) => ({ ...prev, head_employee_id: '' }))
+    }
+  }, [headOptions, form.head_employee_id, location?.id])
 
   const handleAddressSelect = (address) => {
     setForm((prev) => ({
@@ -66,7 +91,13 @@ export default function LocationModal({ location, saving, onClose, onSave, neste
     }
 
     try {
-      await onSave(form)
+      const payload = { ...form }
+      if (!location) {
+        delete payload.head_employee_id
+      } else {
+        payload.head_employee_id = form.head_employee_id || null
+      }
+      await onSave(payload)
     } catch (err) {
       setError(err.message)
     }
@@ -126,10 +157,33 @@ export default function LocationModal({ location, saving, onClose, onSave, neste
               <input className="company-form__input" value={form.country} onChange={(e) => setForm({ ...form, country: e.target.value })} />
             </label>
           </div>
-          <label className="company-checkbox">
-            <input type="checkbox" checked={form.is_primary} onChange={(e) => setForm({ ...form, is_primary: e.target.checked })} />
-            <span>Primary location</span>
-          </label>
+          <div className="company-employee-photo__login">
+            <span className="company-employee-photo__login-label">Primary location</span>
+            <GooToggle
+              checked={form.is_primary}
+              onChange={(checked) => setForm({ ...form, is_primary: checked })}
+              ariaLabel="Primary location"
+            />
+          </div>
+          {location ? (
+            <EmployeeSelect
+              label="Location head"
+              value={form.head_employee_id}
+              onChange={(head_employee_id) => setForm({ ...form, head_employee_id })}
+              options={headOptions}
+              placeholder="None"
+              disabled={!headOptions.length}
+            />
+          ) : (
+            <p className="company-modal__hint">
+              Save the location first, assign employees to it, then set a location head when editing.
+            </p>
+          )}
+          {location && !headOptions.length && (
+            <p className="company-modal__hint">
+              No employees at this location yet. Assign employees first, then choose a location head.
+            </p>
+          )}
           {error && <p className="company-alert">{error}</p>}
           <div className="company-modal__actions">
             <button type="button" className="company-btn company-btn--secondary" onClick={onClose}>Cancel</button>

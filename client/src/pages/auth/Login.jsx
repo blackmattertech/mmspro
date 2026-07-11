@@ -2,8 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
 import { supabase } from '../../lib/supabase'
-import { onboardOrg, requestPasswordReset } from '../../lib/api'
-import { generateOrgSlug } from '../../lib/slug'
+import { requestPasswordReset } from '../../lib/api'
 import './Login.css'
 
 const SLOGAN_ICON = (
@@ -66,14 +65,13 @@ function EyeIcon({ open }) {
 export default function Login() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [companyName, setCompanyName] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [rememberMe, setRememberMe] = useState(true)
   const [formMode, setFormMode] = useState('signin')
   const [error, setError] = useState(null)
   const [success, setSuccess] = useState(null)
   const [loading, setLoading] = useState(false)
-  const { signIn, signUp } = useAuth()
+  const { signIn } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
 
@@ -88,15 +86,7 @@ export default function Login() {
     }
   }, [location, navigate])
 
-  const isSignUp = formMode === 'signup'
   const isForgot = formMode === 'forgot'
-
-  const switchMode = () => {
-    setFormMode((prev) => (prev === 'signup' ? 'signin' : 'signup'))
-    setError(null)
-    setSuccess(null)
-    setCompanyName('')
-  }
 
   const openForgotMode = (e) => {
     e.preventDefault()
@@ -112,7 +102,9 @@ export default function Login() {
   }
 
   const getPostAuthPath = async (userId) => {
-    if (!supabase) return '/onboard'
+    if (!supabase) {
+      throw new Error('Authentication is not configured.')
+    }
 
     const { data: profile } = await supabase
       .from('profiles')
@@ -120,7 +112,7 @@ export default function Login() {
       .eq('id', userId)
       .maybeSingle()
 
-    if (profile?.role === 'admin') {
+    if (profile?.role === 'super_admin') {
       return '/admin/dashboard'
     }
 
@@ -130,7 +122,8 @@ export default function Login() {
       }
       return `/${profile.organizations.slug}/dashboard`
     }
-    return '/onboard'
+
+    throw new Error('No organization is linked to your account. Contact your administrator.')
   }
 
   const handleSubmit = async (e) => {
@@ -150,35 +143,6 @@ export default function Login() {
       return
     }
 
-    if (isSignUp) {
-      if (!companyName.trim()) {
-        setLoading(false)
-        return setError('Company name is required')
-      }
-
-      const { data, error: signUpError } = await signUp(email, password)
-      if (signUpError) {
-        setLoading(false)
-        return setError(signUpError.message)
-      }
-
-      if (data.session) {
-        try {
-          const { slug } = await onboardOrg(companyName.trim())
-          navigate(`/${slug}/dashboard`, { replace: true })
-        } catch (err) {
-          setError(err.message)
-        }
-        setLoading(false)
-        return
-      }
-
-      setLoading(false)
-      setSuccess('Account created. Check your email to confirm, then sign in.')
-      setFormMode('signin')
-      return
-    }
-
     const { data, error: signInError } = await signIn(email, password)
     if (signInError) {
       setLoading(false)
@@ -194,9 +158,6 @@ export default function Login() {
     setLoading(false)
     navigate(path, { replace: true })
   }
-
-  const previewSlug = isSignUp && companyName.trim() ? generateOrgSlug(companyName) : ''
-
   return (
     <div className="login-page">
       <section className="login-hero">
@@ -260,13 +221,11 @@ export default function Login() {
 
           <div className="login-card__header">
             <h2 className="login-card__title">
-              {isForgot ? 'Forgot Password?' : isSignUp ? 'Create Account' : 'Welcome Back!'}
+              {isForgot ? 'Forgot Password?' : 'Welcome Back!'}
             </h2>
             <p className="login-card__subtitle">
               {isForgot ? (
                 <>Enter your username and we&apos;ll send you a reset link.</>
-              ) : isSignUp ? (
-                <>Register to get started with <span className="text-primary">MMS PRO</span></>
               ) : (
                 <>Sign in to continue to <span className="text-primary">MMS PRO</span></>
               )}
@@ -299,29 +258,6 @@ export default function Login() {
               </div>
             </div>
 
-            {isSignUp && (
-              <div className="form-field">
-                <label htmlFor="companyName" className="form-field__label">Company Name</label>
-                <div className="form-field__input-wrap">
-                  <input
-                    id="companyName"
-                    type="text"
-                    className="form-field__input"
-                    placeholder="e.g. BlackMatter Technologies"
-                    value={companyName}
-                    onChange={(e) => setCompanyName(e.target.value)}
-                    required
-                    autoComplete="organization"
-                  />
-                </div>
-                {previewSlug && (
-                  <p className="login-card__subtitle" style={{ marginTop: '0.5rem', fontSize: '0.85rem' }}>
-                    Workspace URL: <span className="text-primary">mmspro.in/{previewSlug}</span>
-                  </p>
-                )}
-              </div>
-            )}
-
             {!isForgot && (
               <div className="form-field">
                 <label htmlFor="password" className="form-field__label">Password</label>
@@ -341,7 +277,7 @@ export default function Login() {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     required
-                    autoComplete={isSignUp ? 'new-password' : 'current-password'}
+                    autoComplete="current-password"
                   />
                   <button
                     type="button"
@@ -379,8 +315,8 @@ export default function Login() {
 
             <button type="submit" className="login-form__submit" disabled={loading}>
               {loading
-                ? (isForgot ? 'Sending Reset Link...' : isSignUp ? 'Creating Account...' : 'Signing In...')
-                : (isForgot ? 'Send Reset Link' : isSignUp ? 'Create Account' : 'Sign In')}
+                ? (isForgot ? 'Sending Reset Link...' : 'Signing In...')
+                : (isForgot ? 'Send Reset Link' : 'Sign In')}
               <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
                 <path d="M3.75 9H14.25M14.25 9L10.5 5.25M14.25 9L10.5 12.75" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
               </svg>
@@ -395,20 +331,8 @@ export default function Login() {
                   Back to Sign In
                 </button>
               </>
-            ) : isSignUp ? (
-              <>
-                Already have an account?{' '}
-                <button type="button" className="login-card__link text-primary" onClick={switchMode}>
-                  Sign In
-                </button>
-              </>
             ) : (
-              <>
-                Don&apos;t have an account?{' '}
-                <button type="button" className="login-card__link text-primary" onClick={switchMode}>
-                  Create Account
-                </button>
-              </>
+              <>Need an account? Contact your administrator.</>
             )}
           </p>
         </div>

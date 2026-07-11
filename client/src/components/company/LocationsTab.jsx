@@ -1,15 +1,18 @@
 import { useState } from 'react'
 import { useLocations } from '../../hooks/useLocations'
+import { useEmployees } from '../../hooks/useEmployees'
 import { useOrgLimits } from '../../hooks/useOrgLimits'
 import { useLimitExceeded } from '../../hooks/useLimitExceeded'
 import { isLimitError } from '../../lib/limitErrors'
 import GooToggle from '../ui/GooToggle'
 import LocationModal from './LocationModal'
+import LocationHeadCell from './LocationHeadCell'
 import LimitExceededCard from '../shared/LimitExceededCard'
 import './CompanyShared.css'
 
 export default function LocationsTab({ canManage }) {
   const { locations, loading, saving, error, create, update, remove, toggleActive } = useLocations()
+  const { employees } = useEmployees()
   const { isResourceAtLimit, reload: reloadLimits } = useOrgLimits()
   const { visible: limitVisible, resource: limitResource, trigger: triggerLimit, tryHandleLimitError, dismiss: dismissLimit } = useLimitExceeded()
   const [modalOpen, setModalOpen] = useState(false)
@@ -94,6 +97,7 @@ export default function LocationsTab({ canManage }) {
                 <th>Code</th>
                 <th>City</th>
                 <th>Country</th>
+                <th>Location head</th>
                 <th>Primary</th>
                 {canManage && <th>Active</th>}
                 {canManage && <th>Actions</th>}
@@ -113,6 +117,7 @@ export default function LocationsTab({ canManage }) {
                     <td><code className="company-code">{loc.code}</code></td>
                     <td>{loc.city || '—'}</td>
                     <td>{loc.country || '—'}</td>
+                    <td><LocationHeadCell location={loc} /></td>
                     <td>
                       {loc.is_primary ? (
                         <span className="company-badge company-badge--primary">Primary</span>
@@ -156,6 +161,7 @@ export default function LocationsTab({ canManage }) {
         <LocationModal
           key={editing?.id ?? 'new'}
           location={editing}
+          employees={employees}
           saving={saving}
           onClose={() => setModalOpen(false)}
           onSave={handleSave}

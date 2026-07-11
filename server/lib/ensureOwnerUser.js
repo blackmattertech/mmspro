@@ -52,15 +52,23 @@ export async function sendOwnerAccessEmail(email, { orgName }) {
   }
 
   const actionLink = data?.properties?.action_link
-  if (!actionLink) return false
-
-  if (isEmailConfigured) {
-    await sendOwnerPasswordSetupEmail(email, { resetUrl: actionLink, orgName })
-    return true
+  if (!actionLink) {
+    console.warn('Could not generate password link: missing action_link')
+    return false
   }
 
-  console.log(`\n[Owner password setup link — Mailjet not configured]\n  ${email}\n  ${actionLink}\n`)
-  return false
+  if (!isEmailConfigured) {
+    console.log(`\n[Owner password setup link — Mailjet not configured]\n  ${email}\n  ${actionLink}\n`)
+    return false
+  }
+
+  const result = await sendOwnerPasswordSetupEmail(email, { resetUrl: actionLink, orgName })
+  if (!result) {
+    console.warn(`Owner access email failed to send via Mailjet → ${email}`)
+    return false
+  }
+
+  return true
 }
 
 /**

@@ -69,23 +69,35 @@ async function sendPasswordSetupEmail(email, { orgName, employeeName }) {
 
   if (error) {
     console.warn('Could not generate employee password link:', error.message)
-    return false
+    throw new Error(`Could not create password setup link: ${error.message}`)
   }
 
   const actionLink = data?.properties?.action_link
-  if (!actionLink) return false
-
-  if (isEmailConfigured) {
-    await sendEmployeePasswordSetupEmail(email, {
-      resetUrl: actionLink,
-      orgName,
-      employeeName,
-    })
-    return true
+  if (!actionLink) {
+    throw new Error('Could not create password setup link (missing action_link)')
   }
 
-  console.log(`\n[Employee password setup link — Mailjet not configured]\n  ${email}\n  ${actionLink}\n`)
-  return false
+  if (!isEmailConfigured) {
+    console.log(`\n[Employee password setup link — Mailjet not configured]\n  ${email}\n  ${actionLink}\n`)
+    throw new Error(
+      'Login was enabled but email is not configured on the server. Set MAILJET_API_KEY, MAILJET_SECRET_KEY, and MAILJET_FROM_EMAIL, then save the employee again to resend.',
+    )
+  }
+
+  const result = await sendEmployeePasswordSetupEmail(email, {
+    resetUrl: actionLink,
+    orgName,
+    employeeName,
+  })
+
+  if (!result) {
+    console.warn(`Employee password setup email failed via Mailjet → ${email}`)
+    throw new Error(
+      'Login was enabled but the password setup email could not be sent. Check Mailjet configuration and try saving again.',
+    )
+  }
+
+  return true
 }
 
 /**
@@ -123,7 +135,7 @@ export async function provisionEmployeeLogin({
     if (!existingProfile.org_id) {
       const { error: linkError } = await supabaseAdmin
         .from('profiles')
-        .update({ org_id: orgId, role: 'member' })
+        .update({ org_id: orgId, role: 'user' })
         .eq('id', userId)
 
       if (linkError) throw linkError
@@ -135,11 +147,14 @@ export async function provisionEmployeeLogin({
 
     const { error: linkError } = await supabaseAdmin
       .from('profiles')
-      .update({ org_id: orgId, role: 'member' })
+      .update({ org_id: orgId, role: 'user' })
       .eq('id', userId)
 
     if (linkError) throw linkError
   }
+
+  // Send before linking the employee so a failed send can be retried on next save.
+  await sendPasswordSetupEmail(normalized, { orgName, employeeName })
 
   const { error: employeeError } = await supabaseAdmin
     .from('org_employees')
@@ -153,8 +168,7 @@ export async function provisionEmployeeLogin({
 
   if (employeeError) throw employeeError
 
-  const emailSent = await sendPasswordSetupEmail(normalized, { orgName, employeeName })
-  return { userId, emailSent }
+  return { userId, emailSent: true }
 }
 
 export async function disableEmployeeLogin(employeeId, orgId) {

@@ -32,6 +32,18 @@
 --   23-org-limits.sql               → 23-org-limits — Organization resource limits
 --   24-asset-field-dependencies.sql → 24-asset-field-dependencies — Conditional parent fields
 --   25-asset-section-icons.sql      → 25-asset-section-icons — Section PNG/SVG icons
+--   26-location-heads.sql           → 26-location-heads — Location head employee
+--   27-performance-indexes.sql      → 27-performance-indexes — Performance indexes
+--   28-org-access-roles.sql         → 28-org-access-roles — Custom access roles
+--   29-account-roles.sql            → 29-account-roles — Super Admin / Admin / User
+--   30-access-roles-all-locations.sql → 30-access-roles-all-locations — Roles org-wide
+--   31-seed-location-head-role.sql  → 31-seed-location-head-role — Location Head template
+--   32-expand-access-module-keys.sql → 32-expand-access-module-keys — Split module permissions
+--   33-access-roles-created-by.sql  → 33-access-roles-created-by — Role creator ownership
+--   34-location-head-roles-access.sql → 34-location-head-roles-access — LH Roles & Access
+--   35-org-assets-employee-photos.sql → 35-org-assets-employee-photos — Employee photo uploads
+--   36-work-order-department-assignment.sql → 36-work-order-department-assignment — Dept WO assignment
+--   37-work-order-assignment-cascade.sql → 37-work-order-assignment-cascade — Location-only cascade (includes 36 cols)
 --
 -- OTHER:
 --   supabase.sql                  → supabase — Full schema (new projects)

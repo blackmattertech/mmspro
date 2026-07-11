@@ -1,3 +1,5 @@
+import { createId } from './id'
+
 export const ADVANCED_FILTER_FIELDS = [
   { id: 'location', label: 'Location' },
   { id: 'status', label: 'Status' },
@@ -14,7 +16,7 @@ export const FILTER_JOIN_OPTIONS = [
 
 export function createFilterRule(overrides = {}) {
   return {
-    id: crypto.randomUUID(),
+    id: createId(),
     join: 'and',
     field: 'location',
     operator: 'is',
@@ -46,15 +48,26 @@ export function getOperatorsForField(field) {
 }
 
 function getAssigneeLocationIds(order) {
-  return (order.assignees || [])
+  const fromAssignees = (order.assignees || [])
     .map((assignee) => assignee.location_id || assignee.org_locations?.id)
     .filter(Boolean)
+  const fromAssignment = [
+    order.assigned_location_id,
+    order.assigned_location?.id,
+    order.assigned_department?.location_id,
+  ].filter(Boolean)
+  return [...new Set([...fromAssignees, ...fromAssignment])]
 }
 
 function getAssigneeLocationNames(order) {
-  return (order.assignees || [])
+  const fromAssignees = (order.assignees || [])
     .map((assignee) => assignee.org_locations?.name)
     .filter(Boolean)
+  const fromAssignment = [
+    order.assigned_location?.name,
+    order.assigned_department?.location_name,
+  ].filter(Boolean)
+  return [...new Set([...fromAssignees, ...fromAssignment])]
 }
 
 function matchesRule(order, rule, locations = []) {

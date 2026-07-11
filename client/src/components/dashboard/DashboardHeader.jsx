@@ -1,5 +1,4 @@
 import { useState, useRef, useEffect } from 'react'
-import CreateWorkOrderModal from './CreateWorkOrderModal'
 import NotificationPanel from './NotificationPanel'
 import { useOrg } from '../../hooks/useOrg'
 import { useNotifications } from '../../hooks/useNotifications'
@@ -7,16 +6,16 @@ import { getOrgAssetSignedUrl } from '../../lib/orgAssets'
 import './DashboardHeader.css'
 
 export default function DashboardHeader({
-  plants,
-  plantFilter,
-  onPlantChange,
+  locations,
+  locationFilter,
+  onLocationChange,
+  canSeeAllLocations = true,
   dateFrom,
   dateTo,
   onDateFromChange,
   onDateToChange,
   onCreateWorkOrder,
 }) {
-  const [showModal, setShowModal] = useState(false)
   const [showNotifications, setShowNotifications] = useState(false)
   const notifBtnRef = useRef(null)
   const { org } = useOrg()
@@ -69,16 +68,17 @@ export default function DashboardHeader({
 
         <div className="dash-header__right">
           <div className="dash-header__filter">
-            <label className="dash-header__filter-label" htmlFor="dash-plant-filter">Plant</label>
+            <label className="dash-header__filter-label" htmlFor="dash-location-filter">Location</label>
             <select
-              id="dash-plant-filter"
+              id="dash-location-filter"
               className="dash-header__select"
-              value={plantFilter}
-              onChange={(e) => onPlantChange(e.target.value)}
+              value={locationFilter}
+              onChange={(e) => onLocationChange(e.target.value)}
+              disabled={!canSeeAllLocations}
             >
-              <option value="all">All Plants</option>
-              {plants.map((p) => (
-                <option key={p.id} value={p.id}>{p.name}</option>
+              {canSeeAllLocations && <option value="all">All Locations</option>}
+              {locations.map((loc) => (
+                <option key={loc.id} value={loc.id}>{loc.name}</option>
               ))}
             </select>
           </div>
@@ -102,7 +102,11 @@ export default function DashboardHeader({
           <button
             type="button"
             className="dash-header__create-btn"
-            onClick={() => setShowModal(true)}
+            onClick={async () => {
+              if (typeof onCreateWorkOrder === 'function') {
+                await onCreateWorkOrder()
+              }
+            }}
           >
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
               <path d="M8 3V13M3 8H13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
@@ -133,31 +137,8 @@ export default function DashboardHeader({
               anchorRef={notifBtnRef}
             />
           </div>
-
-          <button
-            type="button"
-            className="dash-header__icon-btn dash-header__icon-btn--primary"
-            aria-label="Messages"
-          >
-            <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-              <rect x="3" y="5" width="14" height="10" rx="1.5" stroke="currentColor" strokeWidth="1.5"/>
-              <path d="M3 6.5L10 11L17 6.5" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
-            </svg>
-            <span className="dash-header__badge">3</span>
-          </button>
         </div>
       </header>
-
-      {showModal && (
-        <CreateWorkOrderModal
-          plants={plants}
-          onClose={() => setShowModal(false)}
-          onSubmit={async (data) => {
-            await onCreateWorkOrder(data)
-            setShowModal(false)
-          }}
-        />
-      )}
     </>
   )
 }

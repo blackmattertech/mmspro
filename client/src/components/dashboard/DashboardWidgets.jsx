@@ -4,12 +4,18 @@ import { useOrg } from '../../hooks/useOrg'
 import { orgPath } from '../../config/navigation'
 
 export function KpiCards({ stats }) {
+  const total = stats.total || 0
+  const share = (n) => (total ? `${((n / total) * 100).toFixed(1)}% of total` : '0% of total')
+  const trendLabel = stats.trendPercent === 0
+    ? 'No change vs prior 30 days'
+    : `${stats.trendPercent > 0 ? '+' : ''}${stats.trendPercent}% vs prior 30 days`
+
   const cards = [
     {
       label: 'Total Work Orders',
-      value: stats.total.toLocaleString(),
-      sub: `+${stats.trendPercent}% vs last 30 days`,
-      subClass: 'kpi-card__sub--green',
+      value: total.toLocaleString(),
+      sub: trendLabel,
+      subClass: stats.trendPercent > 0 ? 'kpi-card__sub--green' : '',
       iconBg: 'kpi-card__icon--red',
       icon: (
         <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
@@ -19,9 +25,9 @@ export function KpiCards({ stats }) {
       ),
     },
     {
-      label: 'Open',
-      value: stats.open.toLocaleString(),
-      sub: `${((stats.open / stats.total) * 100).toFixed(1)}% of total`,
+      label: 'Created',
+      value: (stats.created || 0).toLocaleString(),
+      sub: share(stats.created || 0),
       iconBg: 'kpi-card__icon--yellow',
       icon: (
         <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
@@ -31,9 +37,9 @@ export function KpiCards({ stats }) {
       ),
     },
     {
-      label: 'In Progress',
-      value: stats.inProgress.toLocaleString(),
-      sub: `${((stats.inProgress / stats.total) * 100).toFixed(1)}% of total`,
+      label: 'Draft',
+      value: (stats.draft || 0).toLocaleString(),
+      sub: share(stats.draft || 0),
       iconBg: 'kpi-card__icon--blue',
       icon: (
         <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
@@ -43,9 +49,9 @@ export function KpiCards({ stats }) {
       ),
     },
     {
-      label: 'Completed',
-      value: stats.completed.toLocaleString(),
-      sub: `${((stats.completed / stats.total) * 100).toFixed(1)}% of total`,
+      label: 'With Assignees',
+      value: (stats.assigned || 0).toLocaleString(),
+      sub: share(stats.assigned || 0),
       iconBg: 'kpi-card__icon--green',
       icon: (
         <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
@@ -55,9 +61,9 @@ export function KpiCards({ stats }) {
       ),
     },
     {
-      label: 'Overdue',
-      value: stats.overdue.toLocaleString(),
-      sub: `${((stats.overdue / stats.total) * 100).toFixed(1)}% of total`,
+      label: 'Assigned to Me',
+      value: (stats.received || 0).toLocaleString(),
+      sub: share(stats.received || 0),
       iconBg: 'kpi-card__icon--red',
       icon: (
         <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
@@ -123,12 +129,12 @@ export function DonutChart({ title, total, segments, filterLabel }) {
             ))}
           </svg>
           <div className="donut-chart__center">
-            <span className="donut-chart__total">{total.toLocaleString()}</span>
+            <span className="donut-chart__total">{(total || 0).toLocaleString()}</span>
             <span className="donut-chart__label">Total</span>
           </div>
         </div>
         <div className="donut-chart__legend">
-          {segments.map((seg) => (
+          {(segments || []).map((seg) => (
             <div key={seg.status || seg.priority} className="donut-chart__legend-item">
               <span
                 className="donut-chart__dot"
@@ -148,21 +154,27 @@ export function DonutChart({ title, total, segments, filterLabel }) {
 }
 
 export function TrendChart({ data, filterLabel }) {
-  const max = Math.max(...data.map((d) => d.value))
+  const values = (data || []).map((d) => d.value)
+  const max = Math.max(...values, 1)
   const width = 500
   const height = 200
   const padding = { top: 20, right: 20, bottom: 30, left: 40 }
   const chartW = width - padding.left - padding.right
   const chartH = height - padding.top - padding.bottom
+  const empty = !data?.length || values.every((v) => v === 0)
 
-  const points = data.map((d, i) => {
-    const x = padding.left + (i / (data.length - 1)) * chartW
+  const points = (data || []).map((d, i) => {
+    const x = padding.left + (data.length <= 1 ? chartW / 2 : (i / (data.length - 1)) * chartW)
     const y = padding.top + chartH - (d.value / max) * chartH
     return { x, y, ...d }
   })
 
-  const linePath = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ')
-  const areaPath = `${linePath} L ${points[points.length - 1].x} ${padding.top + chartH} L ${points[0].x} ${padding.top + chartH} Z`
+  const linePath = points.length
+    ? points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ')
+    : ''
+  const areaPath = points.length
+    ? `${linePath} L ${points[points.length - 1].x} ${padding.top + chartH} L ${points[0].x} ${padding.top + chartH} Z`
+    : ''
 
   return (
     <div className="dash-card">
@@ -170,52 +182,63 @@ export function TrendChart({ data, filterLabel }) {
         <h3 className="dash-card__title">Work Orders Trend</h3>
         <span className="dash-card__filter">{filterLabel}</span>
       </div>
-      <svg viewBox={`0 0 ${width} ${height}`} className="trend-chart">
-        <defs>
-          <linearGradient id="trendFill" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#E63946" stopOpacity="0.2"/>
-            <stop offset="100%" stopColor="#E63946" stopOpacity="0"/>
-          </linearGradient>
-        </defs>
-        <path d={areaPath} fill="url(#trendFill)"/>
-        <path d={linePath} fill="none" stroke="#E63946" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
-        {points.map((p) => (
-          <g key={p.date}>
-            <circle cx={p.x} cy={p.y} r="4" fill="#E63946"/>
-            <text x={p.x} y={height - 8} textAnchor="middle" className="trend-chart__label">{p.date.replace('May ', '')}</text>
-          </g>
-        ))}
-      </svg>
+      {empty ? (
+        <p className="dash-empty">No work orders created in the last 7 days.</p>
+      ) : (
+        <svg viewBox={`0 0 ${width} ${height}`} className="trend-chart">
+          <defs>
+            <linearGradient id="trendFill" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#E63946" stopOpacity="0.2"/>
+              <stop offset="100%" stopColor="#E63946" stopOpacity="0"/>
+            </linearGradient>
+          </defs>
+          <path d={areaPath} fill="url(#trendFill)"/>
+          <path d={linePath} fill="none" stroke="#E63946" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+          {points.map((p) => (
+            <g key={p.date}>
+              <circle cx={p.x} cy={p.y} r="4" fill="#E63946"/>
+              <text x={p.x} y={height - 8} textAnchor="middle" className="trend-chart__label">{p.date}</text>
+            </g>
+          ))}
+        </svg>
+      )}
     </div>
   )
 }
 
-export function PlantsBarChart({ data, filterLabel }) {
-  const max = Math.max(...data.map((d) => d.count), 1)
+export function LocationsBarChart({ data, filterLabel }) {
+  const max = Math.max(...(data || []).map((d) => d.count), 1)
 
   return (
     <div className="dash-card">
       <div className="dash-card__header">
-        <h3 className="dash-card__title">Top 5 Plants by Work Orders</h3>
+        <h3 className="dash-card__title">Top 5 Locations by Work Orders</h3>
         <span className="dash-card__filter">{filterLabel}</span>
       </div>
-      <div className="bar-chart">
-        {data.map((item) => (
-          <div key={item.name} className="bar-chart__row">
-            <span className="bar-chart__label">{item.name}</span>
-            <div className="bar-chart__track">
-              <div
-                className="bar-chart__fill"
-                style={{ width: `${(item.count / max) * 100}%` }}
-              />
+      {!data?.length ? (
+        <p className="dash-empty">No location breakdown for the current filters.</p>
+      ) : (
+        <div className="bar-chart">
+          {data.map((item) => (
+            <div key={item.name} className="bar-chart__row">
+              <span className="bar-chart__label">{item.name}</span>
+              <div className="bar-chart__track">
+                <div
+                  className="bar-chart__fill"
+                  style={{ width: `${(item.count / max) * 100}%` }}
+                />
+              </div>
+              <span className="bar-chart__value">{item.count}</span>
             </div>
-            <span className="bar-chart__value">{item.count}</span>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
+
+/** @deprecated use LocationsBarChart */
+export const PlantsBarChart = LocationsBarChart
 
 export function SlaGauge({ percent, trend }) {
   const angle = (percent / 100) * 180
@@ -256,7 +279,7 @@ function timeAgo(dateStr) {
 
 export function RecentWorkOrders({ orders }) {
   const { org } = useOrg()
-  const viewAllPath = org ? orgPath(org.slug, 'work-orders/received') : '#'
+  const viewAllPath = org ? orgPath(org.slug, 'work-orders/manual') : '#'
 
   return (
     <div className="dash-card">
@@ -264,19 +287,23 @@ export function RecentWorkOrders({ orders }) {
         <h3 className="dash-card__title">Recent Work Orders</h3>
         <Link to={viewAllPath} className="dash-card__link">View All</Link>
       </div>
-      <div className="recent-list">
-        {orders.map((order) => (
-          <div key={order.id} className="recent-list__item">
-            <span className="recent-list__id">{order.work_order_number}</span>
-            <span className="recent-list__title">{order.title}</span>
-            <span className="recent-list__plant">{order.plants?.name || '—'}</span>
-            <span className="recent-list__time">{timeAgo(order.created_at)}</span>
-            <span className={`priority-badge priority-badge--${order.priority}`}>
-              {order.priority.charAt(0).toUpperCase() + order.priority.slice(1)}
-            </span>
-          </div>
-        ))}
-      </div>
+      {!orders?.length ? (
+        <p className="dash-empty">No work orders yet.</p>
+      ) : (
+        <div className="recent-list">
+          {orders.map((order) => (
+            <div key={order.id} className="recent-list__item">
+              <span className="recent-list__id">{order.wo_number || order.work_order_number}</span>
+              <span className="recent-list__title">{order.title || order.summary}</span>
+              <span className="recent-list__plant">{order.location_name || '—'}</span>
+              <span className="recent-list__time">{timeAgo(order.created_at)}</span>
+              <span className={`status-badge status-badge--${order.status}`}>
+                {STATUS_LABELS[order.status] || order.status}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
@@ -329,26 +356,32 @@ export function UpcomingTasks({ tasks }) {
         <h3 className="dash-card__title">Upcoming Scheduled Tasks</h3>
         <Link to={viewAllPath} className="dash-card__link">View All</Link>
       </div>
-      <div className="upcoming-list">
-        {tasks.map((task) => (
-          <div key={task.id} className="upcoming-list__item">
-            <div className="upcoming-list__icon">
-              <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-                <rect x="3" y="4" width="12" height="11" rx="1.5" stroke="currentColor" strokeWidth="1.5"/>
-                <path d="M3 7.5H15M6 2.5V5M12 2.5V5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-              </svg>
+      {!tasks?.length ? (
+        <p className="dash-empty">No scheduled tasks yet.</p>
+      ) : (
+        <div className="upcoming-list">
+          {tasks.map((task) => (
+            <div key={task.id} className="upcoming-list__item">
+              <div className="upcoming-list__icon">
+                <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+                  <rect x="3" y="4" width="12" height="11" rx="1.5" stroke="currentColor" strokeWidth="1.5"/>
+                  <path d="M3 7.5H15M6 2.5V5M12 2.5V5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                </svg>
+              </div>
+              <div className="upcoming-list__content">
+                <span className="upcoming-list__title">{task.title}</span>
+                <span className="upcoming-list__location">{task.location}</span>
+                <span className="upcoming-list__time">{task.scheduled_at}</span>
+              </div>
+              {task.priority && (
+                <span className={`priority-badge priority-badge--${task.priority}`}>
+                  {task.priority.charAt(0).toUpperCase() + task.priority.slice(1)}
+                </span>
+              )}
             </div>
-            <div className="upcoming-list__content">
-              <span className="upcoming-list__title">{task.title}</span>
-              <span className="upcoming-list__location">{task.location}</span>
-              <span className="upcoming-list__time">{task.scheduled_at}</span>
-            </div>
-            <span className={`priority-badge priority-badge--${task.priority}`}>
-              {task.priority.charAt(0).toUpperCase() + task.priority.slice(1)}
-            </span>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

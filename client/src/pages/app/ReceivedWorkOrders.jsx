@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useMemo } from 'react'
 import { useOutletContext } from 'react-router-dom'
 import { getReceivedWorkOrders, getReceivedWorkOrder } from '../../lib/api-work-orders'
 import { useWorkOrderList } from '../../hooks/useWorkOrderList'
@@ -16,11 +16,14 @@ export default function ReceivedWorkOrders() {
   const fetchOrders = useCallback(() => getReceivedWorkOrders(), [])
   const { orders, loading, error } = useWorkOrderList(fetchOrders)
 
+  const filtered = useMemo(
+    () => applyWorkOrderFilters(orders, { search, locationFilter, advancedRules, locations }),
+    [orders, search, locationFilter, advancedRules, locations],
+  )
+
   if (loading) {
     return <div className="company-loading">Loading...</div>
   }
-
-  const filtered = applyWorkOrderFilters(orders, { search, locationFilter, advancedRules, locations })
 
   return (
     <>
@@ -34,7 +37,7 @@ export default function ReceivedWorkOrders() {
         orders={filtered}
         columns={RECEIVED_COLUMNS}
         emptyTitle="No work orders received yet."
-        emptyHint="Work orders assigned to you — including ones you assign to yourself — appear here."
+        emptyHint="Work orders assigned to you, your location, or your department appear here."
         onView={setSelectedId}
       />
 

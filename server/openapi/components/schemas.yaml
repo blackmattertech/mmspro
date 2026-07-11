@@ -52,26 +52,6 @@ MeResponse:
     user:
       $ref: '#/components/schemas/SupabaseUser'
 
-OnboardRequest:
-  type: object
-  required: [orgName]
-  properties:
-    orgName:
-      type: string
-      example: Acme Maintenance Co.
-    orgSlug:
-      type: string
-      example: acme-maintenance
-
-OnboardResponse:
-  type: object
-  properties:
-    org_id:
-      type: string
-      format: uuid
-    slug:
-      type: string
-
 InviteRequest:
   type: object
   required: [email]
@@ -81,8 +61,8 @@ InviteRequest:
       format: email
     role:
       type: string
-      enum: [member, admin]
-      default: member
+      enum: [user, admin]
+      default: user
 
 InviteAcceptRequest:
   type: object
@@ -120,7 +100,8 @@ Profile:
       nullable: true
     role:
       type: string
-      enum: [owner, admin, member]
+      enum: [super_admin, admin, user]
+      default: user
     org_id:
       type: string
       format: uuid
@@ -334,6 +315,27 @@ Location:
       type: boolean
     is_active:
       type: boolean
+    head_employee_id:
+      type: string
+      format: uuid
+      nullable: true
+    head_employee:
+      type: object
+      nullable: true
+      properties:
+        id:
+          type: string
+          format: uuid
+        emp_id:
+          type: string
+        name:
+          type: string
+        photo_url:
+          type: string
+          nullable: true
+        photo_signed_url:
+          type: string
+          nullable: true
     created_at:
       type: string
       format: date-time
@@ -363,6 +365,10 @@ LocationCreate:
       type: string
     is_primary:
       type: boolean
+    head_employee_id:
+      type: string
+      format: uuid
+      nullable: true
 
 Department:
   type: object
@@ -751,6 +757,14 @@ ManualWorkOrderCreate:
       items:
         type: string
         format: uuid
+    assigned_department_id:
+      type: string
+      format: uuid
+      nullable: true
+    assigned_location_id:
+      type: string
+      format: uuid
+      nullable: true
     assigned_to:
       type: array
       items:
@@ -778,6 +792,29 @@ ManualWorkOrder:
     updated_at:
       type: string
       format: date-time
+    assigned_department_id:
+      type: string
+      format: uuid
+      nullable: true
+    assigned_location_id:
+      type: string
+      format: uuid
+      nullable: true
+    assigned_department:
+      type: object
+      nullable: true
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        location_id:
+          type: string
+          format: uuid
+        location_name:
+          type: string
+          nullable: true
     wo_number:
       type: string
     summary:

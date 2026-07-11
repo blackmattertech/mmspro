@@ -14,6 +14,7 @@ import {
   employeeMatchesDepartmentLocation,
 } from '../../lib/departmentLocation'
 import { validatePhoneE164 } from '../../lib/validation'
+import { isDeptHeadEmployee, isLocationHeadEmployee } from '../../lib/employeeRoles'
 import './CompanyShared.css'
 
 const EMPTY = {
@@ -26,6 +27,7 @@ const EMPTY = {
   department_id: '',
   designation_id: '',
   manager_id: '',
+  access_role_id: '',
   is_department_head: false,
   login_required: false,
 }
@@ -58,6 +60,7 @@ export default function EmployeeModal({
   locations,
   departments,
   designations,
+  accessRoles = [],
   saving,
   nestedSaving,
   onClose,
@@ -97,14 +100,45 @@ export default function EmployeeModal({
     form.department_id
     && form.location_id
     && selectedDepartment
-    && !selectedDepartment.per_location_heads
     && employeeMatchesDepartmentLocation(form.location_id, selectedDepartment),
   )
+
+  const selectedLocation = useMemo(
+    () => activeLocations.find((loc) => loc.id === form.location_id),
+    [activeLocations, form.location_id],
+  )
+
+  const isEmployeeDepartmentHead = (emp) => {
+    if (!emp?.department_id) return false
+    if ((emp.headed_departments || []).some((dept) => dept.id === emp.department_id)) {
+      return true
+    }
+    const dept = departments.find((d) => d.id === emp.department_id)
+    return Boolean(
+      dept?.location_heads?.some(
+        (row) => row.location_id === emp.location_id && row.head_employee_id === emp.id,
+      ),
+    )
+  }
 
   const availableDesignations = useMemo(
     () => filterDesignationsForDepartment(designations, form.department_id),
     [designations, form.department_id],
   )
+  const availableAccessRoles = useMemo(
+    () => accessRoles.filter((role) => role.is_active !== false),
+    [accessRoles],
+  )
+  const selectedAccessRole = useMemo(
+    () => availableAccessRoles.find((role) => role.id === form.access_role_id) || null,
+    [availableAccessRoles, form.access_role_id],
+  )
+  const showLocationHeadPill = isLocationHeadEmployee(employee, {
+    accessRoleName: selectedAccessRole?.name,
+  })
+  const showDeptHeadPill = isDeptHeadEmployee(employee, {
+    isDepartmentHead: form.is_department_head,
+  })
 
   useEffect(() => {
     if (employee) {
@@ -118,9 +152,8 @@ export default function EmployeeModal({
         department_id: employee.department_id || '',
         designation_id: employee.designation_id || '',
         manager_id: employee.manager_id || '',
-        is_department_head: (employee.headed_departments || []).some(
-          (dept) => dept.id === employee.department_id,
-        ),
+        access_role_id: employee.access_role_id || '',
+        is_department_head: isEmployeeDepartmentHead(employee),
         login_required: employee.login_required === true,
       })
       setPhotoPreview(employee.photo_signed_url || null)
@@ -165,6 +198,14 @@ export default function EmployeeModal({
       setForm((prev) => ({ ...prev, manager_id: '' }))
     }
   }, [managerOptions, form.manager_id])
+
+  useEffect(() => {
+    if (!form.access_role_id) return
+    const stillValid = availableAccessRoles.some((role) => role.id === form.access_role_id)
+    if (!stillValid) {
+      setForm((prev) => ({ ...prev, access_role_id: '' }))
+    }
+  }, [availableAccessRoles, form.access_role_id])
 
   const handlePhotoChange = (e) => {
     const file = e.target.files?.[0]
@@ -242,6 +283,7 @@ export default function EmployeeModal({
         department_id: form.department_id || null,
         designation_id: form.designation_id || null,
         manager_id: form.manager_id || null,
+        access_role_id: form.access_role_id || null,
         is_department_head: form.is_department_head,
         login_required: form.login_required,
       }, photoFile)
@@ -316,11 +358,27 @@ export default function EmployeeModal({
           <form className="company-modal__form" onSubmit={handleSubmit}>
             <div className="company-employee-photo">
               <div className="company-employee-photo__main">
-                <div className="company-employee-photo__preview">
-                  {photoPreview ? (
-                    <img src={photoPreview} alt="" className="company-employee-photo__img" />
-                  ) : (
-                    <span className="company-employee-photo__placeholder">{avatarLetter}</span>
+                <div className="company-employee-photo__identity">
+                  <div className="company-employee-photo__preview">
+                    {photoPreview ? (
+                      <img src={photoPreview} alt="" className="company-employee-photo__img" />
+                    ) : (
+                      <span className="company-employee-photo__placeholder">{avatarLetter}</span>
+                    )}
+                  </div>
+                  {(showLocationHeadPill || showDeptHeadPill) && (
+                    <div className="company-employee-photo__pills" aria-label="Employee roles">
+                      {showLocationHeadPill && (
+                        <span className="company-badge company-badge--location-head">
+                          Location Head
+                        </span>
+                      )}
+                      {showDeptHeadPill && (
+                        <span className="company-badge company-badge--dept-head">
+                          Dept Head
+                        </span>
+                      )}
+                    </div>
                   )}
                 </div>
                 <div className="company-employee-photo__actions">
@@ -449,6 +507,7 @@ export default function EmployeeModal({
                 department_id: '',
                 designation_id: '',
                 manager_id: '',
+                access_role_id: '',
                 is_department_head: false,
               })}
               options={activeLocations}
@@ -495,6 +554,29 @@ export default function EmployeeModal({
               disabled={!form.location_id}
             />
 
+            <label className="company-form__field">
+              <span className="company-form__label">Access Role</span>
+              <select
+                className="company-form__input company-form__input--select"
+                value={form.access_role_id}
+                onChange={(e) => setForm({ ...form, access_role_id: e.target.value })}
+              >
+                <option value="">No role assigned</option>
+                {availableAccessRoles.map((role) => (
+                  <option key={role.id} value={role.id}>{role.name}</option>
+                ))}
+              </select>
+              {accessRoles.length === 0 ? (
+                <span className="company-modal__hint">
+                  No access roles yet. Create them under Configuration → Roles &amp; Access.
+                </span>
+              ) : (
+                <span className="company-modal__hint">
+                  Roles apply across the company. Employees still only work within their assigned location.
+                </span>
+              )}
+            </label>
+
             <div className="company-employee-photo__login">
               <span className="company-employee-photo__login-label">Department Head</span>
               <GooToggle
@@ -509,10 +591,12 @@ export default function EmployeeModal({
                 }`}
               >
                 {canBeDepartmentHead
-                  ? `Head of ${selectedDepartment?.code || selectedDepartment?.name || 'selected department'} at this location.`
-                  : selectedDepartment?.per_location_heads
-                    ? 'This department uses separate heads per location. Manage from the department form.'
-                    : 'Select a location and matching department first.'}
+                  ? (
+                    selectedDepartment?.per_location_heads
+                      ? `Head of ${selectedDepartment?.code || selectedDepartment?.name || 'this department'} for ${selectedLocation?.code || selectedLocation?.name || 'the selected location'}.`
+                      : `Head of ${selectedDepartment?.code || selectedDepartment?.name || 'selected department'} at this location.`
+                  )
+                  : 'Select a location and matching department first.'}
               </p>
             </div>
 

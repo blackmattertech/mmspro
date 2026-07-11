@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { createId } from './id'
 
 export const WORK_ORDER_ASSETS_BUCKET = 'work-order-assets'
 const MAX_BYTES = 10 * 1024 * 1024
@@ -41,7 +42,7 @@ export function validateWorkOrderFile(file, fieldType) {
 
 export function workOrderFileStoragePath(orgId, workOrderId, fieldId, fileName) {
   const safeName = sanitizeFileName(fileName)
-  const unique = crypto.randomUUID()
+  const unique = createId()
   return `${orgId}/${workOrderId}/${fieldId}/${unique}-${safeName}`
 }
 

@@ -2,6 +2,8 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <link rel="manifest" href="/manifest.json" />
@@ -11,6 +13,41 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
     <title>MMS PRO — Sign In</title>
+    <script>
+      // Ngrok free interstitial can return HTML for early favicon requests.
+      // Re-apply the icon after the page loads (cookie set) so the tab icon works.
+      (function ensureFavicon() {
+        var candidates = ['/favicon.svg', '/favicon-32x32.png', '/favicon.ico']
+        function apply(href, type) {
+          var link = document.querySelector('link[data-app-favicon]') || document.createElement('link')
+          link.rel = 'icon'
+          link.type = type
+          link.href = href
+          link.setAttribute('data-app-favicon', '1')
+          if (!link.parentNode) document.head.appendChild(link)
+        }
+        function tryNext(i) {
+          if (i >= candidates.length) return
+          var href = candidates[i]
+          fetch(href, { headers: { 'ngrok-skip-browser-warning': '1' }, cache: 'no-store' })
+            .then(function (res) {
+              if (!res.ok) throw new Error('favicon failed')
+              var type = res.headers.get('content-type') || ''
+              if (type.indexOf('text/html') !== -1) throw new Error('got html')
+              return res.blob().then(function (blob) {
+                if (blob.type && blob.type.indexOf('text/html') !== -1) throw new Error('got html blob')
+                apply(URL.createObjectURL(blob), blob.type || type || 'image/svg+xml')
+              })
+            })
+            .catch(function () { tryNext(i + 1) })
+        }
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', function () { tryNext(0) })
+        } else {
+          tryNext(0)
+        }
+      })()
+    </script>
   </head>
   <body>
     <div id="root"></div>

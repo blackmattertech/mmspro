@@ -64,7 +64,15 @@ export async function uploadEmployeePhoto(orgId, employeeId, file) {
     .from(ORG_ASSETS_BUCKET)
     .upload(path, file, { upsert: true, contentType: file.type })
 
-  if (error) throw new Error(error.message)
+  if (error) {
+    const msg = error.message || 'Upload failed'
+    if (/row-level security|violates|not allowed|403|401/i.test(msg)) {
+      throw new Error(
+        'You do not have permission to upload this photo. Ask an admin to apply the employee photo storage policy, or try again after re-login.',
+      )
+    }
+    throw new Error(msg)
+  }
   return path
 }
 

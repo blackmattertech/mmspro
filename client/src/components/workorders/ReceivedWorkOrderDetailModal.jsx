@@ -1,17 +1,15 @@
+import { useState } from 'react'
+import { formatAssignees } from '../../lib/workOrderTableUtils'
 import { useBackdropClose } from '../../hooks/useBackdropClose'
 import { useWorkOrderDetail } from '../../hooks/useWorkOrderList'
 import { getReceivedWorkOrder } from '../../lib/api-work-orders'
 import { getWorkOrderFileSignedUrl } from '../../lib/workOrderAssets'
 import { getStoredWorkOrderFiles } from '../../lib/workOrderFileValues'
 import { fieldTypeLabel } from '../../lib/assetFieldTypes'
+import WorkOrderAssignmentActions from './WorkOrderAssignmentActions'
 import '../dashboard/CreateWorkOrderModal.css'
 import '../company/CompanyShared.css'
 import './ManualWorkOrder.css'
-
-function formatAssignees(assignees) {
-  if (!assignees?.length) return '—'
-  return assignees.map((a) => a.name).join(', ')
-}
 
 function formatDate(value) {
   if (!value) return '—'
@@ -61,9 +59,18 @@ export default function ReceivedWorkOrderDetailModal({
   orderId,
   onClose,
   fetchWorkOrder = getReceivedWorkOrder,
+  onAssignmentUpdated,
 }) {
-  const { detail, loading, error } = useWorkOrderDetail(orderId, fetchWorkOrder)
+  const { detail, loading, error, reload } = useWorkOrderDetail(orderId, fetchWorkOrder)
+  const [localDetail, setLocalDetail] = useState(null)
   const handleBackdropClick = useBackdropClose(onClose)
+  const view = localDetail || detail
+
+  const handleUpdated = (updated) => {
+    setLocalDetail(updated)
+    onAssignmentUpdated?.(updated)
+    reload()
+  }
 
   return (
     <div className="modal-overlay" onClick={handleBackdropClick} role="presentation">
@@ -75,41 +82,45 @@ export default function ReceivedWorkOrderDetailModal({
       >
         <div className="modal__header">
           <h2 id="wo-received-detail-title" className="modal__title">
-            Work Order {detail?.wo_number || ''}
+            Work Order {view?.wo_number || ''}
           </h2>
           <button type="button" className="modal__close" onClick={onClose} aria-label="Close">×</button>
         </div>
 
         <div className="wo-received-detail__body">
-          {loading && <p className="wo-received-detail__status">Loading...</p>}
+          {loading && !view && <p className="wo-received-detail__status">Loading...</p>}
           {error && <p className="wo-alert wo-alert--error">{error}</p>}
 
-          {detail && !loading && (
+          {view && (
             <>
               <div className="wo-received-detail__meta">
                 <div>
                   <span className="wo-received-detail__label">Received</span>
-                  <span>{formatDate(detail.created_at)}</span>
+                  <span>{formatDate(view.created_at)}</span>
                 </div>
                 <div>
                   <span className="wo-received-detail__label">Assigned to</span>
-                  <span>{formatAssignees(detail.assignees)}</span>
+                  <span>{formatAssignees(view.assignees, view.assigned_department, view.assigned_location)}</span>
                 </div>
                 <div>
                   <span className="wo-received-detail__label">Created by</span>
-                  <span>{detail.creator?.email || '—'}</span>
+                  <span>{view.creator?.email || '—'}</span>
                 </div>
                 <div>
                   <span className="wo-received-detail__label">Status</span>
-                  <span className="wo-received-badge">{detail.status}</span>
+                  <span className="wo-received-badge">{view.status}</span>
                 </div>
               </div>
 
-              {detail.summary && (
-                <p className="wo-received-detail__summary">{detail.summary}</p>
+              {view.summary && (
+                <p className="wo-received-detail__summary">{view.summary}</p>
               )}
 
-              {detail.sections?.map((section) => (
+              {view.assignment_actions && (
+                <WorkOrderAssignmentActions detail={view} onUpdated={handleUpdated} />
+              )}
+
+              {view.sections?.map((section) => (
                 <section key={section.id} className="wo-received-detail__section">
                   <h3>{section.name}</h3>
                   <dl className="wo-received-detail__fields">
@@ -126,7 +137,7 @@ export default function ReceivedWorkOrderDetailModal({
                 </section>
               ))}
 
-              {!detail.sections?.length && (
+              {!view.sections?.length && (
                 <p className="wo-received-detail__status">No field values recorded.</p>
               )}
             </>

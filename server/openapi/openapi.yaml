@@ -22,7 +22,7 @@ tags:
   - name: Health
     description: Service health check
   - name: Auth
-    description: Authentication, onboarding, and invites
+    description: Authentication and invites
   - name: User
     description: Current authenticated user
   - name: Profile

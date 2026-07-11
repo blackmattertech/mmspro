@@ -4,6 +4,7 @@ import { useOrg } from '../../hooks/useOrg'
 import GooToggle from '../ui/GooToggle'
 import SectionIconUpload from './SectionIconUpload'
 import { ASSET_FIELD_TYPES, fieldTypeLabel, nextSortOrder } from '../../lib/assetFieldTypes'
+import { parseDependsOnOptions } from '../../lib/assetFieldDependencies'
 import {
   assetFieldDraftKey,
   clearFormDraft,
@@ -24,7 +25,7 @@ const EMPTY = {
   is_dependent: false,
   dependency_section_id: '',
   depends_on_parent_id: '',
-  depends_on_option: '',
+  depends_on_options: [],
 }
 
 function defaultsForMode(mode) {
@@ -49,7 +50,7 @@ function formFromField(field, parents) {
     is_dependent: Boolean(field.depends_on_parent_id),
     dependency_section_id: depParent?.section_id || '',
     depends_on_parent_id: field.depends_on_parent_id || '',
-    depends_on_option: field.depends_on_option || '',
+    depends_on_options: parseDependsOnOptions(field.depends_on_option),
   }
 }
 
@@ -105,6 +106,9 @@ export default function FieldModal({
         ...defaultsForMode(mode),
         ...draft,
         dropdown_options: draft.dropdown_options?.length ? draft.dropdown_options : [''],
+        depends_on_options: parseDependsOnOptions(
+          draft.depends_on_options?.length ? draft.depends_on_options : draft.depends_on_option,
+        ),
       })
     } else {
       const defaults = defaultsForMode(mode)
@@ -183,7 +187,7 @@ export default function FieldModal({
       is_dependent: isDependent,
       dependency_section_id: isDependent ? prev.dependency_section_id : '',
       depends_on_parent_id: isDependent ? prev.depends_on_parent_id : '',
-      depends_on_option: isDependent ? prev.depends_on_option : '',
+      depends_on_options: isDependent ? prev.depends_on_options : [],
     }))
   }
 
@@ -192,7 +196,7 @@ export default function FieldModal({
       ...prev,
       dependency_section_id: sectionId,
       depends_on_parent_id: '',
-      depends_on_option: '',
+      depends_on_options: [],
     }))
   }
 
@@ -200,8 +204,17 @@ export default function FieldModal({
     setForm((prev) => ({
       ...prev,
       depends_on_parent_id: dependsOnParentId,
-      depends_on_option: '',
+      depends_on_options: [],
     }))
+  }
+
+  const toggleDependencyOption = (option) => {
+    setForm((prev) => {
+      const selected = new Set(prev.depends_on_options || [])
+      if (selected.has(option)) selected.delete(option)
+      else selected.add(option)
+      return { ...prev, depends_on_options: [...selected] }
+    })
   }
 
   const handleSubmit = async (e) => {
@@ -246,8 +259,8 @@ export default function FieldModal({
         setError('Dependencies require a dropdown parent field with values')
         return
       }
-      if (!form.depends_on_option) {
-        setError('Select the child value that controls when this field is shown')
+      if (!form.depends_on_options?.length) {
+        setError('Select at least one child value that controls when this field is shown')
         return
       }
     }
@@ -263,7 +276,7 @@ export default function FieldModal({
         ? form.dropdown_options.map((o) => o.trim()).filter(Boolean)
         : [],
       depends_on_parent_id: form.is_dependent ? form.depends_on_parent_id : null,
-      depends_on_option: form.is_dependent ? form.depends_on_option : null,
+      depends_on_option: form.is_dependent ? form.depends_on_options : null,
     }
 
     try {
@@ -473,7 +486,7 @@ export default function FieldModal({
                 />
               </div>
               <p className="company-employee-photo__login-hint">
-                Link to any section, parent, and child value. This field appears only when that value is selected on the work order form.
+                Link to any section, parent, and one or more child values. This field appears when any selected value is chosen on the work order form.
               </p>
 
               {form.is_dependent && (
@@ -518,30 +531,42 @@ export default function FieldModal({
                   )}
 
                   {form.depends_on_parent_id && selectedDependencyParent?.field_type === 'dropdown' && (
-                    <label className="company-form__field">
-                      <span className="company-form__label">3. Child value *</span>
-                      <select
-                        className="company-form__input company-form__input--select"
-                        value={form.depends_on_option}
-                        onChange={(e) => updateForm({ depends_on_option: e.target.value })}
-                        required
-                      >
-                        <option value="">Select child…</option>
-                        {dependencyChildOptions.map((option) => (
-                          <option key={option} value={option}>{option}</option>
-                        ))}
-                      </select>
-                      {!dependencyChildOptions.length && (
+                    <div className="company-form__field">
+                      <span className="company-form__label">3. Child values *</span>
+                      <p className="company-employee-photo__login-hint">
+                        Select one or more values. This field shows when the parent matches any of them.
+                      </p>
+                      {dependencyChildOptions.length ? (
+                        <div
+                          className="asset-field-dependency__options"
+                          role="group"
+                          aria-label="Child values"
+                        >
+                          {dependencyChildOptions.map((option) => {
+                            const checked = (form.depends_on_options || []).includes(option)
+                            return (
+                              <label key={option} className="asset-field-dependency__option">
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  onChange={() => toggleDependencyOption(option)}
+                                />
+                                <span>{option}</span>
+                              </label>
+                            )
+                          })}
+                        </div>
+                      ) : (
                         <p className="asset-field-dependency__empty">
                           {selectedDependencyParent.name} has no child values yet.
                         </p>
                       )}
-                    </label>
+                    </div>
                   )}
 
                   {form.depends_on_parent_id && selectedDependencyParent?.field_type !== 'dropdown' && (
                     <p className="asset-field-dependency__empty">
-                      {selectedDependencyParent.name} is not a dropdown. Pick a dropdown parent to select a child value.
+                      {selectedDependencyParent.name} is not a dropdown. Pick a dropdown parent to select child values.
                     </p>
                   )}
                 </div>
