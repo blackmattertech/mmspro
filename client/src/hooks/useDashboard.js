@@ -1,13 +1,10 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import { supabase, isSupabaseConfigured } from '../lib/supabase'
-import { useAuth } from './useAuth'
-import {
-  DEMO_WORK_ORDERS,
-  DEMO_PLANTS,
-  TREND_DATA,
-  PLANT_COUNTS,
-  UPCOMING_TASKS,
-} from '../data/dashboardDemo'
+import { useNavigate } from 'react-router-dom'
+import { useOrg } from './useOrg'
+import { useLocations } from './useLocations'
+import { usePermissions } from './usePermissions'
+import { getDashboardWorkOrders } from '../lib/api-work-orders'
+import { orgPath } from '../config/navigation'
 
 const countBy = (items, key) =>
   items.reduce((acc, item) => {
@@ -16,223 +13,185 @@ const countBy = (items, key) =>
     return acc
   }, {})
 
+function pct(part, total) {
+  if (!total) return 0
+  return Math.round((part / total) * 1000) / 10
+}
+
+function buildTrend(orders) {
+  const days = []
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+
+  for (let i = 6; i >= 0; i -= 1) {
+    const d = new Date(today)
+    d.setDate(today.getDate() - i)
+    days.push(d)
+  }
+
+  return days.map((day) => {
+    const next = new Date(day)
+    next.setDate(day.getDate() + 1)
+    const value = orders.filter((o) => {
+      const created = new Date(o.created_at)
+      return created >= day && created < next
+    }).length
+    return {
+      date: day.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
+      value,
+    }
+  })
+}
+
+function trendPercent(orders) {
+  const now = Date.now()
+  const day = 86400000
+  const last30 = orders.filter((o) => now - new Date(o.created_at).getTime() <= 30 * day).length
+  const prev30 = orders.filter((o) => {
+    const age = now - new Date(o.created_at).getTime()
+    return age > 30 * day && age <= 60 * day
+  }).length
+  if (!prev30) return last30 > 0 ? 100 : 0
+  return Math.round(((last30 - prev30) / prev30) * 1000) / 10
+}
+
 export const useDashboard = () => {
-  const { user } = useAuth()
-  const [plants, setPlants] = useState([])
+  const navigate = useNavigate()
+  const { org } = useOrg()
+  const { locations: orgLocations, loading: locationsLoading } = useLocations()
+  const { isOrgAdmin, locationId: scopedLocationId, canCreate } = usePermissions()
+
+  const canSeeAllLocations = isOrgAdmin
+  const userLocationId = scopedLocationId || null
+
   const [workOrders, setWorkOrders] = useState([])
   const [loading, setLoading] = useState(true)
-  const [plantFilter, setPlantFilter] = useState('all')
+  const [error, setError] = useState(null)
+  const [locationFilter, setLocationFilter] = useState('all')
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
-  const [isDemo, setIsDemo] = useState(false)
+
+  const locations = useMemo(
+    () => (orgLocations || []).filter((loc) => loc.is_active !== false),
+    [orgLocations],
+  )
+
+  const filterLocations = useMemo(() => {
+    if (canSeeAllLocations) return locations
+    if (!userLocationId) return []
+    return locations.filter((loc) => loc.id === userLocationId)
+  }, [canSeeAllLocations, locations, userLocationId])
+
+  useEffect(() => {
+    if (!canSeeAllLocations) {
+      if (userLocationId) setLocationFilter(userLocationId)
+      return
+    }
+    if (locationFilter !== 'all' && !locations.some((loc) => loc.id === locationFilter)) {
+      setLocationFilter('all')
+    }
+  }, [canSeeAllLocations, userLocationId, locations, locationFilter])
 
   const fetchData = useCallback(async () => {
-    if (!isSupabaseConfigured || !supabase || !user) {
-      setPlants(DEMO_PLANTS)
-      setWorkOrders(DEMO_WORK_ORDERS)
-      setIsDemo(true)
-      setLoading(false)
-      return
-    }
-
     setLoading(true)
-
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('org_id')
-      .eq('id', user.id)
-      .single()
-
-    if (!profile?.org_id) {
-      setPlants(DEMO_PLANTS)
-      setWorkOrders(DEMO_WORK_ORDERS)
-      setIsDemo(true)
+    setError(null)
+    try {
+      const locationId = canSeeAllLocations ? locationFilter : (userLocationId || locationFilter)
+      const data = await getDashboardWorkOrders({
+        locationId,
+        dateFrom: dateFrom || undefined,
+        dateTo: dateTo || undefined,
+      })
+      setWorkOrders(Array.isArray(data?.work_orders) ? data.work_orders : [])
+    } catch (err) {
+      setWorkOrders([])
+      setError(err.message || 'Failed to load dashboard')
+    } finally {
       setLoading(false)
-      return
     }
-
-    const [plantsRes, ordersRes] = await Promise.all([
-      supabase.from('plants').select('id, name').eq('org_id', profile.org_id).order('name'),
-      supabase
-        .from('work_orders')
-        .select('*, plants(name)')
-        .eq('org_id', profile.org_id)
-        .order('created_at', { ascending: false }),
-    ])
-
-    if (!plantsRes.data?.length && !ordersRes.data?.length) {
-      setPlants(DEMO_PLANTS)
-      setWorkOrders(DEMO_WORK_ORDERS)
-      setIsDemo(true)
-    } else {
-      setPlants(plantsRes.data || [])
-      setWorkOrders(ordersRes.data || [])
-      setIsDemo(false)
-    }
-
-    setLoading(false)
-  }, [user])
+  }, [canSeeAllLocations, locationFilter, userLocationId, dateFrom, dateTo])
 
   useEffect(() => {
     fetchData()
   }, [fetchData])
 
-  const filteredOrders = useMemo(() => {
-    let orders = [...workOrders]
-
-    if (plantFilter !== 'all') {
-      orders = orders.filter((o) => o.plant_id === plantFilter)
-    }
-
-    if (dateFrom) {
-      orders = orders.filter((o) => new Date(o.created_at) >= new Date(dateFrom))
-    }
-
-    if (dateTo) {
-      orders = orders.filter((o) => new Date(o.created_at) <= new Date(dateTo + 'T23:59:59'))
-    }
-
-    return orders
-  }, [workOrders, plantFilter, dateFrom, dateTo])
-
   const stats = useMemo(() => {
-    const total = filteredOrders.length || (isDemo ? 1246 : 0)
-    const statusCounts = countBy(filteredOrders, 'status')
-    const open = statusCounts.open || (isDemo ? 278 : 0)
-    const inProgress = statusCounts.in_progress || (isDemo ? 356 : 0)
-    const completed = statusCounts.completed || (isDemo ? 532 : 0)
-    const overdue = statusCounts.overdue || (isDemo ? 80 : 0)
-    const scheduled = statusCounts.scheduled || (isDemo ? 0 : 0)
-
-    const demoTotal = isDemo && plantFilter === 'all' && !dateFrom && !dateTo
+    const total = workOrders.length
+    const statusCounts = countBy(workOrders, 'status')
+    const created = statusCounts.created || 0
+    const draft = statusCounts.draft || 0
+    const assigned = workOrders.filter((o) => o.assignee_count > 0).length
+    const received = workOrders.filter((o) => o.is_received).length
+    const change = trendPercent(workOrders)
 
     return {
-      total: demoTotal ? 1246 : total,
-      open: demoTotal ? 278 : open,
-      inProgress: demoTotal ? 356 : inProgress,
-      completed: demoTotal ? 532 : completed,
-      overdue: demoTotal ? 80 : overdue,
-      scheduled: demoTotal ? 0 : scheduled,
-      trendPercent: 12.5,
-      slaPercent: 92,
-      slaTrend: 8,
+      total,
+      created,
+      draft,
+      assigned,
+      received,
+      // Back-compat aliases used by older widget props
+      open: created,
+      inProgress: draft,
+      completed: assigned,
+      overdue: received,
+      trendPercent: change,
+      slaPercent: null,
+      slaTrend: null,
     }
-  }, [filteredOrders, isDemo, plantFilter, dateFrom, dateTo])
+  }, [workOrders])
 
   const statusBreakdown = useMemo(() => {
-    if (isDemo && plantFilter === 'all' && !dateFrom && !dateTo) {
-      return [
-        { status: 'open', count: 278, percent: 22.3 },
-        { status: 'in_progress', count: 356, percent: 28.6 },
-        { status: 'scheduled', count: 0, percent: 0 },
-        { status: 'completed', count: 532, percent: 42.8 },
-        { status: 'overdue', count: 80, percent: 6.4 },
-      ]
-    }
-    const counts = countBy(filteredOrders, 'status')
-    const total = filteredOrders.length || 1
-    return ['open', 'in_progress', 'scheduled', 'completed', 'overdue'].map((status) => ({
+    const counts = countBy(workOrders, 'status')
+    return ['created', 'draft'].map((status) => ({
       status,
       count: counts[status] || 0,
-      percent: Math.round(((counts[status] || 0) / total) * 1000) / 10,
+      percent: pct(counts[status] || 0, workOrders.length),
     }))
-  }, [filteredOrders, isDemo, plantFilter, dateFrom, dateTo])
+  }, [workOrders])
 
-  const priorityBreakdown = useMemo(() => {
-    if (isDemo && plantFilter === 'all' && !dateFrom && !dateTo) {
-      return [
-        { priority: 'high', count: 374, percent: 30 },
-        { priority: 'medium', count: 561, percent: 45 },
-        { priority: 'low', count: 311, percent: 25 },
-      ]
-    }
-    const counts = countBy(filteredOrders, 'priority')
-    const total = filteredOrders.length || 1
-    return ['high', 'medium', 'low'].map((priority) => ({
-      priority,
-      count: counts[priority] || 0,
-      percent: Math.round(((counts[priority] || 0) / total) * 1000) / 10,
-    }))
-  }, [filteredOrders, isDemo, plantFilter, dateFrom, dateTo])
-
-  const plantBreakdown = useMemo(() => {
-    if (isDemo && plantFilter === 'all') return PLANT_COUNTS
+  const locationBreakdown = useMemo(() => {
     const counts = {}
-    filteredOrders.forEach((o) => {
-      const name = o.plants?.name || plants.find((p) => p.id === o.plant_id)?.name || 'Unknown'
+    workOrders.forEach((o) => {
+      const name = o.location_name || 'Unassigned'
       counts[name] = (counts[name] || 0) + 1
     })
     return Object.entries(counts)
       .map(([name, count]) => ({ name, count }))
       .sort((a, b) => b.count - a.count)
       .slice(0, 5)
-  }, [filteredOrders, plants, isDemo, plantFilter])
+  }, [workOrders])
 
-  const createWorkOrder = async ({ title, plantId, priority, status }) => {
-    if (isDemo || !isSupabaseConfigured || !supabase || !user) {
-      const newOrder = {
-        id: String(Date.now()),
-        work_order_number: `WO-${1266 + workOrders.length}`,
-        title,
-        status: status || 'open',
-        priority: priority || 'medium',
-        plant_id: plantId,
-        plants: { name: plants.find((p) => p.id === plantId)?.name || 'Plant 1' },
-        created_at: new Date().toISOString(),
-        scheduled_at: new Date(Date.now() + 86400000).toISOString(),
-      }
-      setWorkOrders((prev) => [newOrder, ...prev])
-      return { data: newOrder, error: null }
+  const trendData = useMemo(() => buildTrend(workOrders), [workOrders])
+
+  const createWorkOrder = async () => {
+    if (!org?.slug) return { data: null, error: { message: 'No organization found' } }
+    if (canCreate && !canCreate('work_orders_manual') && !canCreate('work_orders')) {
+      return { data: null, error: { message: 'You do not have permission to create work orders' } }
     }
-
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('org_id')
-      .eq('id', user.id)
-      .single()
-
-    if (!profile?.org_id) return { data: null, error: { message: 'No organization found' } }
-
-    const { count } = await supabase
-      .from('work_orders')
-      .select('*', { count: 'exact', head: true })
-      .eq('org_id', profile.org_id)
-
-    const woNumber = `WO-${1260 + (count || 0)}`
-
-    const { data, error } = await supabase
-      .from('work_orders')
-      .insert({
-        org_id: profile.org_id,
-        plant_id: plantId || null,
-        work_order_number: woNumber,
-        title,
-        status: status || 'open',
-        priority: priority || 'medium',
-        created_by: user.id,
-        scheduled_at: new Date(Date.now() + 86400000).toISOString(),
-      })
-      .select('*, plants(name)')
-      .single()
-
-    if (!error) await fetchData()
-    return { data, error }
+    navigate(orgPath(org.slug, 'work-orders/manual/create'))
+    return { data: null, error: null }
   }
 
   return {
-    loading,
-    isDemo,
-    plants,
-    workOrders: filteredOrders,
-    recentOrders: filteredOrders.slice(0, 5),
-    upcomingTasks: UPCOMING_TASKS,
-    trendData: TREND_DATA,
-    plantBreakdown,
+    loading: loading || locationsLoading,
+    error,
+    isDemo: false,
+    locations: filterLocations,
+    canSeeAllLocations,
+    workOrders,
+    recentOrders: workOrders.slice(0, 5),
+    upcomingTasks: [],
+    trendData,
+    locationBreakdown,
+    plantBreakdown: locationBreakdown,
     statusBreakdown,
-    priorityBreakdown,
+    priorityBreakdown: [],
     stats,
-    plantFilter,
-    setPlantFilter,
+    locationFilter,
+    setLocationFilter,
+    plantFilter: locationFilter,
+    setPlantFilter: setLocationFilter,
     dateFrom,
     setDateFrom,
     dateTo,

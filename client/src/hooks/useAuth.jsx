@@ -1,5 +1,6 @@
 import { useState, useEffect, createContext, useContext } from 'react'
 import { supabase, isSupabaseConfigured } from '../lib/supabase'
+import { syncAccessToken, clearAccessTokenCache } from '../lib/api'
 
 const AuthContext = createContext(null)
 
@@ -21,15 +22,21 @@ export const AuthProvider = ({ children }) => {
     }
 
     supabase.auth.getSession().then(({ data: { session } }) => {
+      syncAccessToken(session)
       setUser(session?.user ?? null)
       if (session?.user) fetchRole(session.user.id)
       else setLoading(false)
     })
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      syncAccessToken(session)
       setUser(session?.user ?? null)
       if (session?.user) fetchRole(session.user.id)
-      else { setRole(null); setLoading(false) }
+      else {
+        clearAccessTokenCache()
+        setRole(null)
+        setLoading(false)
+      }
     })
 
     return () => subscription.unsubscribe()
@@ -45,21 +52,28 @@ export const AuthProvider = ({ children }) => {
     setLoading(false)
   }
 
-  const signIn = (email, password) => {
-    if (!isSupabaseConfigured || !supabase) return Promise.resolve(AUTH_UNAVAILABLE)
-    return supabase.auth.signInWithPassword({ email, password })
+  const signIn = async (email, password) => {
+    if (!isSupabaseConfigured || !supabase) return AUTH_UNAVAILABLE
+    clearAccessTokenCache()
+    const result = await supabase.auth.signInWithPassword({ email, password })
+    if (result.data?.session) syncAccessToken(result.data.session)
+    return result
   }
 
-  const signUp = (email, password) => {
-    if (!isSupabaseConfigured || !supabase) return Promise.resolve(AUTH_UNAVAILABLE)
-    return supabase.auth.signUp({ email, password })
+  const signUp = async (email, password) => {
+    if (!isSupabaseConfigured || !supabase) return AUTH_UNAVAILABLE
+    clearAccessTokenCache()
+    const result = await supabase.auth.signUp({ email, password })
+    if (result.data?.session) syncAccessToken(result.data.session)
+    return result
   }
 
-  const signOut = () => {
+  const signOut = async () => {
+    clearAccessTokenCache()
     if (!isSupabaseConfigured || !supabase) {
       setUser(null)
       setRole(null)
-      return Promise.resolve({ error: null })
+      return { error: null }
     }
     return supabase.auth.signOut()
   }

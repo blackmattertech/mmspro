@@ -1,13 +1,20 @@
 import { Router } from 'express'
 import { verifyAuth } from '../../middleware/auth.js'
 import { requireOrgAccess, assertOrgOwnership } from '../../middleware/orgAccess.js'
-import { requireOrgRole } from '../../middleware/orgRole.js'
+import {
+  requireModulePermission,
+  loadOrgPermissions,
+} from '../../middleware/modulePermission.js'
 import { supabaseAdmin } from '../../services/supabase.js'
 
 const router = Router()
-const canManage = requireOrgRole('owner', 'admin')
 
-router.use(verifyAuth, requireOrgAccess)
+const canReadAssets = requireModulePermission('assets', 'read')
+const canCreateAssets = requireModulePermission('assets', 'create')
+const canUpdateAssets = requireModulePermission('assets', 'update')
+const canDeleteAssets = requireModulePermission('assets', 'delete')
+
+router.use(verifyAuth, requireOrgAccess, loadOrgPermissions)
 
 const FIELD_TYPES = new Set([
   'text', 'textarea', 'number', 'date', 'datetime', 'image', 'file', 'checkbox', 'dropdown',
@@ -15,6 +22,33 @@ const FIELD_TYPES = new Set([
 
 const KINDS = new Set(['section', 'parent', 'child'])
 const ORG_ASSETS_BUCKET = 'org-assets'
+
+function parseDependsOnOptions(raw) {
+  if (raw == null || raw === '') return []
+  if (Array.isArray(raw)) {
+    return [...new Set(raw.map((v) => String(v).trim()).filter(Boolean))]
+  }
+  const str = String(raw).trim()
+  if (!str) return []
+  if (str.startsWith('[')) {
+    try {
+      const parsed = JSON.parse(str)
+      if (Array.isArray(parsed)) {
+        return [...new Set(parsed.map((v) => String(v).trim()).filter(Boolean))]
+      }
+    } catch {
+      // fall through
+    }
+  }
+  return [str]
+}
+
+function serializeDependsOnOptions(options) {
+  const list = parseDependsOnOptions(options)
+  if (!list.length) return null
+  if (list.length === 1) return list[0]
+  return JSON.stringify(list)
+}
 
 async function attachSectionIconUrl(field) {
   if (field.kind !== 'section' || !field.icon_path) return field
@@ -171,12 +205,14 @@ async function validateFieldDependency(allFields, {
   dependsOnParentId,
   dependsOnOption,
 }) {
-  if (!dependsOnParentId && !dependsOnOption) {
+  const requestedOptions = parseDependsOnOptions(dependsOnOption)
+
+  if (!dependsOnParentId && !requestedOptions.length) {
     return { depends_on_parent_id: null, depends_on_option: null }
   }
 
-  if (!dependsOnParentId || !dependsOnOption?.trim()) {
-    throw new Error('Select both a parent field and option for the dependency')
+  if (!dependsOnParentId || !requestedOptions.length) {
+    throw new Error('Select both a parent field and at least one child value for the dependency')
   }
 
   if (fieldId && dependsOnParentId === fieldId) {
@@ -194,10 +230,12 @@ async function validateFieldDependency(allFields, {
     throw new Error('Dependency field is inactive')
   }
 
-  const option = dependsOnOption.trim()
   const options = dependsOn.dropdown_options || []
-  if (!options.some((value) => value.toLowerCase() === option.toLowerCase())) {
-    throw new Error('Invalid dependency option')
+  const resolved = []
+  for (const option of requestedOptions) {
+    const match = options.find((value) => value.toLowerCase() === option.toLowerCase())
+    if (!match) throw new Error(`Invalid dependency option: ${option}`)
+    resolved.push(match)
   }
 
   let currentId = dependsOnParentId
@@ -213,7 +251,7 @@ async function validateFieldDependency(allFields, {
 
   return {
     depends_on_parent_id: dependsOnParentId,
-    depends_on_option: options.find((value) => value.toLowerCase() === option.toLowerCase()) || option,
+    depends_on_option: serializeDependsOnOptions(resolved),
   }
 }
 
@@ -314,7 +352,7 @@ async function reassignSectionSortOrder(orgId, ids) {
   }
 }
 
-router.get('/fields', async (req, res) => {
+router.get('/fields', canReadAssets, async (req, res) => {
   try {
     const fields = await loadOrgFields(req.userProfile.org_id)
     res.json(fields)
@@ -323,7 +361,7 @@ router.get('/fields', async (req, res) => {
   }
 })
 
-router.put('/fields/reorder', canManage, async (req, res) => {
+router.put('/fields/reorder', canUpdateAssets, async (req, res) => {
   const orgId = req.userProfile.org_id
   const { kind, ids } = req.body
 
@@ -354,7 +392,7 @@ router.put('/fields/reorder', canManage, async (req, res) => {
   }
 })
 
-router.get('/fields/:id', assertOrgOwnership('asset_fields'), async (req, res) => {
+router.get('/fields/:id', canReadAssets, assertOrgOwnership('asset_fields'), async (req, res) => {
   try {
     const field = await getFieldById(req.userProfile.org_id, req.params.id)
     if (!field) return res.status(404).json({ error: 'Field not found' })
@@ -364,7 +402,7 @@ router.get('/fields/:id', assertOrgOwnership('asset_fields'), async (req, res) =
   }
 })
 
-router.post('/fields', canManage, async (req, res) => {
+router.post('/fields', canCreateAssets, async (req, res) => {
   const orgId = req.userProfile.org_id
   try {
     const payload = await validateFieldPayload(orgId, req.body)
@@ -412,7 +450,7 @@ function isActiveOnlyUpdate(body) {
   return keys.length === 1 && keys[0] === 'is_active'
 }
 
-router.patch('/fields/:id', canManage, assertOrgOwnership('asset_fields'), async (req, res) => {
+router.patch('/fields/:id', canUpdateAssets, assertOrgOwnership('asset_fields'), async (req, res) => {
   const orgId = req.userProfile.org_id
   try {
     const existing = await getFieldById(orgId, req.params.id)
@@ -484,8 +522,11 @@ router.patch('/fields/:id', canManage, assertOrgOwnership('asset_fields'), async
         const newOptions = normalizeDropdownOptions(options)
         const dependents = allFields.filter((f) => f.depends_on_parent_id === existing.id && f.id !== existing.id)
         for (const dep of dependents) {
-          if (dep.depends_on_option && !newOptions.some((o) => o.toLowerCase() === dep.depends_on_option.toLowerCase())) {
-            throw new Error(`Cannot remove "${dep.depends_on_option}" — "${dep.name}" depends on it`)
+          const depOptions = parseDependsOnOptions(dep.depends_on_option)
+          for (const option of depOptions) {
+            if (!newOptions.some((o) => o.toLowerCase() === option.toLowerCase())) {
+              throw new Error(`Cannot remove "${option}" — "${dep.name}" depends on it`)
+            }
           }
         }
         await syncDropdownChildren(orgId, req.params.id, options)
@@ -501,7 +542,7 @@ router.patch('/fields/:id', canManage, assertOrgOwnership('asset_fields'), async
   }
 })
 
-router.delete('/fields/:id', canManage, assertOrgOwnership('asset_fields'), async (req, res) => {
+router.delete('/fields/:id', canDeleteAssets, assertOrgOwnership('asset_fields'), async (req, res) => {
   const orgId = req.userProfile.org_id
   try {
     const existing = await getFieldById(orgId, req.params.id)

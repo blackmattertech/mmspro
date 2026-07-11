@@ -4,8 +4,7 @@ import {
   KpiCards,
   DonutChart,
   TrendChart,
-  PlantsBarChart,
-  SlaGauge,
+  LocationsBarChart,
   RecentWorkOrders,
   CalendarWidget,
   UpcomingTasks,
@@ -15,16 +14,17 @@ import './Dashboard.css'
 export default function Dashboard() {
   const {
     loading,
-    plants,
+    error,
+    locations,
+    canSeeAllLocations,
     recentOrders,
     upcomingTasks,
     trendData,
-    plantBreakdown,
+    locationBreakdown,
     statusBreakdown,
-    priorityBreakdown,
     stats,
-    plantFilter,
-    setPlantFilter,
+    locationFilter,
+    setLocationFilter,
     dateFrom,
     setDateFrom,
     dateTo,
@@ -40,12 +40,17 @@ export default function Dashboard() {
     )
   }
 
+  const locationFilterLabel = canSeeAllLocations && locationFilter === 'all'
+    ? 'All Locations'
+    : (locations.find((loc) => loc.id === locationFilter)?.name || 'Location')
+
   return (
     <div className="dashboard">
       <DashboardHeader
-        plants={plants}
-        plantFilter={plantFilter}
-        onPlantChange={setPlantFilter}
+        locations={locations}
+        locationFilter={locationFilter}
+        onLocationChange={setLocationFilter}
+        canSeeAllLocations={canSeeAllLocations}
         dateFrom={dateFrom}
         dateTo={dateTo}
         onDateFromChange={setDateFrom}
@@ -54,6 +59,8 @@ export default function Dashboard() {
       />
 
       <div className="dashboard__content">
+        {error && <div className="company-alert" role="alert">{error}</div>}
+
         <KpiCards stats={stats} />
 
         <div className="dashboard__row dashboard__row--2">
@@ -61,24 +68,18 @@ export default function Dashboard() {
             title="Work Orders by Status"
             total={stats.total}
             segments={statusBreakdown}
-            filterLabel="All Plants"
+            filterLabel={locationFilterLabel}
           />
           <TrendChart data={trendData} filterLabel="Last 7 Days" />
         </div>
 
         <div className="dashboard__row dashboard__row--3">
-          <PlantsBarChart data={plantBreakdown} filterLabel="This Month" />
+          <LocationsBarChart data={locationBreakdown} filterLabel="Current filters" />
           <RecentWorkOrders orders={recentOrders} />
           <CalendarWidget />
         </div>
 
-        <div className="dashboard__row dashboard__row--3">
-          <DonutChart
-            title="Work Orders by Priority"
-            total={stats.total}
-            segments={priorityBreakdown}
-          />
-          <SlaGauge percent={stats.slaPercent} trend={stats.slaTrend} />
+        <div className="dashboard__row dashboard__row--2">
           <UpcomingTasks tasks={upcomingTasks} />
         </div>
       </div>

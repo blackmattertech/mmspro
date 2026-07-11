@@ -1,9 +1,11 @@
-import { useState } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { Link, Outlet, useNavigate, useLocation } from 'react-router-dom'
 import { useOrg } from '../../hooks/useOrg'
+import { useProfile } from '../../hooks/useProfile'
 import { useLocations } from '../../hooks/useLocations'
 import { useWorkOrderCounts } from '../../hooks/useWorkOrderCounts'
 import { useWorkOrderToolbar } from '../../hooks/useWorkOrderToolbar'
+import { usePermissions } from '../../hooks/usePermissions'
 import { orgPath } from '../../config/navigation'
 import { WORK_ORDER_TABS, getWorkOrderActiveTab, isWorkOrderTabActive } from '../../config/workOrders'
 import { createFilterRule, countActiveAdvancedRules } from '../../lib/workOrderFilters'
@@ -17,17 +19,39 @@ export default function WorkOrdersLayout() {
   const navigate = useNavigate()
   const location = useLocation()
   const { org } = useOrg()
+  const { employee } = useProfile()
   const { locations } = useLocations()
   const { counts } = useWorkOrderCounts()
   const { toolbarLeft, toolbarRight } = useWorkOrderToolbar()
+  const { isOrgAdmin, canCreate, canRead, locationId: scopedLocationId } = usePermissions()
   const [locationFilter, setLocationFilter] = useState('all')
   const [search, setSearch] = useState('')
   const [advancedRules, setAdvancedRules] = useState([createFilterRule()])
   const [showCreateModal, setShowCreateModal] = useState(false)
 
+  const canSeeAllLocations = isOrgAdmin
+  const canCreateWorkOrders = canCreate('work_orders_manual') || canCreate('work_orders')
+  const userLocationId = scopedLocationId || employee?.location_id || null
+
   const isCreatePage = location.pathname.includes('/work-orders/manual/create')
+  const visibleTabs = useMemo(
+    () => WORK_ORDER_TABS.filter((tab) => canRead(tab.moduleKey) || canRead('work_orders')),
+    [canRead],
+  )
   const activeTab = getWorkOrderActiveTab(location.pathname)
-  const activeLocations = (locations || []).filter((loc) => loc.is_active !== false)
+  const activeLocations = useMemo(() => {
+    const all = (locations || []).filter((loc) => loc.is_active !== false)
+    if (canSeeAllLocations) return all
+    if (!userLocationId) return []
+    return all.filter((loc) => loc.id === userLocationId)
+  }, [locations, canSeeAllLocations, userLocationId])
+
+  useEffect(() => {
+    if (!canSeeAllLocations && userLocationId) {
+      setLocationFilter(userLocationId)
+    }
+  }, [canSeeAllLocations, userLocationId])
+
   const advancedFilterCount = countActiveAdvancedRules(advancedRules)
   const locationFilterActive = locationFilter !== 'all' ? 1 : 0
   const totalFilterCount = advancedFilterCount + locationFilterActive
@@ -51,7 +75,7 @@ export default function WorkOrdersLayout() {
 
       <div className="wo-page__bar">
         <nav className="wo-page__tabs" aria-label="Work order types">
-          {WORK_ORDER_TABS.map((tab) => {
+          {visibleTabs.map((tab) => {
             const isActive = isWorkOrderTabActive(tab.id, location.pathname)
             return (
               <Link
@@ -76,8 +100,9 @@ export default function WorkOrdersLayout() {
                 className="wo-page__location-select"
                 value={locationFilter}
                 onChange={(e) => setLocationFilter(e.target.value)}
+                disabled={!canSeeAllLocations}
               >
-                <option value="all">All Locations</option>
+                {canSeeAllLocations && <option value="all">All Locations</option>}
                 {activeLocations.map((loc) => (
                   <option key={loc.id} value={loc.id}>{loc.name}</option>
                 ))}
@@ -108,7 +133,7 @@ export default function WorkOrdersLayout() {
 
           {toolbarRight}
 
-          {!isCreatePage && (
+          {!isCreatePage && canCreateWorkOrders && (
             <button
               type="button"
               className="company-btn company-btn--primary wo-page__add-btn"

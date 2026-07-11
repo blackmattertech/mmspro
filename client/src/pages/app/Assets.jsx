@@ -1,10 +1,10 @@
-import { useOrg } from '../../hooks/useOrg'
+import { usePermissions } from '../../hooks/usePermissions'
 import AssetsFieldsPanel from '../../components/assets/AssetsFieldsPanel'
 import './Company.css'
 
 export default function Assets() {
-  const { orgRole, loading } = useOrg()
-  const canManage = orgRole === 'owner' || orgRole === 'admin'
+  const { loading, canUpdate, canCreate, canDelete } = usePermissions()
+  const canManage = canCreate('assets') || canUpdate('assets') || canDelete('assets')
 
   if (loading) {
     return (
@@ -26,7 +26,7 @@ export default function Assets() {
       <div className="company-page__content">
         {!canManage && (
           <p className="company-readonly-note">
-            You have read-only access. Contact an owner or admin to make changes.
+            You have read-only access. Contact a company admin to make changes.
           </p>
         )}
 

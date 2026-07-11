@@ -344,6 +344,10 @@ export default function ProfileModal({ profile, employee, avatarUrl, onClose, on
                     <dt>Manager</dt>
                     <dd>{employee.manager?.name || '—'}</dd>
                   </div>
+                  <div className="profile-modal__company-item">
+                    <dt>Access Role</dt>
+                    <dd>{employee.access_role?.name || '—'}</dd>
+                  </div>
                   {isDepartmentHead && (
                     <div className="profile-modal__company-item profile-modal__company-item--full">
                       <dt>Department Head</dt>

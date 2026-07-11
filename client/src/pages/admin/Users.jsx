@@ -3,9 +3,9 @@ import { getAdminUsers } from '../../lib/api'
 import './AdminPage.css'
 
 const ROLE_LABELS = {
-  owner: 'Owner',
-  admin: 'Platform Admin',
-  member: 'Member',
+  super_admin: 'Super Admin',
+  admin: 'Admin',
+  user: 'User',
 }
 
 export default function Users() {

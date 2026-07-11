@@ -23,10 +23,11 @@ const MY_EMPLOYEE_SELECT = `
   manager_id,
   designations ( id, name ),
   departments!department_id ( id, name, code ),
-  org_locations ( id, name, code ),
+  org_locations!location_id ( id, name, code ),
   manager:manager_id ( id, emp_id, name ),
   org_employee_emails ( id, email ),
-  headed_departments:departments!head_employee_id ( id, name, code )
+  headed_departments:departments!head_employee_id ( id, name, code ),
+  access_role:access_role_id ( id, name )
 `
 
 async function attachEmployeePhotoUrl(employee) {

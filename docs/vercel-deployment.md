@@ -24,11 +24,13 @@ Vercel auto-detects [`server/app.js`](server/app.js) as the Express entry point.
 | `CLIENT_URL` | `https://mmspro-client.vercel.app` | CORS allowlist (comma-separated) |
 | `APP_PUBLIC_URL` | `https://mmspro-client.vercel.app` | Password-reset / invite email links |
 | `API_PUBLIC_URL` | `https://mmspro-server.vercel.app` | Optional — Swagger server URL |
-| `FIREBASE_SERVICE_ACCOUNT_JSON` | `{"type":"service_account",...}` | Required on Vercel (file path won't work) |
+| `FIREBASE_SERVICE_ACCOUNT_JSON` | `{"type":"service_account",...}` | Required on Vercel — paste full JSON as one line |
 | `MAILJET_API_KEY` | | Required for emails |
 | `MAILJET_SECRET_KEY` | | Required for emails |
 | `MAILJET_FROM_EMAIL` | | Verified sender in Mailjet |
 | `MAILJET_FROM_NAME` | `MMS PRO` | Optional |
+
+**Important:** Do **not** set `FIREBASE_SERVICE_ACCOUNT_PATH` on Vercel — the JSON key file is gitignored and not deployed. Use `FIREBASE_SERVICE_ACCOUNT_JSON` only. Remove `FIREBASE_SERVICE_ACCOUNT_PATH` from Vercel env vars if you copied your local `.env`.
 
 After deploy, verify:
 
@@ -110,3 +112,21 @@ cd client && npm run dev   # http://localhost:5173 (proxies /api to server)
 ```
 
 Swagger UI locally: http://localhost:5050/api/docs
+
+## 6. Performance Baseline Checklist
+
+Run this after every production deployment and track before/after values.
+
+- Frontend Web Vitals (production): LCP, INP, CLS, TBT
+- API latency (server): p50/p95 for `/api/company/employees`, `/api/work-orders/manual/orders`, `/api/profile/me`
+- Serverless duration (Vercel): average + p95 function duration
+- Bundle size budget:
+  - main JS chunk gzip/brotli size
+  - login background assets total transfer size
+
+Suggested quick checks:
+
+1. Lighthouse on `/login`, dashboard, work-orders page, admin users page.
+2. Browser Network tab to confirm no duplicate org/profile fetches.
+3. Vercel Function logs/metrics for slow routes and cold starts.
+4. Compare values against previous deployment; only keep changes that improve metrics.

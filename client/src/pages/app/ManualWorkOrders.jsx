@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useMemo } from 'react'
 import { useLocation, useOutletContext } from 'react-router-dom'
 import { getManualWorkOrders, getManualWorkOrder } from '../../lib/api-work-orders'
 import { useWorkOrderList } from '../../hooks/useWorkOrderList'
@@ -18,16 +18,16 @@ export default function ManualWorkOrders() {
   const { orders, loading, error } = useWorkOrderList(fetchManualOrders)
   const successMessage = location.state?.success
 
-  if (loading) {
-    return <div className="company-loading">Loading...</div>
-  }
-
-  const filteredOrders = applyWorkOrderFilters(orders, {
+  const filteredOrders = useMemo(() => applyWorkOrderFilters(orders, {
     search,
     locationFilter,
     advancedRules,
     locations,
-  })
+  }), [orders, search, locationFilter, advancedRules, locations])
+
+  if (loading) {
+    return <div className="company-loading">Loading...</div>
+  }
 
   return (
     <>

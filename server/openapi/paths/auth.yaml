@@ -95,39 +95,3 @@
           application/json:
             schema:
               $ref: '#/components/schemas/ErrorResponse'
-
-/api/auth/onboard:
-  post:
-    tags: [Auth]
-    summary: Create organization after signup
-    requestBody:
-      required: true
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/OnboardRequest'
-    responses:
-      '200':
-        description: Organization created
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/OnboardResponse'
-      '400':
-        description: Validation error
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ErrorResponse'
-      '401':
-        description: Unauthorized
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ErrorResponse'
-      '500':
-        description: Server error
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ErrorResponse'

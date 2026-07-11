@@ -1,9 +1,15 @@
 import { useState } from 'react'
 import './CreateWorkOrderModal.css'
 
-export default function CreateWorkOrderModal({ plants, onClose, onSubmit }) {
+export default function CreateWorkOrderModal({
+  locations = [],
+  defaultLocationId,
+  locationLocked = false,
+  onClose,
+  onSubmit,
+}) {
   const [title, setTitle] = useState('')
-  const [plantId, setPlantId] = useState(plants[0]?.id || '')
+  const [locationId, setLocationId] = useState(defaultLocationId || locations[0]?.id || '')
   const [priority, setPriority] = useState('medium')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
@@ -12,7 +18,7 @@ export default function CreateWorkOrderModal({ plants, onClose, onSubmit }) {
     e.preventDefault()
     setLoading(true)
     setError(null)
-    const { error: submitError } = await onSubmit({ title, plantId, priority })
+    const { error: submitError } = await onSubmit({ title, locationId, priority })
     setLoading(false)
     if (submitError) setError(submitError.message)
   }
@@ -41,10 +47,17 @@ export default function CreateWorkOrderModal({ plants, onClose, onSubmit }) {
           </div>
 
           <div className="modal__field">
-            <label htmlFor="wo-plant">Plant</label>
-            <select id="wo-plant" value={plantId} onChange={(e) => setPlantId(e.target.value)}>
-              {plants.map((p) => (
-                <option key={p.id} value={p.id}>{p.name}</option>
+            <label htmlFor="wo-location">Location</label>
+            <select
+              id="wo-location"
+              value={locationId}
+              onChange={(e) => setLocationId(e.target.value)}
+              disabled={locationLocked || !locations.length}
+              required
+            >
+              {!locations.length && <option value="">No locations available</option>}
+              {locations.map((loc) => (
+                <option key={loc.id} value={loc.id}>{loc.name}</option>
               ))}
             </select>
           </div>
@@ -62,7 +75,7 @@ export default function CreateWorkOrderModal({ plants, onClose, onSubmit }) {
             <button type="button" className="modal__btn modal__btn--secondary" onClick={onClose}>
               Cancel
             </button>
-            <button type="submit" className="modal__btn modal__btn--primary" disabled={loading}>
+            <button type="submit" className="modal__btn modal__btn--primary" disabled={loading || !locationId}>
               {loading ? 'Creating...' : 'Create Work Order'}
             </button>
           </div>

@@ -7,7 +7,15 @@ export function LegacyAppRedirect() {
   const location = useLocation()
 
   if (loading) return <div className="loading">Loading...</div>
-  if (!org) return <Navigate to="/onboard" replace />
+  if (!org) {
+    return (
+      <Navigate
+        to="/login"
+        replace
+        state={{ error: 'No organization is linked to your account. Contact your administrator.' }}
+      />
+    )
+  }
 
   const suffix = location.pathname.replace(/^\/app\/?/, '') || 'dashboard'
   return <Navigate to={`/${org.slug}/${suffix}`} replace />

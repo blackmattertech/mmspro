@@ -31,7 +31,10 @@ export const isEmailConfigured = Boolean(
 )
 
 let mailjet = null
-if (isEmailConfigured) {
+
+function getMailjetClient() {
+  if (!isEmailConfigured) return null
+  if (mailjet) return mailjet
   try {
     mailjet = Mailjet.apiConnect(
       process.env.MAILJET_API_KEY,
@@ -39,20 +42,23 @@ if (isEmailConfigured) {
     )
   } catch (err) {
     console.warn('Mailjet failed to initialize:', err.message)
+    mailjet = null
   }
+  return mailjet
 }
 
 /**
  * Core send function — no-ops when Mailjet is not configured
  */
-const sendEmail = async ({ to, toName, subject, htmlContent, textContent }) => {
-  if (!mailjet) {
+export const sendEmail = async ({ to, toName, subject, htmlContent, textContent }) => {
+  const client = getMailjetClient()
+  if (!client) {
     console.warn(`Email not sent (Mailjet not configured): ${subject} → ${to}`)
     return null
   }
 
   try {
-    const response = await mailjet.post('send', { version: 'v3.1' }).request({
+    const response = await client.post('send', { version: 'v3.1' }).request({
       Messages: [
         {
           From: { Email: FROM_EMAIL, Name: FROM_NAME },
@@ -63,6 +69,13 @@ const sendEmail = async ({ to, toName, subject, htmlContent, textContent }) => {
         },
       ],
     })
+
+    const message = response?.body?.Messages?.[0]
+    if (message?.Status && message.Status !== 'success') {
+      console.warn(`Email not sent: ${subject} → ${to}`, JSON.stringify(message.Errors || message))
+      return null
+    }
+
     return response.body
   } catch (err) {
     console.warn(`Email not sent: ${subject} → ${to}`, err.message)

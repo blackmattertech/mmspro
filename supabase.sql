@@ -27,8 +27,8 @@ create table profiles (
   full_name text,
   avatar_url text,
   phone text,
-  role text default 'member'
-    check (role in ('owner', 'admin', 'member')),
+  role text default 'user'
+    check (role in ('super_admin', 'admin', 'user')),
   created_at timestamptz default now()
 );
 
@@ -157,7 +157,7 @@ begin
   returning id into v_org_id;
 
   update profiles
-  set org_id = v_org_id, role = 'owner'
+  set org_id = v_org_id, role = 'admin'
   where id = p_user_id;
 
   return v_org_id;
@@ -171,7 +171,7 @@ $$ language plpgsql security definer;
 -- Step 2: Create an org manually:
 --   select create_org_for_user('<your-user-id>', 'My Company', 'my-company');
 -- Step 3: Make yourself platform admin in profiles:
---   update profiles set role = 'admin' where email = 'you@example.com';
+--   update profiles set role = 'super_admin' where email = 'you@example.com';
 
 -- ══════════════════════════════════════════
 -- 9. PLANTS & WORK ORDERS (Dashboard)

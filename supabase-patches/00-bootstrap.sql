@@ -26,8 +26,8 @@ create table if not exists public.profiles (
   full_name text,
   avatar_url text,
   phone text,
-  role text default 'member'
-    check (role in ('owner', 'admin', 'member')),
+  role text default 'user'
+    check (role in ('super_admin', 'admin', 'user')),
   created_at timestamptz default now()
 );
 
@@ -53,7 +53,7 @@ create table if not exists public.org_invites (
   id uuid default gen_random_uuid() primary key,
   org_id uuid references public.organizations(id) on delete cascade not null,
   email text not null,
-  role text default 'member',
+  role text default 'user',
   token text unique default gen_random_uuid()::text,
   accepted_at timestamptz,
   created_at timestamptz default now()
@@ -139,7 +139,7 @@ begin
   returning id into v_org_id;
 
   update public.profiles
-  set org_id = v_org_id, role = 'owner'
+  set org_id = v_org_id, role = 'admin'
   where id = p_user_id;
 
   return v_org_id;
@@ -205,4 +205,4 @@ create policy "Org isolation on work_orders"
   using (org_id = (select org_id from public.profiles where id = auth.uid()));
 
 -- Done! Next steps (run separately after creating your first user):
---   update public.profiles set role = 'admin' where email = 'you@example.com';
+--   update public.profiles set role = 'super_admin' where email = 'you@example.com';

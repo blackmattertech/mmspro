@@ -1,3 +1,5 @@
+import { createId } from './id'
+
 export function getWorkOrderFiles(value) {
   if (!value) return []
   if (Array.isArray(value)) return value
@@ -17,7 +19,7 @@ export function createLocalFileItem(file, fieldType) {
     : null
 
   return {
-    id: crypto.randomUUID(),
+    id: createId(),
     file,
     name: file.name,
     size: file.size,

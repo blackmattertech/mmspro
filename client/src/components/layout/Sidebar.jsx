@@ -2,15 +2,12 @@ import { useEffect, useState } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
 import { useOrg } from '../../hooks/useOrg'
+import { usePermissions } from '../../hooks/usePermissions'
 import { getNavItems } from '../../config/navigation'
+import { formatAccountRole } from '../../lib/accountRoles'
 import NavIcon from './NavIcon'
 import SidebarUserFooter from './SidebarUserFooter'
 import './Sidebar.css'
-
-const formatRole = (role) => {
-  const labels = { owner: 'Owner', admin: 'Admin', member: 'Member' }
-  return labels[role] ?? (role ? role.charAt(0).toUpperCase() + role.slice(1) : 'Member')
-}
 
 function findActiveParentId(navItems, pathname) {
   for (const item of navItems) {
@@ -24,22 +21,23 @@ function findActiveParentId(navItems, pathname) {
 export default function Sidebar({ collapsed = false, onToggle }) {
   const { signOut } = useAuth()
   const { org, orgRole } = useOrg()
+  const { canRead, loading: permsLoading } = usePermissions()
   const location = useLocation()
-  const navItems = org ? getNavItems(org.slug) : []
+  const navItems = org && !permsLoading ? getNavItems(org.slug, { canRead }) : []
   const [openMenu, setOpenMenu] = useState(null)
 
   useEffect(() => {
-    if (!org) return
-    const items = getNavItems(org.slug)
+    if (!org || permsLoading) return
+    const items = getNavItems(org.slug, { canRead })
     setOpenMenu(findActiveParentId(items, location.pathname))
-  }, [location.pathname, org])
+  }, [location.pathname, org, canRead, permsLoading])
 
   const toggleMenu = (id) => {
     if (collapsed) return
     setOpenMenu((prev) => (prev === id ? null : id))
   }
 
-  const roleLabel = formatRole(orgRole)
+  const roleLabel = formatAccountRole(orgRole) || 'User'
 
   return (
     <aside className={`sidebar ${collapsed ? 'sidebar--collapsed' : ''}`}>

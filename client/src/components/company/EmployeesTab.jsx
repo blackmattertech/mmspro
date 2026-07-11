@@ -4,6 +4,7 @@ import { useEmployees } from '../../hooks/useEmployees'
 import { useLocations } from '../../hooks/useLocations'
 import { useDepartments } from '../../hooks/useDepartments'
 import { useDesignations } from '../../hooks/useDesignations'
+import { useRoles } from '../../hooks/useRoles'
 import { useOrgLimits } from '../../hooks/useOrgLimits'
 import { useLimitExceeded } from '../../hooks/useLimitExceeded'
 import { isLimitError } from '../../lib/limitErrors'
@@ -13,6 +14,7 @@ import EmployeeAvatar from './EmployeeAvatar'
 import EmployeeModal from './EmployeeModal'
 import LimitExceededCard from '../shared/LimitExceededCard'
 import { formatPhoneDisplay } from '../shared/PhoneInput'
+import { isDeptHeadEmployee, isLocationHeadEmployee } from '../../lib/employeeRoles'
 import './CompanyShared.css'
 
 export default function EmployeesTab({ canManage }) {
@@ -23,6 +25,7 @@ export default function EmployeesTab({ canManage }) {
   const { locations, create: createLocation, reload: reloadLocations, saving: savingLocation } = useLocations()
   const { departments, create: createDepartment, reload: reloadDepartments, saving: savingDepartment } = useDepartments()
   const { designations, create: createDesignation, reload: reloadDesignations, saving: savingDesignation } = useDesignations()
+  const { roles: accessRoles } = useRoles()
   const {
     employees,
     loading,
@@ -78,7 +81,7 @@ export default function EmployeesTab({ canManage }) {
         await update(saved.id, { photo_url: path })
       }
 
-      await reloadLimits()
+      await Promise.all([reloadLimits(), reloadDepartments()])
       setModalOpen(false)
     } catch (err) {
       if (tryHandleLimitError(err, 'Employee')) {
@@ -206,10 +209,28 @@ export default function EmployeesTab({ canManage }) {
             <tbody>
               {employees.map((employee) => {
                 const isActive = employee.is_active !== false
+                const showLocationHead = isLocationHeadEmployee(employee)
+                const showDeptHead = isDeptHeadEmployee(employee)
                 return (
                   <tr key={employee.id} className={!isActive ? 'company-table__row--inactive' : undefined}>
                     <td className="company-table__cell--photo">
-                      <EmployeeAvatar employee={employee} />
+                      <div className="company-employee-photo-cell">
+                        <EmployeeAvatar employee={employee} />
+                        {(showLocationHead || showDeptHead) && (
+                          <div className="company-employee-photo__pills" aria-label="Employee roles">
+                            {showLocationHead && (
+                              <span className="company-badge company-badge--location-head">
+                                Location Head
+                              </span>
+                            )}
+                            {showDeptHead && (
+                              <span className="company-badge company-badge--dept-head">
+                                Dept Head
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     </td>
                     <td><code className="company-code">{employee.emp_id}</code></td>
                     <td><span className="company-table__name">{employee.name}</span></td>
@@ -301,6 +322,7 @@ export default function EmployeesTab({ canManage }) {
           locations={locations}
           departments={departments}
           designations={designations}
+          accessRoles={accessRoles}
           saving={saving}
           nestedSaving={nestedSaving}
           onClose={() => setModalOpen(false)}

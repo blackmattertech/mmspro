@@ -53,7 +53,7 @@ export default function AdminSidebar({ collapsed = false, onToggle }) {
       <div className="sidebar__footer">
         <SidebarUserFooter
           collapsed={collapsed}
-          roleLabel="Platform Admin"
+          roleLabel="Super Admin"
           onSignOut={signOut}
         />
       </div>

@@ -315,8 +315,30 @@
 }
 
 .company-table__cell--photo {
-  width: 56px;
+  width: 96px;
+  min-width: 96px;
   padding-right: 12px;
+  vertical-align: top;
+}
+
+.company-employee-photo-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.company-employee-photo-cell .company-employee-photo__pills {
+  max-width: 88px;
+}
+
+.company-employee-photo-cell .company-badge {
+  font-size: 10px;
+  padding: 3px 8px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .company-table__cell--manager {
@@ -374,6 +396,16 @@
 }
 
 .company-badge--primary {
+  color: var(--color-primary);
+  background: var(--color-light-pink-1);
+}
+
+.company-badge--location-head {
+  color: #15803d;
+  background: #dcfce7;
+}
+
+.company-badge--dept-head {
   color: var(--color-primary);
   background: var(--color-light-pink-1);
 }
@@ -534,6 +566,21 @@
   align-items: center;
   gap: 16px;
   min-width: 0;
+}
+
+.company-employee-photo__identity {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.company-employee-photo__pills {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
 }
 
 .company-employee-photo__login {

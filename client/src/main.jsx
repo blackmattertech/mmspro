@@ -4,7 +4,19 @@ import './styles/global.css'
 import { initAnalytics } from './lib/firebase'
 import App from './App.jsx'
 
-initAnalytics()
+const scheduleAnalyticsInit = () => {
+  if (typeof window === 'undefined') return
+  const run = () => {
+    initAnalytics().catch(() => {})
+  }
+  if ('requestIdleCallback' in window) {
+    window.requestIdleCallback(run, { timeout: 3000 })
+  } else {
+    setTimeout(run, 0)
+  }
+}
+
+scheduleAnalyticsInit()
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>

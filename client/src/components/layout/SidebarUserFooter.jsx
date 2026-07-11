@@ -1,26 +1,27 @@
 import { useState } from 'react'
 import { useProfile } from '../../hooks/useProfile'
+import { formatAccountRole } from '../../lib/accountRoles'
 import ProfileModal from '../profile/ProfileModal'
 import LogoutButton from '../ui/LogoutButton'
-
-const formatRole = (role) => {
-  const labels = { owner: 'Owner', admin: 'Admin', member: 'Member', admin_platform: 'Platform Admin' }
-  return labels[role] ?? (role ? role.charAt(0).toUpperCase() + role.slice(1) : 'Member')
-}
 
 export default function SidebarUserFooter({
   collapsed = false,
   roleLabel,
   onSignOut,
 }) {
-  const { profile, avatarUrl, displayName, employee, refresh } = useProfile()
+  const { profile, avatarUrl, displayName, employee, loading, refresh } = useProfile()
   const [showProfile, setShowProfile] = useState(false)
 
-  const resolvedRole = roleLabel ?? formatRole(profile?.role)
-  const avatarLetter = (displayName[0] || 'U').toUpperCase()
-  const tooltipLabel = `${displayName} · ${resolvedRole}`
+  const showSkeleton = loading && !displayName
+  const resolvedName = displayName || 'User'
+  const resolvedRole = roleLabel ?? formatAccountRole(profile?.role)
+  const avatarLetter = (resolvedName[0] || 'U').toUpperCase()
+  const tooltipLabel = showSkeleton ? 'Loading profile' : `${resolvedName} · ${resolvedRole}`
 
-  const openProfile = () => setShowProfile(true)
+  const openProfile = () => {
+    if (showSkeleton) return
+    setShowProfile(true)
+  }
 
   return (
     <>
@@ -29,10 +30,13 @@ export default function SidebarUserFooter({
           type="button"
           className="sidebar__user-trigger"
           onClick={openProfile}
-          aria-label={`Open profile for ${displayName}`}
+          aria-label={showSkeleton ? 'Loading profile' : `Open profile for ${resolvedName}`}
+          disabled={showSkeleton}
         >
-          <div className="sidebar__avatar">
-            {avatarUrl ? (
+          <div className={`sidebar__avatar ${showSkeleton ? 'sidebar__avatar--loading' : ''}`}>
+            {showSkeleton ? (
+              <span className="sidebar__avatar-skeleton" aria-hidden="true" />
+            ) : avatarUrl ? (
               <img src={avatarUrl} alt="" className="sidebar__avatar-img" />
             ) : (
               avatarLetter
@@ -43,8 +47,17 @@ export default function SidebarUserFooter({
           </div>
           {!collapsed && (
             <div className="sidebar__user-info">
-              <span className="sidebar__user-name">{displayName}</span>
-              <span className="sidebar__user-role">{resolvedRole}</span>
+              {showSkeleton ? (
+                <>
+                  <span className="sidebar__user-skeleton sidebar__user-skeleton--name" />
+                  <span className="sidebar__user-skeleton sidebar__user-skeleton--role" />
+                </>
+              ) : (
+                <>
+                  <span className="sidebar__user-name">{resolvedName}</span>
+                  <span className="sidebar__user-role">{resolvedRole}</span>
+                </>
+              )}
             </div>
           )}
         </button>

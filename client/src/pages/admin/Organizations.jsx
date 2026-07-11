@@ -434,9 +434,7 @@ export default function Organizations() {
             setSuccess(
               org.email_sent
                 ? `Organization "${org.name}" created. A password setup email was sent to ${org.owner_email}.`
-                : org.owner_created
-                  ? `Organization "${org.name}" created. Owner account ${org.owner_email} was created — configure Mailjet in server/.env to send the password setup email, or check server logs for the link.`
-                  : `Organization "${org.name}" created. Owner ${org.owner_email} was linked to the organization.`
+                : `Organization "${org.name}" created for ${org.owner_email}, but the password setup email was not sent. Check Mailjet settings in server/.env and the server logs for the setup link.`
             )
             return org
           }}

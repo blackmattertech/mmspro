@@ -49,6 +49,9 @@ export function useManualWorkOrderForm() {
   const [settings, setSettings] = useState({ sections: [] })
   const [values, setValues] = useState({})
   const [assignedEmployeeIds, setAssignedEmployeeIds] = useState([])
+  const [assignToDepartment, setAssignToDepartment] = useState(false)
+  const [assignedDepartmentId, setAssignedDepartmentId] = useState(null)
+  const [assignedLocationId, setAssignedLocationId] = useState(null)
   const [formOpen, setFormOpen] = useState(true)
   const valuesRef = useRef(values)
   const draftHydratedRef = useRef(false)
@@ -97,6 +100,11 @@ export function useManualWorkOrderForm() {
       if (Array.isArray(draft.assignedEmployeeIds)) {
         setAssignedEmployeeIds(draft.assignedEmployeeIds)
       }
+      if (typeof draft.assignToDepartment === 'boolean') {
+        setAssignToDepartment(draft.assignToDepartment)
+      }
+      if (draft.assignedDepartmentId) setAssignedDepartmentId(draft.assignedDepartmentId)
+      if (draft.assignedLocationId) setAssignedLocationId(draft.assignedLocationId)
       if (draft.formOpen !== undefined) setFormOpen(draft.formOpen)
     }
     draftHydratedRef.current = true
@@ -107,6 +115,7 @@ export function useManualWorkOrderForm() {
     const serialized = serializeWorkOrderValues(values)
     const hasContent = Object.keys(serialized).length > 0
       || assignedEmployeeIds.length > 0
+      || assignToDepartment
       || formOpen
     if (!hasContent) {
       clearFormDraft(draftKey)
@@ -115,9 +124,12 @@ export function useManualWorkOrderForm() {
     writeFormDraft(draftKey, {
       values: serialized,
       assignedEmployeeIds,
+      assignToDepartment,
+      assignedDepartmentId,
+      assignedLocationId,
       formOpen,
     })
-  }, [draftKey, values, assignedEmployeeIds, formOpen])
+  }, [draftKey, values, assignedEmployeeIds, assignToDepartment, assignedDepartmentId, assignedLocationId, formOpen])
 
   useEffect(() => () => revokePreviewUrls(valuesRef.current), [])
 
@@ -143,10 +155,18 @@ export function useManualWorkOrderForm() {
     revokePreviewUrls(values)
     setValues({})
     setAssignedEmployeeIds([])
+    setAssignToDepartment(false)
+    setAssignedDepartmentId(null)
+    setAssignedLocationId(null)
     setSuccess(null)
     setError(null)
     if (draftKey) clearFormDraft(draftKey)
   }
+
+  const setDepartmentTarget = useCallback(({ departmentId, locationId }) => {
+    setAssignedDepartmentId(departmentId || null)
+    setAssignedLocationId(locationId || null)
+  }, [])
 
   const saveSettings = async (updates) => {
     setSaving(true)
@@ -167,6 +187,10 @@ export function useManualWorkOrderForm() {
   const submit = async (status = 'created') => {
     if (!org?.id) {
       setError('Organization not loaded')
+      return
+    }
+    if (status === 'created' && !assignedLocationId && !assignedEmployeeIds.length) {
+      setError('Select a location (or specific employees) before creating the work order')
       return
     }
 
@@ -203,6 +227,8 @@ export function useManualWorkOrderForm() {
         status,
         values: textValues,
         assignedEmployeeIds,
+        assignedDepartmentId: assignedDepartmentId || null,
+        assignedLocationId: assignedLocationId || null,
       })
 
       if (fileEntries.length) {
@@ -223,6 +249,9 @@ export function useManualWorkOrderForm() {
       revokePreviewUrls(values)
       setValues({})
       setAssignedEmployeeIds([])
+      setAssignToDepartment(false)
+      setAssignedDepartmentId(null)
+      setAssignedLocationId(null)
       if (draftKey) clearFormDraft(draftKey)
 
       if (status === 'created') {
@@ -245,6 +274,9 @@ export function useManualWorkOrderForm() {
     values,
     assignedEmployeeIds,
     setAssignedEmployeeIds,
+    assignToDepartment,
+    setAssignToDepartment,
+    setDepartmentTarget,
     formOpen,
     setFormOpen,
     loading,
