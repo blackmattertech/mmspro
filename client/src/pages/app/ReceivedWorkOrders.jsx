@@ -8,7 +8,7 @@ import WorkOrdersTable from '../../components/workorders/WorkOrdersTable'
 import '../../components/company/CompanyShared.css'
 import '../../components/workorders/WorkOrdersPage.css'
 
-const RECEIVED_COLUMNS = ['wo_number', 'summary', 'assigned_with', 'creator', 'received_at', 'status']
+const RECEIVED_COLUMNS = ['wo_number', 'summary', 'assignees', 'creator', 'received_at', 'status']
 
 export default function ReceivedWorkOrders() {
   const [selectedId, setSelectedId] = useState(null)

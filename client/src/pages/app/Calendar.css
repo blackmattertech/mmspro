@@ -385,6 +385,18 @@
   margin-bottom: 16px;
 }
 
+.cal-panel__empty,
+.cal-table__empty {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--color-slate-gray, #64748b);
+  text-align: center;
+}
+
+.cal-table__empty {
+  padding: 24px 12px;
+}
+
 /* Quick filters */
 .cal-quick-filters {
   list-style: none;

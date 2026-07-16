@@ -46,7 +46,6 @@ export const ACCESS_MODULE_GROUPS = [
       { key: 'company', label: 'Company profile', actions: ['read', 'update'] },
       { key: 'locations', label: 'Locations', actions: ['create', 'read', 'update', 'delete'] },
       { key: 'departments', label: 'Departments', actions: ['create', 'read', 'update', 'delete'] },
-      { key: 'designations', label: 'Designations', actions: ['create', 'read', 'update', 'delete'] },
       { key: 'employees', label: 'Employees', actions: ['create', 'read', 'update', 'delete'] },
     ],
   },
@@ -55,6 +54,8 @@ export const ACCESS_MODULE_GROUPS = [
     label: 'Masters',
     modules: [
       { key: 'assets', label: 'Assets', actions: ['create', 'read', 'update', 'delete'] },
+      { key: 'areas', label: 'Areas', actions: ['create', 'read', 'update', 'delete'] },
+      { key: 'equipment', label: 'Equipment', actions: ['create', 'read', 'update', 'delete'] },
     ],
   },
   {
@@ -85,8 +86,8 @@ export const MODULE_LEGACY_EXPAND = {
     'reports_completed_logs',
     'reports_overdue',
   ],
-  // Older roles used company.update for locations/depts/designations CRUD.
-  company: ['locations', 'departments', 'designations'],
+  // Older roles used company.update for locations/depts CRUD.
+  company: ['locations', 'departments'],
 }
 
 export const WORK_ORDER_MODULE_KEYS = [
@@ -110,7 +111,7 @@ export const COMPANY_PAGE_MODULE_KEYS = [
   'company',
   'locations',
   'departments',
-  'designations',
+  'areas',
   'employees',
 ]
 

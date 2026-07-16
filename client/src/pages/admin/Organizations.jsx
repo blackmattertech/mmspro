@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useAdminOrganizations } from '../../hooks/useAdminOrganizations'
 import CreateOrgModal from '../../components/admin/CreateOrgModal'
 import OrgLimitsModal from '../../components/admin/OrgLimitsModal'
@@ -7,6 +8,7 @@ import { LIMIT_ITEMS, formatUsage, isAtOrOverLimit } from '../../lib/orgLimits'
 import '../../components/admin/OrgLimitsModal.css'
 import './AdminPage.css'
 import './Organizations.css'
+import './AdminOrgAssets.css'
 
 const PAGE_SIZE = 10
 
@@ -344,12 +346,13 @@ export default function Organizations() {
                       <th>Usage / Limits</th>
                       <th>Created</th>
                       <th>Enabled</th>
+                      <th>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
                     {!pageRows.length ? (
                       <tr>
-                        <td colSpan={5} className="admin-table__empty">
+                        <td colSpan={6} className="admin-table__empty">
                           {organizations.length
                             ? 'No organizations match your search.'
                             : 'No organizations yet. Create your first organization to get started.'}
@@ -387,6 +390,22 @@ export default function Organizations() {
                               onChange={(checked) => handleToggle(org, checked)}
                               ariaLabel={`${org.is_active !== false ? 'Disable' : 'Enable'} ${org.name}`}
                             />
+                          </td>
+                          <td>
+                            <div className="admin-org-actions">
+                              <Link
+                                to={`/admin/organizations/${org.id}/assets`}
+                                className="admin-org-actions__btn"
+                              >
+                                Assets
+                              </Link>
+                              <Link
+                                to={`/admin/organizations/${org.id}/equipment`}
+                                className="admin-org-actions__btn"
+                              >
+                                Equipment
+                              </Link>
+                            </div>
                           </td>
                         </tr>
                       ))

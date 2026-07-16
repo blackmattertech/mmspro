@@ -6,15 +6,13 @@ import EmployeeSelect from './EmployeeSelect'
 import GooToggle from '../ui/GooToggle'
 import LocationModal from './LocationModal'
 import DepartmentModal from './DepartmentModal'
-import DesignationModal from './DesignationModal'
 import PhoneInput from '../shared/PhoneInput'
 import ImageCropModal from '../shared/ImageCropModal'
 import {
   departmentsForEmployeeLocation,
-  employeeMatchesDepartmentLocation,
 } from '../../lib/departmentLocation'
 import { validatePhoneE164 } from '../../lib/validation'
-import { isDeptHeadEmployee, isLocationHeadEmployee } from '../../lib/employeeRoles'
+import { isLocationHeadEmployee } from '../../lib/employeeRoles'
 import './CompanyShared.css'
 
 const EMPTY = {
@@ -25,11 +23,15 @@ const EMPTY = {
   additional_emails: [],
   location_id: '',
   department_id: '',
-  designation_id: '',
   manager_id: '',
   access_role_id: '',
-  is_department_head: false,
   login_required: false,
+}
+
+function findDefaultUserRole(roles) {
+  return (roles || []).find(
+    (role) => role.is_active !== false && role.name?.trim().toLowerCase() === 'user',
+  ) || null
 }
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
@@ -46,28 +48,21 @@ function normalizeAdditionalEmails(emails) {
   return normalized
 }
 
-function filterDesignationsForDepartment(designations, departmentId) {
-  const active = designations.filter((d) => d.is_active !== false)
-  if (!departmentId) return active
-  return active.filter((d) =>
-    d.all_departments || d.departments?.some((dept) => dept.id === departmentId),
-  )
-}
 
 export default function EmployeeModal({
   employee,
   employees = [],
   locations,
   departments,
-  designations,
   accessRoles = [],
   saving,
   nestedSaving,
+  defaultLocationId = '',
+  lockLocation = false,
   onClose,
   onSave,
   onCreateLocation,
   onCreateDepartment,
-  onCreateDesignation,
   onLimitExceeded,
 }) {
   const [form, setForm] = useState(EMPTY)
@@ -91,40 +86,6 @@ export default function EmployeeModal({
     [activeDepartments, form.location_id],
   )
 
-  const selectedDepartment = useMemo(
-    () => activeDepartments.find((d) => d.id === form.department_id),
-    [activeDepartments, form.department_id],
-  )
-
-  const canBeDepartmentHead = Boolean(
-    form.department_id
-    && form.location_id
-    && selectedDepartment
-    && employeeMatchesDepartmentLocation(form.location_id, selectedDepartment),
-  )
-
-  const selectedLocation = useMemo(
-    () => activeLocations.find((loc) => loc.id === form.location_id),
-    [activeLocations, form.location_id],
-  )
-
-  const isEmployeeDepartmentHead = (emp) => {
-    if (!emp?.department_id) return false
-    if ((emp.headed_departments || []).some((dept) => dept.id === emp.department_id)) {
-      return true
-    }
-    const dept = departments.find((d) => d.id === emp.department_id)
-    return Boolean(
-      dept?.location_heads?.some(
-        (row) => row.location_id === emp.location_id && row.head_employee_id === emp.id,
-      ),
-    )
-  }
-
-  const availableDesignations = useMemo(
-    () => filterDesignationsForDepartment(designations, form.department_id),
-    [designations, form.department_id],
-  )
   const availableAccessRoles = useMemo(
     () => accessRoles.filter((role) => role.is_active !== false),
     [accessRoles],
@@ -135,9 +96,6 @@ export default function EmployeeModal({
   )
   const showLocationHeadPill = isLocationHeadEmployee(employee, {
     accessRoleName: selectedAccessRole?.name,
-  })
-  const showDeptHeadPill = isDeptHeadEmployee(employee, {
-    isDepartmentHead: form.is_department_head,
   })
 
   useEffect(() => {
@@ -150,27 +108,47 @@ export default function EmployeeModal({
         additional_emails: (employee.org_employee_emails || []).map((row) => row.email),
         location_id: employee.location_id || '',
         department_id: employee.department_id || '',
-        designation_id: employee.designation_id || '',
         manager_id: employee.manager_id || '',
         access_role_id: employee.access_role_id || '',
-        is_department_head: isEmployeeDepartmentHead(employee),
         login_required: employee.login_required === true,
       })
       setPhotoPreview(employee.photo_signed_url || null)
     } else {
-      setForm(EMPTY)
+      const defaultRole = findDefaultUserRole(accessRoles)
+      setForm({
+        ...EMPTY,
+        location_id: defaultLocationId || '',
+        access_role_id: defaultRole?.id || '',
+      })
       setPhotoPreview(null)
     }
     setPhotoFile(null)
-  }, [employee])
+  }, [employee, defaultLocationId])
 
   useEffect(() => {
-    if (!form.designation_id) return
-    const stillValid = availableDesignations.some((d) => d.id === form.designation_id)
-    if (!stillValid) {
-      setForm((prev) => ({ ...prev, designation_id: '' }))
-    }
-  }, [availableDesignations, form.designation_id])
+    // When roles load after opening create modal, default to User if still empty.
+    if (employee || form.access_role_id) return
+    const defaultRole = findDefaultUserRole(availableAccessRoles)
+    if (!defaultRole) return
+    setForm((prev) => (prev.access_role_id ? prev : { ...prev, access_role_id: defaultRole.id }))
+  }, [employee, availableAccessRoles, form.access_role_id])
+
+  useEffect(() => {
+    if (employee || !defaultLocationId) return
+    setForm((prev) => (prev.location_id ? prev : { ...prev, location_id: defaultLocationId }))
+  }, [employee, defaultLocationId])
+
+  useEffect(() => {
+    if (!lockLocation || !defaultLocationId || employee) return
+    if (form.location_id === defaultLocationId) return
+    setForm((prev) => ({
+      ...prev,
+      location_id: defaultLocationId,
+      department_id: prev.location_id === defaultLocationId ? prev.department_id : '',
+      manager_id: prev.location_id === defaultLocationId ? prev.manager_id : '',
+    }))
+  }, [lockLocation, defaultLocationId, employee, form.location_id])
+
 
   useEffect(() => {
     if (!form.department_id) return
@@ -179,17 +157,10 @@ export default function EmployeeModal({
       setForm((prev) => ({
         ...prev,
         department_id: '',
-        designation_id: '',
-        is_department_head: false,
       }))
     }
   }, [departmentsForLocation, form.department_id])
 
-  useEffect(() => {
-    if (form.is_department_head && !canBeDepartmentHead) {
-      setForm((prev) => ({ ...prev, is_department_head: false }))
-    }
-  }, [canBeDepartmentHead, form.is_department_head])
 
   useEffect(() => {
     if (!form.manager_id) return
@@ -281,10 +252,8 @@ export default function EmployeeModal({
         additional_emails: additionalEmails,
         location_id: form.location_id || null,
         department_id: form.department_id || null,
-        designation_id: form.designation_id || null,
         manager_id: form.manager_id || null,
         access_role_id: form.access_role_id || null,
-        is_department_head: form.is_department_head,
         login_required: form.login_required,
       }, photoFile)
     } catch (err) {
@@ -320,11 +289,6 @@ export default function EmployeeModal({
     }
   }
 
-  const handleNestedDesignationSave = async (payload) => {
-    const created = await onCreateDesignation(payload)
-    setForm((prev) => ({ ...prev, designation_id: created.id }))
-    setNested(null)
-  }
 
   const addAdditionalEmail = () => {
     setForm((prev) => ({ ...prev, additional_emails: [...prev.additional_emails, ''] }))
@@ -366,18 +330,11 @@ export default function EmployeeModal({
                       <span className="company-employee-photo__placeholder">{avatarLetter}</span>
                     )}
                   </div>
-                  {(showLocationHeadPill || showDeptHeadPill) && (
+                  {showLocationHeadPill && (
                     <div className="company-employee-photo__pills" aria-label="Employee roles">
-                      {showLocationHeadPill && (
-                        <span className="company-badge company-badge--location-head">
-                          Location Head
-                        </span>
-                      )}
-                      {showDeptHeadPill && (
-                        <span className="company-badge company-badge--dept-head">
-                          Dept Head
-                        </span>
-                      )}
+                      <span className="company-badge company-badge--location-head">
+                        Location Head
+                      </span>
                     </div>
                   )}
                 </div>
@@ -505,17 +462,20 @@ export default function EmployeeModal({
                 ...form,
                 location_id,
                 department_id: '',
-                designation_id: '',
                 manager_id: '',
-                access_role_id: '',
-                is_department_head: false,
               })}
               options={activeLocations}
               getOptionValue={(loc) => loc.id}
               getOptionLabel={(loc) => (loc.code ? `${loc.code} — ${loc.name}` : loc.name)}
               placeholder="Select location"
-              onCreate={() => setNested('location')}
+              disabled={lockLocation}
+              onCreate={onCreateLocation ? () => setNested('location') : undefined}
             />
+            {lockLocation && (
+              <span className="company-modal__hint">
+                Location is limited to your assigned location.
+              </span>
+            )}
 
             <CreatableSelect
               label="Department"
@@ -523,8 +483,6 @@ export default function EmployeeModal({
               onChange={(department_id) => setForm({
                 ...form,
                 department_id,
-                designation_id: '',
-                is_department_head: false,
               })}
               options={departmentsForLocation}
               getOptionValue={(dept) => dept.id}
@@ -534,16 +492,6 @@ export default function EmployeeModal({
               onCreate={() => setNested('department')}
             />
 
-            <CreatableSelect
-              label="Designation"
-              value={form.designation_id}
-              onChange={(designation_id) => setForm({ ...form, designation_id })}
-              options={availableDesignations}
-              getOptionValue={(des) => des.id}
-              getOptionLabel={(des) => des.name}
-              placeholder={form.department_id ? 'Select designation' : 'Select department first (optional)'}
-              onCreate={() => setNested('designation')}
-            />
 
             <EmployeeSelect
               label="Manager"
@@ -561,7 +509,9 @@ export default function EmployeeModal({
                 value={form.access_role_id}
                 onChange={(e) => setForm({ ...form, access_role_id: e.target.value })}
               >
-                <option value="">No role assigned</option>
+                <option value="">
+                  {findDefaultUserRole(availableAccessRoles) ? 'User (default)' : 'No role assigned'}
+                </option>
                 {availableAccessRoles.map((role) => (
                   <option key={role.id} value={role.id}>{role.name}</option>
                 ))}
@@ -572,33 +522,10 @@ export default function EmployeeModal({
                 </span>
               ) : (
                 <span className="company-modal__hint">
-                  Roles apply across the company. Employees still only work within their assigned location.
+                  If no role is selected, the User role is assigned automatically.
                 </span>
               )}
             </label>
-
-            <div className="company-employee-photo__login">
-              <span className="company-employee-photo__login-label">Department Head</span>
-              <GooToggle
-                checked={form.is_department_head}
-                disabled={!canBeDepartmentHead}
-                onChange={(checked) => setForm({ ...form, is_department_head: checked })}
-                ariaLabel="Department head"
-              />
-              <p
-                className={`company-employee-photo__login-hint${
-                  canBeDepartmentHead ? '' : ' company-employee-photo__login-hint--enable'
-                }`}
-              >
-                {canBeDepartmentHead
-                  ? (
-                    selectedDepartment?.per_location_heads
-                      ? `Head of ${selectedDepartment?.code || selectedDepartment?.name || 'this department'} for ${selectedLocation?.code || selectedLocation?.name || 'the selected location'}.`
-                      : `Head of ${selectedDepartment?.code || selectedDepartment?.name || 'selected department'} at this location.`
-                  )
-                  : 'Select a location and matching department first.'}
-              </p>
-            </div>
 
             {error && <p className="company-alert">{error}</p>}
             <div className="company-modal__actions">
@@ -627,23 +554,11 @@ export default function EmployeeModal({
           department={null}
           locations={activeLocations}
           departments={activeDepartments}
-          employees={activeEmployees}
           saving={nestedSaving}
           nestedSaving={nestedSaving}
           onClose={() => setNested(null)}
           onSave={handleNestedDepartmentSave}
           onCreateLocation={onCreateLocation}
-        />
-      )}
-
-      {nested === 'designation' && (
-        <DesignationModal
-          nested
-          designation={null}
-          departments={activeDepartments}
-          saving={nestedSaving}
-          onClose={() => setNested(null)}
-          onSave={handleNestedDesignationSave}
         />
       )}
 

@@ -12,10 +12,32 @@ import {
   resolveSessionPermissions,
   permissionMap,
 } from '../../lib/orgPermissions.js'
+import { getSignedUrl } from '../../lib/signedUrlCache.js'
+import { invalidatePermissionsCache } from '../../lib/requestCache.js'
 
 const router = Router()
 
 router.use(verifyAuth, requireOrgAccess)
+
+const ORG_ASSETS_BUCKET = 'org-assets'
+const ROLE_CARD_AVATAR_LIMIT = 4
+
+async function attachEmployeePhotoUrl(employee) {
+  if (!employee?.photo_url) return employee
+  const signedUrl = await getSignedUrl(ORG_ASSETS_BUCKET, employee.photo_url)
+  return { ...employee, photo_signed_url: signedUrl || null }
+}
+
+async function getEmployeeCountForRole(orgId, roleId) {
+  const { count, error } = await supabaseAdmin
+    .from('org_employees')
+    .select('id', { count: 'exact', head: true })
+    .eq('org_id', orgId)
+    .eq('access_role_id', roleId)
+
+  if (error) throw error
+  return count || 0
+}
 
 async function getPermissionsForRole(roleId) {
   const { data, error } = await supabaseAdmin
@@ -25,6 +47,99 @@ async function getPermissionsForRole(roleId) {
 
   if (error) throw error
   return normalizePermissionsInput(data || [])
+}
+
+/** Batch-enrich roles: few queries total instead of N+1 per role. */
+async function enrichRoles(orgId, roles) {
+  if (!roles?.length) return []
+
+  const roleIds = roles.map((r) => r.id)
+  const locationIds = [...new Set(roles.map((r) => r.location_id).filter(Boolean))]
+
+  const [permResult, empResult, locResult] = await Promise.all([
+    supabaseAdmin
+      .from('org_access_role_permissions')
+      .select('role_id, module_key, can_create, can_read, can_update, can_delete')
+      .in('role_id', roleIds),
+    supabaseAdmin
+      .from('org_employees')
+      .select('id, name, emp_id, photo_url, location_id, access_role_id, org_locations:location_id ( id, name, code )')
+      .eq('org_id', orgId)
+      .in('access_role_id', roleIds)
+      .order('name'),
+    locationIds.length
+      ? supabaseAdmin
+          .from('org_locations')
+          .select('id, name, code')
+          .eq('org_id', orgId)
+          .in('id', locationIds)
+      : Promise.resolve({ data: [], error: null }),
+  ])
+
+  if (permResult.error) throw permResult.error
+  if (empResult.error) throw empResult.error
+  if (locResult.error) throw locResult.error
+
+  const permsByRole = new Map()
+  for (const row of permResult.data || []) {
+    if (!permsByRole.has(row.role_id)) permsByRole.set(row.role_id, [])
+    permsByRole.get(row.role_id).push(row)
+  }
+
+  const employeesByRole = new Map()
+  const allEmployees = empResult.data || []
+  for (const emp of allEmployees) {
+    if (!employeesByRole.has(emp.access_role_id)) employeesByRole.set(emp.access_role_id, [])
+    employeesByRole.get(emp.access_role_id).push(emp)
+  }
+
+  const locationById = new Map((locResult.data || []).map((loc) => [loc.id, loc]))
+
+  const sampleIds = []
+  for (const roleId of roleIds) {
+    const samples = (employeesByRole.get(roleId) || []).slice(0, ROLE_CARD_AVATAR_LIMIT)
+    for (const emp of samples) sampleIds.push(emp.id)
+  }
+
+  const headedByEmployee = new Map()
+  if (sampleIds.length) {
+    const { data: headedLocations, error: headedError } = await supabaseAdmin
+      .from('org_locations')
+      .select('id, name, code, head_employee_id')
+      .eq('org_id', orgId)
+      .in('head_employee_id', sampleIds)
+    if (headedError) throw headedError
+    for (const location of headedLocations || []) {
+      const existing = headedByEmployee.get(location.head_employee_id) || []
+      existing.push({ id: location.id, name: location.name, code: location.code })
+      headedByEmployee.set(location.head_employee_id, existing)
+    }
+  }
+
+  return Promise.all(roles.map(async (role) => {
+    const roleEmployees = employeesByRole.get(role.id) || []
+    const samples = roleEmployees.slice(0, ROLE_CARD_AVATAR_LIMIT)
+    const sample_employees = await Promise.all(samples.map(async (employee) => {
+      const withPhoto = await attachEmployeePhotoUrl(employee)
+      return {
+        ...withPhoto,
+        headed_locations: headedByEmployee.get(employee.id) || [],
+      }
+    }))
+
+    return {
+      ...role,
+      location: role.location_id ? (locationById.get(role.location_id) || null) : null,
+      permissions: normalizePermissionsInput(permsByRole.get(role.id) || []),
+      employee_count: roleEmployees.length,
+      sample_employees,
+    }
+  }))
+}
+
+async function enrichRole(orgId, role) {
+  const [enriched] = await enrichRoles(orgId, [role])
+  return enriched
 }
 
 async function syncRolePermissions(roleId, permissions) {
@@ -46,62 +161,18 @@ async function syncRolePermissions(roleId, permissions) {
     can_delete: row.can_delete,
   }))
 
-  if (!rows.length) return normalized
+  if (!rows.length) {
+    invalidatePermissionsCache()
+    return normalized
+  }
 
   const { error: insertError } = await supabaseAdmin
     .from('org_access_role_permissions')
     .insert(rows)
 
   if (insertError) throw insertError
+  invalidatePermissionsCache()
   return normalized
-}
-
-const ORG_ASSETS_BUCKET = 'org-assets'
-const ROLE_CARD_AVATAR_LIMIT = 4
-
-async function attachEmployeePhotoUrl(employee) {
-  if (!employee?.photo_url) return employee
-  const { data } = await supabaseAdmin.storage
-    .from(ORG_ASSETS_BUCKET)
-    .createSignedUrl(employee.photo_url, 3600)
-  return { ...employee, photo_signed_url: data?.signedUrl || null }
-}
-
-async function getEmployeeCountForRole(orgId, roleId) {
-  const { count, error } = await supabaseAdmin
-    .from('org_employees')
-    .select('id', { count: 'exact', head: true })
-    .eq('org_id', orgId)
-    .eq('access_role_id', roleId)
-
-  if (error) throw error
-  return count || 0
-}
-
-async function getSampleEmployeesForRole(orgId, roleId) {
-  const { data, error } = await supabaseAdmin
-    .from('org_employees')
-    .select('id, name, emp_id, photo_url')
-    .eq('org_id', orgId)
-    .eq('access_role_id', roleId)
-    .order('name')
-    .limit(ROLE_CARD_AVATAR_LIMIT)
-
-  if (error) throw error
-  return Promise.all((data || []).map(attachEmployeePhotoUrl))
-}
-
-async function resolveLocation(orgId, locationId) {
-  if (!locationId) return null
-  const { data, error } = await supabaseAdmin
-    .from('org_locations')
-    .select('id, name, code')
-    .eq('id', locationId)
-    .eq('org_id', orgId)
-    .maybeSingle()
-
-  if (error) throw error
-  return data
 }
 
 /**
@@ -164,16 +235,6 @@ function assertRoleInScope(role, capability, userId) {
   return true
 }
 
-async function enrichRole(orgId, role) {
-  const [permissions, employee_count, location, sample_employees] = await Promise.all([
-    getPermissionsForRole(role.id),
-    getEmployeeCountForRole(orgId, role.id),
-    resolveLocation(orgId, role.location_id),
-    getSampleEmployeesForRole(orgId, role.id),
-  ])
-  return { ...role, location, permissions, employee_count, sample_employees }
-}
-
 router.get('/modules', (_req, res) => {
   res.json({ groups: ACCESS_MODULE_GROUPS, modules: ACCESS_MODULES })
 })
@@ -219,7 +280,7 @@ router.get('/', async (req, res) => {
     const { data, error } = await query
     if (error) return res.status(500).json({ error: error.message })
 
-    const roles = await Promise.all((data || []).map((role) => enrichRole(orgId, role)))
+    const roles = await enrichRoles(orgId, data || [])
     res.json(roles)
   } catch (err) {
     res.status(500).json({ error: err.message })
@@ -369,6 +430,7 @@ router.delete('/:id', requireCapability('delete'), assertOrgOwnership('org_acces
     .eq('org_id', orgId)
 
   if (error) return res.status(500).json({ error: error.message })
+  invalidatePermissionsCache()
   res.json({ ok: true })
 })
 
@@ -427,6 +489,7 @@ router.post('/:id/assign-employees', requireCapability('assign'), assertOrgOwner
     if (assignError) return res.status(500).json({ error: assignError.message })
   }
 
+  invalidatePermissionsCache()
   const employee_count = await getEmployeeCountForRole(orgId, roleId)
   res.json({ employee_count, employee_ids: uniqueIds })
 })

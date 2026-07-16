@@ -12,6 +12,7 @@ import {
   LIMIT_FIELDS,
 } from '../../lib/orgLimits.js'
 import { ACCOUNT_ROLES } from '../../lib/accountRoles.js'
+import { getSignedUrl } from '../../lib/signedUrlCache.js'
 
 const router = Router()
 const ORG_ASSETS_BUCKET = 'org-assets'
@@ -25,12 +26,9 @@ const ORG_SELECT = `
 async function attachOrgLogoUrl(org) {
   if (!org?.logo_url) return org
 
-  const { data, error } = await supabaseAdmin.storage
-    .from(ORG_ASSETS_BUCKET)
-    .createSignedUrl(org.logo_url, 3600)
-
-  if (!error && data?.signedUrl) {
-    return { ...org, logo_signed_url: data.signedUrl }
+  const signedUrl = await getSignedUrl(ORG_ASSETS_BUCKET, org.logo_url)
+  if (signedUrl) {
+    return { ...org, logo_signed_url: signedUrl }
   }
   return org
 }
@@ -190,6 +188,31 @@ router.post('/', async (req, res) => {
     const status = err.status || 500
     res.status(status).json({ error: err.message || 'Failed to create organization' })
   }
+})
+
+router.get('/:id', async (req, res) => {
+  const { data, error } = await supabaseAdmin
+    .from('organizations')
+    .select(ORG_SELECT)
+    .eq('id', req.params.id)
+    .maybeSingle()
+
+  if (error) return res.status(500).json({ error: error.message })
+  if (!data) return res.status(404).json({ error: 'Organization not found' })
+
+  const [usage, { count }] = await Promise.all([
+    getBulkOrgUsage([data.id]).then((map) => map[data.id]),
+    supabaseAdmin
+      .from('profiles')
+      .select('*', { count: 'exact', head: true })
+      .eq('org_id', data.id),
+  ])
+
+  res.json({
+    ...(await attachOrgLogoUrl(data)),
+    member_count: count || 0,
+    usage: usage || { locations: 0, departments: 0, employees: 0, logins: 0 },
+  })
 })
 
 router.patch('/:id', async (req, res) => {

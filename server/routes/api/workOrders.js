@@ -7,6 +7,7 @@ import {
 } from '../../middleware/modulePermission.js'
 import { supabaseAdmin } from '../../services/supabase.js'
 import { getScopedLocationId } from '../../lib/orgPermissions.js'
+import { getSignedUrl, getSignedUrls } from '../../lib/signedUrlCache.js'
 
 const router = Router()
 
@@ -14,8 +15,6 @@ const canReadWorkOrders = requireModulePermission('work_orders', 'read')
 const canCreateWorkOrders = requireModulePermission('work_orders', 'create')
 const canUpdateWorkOrders = requireModulePermission('work_orders', 'update')
 const canManageFormSettings = requireModulePermission('work_orders', 'update')
-
-const LIST_SIGNED_URL_LIMIT = 25
 
 router.use(verifyAuth, requireOrgAccess, loadOrgPermissions)
 
@@ -123,11 +122,9 @@ function buildFormSchema(fields, settingsMap) {
 async function attachSectionIconUrls(schema) {
   const sections = await Promise.all((schema.sections || []).map(async (section) => {
     if (!section.icon_path) return section
-    const { data, error } = await supabaseAdmin.storage
-      .from('org-assets')
-      .createSignedUrl(section.icon_path, 3600)
-    if (error || !data?.signedUrl) return section
-    return { ...section, icon_signed_url: data.signedUrl }
+    const signedUrl = await getSignedUrl('org-assets', section.icon_path)
+    if (!signedUrl) return section
+    return { ...section, icon_signed_url: signedUrl }
   }))
   return { sections }
 }
@@ -224,98 +221,48 @@ async function getEmployeeByProfile(orgId, profileId, { email = null } = {}) {
   return byEmail || null
 }
 
-async function listHeadedDepartmentIds(orgId, employeeId) {
-  if (!employeeId) return []
-
-  const [{ data: asPrimary }, { data: asLocationHead }] = await Promise.all([
-    supabaseAdmin
-      .from('departments')
-      .select('id')
-      .eq('org_id', orgId)
-      .eq('head_employee_id', employeeId),
-    supabaseAdmin
-      .from('department_location_heads')
-      .select('department_id')
-      .eq('org_id', orgId)
-      .eq('head_employee_id', employeeId),
-  ])
-
-  return [...new Set([
-    ...(asPrimary || []).map((row) => row.id),
-    ...(asLocationHead || []).map((row) => row.department_id),
-  ].filter(Boolean))]
-}
-
 async function listReceivedWorkOrderIds(orgId, employee) {
   if (!employee) return []
 
   const ids = new Set()
 
-  // 1) Explicit personal assignees
-  const { data: assignments, error: assignmentError } = await supabaseAdmin
-    .from('manual_work_order_assignees')
-    .select('work_order_id')
-    .eq('org_id', orgId)
-    .eq('employee_id', employee.id)
-
-  if (assignmentError) throw assignmentError
-  for (const row of assignments || []) ids.add(row.work_order_id)
-
-  // 2) Location pool — anyone at the location (incl. Location Head)
-  if (employee.location_id) {
-    const { data: locOrders, error: locError } = await supabaseAdmin
-      .from('manual_work_orders')
-      .select('id')
+  const [assignmentResult, locResult, deptResult] = await Promise.all([
+    supabaseAdmin
+      .from('manual_work_order_assignees')
+      .select('work_order_id')
       .eq('org_id', orgId)
-      .eq('assigned_location_id', employee.location_id)
-      .eq('status', 'created')
+      .eq('employee_id', employee.id),
+    employee.location_id
+      ? supabaseAdmin
+          .from('manual_work_orders')
+          .select('id')
+          .eq('org_id', orgId)
+          .eq('assigned_location_id', employee.location_id)
+          .eq('status', 'created')
+      : Promise.resolve({ data: [], error: null }),
+    employee.department_id
+      ? supabaseAdmin
+          .from('manual_work_orders')
+          .select('id, assigned_location_id')
+          .eq('org_id', orgId)
+          .eq('assigned_department_id', employee.department_id)
+          .eq('status', 'created')
+      : Promise.resolve({ data: [], error: null }),
+  ])
 
-    if (locError) throw locError
-    for (const row of locOrders || []) ids.add(row.id)
-  }
+  if (assignmentResult.error) throw assignmentResult.error
+  if (locResult.error) throw locResult.error
+  if (deptResult.error) throw deptResult.error
 
-  // 3) Department pool — same department (at matching location when set)
-  if (employee.department_id) {
-    let deptQuery = supabaseAdmin
-      .from('manual_work_orders')
-      .select('id, assigned_location_id')
-      .eq('org_id', orgId)
-      .eq('assigned_department_id', employee.department_id)
-      .eq('status', 'created')
-
-    const { data: deptOrders, error: deptError } = await deptQuery
-    if (deptError) throw deptError
-    for (const row of deptOrders || []) {
-      if (
-        !row.assigned_location_id
-        || !employee.location_id
-        || row.assigned_location_id === employee.location_id
-      ) {
-        ids.add(row.id)
-      }
-    }
-  }
-
-  // 4) Departments this employee heads (may differ from their own department_id)
-  const headedDeptIds = await listHeadedDepartmentIds(orgId, employee.id)
-  if (headedDeptIds.length) {
-    const { data: headedOrders, error: headedError } = await supabaseAdmin
-      .from('manual_work_orders')
-      .select('id, assigned_location_id')
-      .eq('org_id', orgId)
-      .in('assigned_department_id', headedDeptIds)
-      .eq('status', 'created')
-
-    if (headedError) throw headedError
-    for (const row of headedOrders || []) {
-      // Prefer same-location when employee has a location; still include if WO has no location
-      if (
-        !employee.location_id
-        || !row.assigned_location_id
-        || row.assigned_location_id === employee.location_id
-      ) {
-        ids.add(row.id)
-      }
+  for (const row of assignmentResult.data || []) ids.add(row.work_order_id)
+  for (const row of locResult.data || []) ids.add(row.id)
+  for (const row of deptResult.data || []) {
+    if (
+      !row.assigned_location_id
+      || !employee.location_id
+      || row.assigned_location_id === employee.location_id
+    ) {
+      ids.add(row.id)
     }
   }
 
@@ -357,7 +304,7 @@ async function validateAssignedDepartment(orgId, departmentId, locationId) {
 
   const { data: department, error: deptError } = await supabaseAdmin
     .from('departments')
-    .select('id, name, location_id, all_locations, is_active, head_employee_id, per_location_heads')
+    .select('id, name, location_id, all_locations, is_active')
     .eq('org_id', orgId)
     .eq('id', departmentId)
     .maybeSingle()
@@ -450,50 +397,57 @@ function employeeMatchesDepartmentAssignment(employee, workOrder) {
   return true
 }
 
-async function isLocationHead(orgId, employee) {
-  if (!employee?.id || !employee?.location_id) return false
+async function isLocationHeadFor(orgId, employee, locationId, session = null) {
+  if (!employee?.id || !locationId) return false
+
   const { data, error } = await supabaseAdmin
     .from('org_locations')
     .select('id')
     .eq('org_id', orgId)
-    .eq('id', employee.location_id)
+    .eq('id', locationId)
     .eq('head_employee_id', employee.id)
     .maybeSingle()
-  if (error) throw error
-  return Boolean(data)
-}
-
-async function isDepartmentHeadFor(orgId, employee, departmentId, locationId) {
-  if (!employee?.id || !departmentId) return false
-
-  const { data: department, error } = await supabaseAdmin
-    .from('departments')
-    .select('id, head_employee_id, per_location_heads, all_locations')
-    .eq('org_id', orgId)
-    .eq('id', departmentId)
-    .maybeSingle()
 
   if (error) throw error
-  if (!department) return false
-  if (department.head_employee_id === employee.id) return true
+  if (data) return true
 
-  if (department.per_location_heads && locationId) {
-    const { data: row, error: headError } = await supabaseAdmin
-      .from('department_location_heads')
-      .select('id')
-      .eq('org_id', orgId)
-      .eq('department_id', departmentId)
-      .eq('location_id', locationId)
-      .eq('head_employee_id', employee.id)
-      .maybeSingle()
-    if (headError) throw headError
-    return Boolean(row)
+  // Access role "Location Head" at this location (same convention as company employee flags)
+  const roleName = session?.access_role?.name?.trim().toLowerCase()
+  if (roleName === 'location head' && employee.location_id === locationId) {
+    return true
   }
 
   return false
 }
 
-async function validateAssignedEmployees(orgId, rawIds, { locationId = null } = {}) {
+async function buildAssignmentActions(orgId, detail, employee, session = null) {
+  if (!detail || !employee) {
+    return {
+      can_reassign_as_location_head: false,
+      can_claim_self: false,
+      employee_id: employee?.id || null,
+    }
+  }
+
+  const isLH = await isLocationHeadFor(orgId, employee, detail.assigned_location_id, session)
+  const inDeptPool = employeeMatchesDepartmentAssignment(employee, detail)
+  const locationPool = Boolean(
+    detail.assigned_location_id
+    && detail.assigned_location_id === employee.location_id,
+  )
+  const alreadyAssignee = (detail.assignees || []).some((a) => a.id === employee.id)
+
+  return {
+    can_reassign_as_location_head: Boolean(isLH && locationPool),
+    can_claim_self: Boolean(
+      (inDeptPool || (locationPool && !detail.assigned_department_id))
+      && !alreadyAssignee,
+    ),
+    employee_id: employee.id,
+  }
+}
+
+async function validateAssignedEmployees(orgId, rawIds, { locationId = null, departmentId = null } = {}) {
   const ids = Array.isArray(rawIds)
     ? rawIds
     : rawIds
@@ -505,7 +459,7 @@ async function validateAssignedEmployees(orgId, rawIds, { locationId = null } = 
 
   let query = supabaseAdmin
     .from('org_employees')
-    .select('id, location_id')
+    .select('id, location_id, department_id')
     .eq('org_id', orgId)
     .eq('is_active', true)
     .in('id', unique)
@@ -513,15 +467,20 @@ async function validateAssignedEmployees(orgId, rawIds, { locationId = null } = 
   if (locationId) {
     query = query.eq('location_id', locationId)
   }
+  if (departmentId) {
+    query = query.eq('department_id', departmentId)
+  }
 
   const { data, error } = await query
 
   if (error) throw error
   if ((data || []).length !== unique.length) {
     throw new Error(
-      locationId
-        ? 'Assignees must be active employees at the selected location'
-        : 'One or more assigned employees are invalid',
+      departmentId
+        ? 'Assignees must be active employees in the selected department'
+        : locationId
+          ? 'Assignees must be active employees at the selected location'
+          : 'One or more assigned employees are invalid',
     )
   }
   return unique
@@ -550,26 +509,67 @@ async function syncWorkOrderAssignees(orgId, workOrderId, employeeIds) {
   if (error) throw error
 }
 
-async function loadAssigneesForWorkOrders(orgId, workOrderIds) {
+async function loadAssigneesForWorkOrders(orgId, workOrderIds, { withPhotos = true } = {}) {
   if (!workOrderIds.length) return new Map()
 
   const { data, error } = await supabaseAdmin
     .from('manual_work_order_assignees')
-    .select('work_order_id, employee_id, org_employees(id, name, emp_id, location_id, org_locations!location_id(id, name))')
+    .select(`
+      work_order_id,
+      employee_id,
+      org_employees(
+        id,
+        name,
+        emp_id,
+        photo_url,
+        location_id,
+        department_id,
+        org_locations!location_id(id, name),
+        departments!department_id(id, name)
+      )
+    `)
     .eq('org_id', orgId)
     .in('work_order_id', workOrderIds)
 
   if (error) throw error
 
   const byWorkOrder = new Map()
+  const photoPaths = []
+
   for (const row of data || []) {
     const employee = row.org_employees
     if (!employee) continue
+
+    const mapped = {
+      id: employee.id,
+      name: employee.name,
+      emp_id: employee.emp_id,
+      photo_url: employee.photo_url || null,
+      photo_signed_url: null,
+      location_id: employee.location_id || null,
+      department_id: employee.department_id || null,
+      department_name: employee.departments?.name || null,
+      location_name: employee.org_locations?.name || null,
+      departments: employee.departments || null,
+      org_locations: employee.org_locations || null,
+    }
+
+    if (mapped.photo_url) photoPaths.push(mapped.photo_url)
     if (!byWorkOrder.has(row.work_order_id)) byWorkOrder.set(row.work_order_id, [])
-    byWorkOrder.get(row.work_order_id).push(employee)
+    byWorkOrder.get(row.work_order_id).push(mapped)
+  }
+
+  let signedByPath = new Map()
+  if (withPhotos && photoPaths.length) {
+    signedByPath = await getSignedUrls('org-assets', photoPaths)
   }
 
   for (const list of byWorkOrder.values()) {
+    for (const employee of list) {
+      if (employee.photo_url) {
+        employee.photo_signed_url = signedByPath.get(employee.photo_url) || null
+      }
+    }
     list.sort((a, b) => a.name.localeCompare(b.name))
   }
 
@@ -608,23 +608,29 @@ async function attachSummaries(orgId, workOrders) {
   }))
 }
 
-async function buildWorkOrderListResponse(orgId, rows, { includeSignedUrls = false } = {}) {
+async function buildWorkOrderListResponse(orgId, rows, existingAssigneesByWo = null) {
   if (!rows.length) return []
 
   const withDepartments = await attachDepartmentAssignments(rows)
   const withSummaries = await attachSummaries(orgId, withDepartments)
-  const assigneesByWo = await loadAssigneesForWorkOrders(orgId, withSummaries.map((r) => r.id))
+  const assigneesByWo = existingAssigneesByWo
+    || await loadAssigneesForWorkOrders(orgId, withSummaries.map((r) => r.id))
   const creatorIds = [...new Set(withSummaries.map((r) => r.created_by).filter(Boolean))]
 
   const { data: creators } = creatorIds.length
-    ? await supabaseAdmin.from('profiles').select('id, email').in('id', creatorIds)
+    ? await supabaseAdmin.from('profiles').select('id, email, full_name').in('id', creatorIds)
     : { data: [] }
 
-  const creatorById = new Map((creators || []).map((c) => [c.id, c]))
+  const creatorById = new Map((creators || []).map((c) => [c.id, {
+    id: c.id,
+    email: c.email || null,
+    full_name: c.full_name || null,
+    display_name: c.full_name || c.email || null,
+  }]))
 
-  return withSummaries.map((row, idx) => ({
+  return withSummaries.map((row) => ({
     ...row,
-    assignees: includeSignedUrls || idx < LIST_SIGNED_URL_LIMIT ? (assigneesByWo.get(row.id) || []) : [],
+    assignees: assigneesByWo.get(row.id) || [],
     creator: creatorById.get(row.created_by) || null,
   }))
 }
@@ -651,6 +657,44 @@ async function listReceivedWorkOrders(orgId, profile, { status = 'created', limi
   return buildWorkOrderListResponse(orgId, data || [])
 }
 
+function isAssignedByMeRow(wo, assignees, myEmployeeId) {
+  const hasDepartment = Boolean(wo.assigned_department_id)
+  const hasLocation = Boolean(wo.assigned_location_id)
+  if (!assignees.length && !hasDepartment && !hasLocation) return false
+  if (hasDepartment || hasLocation) return true
+  if (!myEmployeeId) return true
+  return assignees.some((a) => a.id !== myEmployeeId)
+}
+
+/** Lightweight count for badge — no summaries, creators, or signed URLs. */
+async function countAssignedByMe(orgId, profile, { status = 'created' } = {}) {
+  const profileId = profile?.id || profile
+  const employee = await getEmployeeByProfile(orgId, profileId, { email: profile?.email })
+  const myEmployeeId = employee?.id
+
+  let query = supabaseAdmin
+    .from('manual_work_orders')
+    .select('id, assigned_department_id, assigned_location_id')
+    .eq('org_id', orgId)
+    .eq('created_by', profileId)
+
+  if (status) query = query.eq('status', status)
+
+  const { data: workOrders, error } = await query
+  if (error) throw error
+  if (!workOrders?.length) return 0
+
+  const assigneesByWo = await loadAssigneesForWorkOrders(
+    orgId,
+    workOrders.map((row) => row.id),
+    { withPhotos: false },
+  )
+
+  return workOrders.filter((wo) =>
+    isAssignedByMeRow(wo, assigneesByWo.get(wo.id) || [], myEmployeeId),
+  ).length
+}
+
 async function listAssignedByMeWorkOrders(orgId, profile, { status = 'created', limit = 50, offset = 0 } = {}) {
   const profileId = profile?.id || profile
   const employee = await getEmployeeByProfile(orgId, profileId, { email: profile?.email })
@@ -675,17 +719,11 @@ async function listAssignedByMeWorkOrders(orgId, profile, { status = 'created', 
     workOrders.map((row) => row.id),
   )
 
-  const filtered = workOrders.filter((wo) => {
-    const assignees = assigneesByWo.get(wo.id) || []
-    const hasDepartment = Boolean(wo.assigned_department_id)
-    const hasLocation = Boolean(wo.assigned_location_id)
-    if (!assignees.length && !hasDepartment && !hasLocation) return false
-    if (hasDepartment || hasLocation) return true
-    if (!myEmployeeId) return true
-    return assignees.some((a) => a.id !== myEmployeeId)
-  })
+  const filtered = workOrders.filter((wo) =>
+    isAssignedByMeRow(wo, assigneesByWo.get(wo.id) || [], myEmployeeId),
+  )
 
-  return buildWorkOrderListResponse(orgId, filtered)
+  return buildWorkOrderListResponse(orgId, filtered, assigneesByWo)
 }
 
 async function loadAssignedByMeDetail(orgId, workOrderId, profile) {
@@ -717,7 +755,7 @@ async function enrichWorkOrderRow(orgId, row, assigneesByWo = null) {
   const creator = row.created_by
     ? await supabaseAdmin
       .from('profiles')
-      .select('id, email')
+      .select('id, email, full_name')
       .eq('id', row.created_by)
       .maybeSingle()
       .then(({ data }) => data)
@@ -726,7 +764,14 @@ async function enrichWorkOrderRow(orgId, row, assigneesByWo = null) {
   return {
     ...withSummary,
     assignees,
-    creator,
+    creator: creator
+      ? {
+          id: creator.id,
+          email: creator.email || null,
+          full_name: creator.full_name || null,
+          display_name: creator.full_name || creator.email || null,
+        }
+      : null,
   }
 }
 
@@ -755,24 +800,50 @@ async function loadWorkOrderDetail(orgId, workOrderId, { employee = null } = {})
 
   if (valuesError) throw valuesError
 
-  const fields = await loadOrgAssetFields(orgId)
+  const [fields, settingsMap] = await Promise.all([
+    loadOrgAssetFields(orgId),
+    loadFieldSettings(orgId),
+  ])
+  const schema = buildFormSchema(fields, settingsMap)
   const fieldById = new Map(fields.map((f) => [f.id, f]))
+  const valueByFieldId = new Map((values || []).map((val) => [val.field_id, val]))
+  const seenFieldIds = new Set()
 
   const sections = []
-  const sectionMap = new Map()
-
-  for (const field of fields.filter((f) => f.kind === 'section')) {
-    sectionMap.set(field.id, { id: field.id, name: field.name, fields: [] })
+  for (const section of schema.sections || []) {
+    const sectionFields = []
+    for (const field of section.fields || []) {
+      seenFieldIds.add(field.id)
+      const val = valueByFieldId.get(field.id)
+      sectionFields.push({
+        id: field.id,
+        name: field.name,
+        field_type: field.field_type,
+        value_text: val?.value_text ?? null,
+        value_json: val?.value_json ?? null,
+      })
+    }
+    if (sectionFields.length) {
+      sections.push({ id: section.id, name: section.name, fields: sectionFields })
+    }
   }
 
+  // Keep values for fields later removed from the form schema
+  const orphanBySection = new Map()
   for (const val of values || []) {
+    if (seenFieldIds.has(val.field_id)) continue
     const field = fieldById.get(val.field_id)
     if (!field || field.kind !== 'parent') continue
-
-    const sectionId = field.section_id
-    if (!sectionMap.has(sectionId)) continue
-
-    sectionMap.get(sectionId).fields.push({
+    const sectionId = field.section_id || '_other'
+    if (!orphanBySection.has(sectionId)) {
+      const sectionMeta = fieldById.get(sectionId)
+      orphanBySection.set(sectionId, {
+        id: sectionId,
+        name: sectionMeta?.name || 'Other fields',
+        fields: [],
+      })
+    }
+    orphanBySection.get(sectionId).fields.push({
       id: field.id,
       name: field.name,
       field_type: field.field_type,
@@ -780,13 +851,23 @@ async function loadWorkOrderDetail(orgId, workOrderId, { employee = null } = {})
       value_json: val.value_json,
     })
   }
-
-  for (const section of sectionMap.values()) {
+  for (const section of orphanBySection.values()) {
     if (section.fields.length) sections.push(section)
   }
 
   const enriched = await enrichWorkOrderRow(orgId, workOrder)
   return { ...enriched, sections }
+}
+
+function normalizeFileMeta(item) {
+  if (!item || typeof item !== 'object' || !item.path) return null
+  return {
+    path: item.path,
+    name: item.name || null,
+    mime_type: item.mime_type || item.type || null,
+    size: item.size ?? null,
+    bucket: item.bucket || 'work-order-assets',
+  }
 }
 
 function normalizeValue(fieldType, raw) {
@@ -804,18 +885,29 @@ function normalizeValue(fieldType, raw) {
   }
 
   if (fieldType === 'file' || fieldType === 'image') {
-    if (typeof raw === 'object' && raw !== null && raw.path) {
-      return {
-        value_text: raw.name || raw.path,
-        value_json: {
-          path: raw.path,
-          name: raw.name || null,
-          mime_type: raw.mime_type || null,
-          size: raw.size ?? null,
-          bucket: raw.bucket || 'work-order-assets',
-        },
-      }
+    if (typeof raw !== 'object' || raw === null) return { value_text: null, value_json: null }
+
+    const list = Array.isArray(raw.files)
+      ? raw.files.map(normalizeFileMeta).filter(Boolean)
+      : raw.path
+        ? [normalizeFileMeta(raw)].filter(Boolean)
+        : []
+
+    if (!list.length) return { value_text: null, value_json: null }
+
+    return {
+      value_text: list.map((f) => f.name || f.path).join(', '),
+      value_json: { files: list },
     }
+  }
+
+  if (Array.isArray(raw)) {
+    const joined = raw.map((item) => String(item ?? '').trim()).filter(Boolean).join(', ')
+    if (!joined) return { value_text: null, value_json: null }
+    return { value_text: joined, value_json: { values: raw } }
+  }
+
+  if (typeof raw === 'object') {
     return { value_text: null, value_json: null }
   }
 
@@ -964,31 +1056,29 @@ router.patch('/manual/:id/assignment', canReadWorkOrders, assertOrgOwnership('ma
       return res.status(400).json({ error: 'Only created work orders can be reassigned' })
     }
 
-    const isLH = await isLocationHead(orgId, employee)
-    const isDH = workOrder.assigned_department_id
-      ? await isDepartmentHeadFor(
-        orgId,
-        employee,
-        workOrder.assigned_department_id,
-        workOrder.assigned_location_id,
-      )
-      : false
-    const headedDeptIds = await listHeadedDepartmentIds(orgId, employee.id)
+    const isLH = await isLocationHeadFor(
+      orgId,
+      employee,
+      workOrder.assigned_location_id,
+      req.orgPermissions,
+    )
     const inDeptPool = employeeMatchesDepartmentAssignment(employee, workOrder)
-      || (
-        Boolean(workOrder.assigned_department_id)
-        && headedDeptIds.includes(workOrder.assigned_department_id)
-        && (
-          !employee.location_id
-          || !workOrder.assigned_location_id
-          || workOrder.assigned_location_id === employee.location_id
-        )
-      )
     const atLocation = Boolean(
       workOrder.assigned_location_id
       && workOrder.assigned_location_id === employee.location_id,
     )
     const locationOnlyPool = atLocation && !workOrder.assigned_department_id
+
+    const respondWithDetail = async () => {
+      const detail = await loadWorkOrderDetail(orgId, workOrderId)
+      const assignment_actions = await buildAssignmentActions(
+        orgId,
+        detail,
+        employee,
+        req.orgPermissions,
+      )
+      return res.json({ ...detail, assignment_actions })
+    }
 
     // Self-claim from department or location pool
     if (claimSelf) {
@@ -998,8 +1088,7 @@ router.patch('/manual/:id/assignment', canReadWorkOrders, assertOrgOwnership('ma
       const current = (await loadAssigneesForWorkOrders(orgId, [workOrderId])).get(workOrderId) || []
       const ids = [...new Set([...current.map((a) => a.id), employee.id])]
       await syncWorkOrderAssignees(orgId, workOrderId, ids)
-      const detail = await loadWorkOrderDetail(orgId, workOrderId)
-      return res.json(detail)
+      return respondWithDetail()
     }
 
     const nextLocationId = req.body?.assigned_location_id !== undefined
@@ -1020,9 +1109,12 @@ router.patch('/manual/:id/assignment', canReadWorkOrders, assertOrgOwnership('ma
         nextDepartmentId,
         nextLocationId || workOrder.assigned_location_id,
       )
+      const scopeLocationId = departmentAssignment?.assigned_location_id || workOrder.assigned_location_id
+      const scopeDepartmentId = departmentAssignment?.assigned_department_id || null
       const employeeIds = hasEmployeeIds
         ? await validateAssignedEmployees(orgId, req.body.assigned_employee_ids, {
-          locationId: departmentAssignment?.assigned_location_id || workOrder.assigned_location_id,
+          locationId: scopeLocationId,
+          departmentId: scopeDepartmentId,
         })
         : null
 
@@ -1039,27 +1131,7 @@ router.patch('/manual/:id/assignment', canReadWorkOrders, assertOrgOwnership('ma
       if (updateError) throw updateError
 
       if (employeeIds) await syncWorkOrderAssignees(orgId, workOrderId, employeeIds)
-      const detail = await loadWorkOrderDetail(orgId, workOrderId)
-      return res.json(detail)
-    }
-
-    // Department Head may set employees (keep dept/location)
-    if (isDH && inDeptPool) {
-      if (!hasEmployeeIds) {
-        return res.status(400).json({ error: 'assigned_employee_ids is required' })
-      }
-      if (
-        (req.body.assigned_location_id && req.body.assigned_location_id !== workOrder.assigned_location_id)
-        || (req.body.assigned_department_id && req.body.assigned_department_id !== workOrder.assigned_department_id)
-      ) {
-        return res.status(403).json({ error: 'Department Heads cannot change location or department' })
-      }
-      const employeeIds = await validateAssignedEmployees(orgId, req.body.assigned_employee_ids, {
-        locationId: workOrder.assigned_location_id,
-      })
-      await syncWorkOrderAssignees(orgId, workOrderId, employeeIds)
-      const detail = await loadWorkOrderDetail(orgId, workOrderId)
-      return res.json(detail)
+      return respondWithDetail()
     }
 
     // Same-dept employee may only claim self (handled above)
@@ -1093,6 +1165,7 @@ router.get('/dashboard', canReadWorkOrders, async (req, res) => {
   const locationFilter = typeof req.query.location_id === 'string' ? req.query.location_id : null
   const dateFrom = typeof req.query.date_from === 'string' ? req.query.date_from : null
   const dateTo = typeof req.query.date_to === 'string' ? req.query.date_to : null
+  const RECENT_LIMIT = 10
 
   try {
     const employee = await getEmployeeByProfile(orgId, profileId, { email: req.userProfile.email })
@@ -1102,7 +1175,7 @@ router.get('/dashboard', canReadWorkOrders, async (req, res) => {
       .select('id, status, created_at, updated_at, created_by, assigned_department_id, assigned_location_id')
       .eq('org_id', orgId)
       .order('created_at', { ascending: false })
-      .limit(1000)
+      .limit(2000)
 
     if (dateFrom) query = query.gte('created_at', new Date(dateFrom).toISOString())
     if (dateTo) {
@@ -1114,58 +1187,207 @@ router.get('/dashboard', canReadWorkOrders, async (req, res) => {
     if (error) return res.status(500).json({ error: error.message })
 
     const workOrders = rows || []
-    const [assigneesByWo, withDepartments, withSummaries] = await Promise.all([
-      loadAssigneesForWorkOrders(orgId, workOrders.map((row) => row.id)),
-      attachDepartmentAssignments(workOrders),
-      attachSummaries(orgId, workOrders),
+    const woIds = workOrders.map((row) => row.id)
+
+    // Lightweight assignee counts + location ids (no photos / full employee joins)
+    const [assigneeRows, deptRows, receivedIds] = await Promise.all([
+      woIds.length
+        ? supabaseAdmin
+            .from('manual_work_order_assignees')
+            .select('work_order_id, employee_id, org_employees(location_id, org_locations!location_id(name))')
+            .eq('org_id', orgId)
+            .in('work_order_id', woIds)
+            .then(({ data, error: e }) => { if (e) throw e; return data || [] })
+        : Promise.resolve([]),
+      (() => {
+        const deptIds = [...new Set(workOrders.map((r) => r.assigned_department_id).filter(Boolean))]
+        const locIds = [...new Set(workOrders.map((r) => r.assigned_location_id).filter(Boolean))]
+        return Promise.all([
+          deptIds.length
+            ? supabaseAdmin.from('departments').select('id, name, location_id').eq('org_id', orgId).in('id', deptIds)
+                .then(({ data, error: e }) => { if (e) throw e; return data || [] })
+            : Promise.resolve([]),
+          locIds.length
+            ? supabaseAdmin.from('org_locations').select('id, name').eq('org_id', orgId).in('id', locIds)
+                .then(({ data, error: e }) => { if (e) throw e; return data || [] })
+            : Promise.resolve([]),
+        ]).then(([depts, locs]) => ({ depts, locs }))
+      })(),
+      employee ? listReceivedWorkOrderIds(orgId, employee) : Promise.resolve([]),
     ])
 
-    const summaryById = new Map(withSummaries.map((row) => [row.id, row]))
-    const deptById = new Map(withDepartments.map((row) => [row.id, row]))
+    const assigneeCountByWo = new Map()
+    const assigneeLocationByWo = new Map()
+    for (const row of assigneeRows) {
+      assigneeCountByWo.set(row.work_order_id, (assigneeCountByWo.get(row.work_order_id) || 0) + 1)
+      const locId = row.org_employees?.location_id
+      const locName = row.org_employees?.org_locations?.name
+      if (!assigneeLocationByWo.has(row.work_order_id)) {
+        assigneeLocationByWo.set(row.work_order_id, { ids: [], name: null })
+      }
+      const entry = assigneeLocationByWo.get(row.work_order_id)
+      if (locId && !entry.ids.includes(locId)) entry.ids.push(locId)
+      if (!entry.name && locName) entry.name = locName
+    }
 
-    const receivedIds = new Set(employee ? await listReceivedWorkOrderIds(orgId, employee) : [])
+    const deptById = new Map((deptRows.depts || []).map((d) => [d.id, d]))
+    const locById = new Map((deptRows.locs || []).map((l) => [l.id, l]))
+    const receivedSet = new Set(receivedIds)
+
+    // Resolve department location names
+    const deptLocIds = [...new Set([...deptById.values()].map((d) => d.location_id).filter(Boolean))]
+    if (deptLocIds.length) {
+      const missing = deptLocIds.filter((id) => !locById.has(id))
+      if (missing.length) {
+        const { data: moreLocs, error: locErr } = await supabaseAdmin
+          .from('org_locations')
+          .select('id, name')
+          .eq('org_id', orgId)
+          .in('id', missing)
+        if (locErr) throw locErr
+        for (const loc of moreLocs || []) locById.set(loc.id, loc)
+      }
+    }
 
     const effectiveLocationId = scopedLocationId
       || (locationFilter && locationFilter !== 'all' ? locationFilter : null)
 
     const orders = workOrders.map((row) => {
-      const assignees = assigneesByWo.get(row.id) || []
-      const withDept = deptById.get(row.id) || row
-      const summary = summaryById.get(row.id)
+      const assigneeCount = assigneeCountByWo.get(row.id) || 0
+      const assigneeLoc = assigneeLocationByWo.get(row.id)
+      const dept = row.assigned_department_id ? deptById.get(row.assigned_department_id) : null
+      const assignedLoc = row.assigned_location_id ? locById.get(row.assigned_location_id) : null
+      const deptLocName = dept?.location_id ? locById.get(dept.location_id)?.name : null
+
       const locationIds = [
         ...new Set([
-          ...assignees.map((a) => a.location_id).filter(Boolean),
-          withDept.assigned_location_id,
+          ...(assigneeLoc?.ids || []),
+          row.assigned_location_id,
+          dept?.location_id,
         ].filter(Boolean)),
       ]
-      const locationName = withDept.assigned_department?.location_name
-        || assignees.find((a) => a.org_locations?.name)?.org_locations?.name
-        || (assignees.length || withDept.assigned_department ? 'Unknown location' : 'Unassigned')
+
+      const locationName = assignedLoc?.name
+        || deptLocName
+        || assigneeLoc?.name
+        || (assigneeCount || dept || assignedLoc ? 'Unknown location' : 'Unassigned')
 
       return {
         id: row.id,
-        wo_number: summary?.wo_number || shortWorkOrderId(row.id),
-        title: summary?.summary || 'Work order',
-        summary: summary?.summary || 'Work order',
+        wo_number: shortWorkOrderId(row.id),
+        title: 'Work order',
+        summary: 'Work order',
         status: row.status,
         created_at: row.created_at,
         updated_at: row.updated_at,
         created_by: row.created_by,
-        assignee_count: assignees.length,
-        assigned_department: withDept.assigned_department || null,
+        assignee_count: assigneeCount,
         location_ids: locationIds,
         location_id: locationIds[0] || null,
         location_name: locationName,
-        is_received: receivedIds.has(row.id),
+        is_received: receivedSet.has(row.id),
       }
     }).filter((row) => {
       if (!effectiveLocationId) return true
       return row.location_ids.includes(effectiveLocationId)
     })
 
+    // Server-side aggregates (client no longer needs 1000 enriched rows)
+    const total = orders.length
+    const statusCounts = {}
+    const locationCounts = {}
+    let assigned = 0
+    let received = 0
+    for (const o of orders) {
+      statusCounts[o.status] = (statusCounts[o.status] || 0) + 1
+      if (o.assignee_count > 0) assigned += 1
+      if (o.is_received) received += 1
+      const name = o.location_name || 'Unassigned'
+      locationCounts[name] = (locationCounts[name] || 0) + 1
+    }
+
+    const now = Date.now()
+    const dayMs = 86400000
+    const last30 = orders.filter((o) => now - new Date(o.created_at).getTime() <= 30 * dayMs).length
+    const prev30 = orders.filter((o) => {
+      const age = now - new Date(o.created_at).getTime()
+      return age > 30 * dayMs && age <= 60 * dayMs
+    }).length
+    const trendPercent = !prev30 ? (last30 > 0 ? 100 : 0) : Math.round(((last30 - prev30) / prev30) * 1000) / 10
+
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const trend_data = []
+    for (let i = 6; i >= 0; i -= 1) {
+      const day = new Date(today)
+      day.setDate(today.getDate() - i)
+      const next = new Date(day)
+      next.setDate(day.getDate() + 1)
+      const value = orders.filter((o) => {
+        const created = new Date(o.created_at)
+        return created >= day && created < next
+      }).length
+      trend_data.push({
+        date: day.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
+        value,
+      })
+    }
+
+    const status_breakdown = ['created', 'draft'].map((status) => ({
+      status,
+      count: statusCounts[status] || 0,
+      percent: total ? Math.round(((statusCounts[status] || 0) / total) * 1000) / 10 : 0,
+    }))
+
+    const location_breakdown = Object.entries(locationCounts)
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 5)
+
+    // Enrich only recent rows with summaries for the recent list
+    const recentSlice = orders.slice(0, RECENT_LIMIT)
+    let recent_orders = recentSlice
+    if (recentSlice.length) {
+      const withSummaries = await attachSummaries(orgId, recentSlice.map((o) => ({
+        id: o.id,
+        status: o.status,
+        created_at: o.created_at,
+        updated_at: o.updated_at,
+        created_by: o.created_by,
+      })))
+      const summaryById = new Map(withSummaries.map((r) => [r.id, r]))
+      recent_orders = recentSlice.map((o) => {
+        const s = summaryById.get(o.id)
+        return {
+          ...o,
+          wo_number: s?.wo_number || o.wo_number,
+          title: s?.summary || o.title,
+          summary: s?.summary || o.summary,
+        }
+      })
+    }
+
     res.json({
-      work_orders: orders,
-      received_count: orders.filter((o) => o.is_received).length,
+      work_orders: recent_orders,
+      recent_orders,
+      stats: {
+        total,
+        created: statusCounts.created || 0,
+        draft: statusCounts.draft || 0,
+        assigned,
+        received,
+        open: statusCounts.created || 0,
+        inProgress: statusCounts.draft || 0,
+        completed: assigned,
+        overdue: received,
+        trendPercent,
+        slaPercent: null,
+        slaTrend: null,
+      },
+      status_breakdown,
+      location_breakdown,
+      trend_data,
+      received_count: received,
       scoped_location_id: scopedLocationId,
     })
   } catch (err) {
@@ -1180,38 +1402,37 @@ router.get('/counts', canReadWorkOrders, async (req, res) => {
   try {
     const employee = await getEmployeeByProfile(orgId, profileId, { email: req.userProfile.email })
 
-    let received = 0
-    if (employee) {
-      const workOrderIds = await listReceivedWorkOrderIds(orgId, employee)
-      if (workOrderIds.length) {
+    const [receivedResult, assigned, manualResult] = await Promise.all([
+      (async () => {
+        if (!employee) return 0
+        const workOrderIds = await listReceivedWorkOrderIds(orgId, employee)
+        if (!workOrderIds.length) return 0
         const { count, error } = await supabaseAdmin
           .from('manual_work_orders')
           .select('id', { count: 'exact', head: true })
           .eq('org_id', orgId)
           .in('id', workOrderIds)
           .eq('status', 'created')
-
         if (error) throw error
-        received = count || 0
-      }
-    }
-
-    const assignedRows = await listAssignedByMeWorkOrders(orgId, req.userProfile)
-    const assigned = assignedRows.length
-
-    const { count: manualCount, error: manualError } = await supabaseAdmin
-      .from('manual_work_orders')
-      .select('id', { count: 'exact', head: true })
-      .eq('org_id', orgId)
-      .eq('status', 'created')
-
-    if (manualError) throw manualError
+        return count || 0
+      })(),
+      countAssignedByMe(orgId, req.userProfile),
+      supabaseAdmin
+        .from('manual_work_orders')
+        .select('id', { count: 'exact', head: true })
+        .eq('org_id', orgId)
+        .eq('status', 'created')
+        .then(({ count, error }) => {
+          if (error) throw error
+          return count || 0
+        }),
+    ])
 
     res.json({
-      received,
+      received: receivedResult,
       assigned,
       scheduled: 0,
-      manual: manualCount || 0,
+      manual: manualResult,
     })
   } catch (err) {
     res.status(500).json({ error: err.message })
@@ -1296,43 +1517,16 @@ router.get('/received/:id', canReadWorkOrders, async (req, res) => {
     })
     if (!detail) return res.status(404).json({ error: 'Not found' })
 
-    const isLH = await isLocationHead(orgId, employee)
-    const isDH = detail.assigned_department_id
-      ? await isDepartmentHeadFor(
-        orgId,
-        employee,
-        detail.assigned_department_id,
-        detail.assigned_location_id,
-      )
-      : false
-    const headedDeptIds = await listHeadedDepartmentIds(orgId, employee.id)
-    const inDeptPool = employeeMatchesDepartmentAssignment(employee, detail)
-      || (
-        Boolean(detail.assigned_department_id)
-        && headedDeptIds.includes(detail.assigned_department_id)
-        && (
-          !employee.location_id
-          || !detail.assigned_location_id
-          || detail.assigned_location_id === employee.location_id
-        )
-      )
-    const locationPool = Boolean(
-      detail.assigned_location_id
-      && detail.assigned_location_id === employee.location_id,
+    const assignment_actions = await buildAssignmentActions(
+      orgId,
+      detail,
+      employee,
+      req.orgPermissions,
     )
-    const alreadyAssignee = (detail.assignees || []).some((a) => a.id === employee.id)
 
     res.json({
       ...detail,
-      assignment_actions: {
-        can_reassign_as_location_head: Boolean(isLH && locationPool),
-        can_reassign_as_department_head: Boolean(isDH && inDeptPool),
-        can_claim_self: Boolean(
-          (inDeptPool || (locationPool && !detail.assigned_department_id))
-          && !alreadyAssignee,
-        ),
-        employee_id: employee.id,
-      },
+      assignment_actions,
     })
   } catch (err) {
     res.status(500).json({ error: err.message })

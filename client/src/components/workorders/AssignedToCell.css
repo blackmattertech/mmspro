@@ -1,0 +1,84 @@
+.wo-assigned {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  max-width: 220px;
+}
+
+.wo-assigned--empty {
+  color: var(--color-gray-blue);
+}
+
+.wo-assigned__person {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.wo-assigned__name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-dark-navy);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.wo-assigned__more {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 22px;
+  padding: 0 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-gray-blue);
+  background: var(--color-light-gray-1, #f3f4f6);
+  border-radius: var(--radius-pill);
+  cursor: default;
+}
+
+.wo-assigned__person[data-tooltip]::after,
+.wo-assigned__more[data-tooltip]::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 8px);
+  z-index: 20;
+  width: max-content;
+  max-width: 240px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: #1f2937;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.35;
+  white-space: normal;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.18);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(4px);
+  transition: opacity 0.12s ease, transform 0.12s ease;
+}
+
+.wo-assigned__person[data-tooltip]:hover::after,
+.wo-assigned__person[data-tooltip]:focus-visible::after,
+.wo-assigned__more[data-tooltip]:hover::after,
+.wo-assigned__more[data-tooltip]:focus-visible::after {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.wo-table__assignees {
+  max-width: 240px;
+  overflow: visible;
+  white-space: normal;
+}

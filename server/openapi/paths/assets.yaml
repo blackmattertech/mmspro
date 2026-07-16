@@ -19,8 +19,8 @@
               $ref: '#/components/schemas/ErrorResponse'
   post:
     tags: [Assets]
-    summary: Create asset field
-    description: Requires org owner or admin role.
+    summary: Create asset field (section or parent)
+    description: Super Admin only. Dropdown child values are added separately by the company.
     requestBody:
       required: true
       content:
@@ -101,7 +101,7 @@
   patch:
     tags: [Assets]
     summary: Update asset field
-    description: Requires org owner or admin role.
+    description: Super Admin edits sections/parents. Company users may send only `dropdown_options` on dropdown parents.
     parameters:
       - name: id
         in: path
@@ -142,7 +142,7 @@
   delete:
     tags: [Assets]
     summary: Delete asset field
-    description: Requires org owner or admin role.
+    description: Super Admin deletes sections/parents. Company users may delete individual child values.
     parameters:
       - name: id
         in: path

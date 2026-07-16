@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, createContext, useContext, useRef } from 'react'
+import { useState, useEffect, useCallback, createContext, useContext, useRef, useMemo } from 'react'
 import {
   requestNotificationPermission,
   onForegroundMessage,
@@ -131,7 +131,7 @@ export function NotificationsProvider({ children }) {
     registerToken()
   }, [user, registerToken])
 
-  const value = {
+  const value = useMemo(() => ({
     permission,
     token,
     error,
@@ -142,7 +142,17 @@ export function NotificationsProvider({ children }) {
     markAllRead,
     markRead,
     addNotification,
-  }
+  }), [
+    permission,
+    token,
+    error,
+    notifications,
+    unreadCount,
+    registerToken,
+    markAllRead,
+    markRead,
+    addNotification,
+  ])
 
   return (
     <NotificationContext.Provider value={value}>

@@ -223,7 +223,6 @@ export default function ProfileModal({ profile, employee, avatarUrl, onClose, on
   const avatarLetter = (displayName[0] || 'U').toUpperCase()
   const hasEmployeeDetails = Boolean(employee)
   const additionalEmails = (employee?.org_employee_emails || []).map((row) => row.email)
-  const isDepartmentHead = (employee?.headed_departments || []).length > 0
 
   return (
     <div className="company-modal-overlay" onMouseDown={handleBackdropClick}>
@@ -329,10 +328,6 @@ export default function ProfileModal({ profile, employee, avatarUrl, onClose, on
                     <dd>{employee.emp_id || '—'}</dd>
                   </div>
                   <div className="profile-modal__company-item">
-                    <dt>Designation</dt>
-                    <dd>{employee.designations?.name || '—'}</dd>
-                  </div>
-                  <div className="profile-modal__company-item">
                     <dt>Department</dt>
                     <dd>{employee.departments?.name || '—'}</dd>
                   </div>
@@ -348,16 +343,6 @@ export default function ProfileModal({ profile, employee, avatarUrl, onClose, on
                     <dt>Access Role</dt>
                     <dd>{employee.access_role?.name || '—'}</dd>
                   </div>
-                  {isDepartmentHead && (
-                    <div className="profile-modal__company-item profile-modal__company-item--full">
-                      <dt>Department Head</dt>
-                      <dd>
-                        <span className="profile-modal__dept-head-badge">
-                          {(employee.headed_departments || []).map((dept) => dept.name).join(', ')}
-                        </span>
-                      </dd>
-                    </div>
-                  )}
                   {additionalEmails.length > 0 && (
                     <div className="profile-modal__company-item profile-modal__company-item--full">
                       <dt>Additional Emails</dt>

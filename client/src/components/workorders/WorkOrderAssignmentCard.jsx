@@ -18,12 +18,6 @@ function DetailRow({ icon, label, value }) {
             <path d="M5.5 12V8.5H8.5V12" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" />
           </svg>
         )}
-        {icon === 'designation' && (
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-            <circle cx="7" cy="4.5" r="2.25" stroke="currentColor" strokeWidth="1.2" />
-            <path d="M3 12C3 9.5 4.8 8 7 8C9.2 8 11 9.5 11 12" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
-          </svg>
-        )}
         {icon === 'location' && (
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
             <path d="M7 7.25C7.9665 7.25 8.75 6.4665 8.75 5.5C8.75 4.5335 7.9665 3.75 7 3.75C6.0335 3.75 5.25 4.5335 5.25 5.5C5.25 6.4665 6.0335 7.25 7 7.25Z" stroke="currentColor" strokeWidth="1.2" />
@@ -62,21 +56,6 @@ function ContactBox({ icon, label, value }) {
       </span>
     </span>
   )
-}
-
-function isDepartmentHead(employee, department, locationId) {
-  if (!employee || !department) return false
-
-  if (department.head_employee_id === employee.id) return true
-  if ((employee.headed_departments || []).some((dept) => dept.id === department.id)) return true
-
-  if (locationId && department.location_heads?.length) {
-    return department.location_heads.some(
-      (entry) => entry.location_id === locationId && entry.head_employee_id === employee.id,
-    )
-  }
-
-  return false
 }
 
 function FilterStep({ step, label, active, complete }) {
@@ -121,7 +100,6 @@ function EmployeePicker({
         emp.name,
         emp.emp_id,
         emp.email,
-        emp.designations?.name,
         emp.departments?.name,
         emp.org_locations?.name,
       ].filter(Boolean).join(' ').toLowerCase()
@@ -181,9 +159,6 @@ function EmployeePicker({
         <div className="wo-assignment__grid" role="group" aria-label="Assigned employees">
           {filteredEmployees.map((emp) => {
             const checked = selectedIds.includes(emp.id)
-            const showHeadBadge = department
-              ? isDepartmentHead(emp, department, locationId)
-              : false
 
             return (
               <button
@@ -209,9 +184,6 @@ function EmployeePicker({
 
                   <span className="wo-assignment__card-header">
                     <span className="wo-assignment__card-name">{emp.name}</span>
-                    {showHeadBadge && (
-                      <span className="wo-assignment__card-badge">Dept. Head</span>
-                    )}
                   </span>
                 </span>
 
@@ -220,7 +192,6 @@ function EmployeePicker({
                 <span className="wo-assignment__card-details">
                   <span className="wo-assignment__card-info">
                     <DetailRow icon="department" label="Department" value={emp.departments?.name} />
-                    <DetailRow icon="designation" label="Designation" value={emp.designations?.name} />
                     <DetailRow icon="location" label="Location" value={emp.org_locations?.name} />
                   </span>
 
@@ -307,7 +278,7 @@ export default function WorkOrderAssignmentCard({
     modeLabel = (
       <>
         Assigned to <strong>{selectedDepartment.name}</strong> at <strong>{selectedLocation?.name}</strong>
-        {' '}— department head / members can claim; optionally pick employees below.
+        {' '}— department members can claim; optionally pick employees below.
       </>
     )
   } else if (hasDepartment) {
@@ -348,7 +319,7 @@ export default function WorkOrderAssignmentCard({
           <div>
             <h2 className="wo-section__title">Assignment</h2>
             <p className="wo-section__desc">
-              Assign to any location, optionally a department, then employees — or leave for the Location / Department Head to route
+              Assign to any location, optionally a department, then employees — or leave for the Location Head to route
             </p>
           </div>
         </div>
@@ -410,7 +381,7 @@ export default function WorkOrderAssignmentCard({
             <div className="wo-assignment__dept-toggle-copy">
               <span className="wo-assignment__dept-toggle-title">Assign to department pool</span>
               <span className="wo-assignment__dept-toggle-hint">
-                Department head and members at {selectedLocation?.name} can claim or reassign.
+                Department members at {selectedLocation?.name} can claim or reassign.
                 Leave off and pick employees to assign directly.
               </span>
             </div>

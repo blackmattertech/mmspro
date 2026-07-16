@@ -8,6 +8,7 @@ import {
   REPORT_MODULE_KEYS,
 } from './accessModules.js'
 import { canManageOrg } from './accountRoles.js'
+import { permissionsCache, permissionsCacheKey } from './requestCache.js'
 
 const ACTION_COLUMNS = {
   create: 'can_create',
@@ -79,8 +80,15 @@ async function getAccessRoleMeta(roleId) {
 /**
  * Resolve the current user's full access-role matrix for an org.
  * Org admins (account admin / super_admin) get full permissions.
+ * Results are cached briefly to avoid repeating 2–4 DB queries on every API call.
  */
 export async function resolveSessionPermissions(profile) {
+  const cacheKey = permissionsCacheKey(profile)
+  if (cacheKey) {
+    const cached = permissionsCache.get(cacheKey)
+    if (cached) return cached
+  }
+
   const orgId = profile?.org_id
   if (!orgId) {
     return {
@@ -96,8 +104,9 @@ export async function resolveSessionPermissions(profile) {
   const employee = await getLinkedEmployee(orgId, profile)
   const locationId = employee?.location_id || null
 
+  let session
   if (orgAdmin) {
-    return {
+    session = {
       is_org_admin: true,
       location_id: locationId,
       employee_id: employee?.id || null,
@@ -106,18 +115,20 @@ export async function resolveSessionPermissions(profile) {
         : null,
       permissions: allTruePermissions(),
     }
+  } else {
+    const permissions = await getPermissionsForRole(employee?.access_role_id)
+    const accessRole = await getAccessRoleMeta(employee?.access_role_id)
+    session = {
+      is_org_admin: false,
+      location_id: locationId,
+      employee_id: employee?.id || null,
+      access_role: accessRole,
+      permissions,
+    }
   }
 
-  const permissions = await getPermissionsForRole(employee?.access_role_id)
-  const accessRole = await getAccessRoleMeta(employee?.access_role_id)
-
-  return {
-    is_org_admin: false,
-    location_id: locationId,
-    employee_id: employee?.id || null,
-    access_role: accessRole,
-    permissions,
-  }
+  if (cacheKey) permissionsCache.set(cacheKey, session)
+  return session
 }
 
 export function permissionMap(permissions) {
@@ -162,8 +173,12 @@ export function hasAnyModulePermission(session, checks) {
   return (checks || []).some(([moduleKey, action]) => hasModulePermission(session, moduleKey, action))
 }
 
-/** Non-admins are limited to their employee location when set. */
+/** Non-admins are limited to their employee location when set.
+ * Company admins and access role "Admin" can use all locations.
+ */
 export function getScopedLocationId(session) {
   if (!session || session.is_org_admin) return null
+  const roleName = session.access_role?.name?.trim().toLowerCase() || ''
+  if (roleName === 'admin') return null
   return session.location_id || null
 }

@@ -9,9 +9,3 @@ export function isLocationHeadEmployee(employee, { accessRoleName, isLocationHea
   if (employee?.is_location_head) return true
   return (employee?.headed_locations || []).length > 0
 }
-
-export function isDeptHeadEmployee(employee, { isDepartmentHead, headedDepartments } = {}) {
-  if (typeof isDepartmentHead === 'boolean') return isDepartmentHead
-  const headed = headedDepartments ?? employee?.headed_departments ?? []
-  return headed.length > 0
-}

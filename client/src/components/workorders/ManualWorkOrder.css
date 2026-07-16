@@ -1054,7 +1054,7 @@
 
 .wo-received-detail__meta {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: 12px;
   margin-bottom: 16px;
   padding: 14px;
@@ -1112,6 +1112,23 @@
   gap: 12px;
 }
 
+.wo-assignment-actions__claim + .wo-assignment-actions__form,
+.wo-assignment-actions__form + .wo-assignment-actions__claim {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--color-light-gray-2);
+}
+
+.wo-assignment-actions__context {
+  margin: 0;
+  font-size: 13px;
+  color: var(--color-gray-blue);
+}
+
+.wo-assignment-actions__context strong {
+  color: var(--color-dark-navy);
+}
+
 .wo-assignment-actions__employees {
   display: flex;
   flex-direction: column;
@@ -1140,6 +1157,23 @@
 
 .wo-assignment-actions__emp input {
   accent-color: var(--color-primary);
+}
+
+.wo-assignment-actions__emp-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.wo-assignment-actions__emp-name {
+  font-weight: 500;
+  color: var(--color-dark-navy);
+}
+
+.wo-assignment-actions__emp-sub {
+  font-size: 12px;
+  color: var(--color-gray-blue);
 }
 
 .wo-received-detail__fields {

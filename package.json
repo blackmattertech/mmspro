@@ -1,4 +1,11 @@
 {
+  "name": "mmspro",
+  "private": true,
+  "scripts": {
+    "dev": "npm run dev --prefix server & npm run dev --prefix client; wait",
+    "dev:server": "npm run dev --prefix server",
+    "dev:client": "npm run dev --prefix client"
+  },
   "dependencies": {
     "firebase": "^12.15.0"
   }

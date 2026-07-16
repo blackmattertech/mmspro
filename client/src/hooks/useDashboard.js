@@ -6,53 +6,19 @@ import { usePermissions } from './usePermissions'
 import { getDashboardWorkOrders } from '../lib/api-work-orders'
 import { orgPath } from '../config/navigation'
 
-const countBy = (items, key) =>
-  items.reduce((acc, item) => {
-    const k = item[key]
-    acc[k] = (acc[k] || 0) + 1
-    return acc
-  }, {})
-
-function pct(part, total) {
-  if (!total) return 0
-  return Math.round((part / total) * 1000) / 10
-}
-
-function buildTrend(orders) {
-  const days = []
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-
-  for (let i = 6; i >= 0; i -= 1) {
-    const d = new Date(today)
-    d.setDate(today.getDate() - i)
-    days.push(d)
-  }
-
-  return days.map((day) => {
-    const next = new Date(day)
-    next.setDate(day.getDate() + 1)
-    const value = orders.filter((o) => {
-      const created = new Date(o.created_at)
-      return created >= day && created < next
-    }).length
-    return {
-      date: day.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
-      value,
-    }
-  })
-}
-
-function trendPercent(orders) {
-  const now = Date.now()
-  const day = 86400000
-  const last30 = orders.filter((o) => now - new Date(o.created_at).getTime() <= 30 * day).length
-  const prev30 = orders.filter((o) => {
-    const age = now - new Date(o.created_at).getTime()
-    return age > 30 * day && age <= 60 * day
-  }).length
-  if (!prev30) return last30 > 0 ? 100 : 0
-  return Math.round(((last30 - prev30) / prev30) * 1000) / 10
+const EMPTY_STATS = {
+  total: 0,
+  created: 0,
+  draft: 0,
+  assigned: 0,
+  received: 0,
+  open: 0,
+  inProgress: 0,
+  completed: 0,
+  overdue: 0,
+  trendPercent: 0,
+  slaPercent: null,
+  slaTrend: null,
 }
 
 export const useDashboard = () => {
@@ -65,6 +31,10 @@ export const useDashboard = () => {
   const userLocationId = scopedLocationId || null
 
   const [workOrders, setWorkOrders] = useState([])
+  const [stats, setStats] = useState(EMPTY_STATS)
+  const [statusBreakdown, setStatusBreakdown] = useState([])
+  const [locationBreakdown, setLocationBreakdown] = useState([])
+  const [trendData, setTrendData] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [locationFilter, setLocationFilter] = useState('all')
@@ -102,9 +72,20 @@ export const useDashboard = () => {
         dateFrom: dateFrom || undefined,
         dateTo: dateTo || undefined,
       })
-      setWorkOrders(Array.isArray(data?.work_orders) ? data.work_orders : [])
+      const recent = Array.isArray(data?.recent_orders)
+        ? data.recent_orders
+        : (Array.isArray(data?.work_orders) ? data.work_orders : [])
+      setWorkOrders(recent)
+      setStats(data?.stats && typeof data.stats === 'object' ? { ...EMPTY_STATS, ...data.stats } : EMPTY_STATS)
+      setStatusBreakdown(Array.isArray(data?.status_breakdown) ? data.status_breakdown : [])
+      setLocationBreakdown(Array.isArray(data?.location_breakdown) ? data.location_breakdown : [])
+      setTrendData(Array.isArray(data?.trend_data) ? data.trend_data : [])
     } catch (err) {
       setWorkOrders([])
+      setStats(EMPTY_STATS)
+      setStatusBreakdown([])
+      setLocationBreakdown([])
+      setTrendData([])
       setError(err.message || 'Failed to load dashboard')
     } finally {
       setLoading(false)
@@ -114,55 +95,6 @@ export const useDashboard = () => {
   useEffect(() => {
     fetchData()
   }, [fetchData])
-
-  const stats = useMemo(() => {
-    const total = workOrders.length
-    const statusCounts = countBy(workOrders, 'status')
-    const created = statusCounts.created || 0
-    const draft = statusCounts.draft || 0
-    const assigned = workOrders.filter((o) => o.assignee_count > 0).length
-    const received = workOrders.filter((o) => o.is_received).length
-    const change = trendPercent(workOrders)
-
-    return {
-      total,
-      created,
-      draft,
-      assigned,
-      received,
-      // Back-compat aliases used by older widget props
-      open: created,
-      inProgress: draft,
-      completed: assigned,
-      overdue: received,
-      trendPercent: change,
-      slaPercent: null,
-      slaTrend: null,
-    }
-  }, [workOrders])
-
-  const statusBreakdown = useMemo(() => {
-    const counts = countBy(workOrders, 'status')
-    return ['created', 'draft'].map((status) => ({
-      status,
-      count: counts[status] || 0,
-      percent: pct(counts[status] || 0, workOrders.length),
-    }))
-  }, [workOrders])
-
-  const locationBreakdown = useMemo(() => {
-    const counts = {}
-    workOrders.forEach((o) => {
-      const name = o.location_name || 'Unassigned'
-      counts[name] = (counts[name] || 0) + 1
-    })
-    return Object.entries(counts)
-      .map(([name, count]) => ({ name, count }))
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 5)
-  }, [workOrders])
-
-  const trendData = useMemo(() => buildTrend(workOrders), [workOrders])
 
   const createWorkOrder = async () => {
     if (!org?.slug) return { data: null, error: { message: 'No organization found' } }

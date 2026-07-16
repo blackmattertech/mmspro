@@ -5,6 +5,8 @@ import { useOrgLimits } from '../../hooks/useOrgLimits'
 import { useLimitExceeded } from '../../hooks/useLimitExceeded'
 import { isLimitError } from '../../lib/limitErrors'
 import GooToggle from '../ui/GooToggle'
+import TrashIcon from '../ui/TrashIcon'
+import EditIcon from '../ui/EditIcon'
 import LocationModal from './LocationModal'
 import LocationHeadCell from './LocationHeadCell'
 import LimitExceededCard from '../shared/LimitExceededCard'
@@ -136,15 +138,23 @@ export default function LocationsTab({ canManage }) {
                     {canManage && (
                       <td>
                         <div className="company-table__actions">
-                          <button type="button" className="company-link" onClick={() => openEdit(loc)}>
-                            Edit
+                          <button
+                            type="button"
+                            className="company-btn company-btn--secondary company-btn--compact company-btn--icon"
+                            onClick={() => openEdit(loc)}
+                            aria-label={`Edit ${loc.name}`}
+                            title="Edit"
+                          >
+                            <EditIcon />
                           </button>
                           <button
                             type="button"
-                            className="company-link company-link--danger"
+                            className="company-btn company-btn--danger company-btn--compact company-btn--icon"
                             onClick={() => handleDelete(loc)}
+                            aria-label={`Delete ${loc.name}`}
+                            title="Delete"
                           >
-                            Delete
+                            <TrashIcon />
                           </button>
                         </div>
                       </td>

@@ -57,6 +57,8 @@ function formFromField(field, parents) {
 export default function FieldModal({
   field,
   mode = 'all',
+  valuesOnly = false,
+  orgId: orgIdProp,
   sections,
   dependencySections = [],
   parents = [],
@@ -66,8 +68,9 @@ export default function FieldModal({
   onSave,
 }) {
   const { org } = useOrg()
+  const orgId = orgIdProp || org?.id
   const isEdit = Boolean(field?.id)
-  const draftKey = assetFieldDraftKey(org?.id, { editingId: field?.id, mode })
+  const draftKey = assetFieldDraftKey(orgId, { editingId: field?.id, mode })
   const hydratedRef = useRef(false)
 
   const [form, setForm] = useState(() => defaultsForMode(mode))
@@ -125,9 +128,10 @@ export default function FieldModal({
     writeFormDraft(draftKey, form)
   }, [form, isEdit, draftKey])
 
-  const showFieldType = !form.is_section
-  const showSectionSelect = !form.is_section
-  const showDropdownOptions = showFieldType && form.field_type === 'dropdown'
+  const showFieldType = !form.is_section && !valuesOnly
+  const showSectionSelect = !form.is_section && !valuesOnly
+  const showDropdownOptions = valuesOnly
+  const showSchemaFields = !valuesOnly
 
   const dependencyParentOptions = useMemo(() => (
     parents.filter((parent) => (
@@ -221,6 +225,21 @@ export default function FieldModal({
     e.preventDefault()
     setError(null)
 
+    if (valuesOnly) {
+      const options = form.dropdown_options.map((o) => o.trim()).filter(Boolean)
+      if (!options.length) {
+        setError('Add at least one dropdown value')
+        return
+      }
+      try {
+        await onSave({ dropdown_options: options })
+        clearFormDraft(draftKey)
+      } catch (err) {
+        setError(err.message)
+      }
+      return
+    }
+
     if (!form.name.trim()) {
       setError('Name is required')
       return
@@ -309,10 +328,20 @@ export default function FieldModal({
     <div className="company-modal-overlay" onMouseDown={handleBackdropClick} role="presentation">
       <div className="company-modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-labelledby="field-modal-title">
         <div className="company-modal__header">
-          <h2 id="field-modal-title">{isEdit ? 'Edit Field' : 'Add Field'}</h2>
+          <h2 id="field-modal-title">
+            {valuesOnly ? 'Edit dropdown values' : isEdit ? 'Edit Field' : 'Add Field'}
+          </h2>
           <button type="button" className="company-modal__close" onClick={onClose} aria-label="Close">×</button>
         </div>
         <form className="company-modal__form" onSubmit={handleSubmit}>
+          {valuesOnly && (
+            <p className="company-employee-photo__login-hint">
+              Parent field: <strong>{field?.name}</strong>
+              {field?.section_name ? ` (${field.section_name})` : ''}
+            </p>
+          )}
+
+          {showSchemaFields && (
           <label className="company-form__field">
             <span className="company-form__label">Name *</span>
             <input
@@ -323,8 +352,9 @@ export default function FieldModal({
               required
             />
           </label>
+          )}
 
-          {!isEdit && (
+          {showSchemaFields && !isEdit && (
             <div className="asset-field-toggle-row">
               <div className="asset-field-toggle-item">
                 <div className="asset-field-toggle-item__head">
@@ -360,19 +390,19 @@ export default function FieldModal({
                   />
                 </div>
                 <p className="company-employee-photo__login-hint">
-                  Input field under a section. Dropdown adds child values below.
+                  Input field under a section. Choose dropdown type to let the company add values later.
                 </p>
               </div>
             </div>
           )}
 
-          {isEdit && (
+          {showSchemaFields && isEdit && (
             <p className="company-employee-photo__login-hint">
               Type: {field.kind === 'section' ? 'Section' : 'Parent field'}
             </p>
           )}
 
-          {showSectionSelect && (
+          {showSchemaFields && showSectionSelect && (
             <label className="company-form__field">
               <span className="company-form__label">Section *</span>
               <select
@@ -389,7 +419,7 @@ export default function FieldModal({
             </label>
           )}
 
-          {(form.is_section || form.is_parent) && (
+          {showSchemaFields && (form.is_section || form.is_parent) && (
             <label className="company-form__field">
               <span className="company-form__label">Display order *</span>
               <input
@@ -409,7 +439,7 @@ export default function FieldModal({
             </label>
           )}
 
-          {isSection && (
+          {showSchemaFields && isSection && (
             <SectionIconUpload
               previewUrl={iconPreview}
               uploading={saving}
@@ -475,7 +505,7 @@ export default function FieldModal({
             </div>
           )}
 
-          {showFieldType && (
+          {showSchemaFields && showFieldType && (
             <div className="asset-field-dependency">
               <div className="asset-field-dependency__head">
                 <span className="company-form__label">Dependent field</span>
@@ -581,7 +611,7 @@ export default function FieldModal({
               Cancel
             </button>
             <button type="submit" className="company-btn company-btn--primary" disabled={saving}>
-              {saving ? 'Saving…' : isEdit ? 'Save changes' : 'Create field'}
+              {saving ? 'Saving…' : valuesOnly ? 'Save values' : isEdit ? 'Save changes' : 'Create field'}
             </button>
           </div>
         </form>

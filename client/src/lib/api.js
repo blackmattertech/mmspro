@@ -87,12 +87,61 @@ export function geocodeAddress(query) {
   return companyFetch(`/geocode?q=${encodeURIComponent(query)}`)
 }
 
-export function getCompanyDetails() {
-  return companyFetch('')
+/** Session-scoped company details: dedupe StrictMode + remounts. */
+const COMPANY_TTL_MS = 30_000
+let companyDetailsCache = {
+  data: null,
+  expiresAt: 0,
+  inflight: null,
 }
 
-export function updateCompanyDetails(data) {
-  return companyFetch('', { method: 'PATCH', body: JSON.stringify(data) })
+export function clearCompanyDetailsCache() {
+  companyDetailsCache = { data: null, expiresAt: 0, inflight: null }
+}
+
+export function getCompanyDetails({ force = false } = {}) {
+  const now = Date.now()
+  if (!force && companyDetailsCache.data && companyDetailsCache.expiresAt > now) {
+    return Promise.resolve(companyDetailsCache.data)
+  }
+  if (!force && companyDetailsCache.inflight) {
+    return companyDetailsCache.inflight
+  }
+
+  const request = companyFetch('')
+    .then((data) => {
+      companyDetailsCache = {
+        data,
+        expiresAt: Date.now() + COMPANY_TTL_MS,
+        inflight: null,
+      }
+      return data
+    })
+    .catch((err) => {
+      if (companyDetailsCache.inflight === request) {
+        companyDetailsCache.inflight = null
+      }
+      throw err
+    })
+
+  companyDetailsCache.inflight = request
+  return request
+}
+
+export async function updateCompanyDetails(data) {
+  const result = await companyFetch('', { method: 'PATCH', body: JSON.stringify(data) })
+  const prev = companyDetailsCache.data
+  companyDetailsCache = {
+    data: {
+      ...result,
+      // PATCH may omit limits/usage — keep previous until next full fetch
+      limits: result.limits ?? prev?.limits ?? null,
+      usage: result.usage ?? prev?.usage ?? null,
+    },
+    expiresAt: Date.now() + COMPANY_TTL_MS,
+    inflight: null,
+  }
+  return companyDetailsCache.data
 }
 
 export function getLocations({ forAssignment = false } = {}) {
@@ -129,25 +178,24 @@ export function deleteDepartment(id) {
   return companyFetch(`/departments/${id}`, { method: 'DELETE' })
 }
 
-export function getDesignations(departmentId) {
-  const qs = departmentId ? `?department_id=${departmentId}` : ''
-  return companyFetch(`/designations${qs}`)
+export function getAreas({ locationId, departmentId } = {}) {
+  const params = new URLSearchParams()
+  if (locationId) params.set('location_id', locationId)
+  if (departmentId) params.set('department_id', departmentId)
+  const qs = params.toString() ? `?${params}` : ''
+  return companyFetch(`/areas${qs}`)
 }
 
-export function createDesignation(data) {
-  return companyFetch('/designations', { method: 'POST', body: JSON.stringify(data) })
+export function createArea(data) {
+  return companyFetch('/areas', { method: 'POST', body: JSON.stringify(data) })
 }
 
-export function updateDesignation(id, data) {
-  return companyFetch(`/designations/${id}`, { method: 'PATCH', body: JSON.stringify(data) })
+export function updateArea(id, data) {
+  return companyFetch(`/areas/${id}`, { method: 'PATCH', body: JSON.stringify(data) })
 }
 
-export function reorderDesignations(ids) {
-  return companyFetch('/designations/reorder', { method: 'PUT', body: JSON.stringify({ ids }) })
-}
-
-export function deleteDesignation(id) {
-  return companyFetch(`/designations/${id}`, { method: 'DELETE' })
+export function deleteArea(id) {
+  return companyFetch(`/areas/${id}`, { method: 'DELETE' })
 }
 
 export function adminFetch(path, options = {}) {
@@ -160,6 +208,10 @@ export function getAdminStats() {
 
 export function getOrganizations({ limit = 50, offset = 0 } = {}) {
   return adminFetch(`/organizations?limit=${limit}&offset=${offset}`)
+}
+
+export function getOrganization(id) {
+  return adminFetch(`/organizations/${id}`)
 }
 
 export function createOrganization(data) {

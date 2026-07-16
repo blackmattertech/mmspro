@@ -10,6 +10,8 @@ import notificationRoutes from './routes/api/notifications.js'
 import authRoutes from './routes/api/auth.js'
 import companyRoutes from './routes/api/company.js'
 import assetsRoutes from './routes/api/assets.js'
+import equipmentRoutes from './routes/api/equipment.js'
+import equipmentFieldsRoutes from './routes/api/equipmentFields.js'
 import workOrdersRoutes from './routes/api/workOrders.js'
 import profileRoutes from './routes/api/profile.js'
 import rolesRoutes from './routes/api/roles.js'
@@ -65,6 +67,8 @@ app.use('/api/auth', authRoutes)
 app.use('/api/company', companyRoutes)
 app.use('/api/roles', rolesRoutes)
 app.use('/api/assets', assetsRoutes)
+app.use('/api/equipment', equipmentRoutes)
+app.use('/api/equipment-fields', equipmentFieldsRoutes)
 app.use('/api/work-orders', workOrdersRoutes)
 app.use('/api/profile', profileRoutes)
 app.use('/api', apiRoutes)

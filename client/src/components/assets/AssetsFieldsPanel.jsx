@@ -14,6 +14,8 @@ import { dependencyLabel } from '../../lib/assetFieldDependencies'
 import { readFormDraft, writeFormDraft, clearFormDraft } from '../../lib/formDraftStorage'
 import { deleteSectionIcon, uploadSectionIcon } from '../../lib/orgAssets'
 import GooToggle from '../ui/GooToggle'
+import TrashIcon from '../ui/TrashIcon'
+import EditIcon from '../ui/EditIcon'
 import FieldModal from './FieldModal'
 import AssetFieldSortMenu from './AssetFieldSortMenu'
 import AssetFormLayoutModal from './AssetFormLayoutModal'
@@ -63,22 +65,15 @@ function FieldPill({ children }) {
   return <span className="company-badge company-badge--primary">{children}</span>
 }
 
-export default function AssetsFieldsPanel({ canManage }) {
+export default function AssetsFieldsPanel({
+  canManageSchema,
+  canManageChildren,
+  orgId: orgIdProp,
+  fieldsState,
+}) {
   const { org } = useOrg()
-  const modalStateKey = org?.id ? `mms:asset-field-modal:${org.id}` : null
-  const [view, setView] = useState('all')
-  const [search, setSearch] = useState('')
-  const [sectionFilter, setSectionFilter] = useState('')
-  const [parentFilter, setParentFilter] = useState('')
-  const [sortBy, setSortBy] = useState('parent')
-  const [sortDir, setSortDir] = useState('asc')
-  const [modalOpen, setModalOpen] = useState(false)
-  const [layoutModalOpen, setLayoutModalOpen] = useState(false)
-  const [modalMode, setModalMode] = useState('all')
-  const [editing, setEditing] = useState(null)
-  const [togglingId, setTogglingId] = useState(null)
-  const modalRestoredRef = useRef(false)
-
+  const orgId = orgIdProp || org?.id
+  const internalState = useAssetFields({ enabled: !fieldsState })
   const {
     fields,
     sections,
@@ -91,7 +86,21 @@ export default function AssetsFieldsPanel({ canManage }) {
     remove,
     toggleActive,
     reorderSections,
-  } = useAssetFields()
+  } = fieldsState || internalState
+  const modalStateKey = orgId ? `mms:asset-field-modal:${orgId}` : null
+  const [view, setView] = useState('all')
+  const [search, setSearch] = useState('')
+  const [sectionFilter, setSectionFilter] = useState('')
+  const [parentFilter, setParentFilter] = useState('')
+  const [sortBy, setSortBy] = useState('parent')
+  const [sortDir, setSortDir] = useState('asc')
+  const [modalOpen, setModalOpen] = useState(false)
+  const [layoutModalOpen, setLayoutModalOpen] = useState(false)
+  const [modalMode, setModalMode] = useState('all')
+  const [valuesOnly, setValuesOnly] = useState(false)
+  const [editing, setEditing] = useState(null)
+  const [togglingId, setTogglingId] = useState(null)
+  const modalRestoredRef = useRef(false)
 
   const sectionOptions = useMemo(
     () => fields.filter((f) => f.kind === 'section'),
@@ -153,14 +162,26 @@ export default function AssetsFieldsPanel({ canManage }) {
   const openCreate = (mode = 'all') => {
     setEditing(null)
     setModalMode(mode)
+    setValuesOnly(false)
     setModalOpen(true)
   }
 
-  const openEdit = (field) => {
+  const openEdit = (field, { valuesOnly: valuesOnlyMode = false } = {}) => {
     if (field.kind === 'child') return
+    if (valuesOnlyMode) {
+      if (!canManageChildren || field.kind !== 'parent' || field.field_type !== 'dropdown') return
+    } else if (!canManageSchema) {
+      return
+    }
     setEditing(field)
     setModalMode(field.kind === 'section' ? 'section' : 'parent')
+    setValuesOnly(valuesOnlyMode)
     setModalOpen(true)
+  }
+
+  const openParentValues = (childField) => {
+    const parent = fields.find((f) => f.id === childField.parent_id)
+    if (parent) openEdit(parent, { valuesOnly: true })
   }
 
   const handleSave = async (payload, iconMeta = {}) => {
@@ -168,14 +189,16 @@ export default function AssetsFieldsPanel({ canManage }) {
     const isSection = payload.is_section || editing?.kind === 'section'
 
     let saved
-    if (editing) {
+    if (valuesOnly && editing) {
+      saved = await update(editing.id, { dropdown_options: payload.dropdown_options })
+    } else if (editing) {
       saved = await update(editing.id, payload)
     } else {
       saved = await create(payload)
     }
 
     const sectionId = editing?.id || saved?.id
-    if (isSection && sectionId && org?.id) {
+    if (!valuesOnly && isSection && sectionId && orgId) {
       if (removeIcon && editing?.icon_path) {
         await deleteSectionIcon(editing.icon_path)
         await update(sectionId, { icon_path: null })
@@ -183,7 +206,7 @@ export default function AssetsFieldsPanel({ canManage }) {
         if (editing?.icon_path) {
           await deleteSectionIcon(editing.icon_path)
         }
-        const path = await uploadSectionIcon(org.id, sectionId, iconFile)
+        const path = await uploadSectionIcon(orgId, sectionId, iconFile)
         await update(sectionId, { icon_path: path })
       }
     }
@@ -194,6 +217,16 @@ export default function AssetsFieldsPanel({ canManage }) {
   const handleDelete = async (field) => {
     if (!window.confirm(`Permanently delete "${field.name}"? This cannot be undone.`)) return
     await remove(field.id)
+  }
+
+  const canDeleteField = (field) => {
+    if (field.kind === 'child') return canManageChildren
+    return canManageSchema
+  }
+
+  const canToggleField = (field) => {
+    if (field.kind === 'child') return canManageChildren
+    return canManageSchema
   }
 
   const handleToggle = async (field, isActive) => {
@@ -211,7 +244,7 @@ export default function AssetsFieldsPanel({ canManage }) {
       ? 'parent'
       : 'all'
 
-  const showAddButton = canManage && view !== 'children'
+  const showAddButton = canManageSchema && view !== 'children'
 
   const handleViewChange = (tabId) => {
     setView(tabId)
@@ -252,7 +285,7 @@ export default function AssetsFieldsPanel({ canManage }) {
           ))}
         </nav>
         <div className="asset-field-toolbar__actions">
-          {canManage && (
+          {canManageSchema && (
             <button
               type="button"
               className="asset-form-layout-btn"
@@ -336,10 +369,26 @@ export default function AssetsFieldsPanel({ canManage }) {
       ) : visibleFields.length === 0 ? (
         <div className="company-empty">
           {hasFilters && 'No fields match your search or filters.'}
-          {!hasFilters && view === 'sections' && 'No sections yet. Add a section to group parent and child fields.'}
-          {!hasFilters && view === 'parents' && 'No parent fields yet. Create a section first, then add parent fields.'}
-          {!hasFilters && view === 'children' && 'No child values yet. Add a dropdown parent field and define values in its form.'}
-          {!hasFilters && view === 'all' && 'No fields yet. Add a section or parent field to get started.'}
+          {!hasFilters && view === 'sections' && (
+            canManageSchema
+              ? 'No sections yet. Add a section to group parent fields for this organization.'
+              : 'No sections yet. Ask Super Admin to add sections first.'
+          )}
+          {!hasFilters && view === 'parents' && (
+            canManageSchema
+              ? 'No parent fields yet. Create a section first, then add parent fields.'
+              : 'No parent fields yet. Ask Super Admin to add parent fields first.'
+          )}
+          {!hasFilters && view === 'children' && (
+            canManageSchema
+              ? 'No child values yet. Companies add dropdown values in their org app after you create dropdown parents.'
+              : 'No child values yet. Ask Super Admin to add a dropdown parent field, then add values here.'
+          )}
+          {!hasFilters && view === 'all' && (
+            canManageSchema
+              ? 'No fields yet. Add sections and parent fields for this organization. Companies will add dropdown values in their app.'
+              : 'No fields yet. Super Admin adds sections and parent fields; your company adds dropdown values.'
+          )}
         </div>
       ) : (
         <div className="company-table-wrap">
@@ -358,8 +407,8 @@ export default function AssetsFieldsPanel({ canManage }) {
                 {view === 'parents' && <th>Values</th>}
                 {view === 'parents' && <th>Dependency</th>}
                 {(view === 'all' || view === 'children') && <th>Hierarchy</th>}
-                {canManage && <th>Active</th>}
-                {canManage && <th aria-label="Actions" />}
+                {(canManageSchema || canManageChildren) && <th>Active</th>}
+                {(canManageSchema || canManageChildren) && <th aria-label="Actions" />}
               </tr>
             </thead>
             <tbody>
@@ -406,26 +455,62 @@ export default function AssetsFieldsPanel({ canManage }) {
                   {view === 'children' && (
                     <td className="asset-field-hierarchy">{hierarchyLabel(field)}</td>
                   )}
-                  {canManage && (
+                  {(canManageSchema || canManageChildren) && (
                     <td>
-                      <GooToggle
-                        checked={field.is_active !== false}
-                        disabled={togglingId === field.id}
-                        onChange={(checked) => handleToggle(field, checked)}
-                        ariaLabel={`Toggle ${field.name}`}
-                      />
+                      {canToggleField(field) ? (
+                        <GooToggle
+                          checked={field.is_active !== false}
+                          disabled={togglingId === field.id}
+                          onChange={(checked) => handleToggle(field, checked)}
+                          ariaLabel={`Toggle ${field.name}`}
+                        />
+                      ) : (
+                        '—'
+                      )}
                     </td>
                   )}
-                  {canManage && (
+                  {(canManageSchema || canManageChildren) && (
                     <td className="company-table__actions">
-                      {field.kind !== 'child' && (
-                        <button type="button" className="company-btn company-btn--ghost" onClick={() => openEdit(field)}>
-                          Edit
+                      {field.kind === 'child' && canManageChildren && (
+                        <button
+                          type="button"
+                          className="company-btn company-btn--ghost"
+                          onClick={() => openParentValues(field)}
+                        >
+                          Edit values
                         </button>
                       )}
-                      <button type="button" className="company-btn company-btn--ghost" onClick={() => handleDelete(field)}>
-                        Delete
-                      </button>
+                      {field.kind === 'parent' && field.field_type === 'dropdown' && canManageChildren && !canManageSchema && (
+                        <button
+                          type="button"
+                          className="company-btn company-btn--ghost"
+                          onClick={() => openEdit(field, { valuesOnly: true })}
+                        >
+                          Edit values
+                        </button>
+                      )}
+                      {field.kind !== 'child' && canManageSchema && (
+                        <button
+                          type="button"
+                          className="company-btn company-btn--secondary company-btn--compact company-btn--icon"
+                          onClick={() => openEdit(field)}
+                          aria-label={`Edit ${field.name}`}
+                          title="Edit"
+                        >
+                          <EditIcon />
+                        </button>
+                      )}
+                      {canDeleteField(field) && (
+                        <button
+                          type="button"
+                          className="company-btn company-btn--danger company-btn--compact company-btn--icon"
+                          onClick={() => handleDelete(field)}
+                          aria-label={`Delete ${field.name}`}
+                          title="Delete"
+                        >
+                          <TrashIcon />
+                        </button>
+                      )}
                     </td>
                   )}
                 </tr>
@@ -448,6 +533,8 @@ export default function AssetsFieldsPanel({ canManage }) {
         <FieldModal
           field={editing}
           mode={modalMode}
+          valuesOnly={valuesOnly}
+          orgId={orgId}
           sections={sections}
           dependencySections={sectionOptions}
           parents={parents}
