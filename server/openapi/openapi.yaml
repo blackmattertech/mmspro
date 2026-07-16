@@ -28,7 +28,7 @@ tags:
   - name: Profile
     description: User profile and linked employee record
   - name: Company
-    description: Organization details, locations, departments, designations, employees
+    description: Organization details, locations, departments, employees
   - name: Assets
     description: Asset field definitions
   - name: WorkOrders

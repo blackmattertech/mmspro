@@ -7,10 +7,10 @@ export function useOrgLimits() {
   const [usage, setUsage] = useState(null)
   const [loading, setLoading] = useState(true)
 
-  const load = useCallback(async () => {
+  const load = useCallback(async ({ force = false } = {}) => {
     setLoading(true)
     try {
-      const data = await getCompanyDetails()
+      const data = await getCompanyDetails({ force })
       setLimits(data.limits || null)
       setUsage(data.usage || null)
     } catch {
@@ -31,5 +31,5 @@ export function useOrgLimits() {
     return isAtOrOverLimit(count, limits[limitKey])
   }, [limits, usage])
 
-  return { limits, usage, loading, reload: load, isResourceAtLimit }
+  return { limits, usage, loading, reload: () => load({ force: true }), isResourceAtLimit }
 }

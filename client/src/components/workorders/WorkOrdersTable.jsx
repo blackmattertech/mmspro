@@ -1,10 +1,11 @@
-import { formatAssignees, formatWorkOrderDate } from '../../lib/workOrderTableUtils'
+import { formatWorkOrderDate } from '../../lib/workOrderTableUtils'
+import AssignedToCell from './AssignedToCell'
 
 const COLUMN_CONFIG = {
   wo_number: { label: 'WO #', className: '' },
   summary: { label: 'Summary', className: 'wo-table__summary' },
   assignees: { label: 'Assigned to', className: 'wo-table__assignees' },
-  assigned_with: { label: 'Assigned with', className: 'wo-table__assignees' },
+  assigned_with: { label: 'Assigned to', className: 'wo-table__assignees' },
   creator: { label: 'Created by', className: 'wo-table__creator' },
   created_at: { label: 'Created', className: '' },
   received_at: { label: 'Received', className: '' },
@@ -46,9 +47,15 @@ export default function WorkOrdersTable({
         )
       case 'assignees':
       case 'assigned_with':
-        return formatAssignees(order.assignees, order.assigned_department, order.assigned_location)
+        return (
+          <AssignedToCell
+            assignees={order.assignees}
+            assignedDepartment={order.assigned_department}
+            assignedLocation={order.assigned_location}
+          />
+        )
       case 'creator':
-        return order.creator?.email || '—'
+        return order.creator?.display_name || order.creator?.email || '—'
       case 'created_at':
       case 'received_at':
         return formatWorkOrderDate(order.created_at)

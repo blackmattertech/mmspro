@@ -44,6 +44,8 @@
 --   35-org-assets-employee-photos.sql → 35-org-assets-employee-photos — Employee photo uploads
 --   36-work-order-department-assignment.sql → 36-work-order-department-assignment — Dept WO assignment
 --   37-work-order-assignment-cascade.sql → 37-work-order-assignment-cascade — Location-only cascade (includes 36 cols)
+--   38-equipment-inventory.sql          → 38-equipment-inventory — Areas + equipment + dynamic fields
+--   39-drop-designations-department-heads.sql → 39-drop-designations-department-heads — Remove designation + dept head
 --
 -- OTHER:
 --   supabase.sql                  → supabase — Full schema (new projects)

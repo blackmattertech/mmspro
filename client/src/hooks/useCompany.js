@@ -7,11 +7,11 @@ export function useCompanyDetails() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
 
-  const load = useCallback(async () => {
+  const load = useCallback(async ({ force = false } = {}) => {
     setLoading(true)
     setError(null)
     try {
-      const data = await getCompanyDetails()
+      const data = await getCompanyDetails({ force })
       setCompany(data)
     } catch (err) {
       setError(err.message)
@@ -39,5 +39,5 @@ export function useCompanyDetails() {
     }
   }
 
-  return { company, loading, saving, error, save, reload: load }
+  return { company, loading, saving, error, save, reload: () => load({ force: true }) }
 }

@@ -49,7 +49,7 @@ export default function AdminDashboard() {
           </div>
           <div style={{ padding: '20px 24px', display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
             <Link to="/admin/organizations" className="admin-page__create-btn">
-              Manage Organizations
+              Manage Organizations &amp; Assets
             </Link>
             <Link
               to="/admin/users"

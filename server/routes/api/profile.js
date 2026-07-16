@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { verifyAuth } from '../../middleware/auth.js'
 import { supabaseAdmin } from '../../services/supabase.js'
 import { validatePhoneE164, normalizePhoneE164 } from '../../lib/contactValidation.js'
+import { getSignedUrl } from '../../lib/signedUrlCache.js'
 
 const router = Router()
 const ORG_ASSETS_BUCKET = 'org-assets'
@@ -17,28 +18,22 @@ const MY_EMPLOYEE_SELECT = `
   email,
   photo_url,
   is_active,
-  designation_id,
   department_id,
   location_id,
   manager_id,
-  designations ( id, name ),
   departments!department_id ( id, name, code ),
   org_locations!location_id ( id, name, code ),
   manager:manager_id ( id, emp_id, name ),
   org_employee_emails ( id, email ),
-  headed_departments:departments!head_employee_id ( id, name, code ),
   access_role:access_role_id ( id, name )
 `
 
 async function attachEmployeePhotoUrl(employee) {
   if (!employee?.photo_url) return employee
 
-  const { data, error } = await supabaseAdmin.storage
-    .from(ORG_ASSETS_BUCKET)
-    .createSignedUrl(employee.photo_url, 3600)
-
-  if (!error && data?.signedUrl) {
-    return { ...employee, photo_signed_url: data.signedUrl }
+  const signedUrl = await getSignedUrl(ORG_ASSETS_BUCKET, employee.photo_url)
+  if (signedUrl) {
+    return { ...employee, photo_signed_url: signedUrl }
   }
   return employee
 }
@@ -46,12 +41,7 @@ async function attachEmployeePhotoUrl(employee) {
 async function attachUserAvatarUrl(profile) {
   if (!profile?.avatar_url) return null
 
-  const { data, error } = await supabaseAdmin.storage
-    .from(USER_ASSETS_BUCKET)
-    .createSignedUrl(profile.avatar_url, 3600)
-
-  if (error || !data?.signedUrl) return null
-  return data.signedUrl
+  return getSignedUrl(USER_ASSETS_BUCKET, profile.avatar_url)
 }
 
 async function loadUserProfile(userId) {

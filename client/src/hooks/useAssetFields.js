@@ -7,13 +7,14 @@ import {
   reorderAssetSections,
 } from '../lib/api-assets'
 
-export function useAssetFields() {
+export function useAssetFields({ enabled = true } = {}) {
   const [fields, setFields] = useState([])
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(enabled)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
 
   const load = useCallback(async ({ silent = false } = {}) => {
+    if (!enabled) return
     if (!silent) setLoading(true)
     setError(null)
     try {
@@ -24,11 +25,12 @@ export function useAssetFields() {
     } finally {
       if (!silent) setLoading(false)
     }
-  }, [])
+  }, [enabled])
 
   useEffect(() => {
+    if (!enabled) return
     load()
-  }, [load])
+  }, [enabled, load])
 
   const create = async (payload) => {
     setSaving(true)

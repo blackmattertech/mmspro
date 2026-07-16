@@ -37,8 +37,8 @@ export function CalendarFilters({
           value={plantFilter}
           onChange={(e) => onPlantFilterChange(e.target.value)}
         >
-          <option value="all">All Plants</option>
-          {plants.map((p) => (
+          <option value="all">All Locations</option>
+          {(plants || []).map((p) => (
             <option key={p.id} value={p.id}>{p.name}</option>
           ))}
         </select>
@@ -48,7 +48,7 @@ export function CalendarFilters({
           onChange={(e) => onWorkCenterFilterChange(e.target.value)}
         >
           <option value="all">All Work Centers</option>
-          {workCenters.map((wc) => (
+          {(workCenters || []).map((wc) => (
             <option key={wc.id} value={wc.id}>{wc.name}</option>
           ))}
         </select>
@@ -140,25 +140,31 @@ export function CalendarTable({ tasks, priorityLabels }) {
           <tr>
             <th>Date</th>
             <th>Task</th>
-            <th>Plant</th>
+            <th>Location</th>
             <th>Priority</th>
             <th>Type</th>
           </tr>
         </thead>
         <tbody>
-          {tasks.map((task) => (
-            <tr key={task.id}>
-              <td>{new Date(task.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</td>
-              <td>{task.title}</td>
-              <td>{task.plant}</td>
-              <td>
-                <span className={`priority-badge priority-badge--${task.priority === 'followup' ? 'followup' : task.priority}`}>
-                  {priorityLabels[task.priority]}
-                </span>
-              </td>
-              <td>{task.type === 'followup' ? 'Follow-up' : 'Log'}</td>
+          {!tasks?.length ? (
+            <tr>
+              <td colSpan={5} className="cal-table__empty">No tasks for this period.</td>
             </tr>
-          ))}
+          ) : (
+            tasks.map((task) => (
+              <tr key={task.id}>
+                <td>{new Date(task.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</td>
+                <td>{task.title}</td>
+                <td>{task.plant}</td>
+                <td>
+                  <span className={`priority-badge priority-badge--${task.priority === 'followup' ? 'followup' : task.priority}`}>
+                    {priorityLabels[task.priority]}
+                  </span>
+                </td>
+                <td>{task.type === 'followup' ? 'Follow-up' : 'Log'}</td>
+              </tr>
+            ))
+          )}
         </tbody>
       </table>
     </div>

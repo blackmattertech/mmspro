@@ -31,15 +31,15 @@ export default function CalendarHeader({
 
         <div className="dash-header__right">
           <div className="dash-header__filter">
-            <label className="dash-header__filter-label" htmlFor="cal-plant-filter">Plant</label>
+            <label className="dash-header__filter-label" htmlFor="cal-plant-filter">Location</label>
             <select
               id="cal-plant-filter"
               className="dash-header__select"
               value={plantFilter}
               onChange={(e) => onPlantChange(e.target.value)}
             >
-              <option value="all">All Plants</option>
-              {plants.map((p) => (
+              <option value="all">All Locations</option>
+              {(plants || []).map((p) => (
                 <option key={p.id} value={p.id}>{p.name}</option>
               ))}
             </select>
@@ -90,7 +90,6 @@ export default function CalendarHeader({
               <rect x="3" y="5" width="14" height="10" rx="1.5" stroke="currentColor" strokeWidth="1.5"/>
               <path d="M3 6.5L10 11L17 6.5" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
             </svg>
-            <span className="dash-header__badge">3</span>
           </button>
         </div>
       </header>

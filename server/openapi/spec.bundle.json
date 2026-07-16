@@ -27,7 +27,7 @@
     },
     {
       "name": "Company",
-      "description": "Organization details, locations, departments, designations, employees"
+      "description": "Organization details, locations, departments, employees"
     },
     {
       "name": "Assets",
@@ -428,8 +428,8 @@
         "tags": [
           "Assets"
         ],
-        "summary": "Create asset field",
-        "description": "Requires org owner or admin role.",
+        "summary": "Create asset field (section or parent)",
+        "description": "Super Admin only. Dropdown child values are added separately by the company.",
         "requestBody": {
           "required": true,
           "content": {
@@ -563,7 +563,7 @@
           "Assets"
         ],
         "summary": "Update asset field",
-        "description": "Requires org owner or admin role.",
+        "description": "Super Admin edits sections/parents. Company users may send only `dropdown_options` on dropdown parents.",
         "parameters": [
           {
             "name": "id",
@@ -635,7 +635,7 @@
           "Assets"
         ],
         "summary": "Delete asset field",
-        "description": "Requires org owner or admin role.",
+        "description": "Super Admin deletes sections/parents. Company users may delete individual child values.",
         "parameters": [
           {
             "name": "id",
@@ -1423,237 +1423,6 @@
         }
       }
     },
-    "/api/company/designations": {
-      "get": {
-        "tags": [
-          "Company"
-        ],
-        "summary": "List designations",
-        "parameters": [
-          {
-            "name": "department_id",
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Designation list",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/Designation"
-                  }
-                }
-              }
-            }
-          }
-        }
-      },
-      "post": {
-        "tags": [
-          "Company"
-        ],
-        "summary": "Create designation",
-        "description": "Requires org owner or admin role.",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/DesignationCreate"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Designation created",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Designation"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Validation error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/company/designations/reorder": {
-      "put": {
-        "tags": [
-          "Company"
-        ],
-        "summary": "Reorder designations",
-        "description": "Requires org owner or admin role. Must include all designation IDs.",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/DesignationReorder"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Reordered designations",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/Designation"
-                  }
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Validation error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/company/designations/{id}": {
-      "patch": {
-        "tags": [
-          "Company"
-        ],
-        "summary": "Update designation",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "allOf": [
-                  {
-                    "$ref": "#/components/schemas/DesignationCreate"
-                  },
-                  {
-                    "type": "object",
-                    "properties": {
-                      "hierarchy": {
-                        "type": "integer"
-                      },
-                      "is_active": {
-                        "type": "boolean"
-                      }
-                    }
-                  }
-                ]
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Updated designation",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Designation"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Validation error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      },
-      "delete": {
-        "tags": [
-          "Company"
-        ],
-        "summary": "Soft-delete designation",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Deactivated designation",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Designation"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/company/employees": {
       "get": {
         "tags": [
@@ -1671,14 +1440,6 @@
           },
           {
             "name": "location_id",
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "name": "designation_id",
             "in": "query",
             "schema": {
               "type": "string",
@@ -1782,9 +1543,6 @@
                     "type": "object",
                     "properties": {
                       "is_active": {
-                        "type": "boolean"
-                      },
-                      "is_department_head": {
                         "type": "boolean"
                       }
                     }
@@ -3351,22 +3109,8 @@
           "all_locations": {
             "type": "boolean"
           },
-          "per_location_heads": {
-            "type": "boolean"
-          },
-          "head_employee_id": {
-            "type": "string",
-            "format": "uuid",
-            "nullable": true
-          },
           "is_active": {
             "type": "boolean"
-          },
-          "location_heads": {
-            "type": "array",
-            "items": {
-              "type": "object"
-            }
           }
         }
       },
@@ -3396,112 +3140,6 @@
           },
           "all_locations": {
             "type": "boolean"
-          },
-          "head_employee_id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "per_location_heads": {
-            "type": "boolean"
-          },
-          "location_heads": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "location_id": {
-                  "type": "string",
-                  "format": "uuid"
-                },
-                "head_employee_id": {
-                  "type": "string",
-                  "format": "uuid"
-                }
-              }
-            }
-          }
-        }
-      },
-      "Designation": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "org_id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "name": {
-            "type": "string"
-          },
-          "description": {
-            "type": "string",
-            "nullable": true
-          },
-          "hierarchy": {
-            "type": "integer"
-          },
-          "all_departments": {
-            "type": "boolean"
-          },
-          "is_active": {
-            "type": "boolean"
-          },
-          "departments": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "id": {
-                  "type": "string",
-                  "format": "uuid"
-                },
-                "name": {
-                  "type": "string"
-                }
-              }
-            }
-          }
-        }
-      },
-      "DesignationCreate": {
-        "type": "object",
-        "required": [
-          "name"
-        ],
-        "properties": {
-          "name": {
-            "type": "string"
-          },
-          "description": {
-            "type": "string"
-          },
-          "all_departments": {
-            "type": "boolean"
-          },
-          "department_ids": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        }
-      },
-      "DesignationReorder": {
-        "type": "object",
-        "required": [
-          "ids"
-        ],
-        "properties": {
-          "ids": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "format": "uuid"
-            }
           }
         }
       },
@@ -3538,11 +3176,6 @@
             "type": "string",
             "nullable": true
           },
-          "designation_id": {
-            "type": "string",
-            "format": "uuid",
-            "nullable": true
-          },
           "department_id": {
             "type": "string",
             "format": "uuid",
@@ -3563,10 +3196,6 @@
           },
           "is_active": {
             "type": "boolean"
-          },
-          "designations": {
-            "type": "object",
-            "nullable": true
           },
           "departments": {
             "type": "object",
@@ -3612,10 +3241,6 @@
           "email": {
             "type": "string"
           },
-          "designation_id": {
-            "type": "string",
-            "format": "uuid"
-          },
           "department_id": {
             "type": "string",
             "format": "uuid"
@@ -3640,9 +3265,6 @@
               "type": "string",
               "format": "email"
             }
-          },
-          "is_department_head": {
-            "type": "boolean"
           }
         }
       },

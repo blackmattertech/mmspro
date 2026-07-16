@@ -3,6 +3,8 @@ import { verifyAuth } from '../../middleware/auth.js'
 import { adminOnly } from '../../middleware/adminOnly.js'
 import { supabaseAdmin } from '../../services/supabase.js'
 import organizationRoutes from './organizations.js'
+import orgAssetFieldsRoutes from './orgAssetFields.js'
+import orgEquipmentFieldsRoutes from './orgEquipmentFields.js'
 
 const router = Router()
 router.use(verifyAuth, adminOnly)
@@ -33,6 +35,8 @@ router.get('/stats', async (_req, res) => {
   })
 })
 
+router.use('/organizations/:orgId/asset-fields', orgAssetFieldsRoutes)
+router.use('/organizations/:orgId/equipment-fields', orgEquipmentFieldsRoutes)
 router.use('/organizations', organizationRoutes)
 
 router.get('/users', async (req, res) => {

@@ -4,7 +4,6 @@ export function getEmployees(filters = {}) {
   const params = new URLSearchParams()
   if (filters.departmentId) params.set('department_id', filters.departmentId)
   if (filters.locationId) params.set('location_id', filters.locationId)
-  if (filters.designationId) params.set('designation_id', filters.designationId)
   if (filters.forAssignment) params.set('for_assignment', '1')
   const qs = params.toString() ? `?${params}` : ''
   return companyFetch(`/employees${qs}`)

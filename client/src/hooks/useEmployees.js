@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { getEmployees, createEmployee, updateEmployee, deleteEmployee } from '../lib/api-employees'
 
 export function useEmployees(filters = {}) {
-  const { departmentId, locationId, designationId, forAssignment = false } = filters
+  const { departmentId, locationId, forAssignment = false } = filters
   const [employees, setEmployees] = useState([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -12,14 +12,14 @@ export function useEmployees(filters = {}) {
     if (!silent) setLoading(true)
     setError(null)
     try {
-      const data = await getEmployees({ departmentId, locationId, designationId, forAssignment })
+      const data = await getEmployees({ departmentId, locationId, forAssignment })
       setEmployees(data)
     } catch (err) {
       setError(err.message)
     } finally {
       if (!silent) setLoading(false)
     }
-  }, [departmentId, locationId, designationId, forAssignment])
+  }, [departmentId, locationId, forAssignment])
 
   useEffect(() => {
     load()

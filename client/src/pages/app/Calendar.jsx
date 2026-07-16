@@ -6,8 +6,9 @@ import { QuickFilters, UpcomingTasksPanel, TaskSummaryPanel } from '../../compon
 import './Calendar.css'
 
 export default function Calendar() {
-  const { plants, createWorkOrder } = useDashboard()
+  const { createWorkOrder } = useDashboard()
   const {
+    plants,
     workCenters,
     allFilteredTasks,
     tasksByDate,
@@ -18,6 +19,7 @@ export default function Calendar() {
     year,
     month,
     monthLabel,
+    todayDay,
     viewMode,
     setViewMode,
     plantFilter,
@@ -37,10 +39,13 @@ export default function Calendar() {
     goToNextMonth,
   } = useCalendar()
 
+  const plantOptions = plants || []
+  const workCenterOptions = workCenters || []
+
   return (
     <div className="calendar-page">
       <CalendarHeader
-        plants={plants}
+        plants={plantOptions}
         plantFilter={plantFilter}
         onPlantChange={setPlantFilter}
         dateFrom={dateFrom}
@@ -60,7 +65,7 @@ export default function Calendar() {
             onPrevMonth={goToPrevMonth}
             onNextMonth={goToNextMonth}
             onCreateTask={createWorkOrder}
-            plants={plants}
+            plants={plantOptions}
           />
 
           <div className="calendar-page__card">
@@ -71,8 +76,8 @@ export default function Calendar() {
               onPlantFilterChange={setPlantFilter}
               workCenterFilter={workCenterFilter}
               onWorkCenterFilterChange={setWorkCenterFilter}
-              plants={plants}
-              workCenters={workCenters}
+              plants={plantOptions}
+              workCenters={workCenterOptions}
             />
 
             {viewMode === 'calendar' ? (
@@ -80,7 +85,7 @@ export default function Calendar() {
                 year={year}
                 month={month}
                 tasksByDate={tasksByDate}
-                todayDay={28}
+                todayDay={todayDay}
               />
             ) : (
               <CalendarTable tasks={allFilteredTasks} priorityLabels={priorityLabels} />

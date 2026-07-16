@@ -1,0 +1,33 @@
+.admin-org-assets__back {
+  color: var(--color-primary, #c41e3a);
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.admin-org-assets__back:hover {
+  text-decoration: underline;
+}
+
+.admin-org-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.admin-org-actions__btn {
+  padding: 0.35rem 0.75rem;
+  border-radius: 6px;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  color: #334155;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  text-decoration: none;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.admin-org-actions__btn:hover {
+  border-color: var(--color-primary, #c41e3a);
+  color: var(--color-primary, #c41e3a);
+}

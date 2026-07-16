@@ -72,20 +72,24 @@ export function UpcomingTasksPanel({ tasks, priorityLabels }) {
   return (
     <div className="cal-panel">
       <h3 className="cal-panel__title">Upcoming Tasks</h3>
-      <ul className="cal-upcoming">
-        {tasks.map((task) => (
-          <li key={task.id} className="cal-upcoming__item">
-            <div className="cal-upcoming__content">
-              <span className="cal-upcoming__date">{task.date}</span>
-              <span className="cal-upcoming__title">{task.title}</span>
-              <span className="cal-upcoming__plant">{task.plant}</span>
-            </div>
-            <span className={`priority-badge ${PRIORITY_BADGE_CLASS[task.priority]}`}>
-              {priorityLabels[task.priority]}
-            </span>
-          </li>
-        ))}
-      </ul>
+      {!tasks?.length ? (
+        <p className="cal-panel__empty">No upcoming tasks.</p>
+      ) : (
+        <ul className="cal-upcoming">
+          {tasks.map((task) => (
+            <li key={task.id} className="cal-upcoming__item">
+              <div className="cal-upcoming__content">
+                <span className="cal-upcoming__date">{task.date}</span>
+                <span className="cal-upcoming__title">{task.title}</span>
+                <span className="cal-upcoming__plant">{task.plant}</span>
+              </div>
+              <span className={`priority-badge ${PRIORITY_BADGE_CLASS[task.priority]}`}>
+                {priorityLabels[task.priority]}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   )
 }

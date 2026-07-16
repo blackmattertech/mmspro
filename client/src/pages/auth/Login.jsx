@@ -106,11 +106,15 @@ export default function Login() {
       throw new Error('Authentication is not configured.')
     }
 
-    const { data: profile } = await supabase
+    const { data: profile, error: profileError } = await supabase
       .from('profiles')
       .select('role, org_id, organizations(slug, is_active)')
       .eq('id', userId)
       .maybeSingle()
+
+    if (profileError) {
+      throw new Error(profileError.message || 'Could not load your account profile. Please try again.')
+    }
 
     if (profile?.role === 'super_admin') {
       return '/admin/dashboard'

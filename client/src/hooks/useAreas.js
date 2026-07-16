@@ -1,14 +1,8 @@
 import { useState, useEffect, useCallback } from 'react'
-import {
-  getDesignations,
-  createDesignation,
-  updateDesignation,
-  reorderDesignations,
-  deleteDesignation,
-} from '../lib/api'
+import { getAreas, createArea, updateArea, deleteArea } from '../lib/api'
 
-export function useDesignations(departmentFilter = '') {
-  const [designations, setDesignations] = useState([])
+export function useAreas({ locationId, departmentId } = {}) {
+  const [areas, setAreas] = useState([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
@@ -17,14 +11,14 @@ export function useDesignations(departmentFilter = '') {
     if (!silent) setLoading(true)
     setError(null)
     try {
-      const data = await getDesignations(departmentFilter || undefined)
-      setDesignations(data)
+      const data = await getAreas({ locationId, departmentId })
+      setAreas(data)
     } catch (err) {
       setError(err.message)
     } finally {
       if (!silent) setLoading(false)
     }
-  }, [departmentFilter])
+  }, [locationId, departmentId])
 
   useEffect(() => {
     load()
@@ -34,7 +28,7 @@ export function useDesignations(departmentFilter = '') {
     setSaving(true)
     setError(null)
     try {
-      const data = await createDesignation(payload)
+      const data = await createArea(payload)
       await load({ silent: true })
       return data
     } catch (err) {
@@ -49,7 +43,7 @@ export function useDesignations(departmentFilter = '') {
     setSaving(true)
     setError(null)
     try {
-      const data = await updateDesignation(id, payload)
+      const data = await updateArea(id, payload)
       await load({ silent: true })
       return data
     } catch (err) {
@@ -60,22 +54,11 @@ export function useDesignations(departmentFilter = '') {
     }
   }
 
-  const reorder = async (ids) => {
-    setError(null)
-    try {
-      const data = await reorderDesignations(ids)
-      setDesignations(data)
-    } catch (err) {
-      setError(err.message)
-      throw err
-    }
-  }
-
   const remove = async (id) => {
     setSaving(true)
     setError(null)
     try {
-      await deleteDesignation(id)
+      await deleteArea(id)
       await load({ silent: true })
     } catch (err) {
       setError(err.message)
@@ -88,7 +71,7 @@ export function useDesignations(departmentFilter = '') {
   const toggleActive = async (id, isActive) => {
     setError(null)
     try {
-      await updateDesignation(id, { is_active: isActive })
+      await updateArea(id, { is_active: isActive })
       await load({ silent: true })
     } catch (err) {
       setError(err.message)
@@ -96,28 +79,5 @@ export function useDesignations(departmentFilter = '') {
     }
   }
 
-  const setHierarchy = async (id, hierarchy) => {
-    setError(null)
-    try {
-      await updateDesignation(id, { hierarchy })
-      await load({ silent: true })
-    } catch (err) {
-      setError(err.message)
-      throw err
-    }
-  }
-
-  return {
-    designations,
-    loading,
-    saving,
-    error,
-    create,
-    update,
-    remove,
-    reorder,
-    toggleActive,
-    setHierarchy,
-    reload: load,
-  }
+  return { areas, loading, saving, error, create, update, remove, toggleActive, reload: load }
 }

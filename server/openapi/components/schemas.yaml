@@ -396,18 +396,8 @@ Department:
       nullable: true
     all_locations:
       type: boolean
-    per_location_heads:
-      type: boolean
-    head_employee_id:
-      type: string
-      format: uuid
-      nullable: true
     is_active:
       type: boolean
-    location_heads:
-      type: array
-      items:
-        type: object
 
 DepartmentCreate:
   type: object
@@ -427,79 +417,9 @@ DepartmentCreate:
       format: uuid
     all_locations:
       type: boolean
-    head_employee_id:
-      type: string
-      format: uuid
-    per_location_heads:
-      type: boolean
-    location_heads:
-      type: array
-      items:
-        type: object
-        properties:
-          location_id:
-            type: string
-            format: uuid
-          head_employee_id:
-            type: string
-            format: uuid
 
-Designation:
-  type: object
-  properties:
-    id:
-      type: string
-      format: uuid
-    org_id:
-      type: string
-      format: uuid
-    name:
-      type: string
-    description:
-      type: string
-      nullable: true
-    hierarchy:
-      type: integer
-    all_departments:
-      type: boolean
-    is_active:
-      type: boolean
-    departments:
-      type: array
-      items:
-        type: object
-        properties:
-          id:
-            type: string
-            format: uuid
-          name:
-            type: string
 
-DesignationCreate:
-  type: object
-  required: [name]
-  properties:
-    name:
-      type: string
-    description:
-      type: string
-    all_departments:
-      type: boolean
-    department_ids:
-      type: array
-      items:
-        type: string
-        format: uuid
 
-DesignationReorder:
-  type: object
-  required: [ids]
-  properties:
-    ids:
-      type: array
-      items:
-        type: string
-        format: uuid
 
 Employee:
   type: object
@@ -526,10 +446,6 @@ Employee:
     photo_signed_url:
       type: string
       nullable: true
-    designation_id:
-      type: string
-      format: uuid
-      nullable: true
     department_id:
       type: string
       format: uuid
@@ -546,9 +462,6 @@ Employee:
       type: boolean
     is_active:
       type: boolean
-    designations:
-      type: object
-      nullable: true
     departments:
       type: object
       nullable: true
@@ -578,9 +491,6 @@ EmployeeCreate:
       type: string
     email:
       type: string
-    designation_id:
-      type: string
-      format: uuid
     department_id:
       type: string
       format: uuid
@@ -599,8 +509,6 @@ EmployeeCreate:
       items:
         type: string
         format: email
-    is_department_head:
-      type: boolean
 
 AssetField:
   type: object

@@ -5,7 +5,6 @@ import { useWorkOrderDetail } from '../../hooks/useWorkOrderList'
 import { getReceivedWorkOrder } from '../../lib/api-work-orders'
 import { getWorkOrderFileSignedUrl } from '../../lib/workOrderAssets'
 import { getStoredWorkOrderFiles } from '../../lib/workOrderFileValues'
-import { fieldTypeLabel } from '../../lib/assetFieldTypes'
 import WorkOrderAssignmentActions from './WorkOrderAssignmentActions'
 import '../dashboard/CreateWorkOrderModal.css'
 import '../company/CompanyShared.css'
@@ -19,10 +18,15 @@ function formatDate(value) {
   })
 }
 
+function creatorLabel(creator) {
+  return creator?.display_name || creator?.full_name || creator?.email || '—'
+}
+
 function FieldValue({ field }) {
   const type = field.field_type
 
   if (type === 'checkbox') {
+    if (field.value_json?.checked == null && field.value_text == null) return <span>—</span>
     return <span>{field.value_json?.checked ? 'Yes' : 'No'}</span>
   }
 
@@ -72,6 +76,13 @@ export default function ReceivedWorkOrderDetailModal({
     reload()
   }
 
+  const locationName = view?.assigned_location?.name
+    || view?.assigned_department?.location_name
+    || null
+  const departmentName = view?.assigned_department?.name || null
+  const assigneeNames = (view?.assignees || []).map((a) => a.name).filter(Boolean)
+  const sections = view?.sections || []
+
   return (
     <div className="modal-overlay" onClick={handleBackdropClick} role="presentation">
       <div
@@ -99,12 +110,24 @@ export default function ReceivedWorkOrderDetailModal({
                   <span>{formatDate(view.created_at)}</span>
                 </div>
                 <div>
-                  <span className="wo-received-detail__label">Assigned to</span>
-                  <span>{formatAssignees(view.assignees, view.assigned_department, view.assigned_location)}</span>
+                  <span className="wo-received-detail__label">Location</span>
+                  <span>{locationName || '—'}</span>
+                </div>
+                <div>
+                  <span className="wo-received-detail__label">Department</span>
+                  <span>{departmentName || '—'}</span>
+                </div>
+                <div>
+                  <span className="wo-received-detail__label">Assignees</span>
+                  <span>
+                    {assigneeNames.length
+                      ? assigneeNames.join(', ')
+                      : formatAssignees([], view.assigned_department, view.assigned_location)}
+                  </span>
                 </div>
                 <div>
                   <span className="wo-received-detail__label">Created by</span>
-                  <span>{view.creator?.email || '—'}</span>
+                  <span>{creatorLabel(view.creator)}</span>
                 </div>
                 <div>
                   <span className="wo-received-detail__label">Status</span>
@@ -120,16 +143,13 @@ export default function ReceivedWorkOrderDetailModal({
                 <WorkOrderAssignmentActions detail={view} onUpdated={handleUpdated} />
               )}
 
-              {view.sections?.map((section) => (
+              {sections.map((section) => (
                 <section key={section.id} className="wo-received-detail__section">
                   <h3>{section.name}</h3>
                   <dl className="wo-received-detail__fields">
                     {section.fields.map((field) => (
                       <div key={field.id} className="wo-received-detail__field">
-                        <dt>
-                          {field.name}
-                          <span className="wo-received-detail__type">{fieldTypeLabel(field.field_type)}</span>
-                        </dt>
+                        <dt>{field.name}</dt>
                         <dd><FieldValue field={field} /></dd>
                       </div>
                     ))}
@@ -137,7 +157,7 @@ export default function ReceivedWorkOrderDetailModal({
                 </section>
               ))}
 
-              {!view.sections?.length && (
+              {!sections.length && (
                 <p className="wo-received-detail__status">No field values recorded.</p>
               )}
             </>

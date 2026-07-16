@@ -343,142 +343,6 @@
             schema:
               $ref: '#/components/schemas/ErrorResponse'
 
-/api/company/designations:
-  get:
-    tags: [Company]
-    summary: List designations
-    parameters:
-      - name: department_id
-        in: query
-        schema:
-          type: string
-          format: uuid
-    responses:
-      '200':
-        description: Designation list
-        content:
-          application/json:
-            schema:
-              type: array
-              items:
-                $ref: '#/components/schemas/Designation'
-  post:
-    tags: [Company]
-    summary: Create designation
-    description: Requires org owner or admin role.
-    requestBody:
-      required: true
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/DesignationCreate'
-    responses:
-      '201':
-        description: Designation created
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/Designation'
-      '400':
-        description: Validation error
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ErrorResponse'
-
-/api/company/designations/reorder:
-  put:
-    tags: [Company]
-    summary: Reorder designations
-    description: Requires org owner or admin role. Must include all designation IDs.
-    requestBody:
-      required: true
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/DesignationReorder'
-    responses:
-      '200':
-        description: Reordered designations
-        content:
-          application/json:
-            schema:
-              type: array
-              items:
-                $ref: '#/components/schemas/Designation'
-      '400':
-        description: Validation error
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ErrorResponse'
-
-/api/company/designations/{id}:
-  patch:
-    tags: [Company]
-    summary: Update designation
-    parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-    requestBody:
-      required: true
-      content:
-        application/json:
-          schema:
-            allOf:
-              - $ref: '#/components/schemas/DesignationCreate'
-              - type: object
-                properties:
-                  hierarchy:
-                    type: integer
-                  is_active:
-                    type: boolean
-    responses:
-      '200':
-        description: Updated designation
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/Designation'
-      '400':
-        description: Validation error
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ErrorResponse'
-      '404':
-        description: Not found
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ErrorResponse'
-  delete:
-    tags: [Company]
-    summary: Soft-delete designation
-    parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-    responses:
-      '200':
-        description: Deactivated designation
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/Designation'
-      '404':
-        description: Not found
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ErrorResponse'
 
 /api/company/employees:
   get:
@@ -491,11 +355,6 @@
           type: string
           format: uuid
       - name: location_id
-        in: query
-        schema:
-          type: string
-          format: uuid
-      - name: designation_id
         in: query
         schema:
           type: string
@@ -560,8 +419,6 @@
               - type: object
                 properties:
                   is_active:
-                    type: boolean
-                  is_department_head:
                     type: boolean
     responses:
       '200':

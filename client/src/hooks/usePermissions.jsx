@@ -8,7 +8,7 @@ import {
   REPORT_MODULE_KEYS,
   COMPANY_PAGE_MODULE_KEYS,
 } from '../lib/accessModules'
-import { useOrg } from './useOrg'
+import { useOrgBootstrap } from './useOrg'
 import { useAuth } from './useAuth'
 
 const PermissionsContext = createContext(null)
@@ -22,7 +22,11 @@ const ACTION_KEY = {
 
 export function PermissionsProvider({ children }) {
   const { user } = useAuth()
-  const { org, loading: orgLoading } = useOrg()
+  const {
+    org,
+    loading: orgLoading,
+    permissionSession: bootstrappedSession,
+  } = useOrgBootstrap()
   const [session, setSession] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -33,6 +37,15 @@ export function PermissionsProvider({ children }) {
       setLoading(false)
       return
     }
+
+    // Prefer permissions already loaded by OrgProvider (/api/session)
+    if (bootstrappedSession) {
+      setSession(bootstrappedSession)
+      setLoading(false)
+      setError(null)
+      return
+    }
+
     setLoading(true)
     setError(null)
     try {
@@ -50,7 +63,7 @@ export function PermissionsProvider({ children }) {
     } finally {
       setLoading(false)
     }
-  }, [user, org?.id])
+  }, [user, org?.id, bootstrappedSession])
 
   useEffect(() => {
     if (orgLoading) return
@@ -96,7 +109,9 @@ export function PermissionsProvider({ children }) {
         ['company', 'masters/company'],
         ['locations', 'masters/company'],
         ['employees', 'masters/company'],
+        ['areas', 'masters/equipment'],
         ['assets', 'masters/assets'],
+        ['equipment', 'masters/equipment'],
         ['roles_access', 'configuration/roles'],
         ['settings', 'configuration/settings'],
       ]

@@ -33,8 +33,8 @@ Apply patch `33-access-roles-created-by.sql` so new roles store the creator.
 - **Work Orders** — Received, Assigned, Scheduled, Manual
 - **Calendar**
 - **Reports** — Daily Logs, Plant Wise, Open Logs, Completed Logs, Overdue
-- **Company** — Company profile, Locations, Departments, Designations, Employees
-- **Masters** — Assets
+- **Company** — Company profile, Locations, Departments, Employees
+- **Masters** — Assets, Areas, Equipment
 - **Configuration** — Roles & Access, Settings
 
 Legacy keys `work_orders` and `reports` still work and expand to their children.

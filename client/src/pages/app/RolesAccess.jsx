@@ -7,19 +7,10 @@ import RoleModal from '../../components/roles/RoleModal'
 import RolePermissionsTable from '../../components/roles/RolePermissionsTable'
 import AssignEmployeesModal from '../../components/roles/AssignEmployeesModal'
 import EmployeeAvatar from '../../components/company/EmployeeAvatar'
+import TrashIcon from '../../components/ui/TrashIcon'
+import EditIcon from '../../components/ui/EditIcon'
 import '../../components/company/CompanyShared.css'
 import './RolesAccess.css'
-
-function LocationPinIcon() {
-  return (
-    <svg className="role-card__pin" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-      <path
-        fill="currentColor"
-        d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5A2.5 2.5 0 1 1 12 6a2.5 2.5 0 0 1 0 5.5z"
-      />
-    </svg>
-  )
-}
 
 const EMPTY_CAPS = {
   is_org_admin: false,
@@ -125,8 +116,6 @@ export default function RolesAccess() {
     } else {
       await create(payload)
     }
-
-    // Return to cards-only view after create/update
     setEditorMode(null)
     setSelectedId(null)
     setPermDraft(null)
@@ -142,7 +131,6 @@ export default function RolesAccess() {
   }
 
   const handleSelectRole = (role) => {
-    // Toggle: click same card again to collapse the access table
     if (selectedId === role.id) {
       setSelectedId(null)
       setPermDraft(null)
@@ -185,16 +173,6 @@ export default function RolesAccess() {
             Create roles, define module permissions, and assign them to employees
           </p>
         </div>
-        {canCreate && (
-          <button
-            type="button"
-            className="company-btn company-btn--primary"
-            onClick={openCreate}
-            disabled={!canOpenCreate}
-          >
-            + Create Role
-          </button>
-        )}
       </header>
 
       <div className="roles-page__content">
@@ -216,80 +194,176 @@ export default function RolesAccess() {
           />
         )}
 
-        {!showEditor && (loading ? (
-          <div className="company-loading">Loading roles...</div>
-        ) : !capability.can_read && !canManageAny ? (
+        {!showEditor && (
           <div className="company-panel">
-            <div className="company-empty">
-              You do not have permission to view roles.
-            </div>
-          </div>
-        ) : activeRoles.length === 0 ? (
-          <div className="company-panel">
-            <div className="company-empty">
-              No roles yet. Create a role to define what each team member can access.
-            </div>
-          </div>
-        ) : (
-          <div className="roles-grid">
-            {activeRoles.map((role) => {
-              const isSelected = selectedId === role.id
-              const samples = role.sample_employees || []
-              const total = role.employee_count || 0
-              const extra = Math.max(0, total - samples.length)
-              const locationLabel = 'All Locations'
-
-              return (
+            <div className="company-panel__toolbar">
+              <p className="company-panel__count">
+                {activeRoles.length} role{activeRoles.length === 1 ? '' : 's'}
+              </p>
+              {canCreate && (
                 <button
-                  key={role.id}
                   type="button"
-                  className={`role-card ${isSelected ? 'role-card--selected' : ''}`}
-                  onClick={() => handleSelectRole(role)}
-                  aria-expanded={isSelected}
-                  aria-label={`${role.name}, ${locationLabel}, ${total} employee${total === 1 ? '' : 's'}`}
+                  className="company-btn company-btn--primary"
+                  onClick={openCreate}
+                  disabled={!canOpenCreate}
                 >
-                  <div className="role-card__top">
-                    <span className="role-card__name">{role.name}</span>
-                  </div>
-                  <div className="role-card__bottom">
-                    <div className="role-card__location">
-                      <LocationPinIcon />
-                      <span>{locationLabel}</span>
-                    </div>
-                    <div className="role-card__avatars">
-                      {samples.map((emp) => {
-                        const tip = emp.name || emp.emp_id || 'Employee'
-                        return (
-                          <span
-                            key={emp.id}
-                            className="role-card__avatar"
-                            data-tooltip={tip}
-                            title={tip}
-                          >
-                            <EmployeeAvatar employee={emp} />
-                          </span>
-                        )
-                      })}
-                      {extra > 0 && (
-                        <span className="role-card__more">+{extra}</span>
-                      )}
-                      {total === 0 && (
-                        <span className="role-card__empty">No employees</span>
-                      )}
-                    </div>
-                  </div>
+                  + Create Role
                 </button>
-              )
-            })}
+              )}
+            </div>
+
+            {loading ? (
+              <div className="company-loading">Loading roles...</div>
+            ) : !capability.can_read && !canManageAny ? (
+              <div className="company-empty">
+                You do not have permission to view roles.
+              </div>
+            ) : activeRoles.length === 0 ? (
+              <div className="company-empty">
+                No roles yet. Create a role to define what each team member can access.
+              </div>
+            ) : (
+              <div className="company-table-wrap">
+                <table className="company-table master-table">
+                  <thead>
+                    <tr>
+                      <th>Role</th>
+                      <th>Description</th>
+                      <th>Employees</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {activeRoles.map((role) => {
+                      const isSelected = selectedId === role.id
+                      const samples = role.sample_employees || []
+                      const total = role.employee_count || 0
+                      const extra = Math.max(0, total - samples.length)
+
+                      return (
+                        <tr
+                          key={role.id}
+                          className={isSelected ? 'company-table__row--selected' : undefined}
+                        >
+                          <td>
+                            <button
+                              type="button"
+                              className="company-link roles-table__name-btn"
+                              onClick={() => handleSelectRole(role)}
+                            >
+                              <span className="company-table__name">{role.name}</span>
+                            </button>
+                          </td>
+                          <td>{role.description || '—'}</td>
+                          <td>
+                            {total === 0 ? (
+                              <span className="roles-table__empty">—</span>
+                            ) : (
+                              <div className="roles-table__people">
+                                {samples.slice(0, 4).map((emp) => {
+                                  const headedNames = (emp.headed_locations || [])
+                                    .map((loc) => loc.name)
+                                    .filter(Boolean)
+                                  const locationLabel = headedNames.length
+                                    ? headedNames.join(', ')
+                                    : (emp.org_locations?.name || null)
+                                  const tip = [emp.name || emp.emp_id, locationLabel].filter(Boolean).join(' · ')
+
+                                  return (
+                                    <div
+                                      key={emp.id}
+                                      className="roles-table__person"
+                                      data-tooltip={tip}
+                                    >
+                                      <span className="roles-table__avatar">
+                                        <EmployeeAvatar employee={emp} />
+                                      </span>
+                                    </div>
+                                  )
+                                })}
+                                {extra > 0 && (
+                                  <span
+                                    className="roles-table__more"
+                                    data-tooltip={`${extra} more employee${extra === 1 ? '' : 's'}`}
+                                  >
+                                    +{extra}
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                          </td>
+                          <td>
+                            <div className="company-table__actions">
+                              <button
+                                type="button"
+                                className="company-link"
+                                onClick={() => handleSelectRole(role)}
+                              >
+                                {isSelected ? 'Hide access' : 'View access'}
+                              </button>
+                              {canAssign && (
+                                <button
+                                  type="button"
+                                  className="company-link"
+                                  onClick={() => {
+                                    setSelectedId(role.id)
+                                    setAssignOpen(true)
+                                  }}
+                                >
+                                  Assign
+                                </button>
+                              )}
+                              {canUpdate && (
+                                <button
+                                  type="button"
+                                  className="company-btn company-btn--secondary company-btn--compact company-btn--icon"
+                                  onClick={() => openEdit(role)}
+                                  aria-label={`Edit ${role.name}`}
+                                  title="Edit"
+                                >
+                                  <EditIcon />
+                                </button>
+                              )}
+                              {canDelete && (
+                                <button
+                                  type="button"
+                                  className="company-btn company-btn--danger company-btn--compact company-btn--icon"
+                                  onClick={() => handleDelete(role)}
+                                  aria-label={`Delete ${role.name}`}
+                                  title="Delete"
+                                >
+                                  <TrashIcon />
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
-        ))}
+        )}
 
         {showRoleDetail && (
           <div className="roles-detail company-panel">
             <div className="roles-detail__header">
               <div>
                 <h2 className="roles-detail__title">{selectedRole.name}</h2>
-                <p className="roles-detail__desc">All locations</p>
+                <p className="roles-detail__desc">
+                  {selectedRole.name?.trim().toLowerCase() === 'location head'
+                    ? (
+                      (selectedRole.sample_employees || [])
+                        .flatMap((emp) => (emp.headed_locations || []).map((loc) => loc.name))
+                        .filter(Boolean)
+                        .filter((name, index, arr) => arr.indexOf(name) === index)
+                        .join(', ')
+                      || 'Location heads are set per location'
+                    )
+                    : 'All locations'}
+                </p>
                 {selectedRole.description && (
                   <p className="roles-detail__desc">{selectedRole.description}</p>
                 )}
@@ -308,19 +382,23 @@ export default function RolesAccess() {
                   {canUpdate && (
                     <button
                       type="button"
-                      className="company-btn company-btn--secondary"
+                      className="company-btn company-btn--secondary company-btn--compact company-btn--icon"
                       onClick={() => openEdit(selectedRole)}
+                      aria-label={`Edit ${selectedRole.name}`}
+                      title="Edit"
                     >
-                      Update Role
+                      <EditIcon />
                     </button>
                   )}
                   {canDelete && (
                     <button
                       type="button"
-                      className="company-link company-link--danger"
+                      className="company-btn company-btn--danger company-btn--compact company-btn--icon"
                       onClick={() => handleDelete(selectedRole)}
+                      aria-label={`Delete ${selectedRole.name}`}
+                      title="Delete"
                     >
-                      Delete
+                      <TrashIcon />
                     </button>
                   )}
                 </div>

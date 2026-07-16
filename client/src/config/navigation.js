@@ -54,9 +54,11 @@ const APP_SEGMENTS = [
         label: 'Company',
         segment: 'masters/company',
         moduleKey: 'company',
-        altModuleKeys: ['locations', 'departments', 'designations', 'employees'],
+        icon: 'buildings',
+        altModuleKeys: ['locations', 'departments', 'employees'],
       },
-      { label: 'Assets', segment: 'masters/assets', moduleKey: 'assets' },
+      { label: 'Assets', segment: 'masters/assets', moduleKey: 'assets', icon: 'asset' },
+      { label: 'Equipment', segment: 'masters/equipment', moduleKey: 'equipment', icon: 'washer', altModuleKeys: ['areas'] },
     ],
   },
   {
@@ -64,8 +66,8 @@ const APP_SEGMENTS = [
     label: 'Configuration',
     icon: 'settings',
     children: [
-      { label: 'Roles & Access', segment: 'configuration/roles', moduleKey: 'roles_access' },
-      { label: 'Settings', segment: 'configuration/settings', moduleKey: 'settings' },
+      { label: 'Roles & Access', segment: 'configuration/roles', moduleKey: 'roles_access', icon: 'key' },
+      { label: 'Settings', segment: 'configuration/settings', moduleKey: 'settings', icon: 'settings' },
     ],
   },
 ]
@@ -96,6 +98,7 @@ export function moduleKeyForPath(pathname, orgSlug) {
   if (rest.startsWith('reports')) return 'reports'
   if (rest.startsWith('masters/company')) return 'company'
   if (rest.startsWith('masters/assets')) return 'assets'
+  if (rest.startsWith('masters/equipment')) return 'equipment'
   if (rest.startsWith('configuration/roles')) return 'roles_access'
   if (rest.startsWith('configuration/settings')) return 'settings'
   if (rest.startsWith('configuration')) return 'settings'

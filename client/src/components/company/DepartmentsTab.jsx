@@ -1,20 +1,19 @@
 import { useState } from 'react'
 import { useDepartments } from '../../hooks/useDepartments'
 import { useLocations } from '../../hooks/useLocations'
-import { useEmployees } from '../../hooks/useEmployees'
 import { useOrgLimits } from '../../hooks/useOrgLimits'
 import { useLimitExceeded } from '../../hooks/useLimitExceeded'
 import { isLimitError } from '../../lib/limitErrors'
 import GooToggle from '../ui/GooToggle'
+import TrashIcon from '../ui/TrashIcon'
+import EditIcon from '../ui/EditIcon'
 import DepartmentModal, { formatDepartmentLocation } from './DepartmentModal'
-import DepartmentHeadCell from './DepartmentHeadCell'
 import LimitExceededCard from '../shared/LimitExceededCard'
 import './CompanyShared.css'
 
 export default function DepartmentsTab({ canManage }) {
   const [locationFilter, setLocationFilter] = useState('')
   const { locations, create: createLocation, saving: savingLocation } = useLocations()
-  const { employees } = useEmployees()
   const { departments, loading, saving, error, create, update, remove, toggleActive } = useDepartments(locationFilter)
   const { isResourceAtLimit, reload: reloadLimits } = useOrgLimits()
   const { visible: limitVisible, resource: limitResource, trigger: triggerLimit, tryHandleLimitError, dismiss: dismissLimit } = useLimitExceeded()
@@ -129,7 +128,6 @@ export default function DepartmentsTab({ canManage }) {
                 <th>Code</th>
                 <th>Name</th>
                 <th>Location</th>
-                <th>Department Head</th>
                 <th>Description</th>
                 {canManage && <th>Active</th>}
                 {canManage && <th>Actions</th>}
@@ -143,7 +141,6 @@ export default function DepartmentsTab({ canManage }) {
                     <td><code className="company-code">{dept.code || '—'}</code></td>
                     <td><span className="company-table__name">{dept.name}</span></td>
                     <td>{formatDepartmentLocation(dept)}</td>
-                    <td><DepartmentHeadCell department={dept} locationFilter={locationFilter} /></td>
                     <td>{dept.description || '—'}</td>
                     {canManage && (
                       <td>
@@ -158,15 +155,23 @@ export default function DepartmentsTab({ canManage }) {
                     {canManage && (
                       <td>
                         <div className="company-table__actions">
-                          <button type="button" className="company-link" onClick={() => openEdit(dept)}>
-                            Edit
+                          <button
+                            type="button"
+                            className="company-btn company-btn--secondary company-btn--compact company-btn--icon"
+                            onClick={() => openEdit(dept)}
+                            aria-label={`Edit ${dept.name}`}
+                            title="Edit"
+                          >
+                            <EditIcon />
                           </button>
                           <button
                             type="button"
-                            className="company-link company-link--danger"
+                            className="company-btn company-btn--danger company-btn--compact company-btn--icon"
                             onClick={() => handleDelete(dept)}
+                            aria-label={`Delete ${dept.name}`}
+                            title="Delete"
                           >
-                            Delete
+                            <TrashIcon />
                           </button>
                         </div>
                       </td>
@@ -185,7 +190,6 @@ export default function DepartmentsTab({ canManage }) {
           department={editing}
           locations={activeLocations}
           departments={activeDepartments}
-          employees={employees}
           saving={saving}
           nestedSaving={savingLocation}
           onClose={() => setModalOpen(false)}

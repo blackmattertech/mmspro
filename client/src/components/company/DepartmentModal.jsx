@@ -1,16 +1,10 @@
-import { useMemo, useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { useBackdropClose } from '../../hooks/useBackdropClose'
 import {
   LOCATION_ALL,
   LOCATION_NONE,
-  HEAD_MODE_SINGLE,
-  HEAD_MODE_PER_LOCATION,
-  employeesForDepartmentHead,
-  buildLocationHeadsPayload,
-  locationHeadsMapFromDepartment,
 } from '../../lib/departmentLocation'
 import LocationModal from './LocationModal'
-import EmployeeSelect from './EmployeeSelect'
 import './CompanyShared.css'
 
 const EMPTY = {
@@ -19,9 +13,6 @@ const EMPTY = {
   description: '',
   locationScope: LOCATION_NONE,
   parent_id: '',
-  head_mode: HEAD_MODE_SINGLE,
-  head_employee_id: '',
-  location_heads: {},
 }
 
 function toLocationScope(department) {
@@ -41,32 +32,10 @@ function scopeToPayload(locationScope) {
   return { all_locations: false, location_id: locationScope }
 }
 
-function headPickerHint(locationScope, headMode) {
-  if (locationScope === LOCATION_ALL) {
-    if (headMode === HEAD_MODE_PER_LOCATION) {
-      return 'Assign a head for each location. Leave blank if not needed yet.'
-    }
-    return 'This person will be the head at every location.'
-  }
-  if (locationScope === LOCATION_NONE) {
-    return 'Any active employee can be selected.'
-  }
-  return 'Only employees at this location are shown.'
-}
-
-function resetHeadFields() {
-  return {
-    head_mode: HEAD_MODE_SINGLE,
-    head_employee_id: '',
-    location_heads: {},
-  }
-}
-
 export default function DepartmentModal({
   department,
   locations,
   departments,
-  employees = [],
   saving,
   nestedSaving = false,
   onClose,
@@ -80,14 +49,6 @@ export default function DepartmentModal({
   const [showLocationModal, setShowLocationModal] = useState(false)
   const handleBackdropClick = useBackdropClose(onClose)
 
-  const isAllLocations = form.locationScope === LOCATION_ALL
-  const usePerLocationHeads = isAllLocations && form.head_mode === HEAD_MODE_PER_LOCATION
-
-  const headOptions = useMemo(
-    () => employeesForDepartmentHead(employees, form.locationScope, form.head_employee_id),
-    [employees, form.locationScope, form.head_employee_id],
-  )
-
   useEffect(() => {
     if (department) {
       setForm({
@@ -96,51 +57,13 @@ export default function DepartmentModal({
         description: department.description || '',
         locationScope: toLocationScope(department),
         parent_id: department.parent_id || '',
-        head_mode: department.per_location_heads ? HEAD_MODE_PER_LOCATION : HEAD_MODE_SINGLE,
-        head_employee_id: department.head_employee_id || '',
-        location_heads: locationHeadsMapFromDepartment(department),
       })
     } else {
       setForm(EMPTY)
     }
   }, [department])
 
-  useEffect(() => {
-    if (!form.head_employee_id || usePerLocationHeads) return
-    const stillValid = headOptions.some((emp) => emp.id === form.head_employee_id)
-    if (!stillValid) {
-      setForm((prev) => ({ ...prev, head_employee_id: '' }))
-    }
-  }, [headOptions, form.head_employee_id, usePerLocationHeads])
-
   const parentOptions = departments.filter((d) => d.id !== department?.id)
-
-  const handleLocationScopeChange = (locationScope) => {
-    setForm((prev) => ({
-      ...prev,
-      locationScope,
-      ...resetHeadFields(),
-    }))
-  }
-
-  const handleHeadModeChange = (head_mode) => {
-    setForm((prev) => ({
-      ...prev,
-      head_mode,
-      head_employee_id: '',
-      location_heads: {},
-    }))
-  }
-
-  const setLocationHead = (locationId, headEmployeeId) => {
-    setForm((prev) => ({
-      ...prev,
-      location_heads: {
-        ...prev.location_heads,
-        [locationId]: headEmployeeId,
-      },
-    }))
-  }
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -159,11 +82,6 @@ export default function DepartmentModal({
         code: form.code,
         description: form.description,
         parent_id: form.parent_id || null,
-        per_location_heads: usePerLocationHeads,
-        head_employee_id: usePerLocationHeads ? null : (form.head_employee_id || null),
-        location_heads: usePerLocationHeads
-          ? buildLocationHeadsPayload(form.location_heads, locations)
-          : [],
         ...scopeToPayload(form.locationScope),
       })
     } catch (err) {
@@ -177,7 +95,6 @@ export default function DepartmentModal({
       setForm((prev) => ({
         ...prev,
         locationScope: created.id,
-        ...resetHeadFields(),
       }))
       setShowLocationModal(false)
     } catch (err) {
@@ -229,7 +146,7 @@ export default function DepartmentModal({
                 <select
                   className="company-form__input company-form__input--select"
                   value={form.locationScope}
-                  onChange={(e) => handleLocationScopeChange(e.target.value)}
+                  onChange={(e) => setForm({ ...form, locationScope: e.target.value })}
                 >
                   <option value={LOCATION_ALL}>All locations</option>
                   <option value={LOCATION_NONE}>No location</option>
@@ -248,62 +165,6 @@ export default function DepartmentModal({
                 )}
               </div>
             </label>
-
-            {isAllLocations && (
-              <fieldset className="company-head-mode">
-                <legend className="company-form__label">Department Head</legend>
-                <label className="company-head-mode__option">
-                  <input
-                    type="radio"
-                    name="head_mode"
-                    checked={form.head_mode === HEAD_MODE_SINGLE}
-                    onChange={() => handleHeadModeChange(HEAD_MODE_SINGLE)}
-                  />
-                  <span>One head for all locations</span>
-                </label>
-                <label className="company-head-mode__option">
-                  <input
-                    type="radio"
-                    name="head_mode"
-                    checked={form.head_mode === HEAD_MODE_PER_LOCATION}
-                    onChange={() => handleHeadModeChange(HEAD_MODE_PER_LOCATION)}
-                  />
-                  <span>Separate head per location</span>
-                </label>
-              </fieldset>
-            )}
-
-            {usePerLocationHeads ? (
-              <div className="company-location-heads">
-                {locations.map((loc) => (
-                  <EmployeeSelect
-                    key={loc.id}
-                    label={loc.name}
-                    value={form.location_heads[loc.id] || ''}
-                    onChange={(headEmployeeId) => setLocationHead(loc.id, headEmployeeId)}
-                    options={employeesForDepartmentHead(
-                      employees,
-                      loc.id,
-                      form.location_heads[loc.id],
-                    )}
-                    placeholder="None"
-                  />
-                ))}
-                <p className="company-modal__hint">{headPickerHint(form.locationScope, form.head_mode)}</p>
-              </div>
-            ) : (
-              <EmployeeSelect
-                label={isAllLocations ? 'Department Head' : 'Department Head'}
-                value={form.head_employee_id}
-                onChange={(head_employee_id) => setForm({ ...form, head_employee_id })}
-                options={headOptions}
-                placeholder="None"
-              />
-            )}
-
-            {!usePerLocationHeads && (
-              <p className="company-modal__hint">{headPickerHint(form.locationScope, form.head_mode)}</p>
-            )}
 
             <label className="company-form__field">
               <span className="company-form__label">Parent Department</span>

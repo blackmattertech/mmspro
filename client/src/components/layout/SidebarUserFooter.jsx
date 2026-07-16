@@ -14,7 +14,10 @@ export default function SidebarUserFooter({
 
   const showSkeleton = loading && !displayName
   const resolvedName = displayName || 'User'
-  const resolvedRole = roleLabel ?? formatAccountRole(profile?.role)
+  const resolvedRole = roleLabel
+    || employee?.access_role?.name
+    || formatAccountRole(profile?.role)
+    || 'No role assigned'
   const avatarLetter = (resolvedName[0] || 'U').toUpperCase()
   const tooltipLabel = showSkeleton ? 'Loading profile' : `${resolvedName} · ${resolvedRole}`
 

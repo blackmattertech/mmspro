@@ -1,10 +1,15 @@
 import { usePermissions } from '../../hooks/usePermissions'
+import { isCompanyAdmin } from '../../lib/accountRoles'
+import { useAuth } from '../../hooks/useAuth'
 import AssetsFieldsPanel from '../../components/assets/AssetsFieldsPanel'
 import './Company.css'
 
 export default function Assets() {
-  const { loading, canUpdate, canCreate, canDelete } = usePermissions()
-  const canManage = canCreate('assets') || canUpdate('assets') || canDelete('assets')
+  const { role } = useAuth()
+  const { loading, canUpdate } = usePermissions()
+  const canManageSchema = false
+  const canManageChildren = isCompanyAdmin(role) || canUpdate('assets')
+  const canManage = canManageChildren
 
   if (loading) {
     return (
@@ -19,7 +24,7 @@ export default function Assets() {
       <header className="company-page__header">
         <h1 className="company-page__title">Assets</h1>
         <p className="company-page__subtitle">
-          Define sections, parent fields, and child fields for asset forms and tickets
+          Manage dropdown child values for your organization&apos;s asset forms
         </p>
       </header>
 
@@ -29,8 +34,17 @@ export default function Assets() {
             You have read-only access. Contact a company admin to make changes.
           </p>
         )}
+        {canManage && (
+          <p className="company-readonly-note">
+            Sections and parent fields are configured by Super Admin per organization.
+            You can add and edit dropdown values here.
+          </p>
+        )}
 
-        <AssetsFieldsPanel canManage={canManage} />
+        <AssetsFieldsPanel
+          canManageSchema={canManageSchema}
+          canManageChildren={canManageChildren}
+        />
       </div>
     </div>
   )

@@ -8,11 +8,12 @@ import '../company/CompanyShared.css'
 export default function WorkOrderAssignmentActions({ detail, onUpdated }) {
   const actions = detail?.assignment_actions || {}
   const canLH = Boolean(actions.can_reassign_as_location_head)
-  const canDH = Boolean(actions.can_reassign_as_department_head)
   const canClaim = Boolean(actions.can_claim_self)
+  const canAssign = canLH
   const locationId = detail?.assigned_location_id || detail?.assigned_location?.id || null
+  const lockedDepartmentId = detail?.assigned_department_id || ''
 
-  const [departmentId, setDepartmentId] = useState(detail?.assigned_department_id || '')
+  const [departmentId, setDepartmentId] = useState(lockedDepartmentId)
   const [employeeIds, setEmployeeIds] = useState(
     () => (detail?.assignees || []).map((a) => a.id),
   )
@@ -20,10 +21,12 @@ export default function WorkOrderAssignmentActions({ detail, onUpdated }) {
   const [error, setError] = useState(null)
   const [success, setSuccess] = useState(null)
 
+  const effectiveDepartmentId = canLH ? departmentId : (lockedDepartmentId || departmentId)
+
   const { departments, loading: departmentsLoading } = useDepartments(canLH ? locationId : '')
   const { employees, loading: employeesLoading } = useEmployees({
     locationId: locationId || undefined,
-    departmentId: departmentId || detail?.assigned_department_id || undefined,
+    departmentId: effectiveDepartmentId || undefined,
     forAssignment: true,
   })
 
@@ -43,7 +46,7 @@ export default function WorkOrderAssignmentActions({ detail, onUpdated }) {
     [employees],
   )
 
-  if (!canLH && !canDH && !canClaim) return null
+  if (!canLH && !canClaim) return null
 
   const toggleEmployee = (id) => {
     setEmployeeIds((prev) => (
@@ -88,28 +91,20 @@ export default function WorkOrderAssignmentActions({ detail, onUpdated }) {
     }
   }
 
+  const poolHint = detail?.assigned_department_id
+    ? 'This work order is in your department pool.'
+    : 'This work order is in your location pool.'
+
   return (
     <section className="wo-received-detail__section wo-assignment-actions">
-      <h3>Reassign / Claim</h3>
+      <h3>{canAssign ? 'Assign employees' : 'Claim'}</h3>
 
-      {canClaim && (
-        <div className="wo-assignment-actions__claim">
-          <p className="wo-assignment-actions__hint">
-            This work order is in your department pool. Claim it to assign it to yourself.
-          </p>
-          <button
-            type="button"
-            className="company-btn company-btn--primary"
-            onClick={handleClaim}
-            disabled={saving}
-          >
-            {saving ? 'Claiming…' : 'Claim for me'}
-          </button>
-        </div>
-      )}
-
-      {(canLH || canDH) && (
+      {canAssign && (
         <div className="wo-assignment-actions__form">
+          <p className="wo-assignment-actions__hint">
+            As Location Head, assign employees at this location, or route to a department.
+          </p>
+
           {canLH && (
             <label className="company-form__field">
               <span className="company-form__label">Department</span>
@@ -122,7 +117,7 @@ export default function WorkOrderAssignmentActions({ detail, onUpdated }) {
                 }}
                 disabled={saving || departmentsLoading}
               >
-                <option value="">Keep for location head / pick later…</option>
+                <option value="">All employees at location…</option>
                 {activeDepartments.map((dept) => (
                   <option key={dept.id} value={dept.id}>{dept.name}</option>
                 ))}
@@ -131,7 +126,10 @@ export default function WorkOrderAssignmentActions({ detail, onUpdated }) {
           )}
 
           <div className="company-form__field">
-            <span className="company-form__label">Employees</span>
+            <span className="company-form__label">
+              Employees
+              {employeeIds.length > 0 ? ` (${employeeIds.length} selected)` : ''}
+            </span>
             {employeesLoading ? (
               <p className="wo-assignment-actions__hint">Loading employees…</p>
             ) : !activeEmployees.length ? (
@@ -149,7 +147,14 @@ export default function WorkOrderAssignmentActions({ detail, onUpdated }) {
                         disabled={saving}
                       />
                       <EmployeeAvatar employee={emp} />
-                      <span>{emp.name}</span>
+                      <span className="wo-assignment-actions__emp-meta">
+                        <span className="wo-assignment-actions__emp-name">{emp.name}</span>
+                        {emp.departments?.name && (
+                          <span className="wo-assignment-actions__emp-sub">
+                            {emp.departments.name}
+                          </span>
+                        )}
+                      </span>
                     </label>
                   )
                 })}
@@ -164,6 +169,24 @@ export default function WorkOrderAssignmentActions({ detail, onUpdated }) {
             disabled={saving}
           >
             {saving ? 'Saving…' : 'Save assignment'}
+          </button>
+        </div>
+      )}
+
+      {canClaim && (
+        <div className="wo-assignment-actions__claim">
+          <p className="wo-assignment-actions__hint">
+            {canAssign
+              ? `${poolHint} You can also claim it for yourself.`
+              : `${poolHint} Claim it to assign it to yourself.`}
+          </p>
+          <button
+            type="button"
+            className={`company-btn ${canAssign ? 'company-btn--secondary' : 'company-btn--primary'}`}
+            onClick={handleClaim}
+            disabled={saving}
+          >
+            {saving ? 'Claiming…' : 'Claim for me'}
           </button>
         </div>
       )}

@@ -1,10 +1,5 @@
 import { useState, useMemo } from 'react'
-import {
-  CALENDAR_TASKS,
-  UPCOMING_CALENDAR_TASKS,
-  DEMO_PLANTS,
-  WORK_CENTERS,
-} from '../data/calendarDemo'
+import { useLocations } from './useLocations'
 
 const PRIORITY_LABELS = {
   high: 'High',
@@ -13,25 +8,40 @@ const PRIORITY_LABELS = {
   followup: 'Follow-up',
 }
 
+const EMPTY_TASKS = []
+
+function startOfToday() {
+  const d = new Date()
+  d.setHours(0, 0, 0, 0)
+  return d
+}
+
 export function useCalendar() {
-  const [viewDate, setViewDate] = useState(new Date(2026, 5, 1))
+  const today = startOfToday()
+  const [viewDate, setViewDate] = useState(() => new Date(today.getFullYear(), today.getMonth(), 1))
   const [viewMode, setViewMode] = useState('calendar')
   const [plantFilter, setPlantFilter] = useState('all')
   const [logFilter, setLogFilter] = useState('all')
   const [workCenterFilter, setWorkCenterFilter] = useState('all')
   const [quickFilter, setQuickFilter] = useState('all')
-  const [dateFrom, setDateFrom] = useState('2026-05-28')
-  const [dateTo, setDateTo] = useState('2026-06-28')
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
+
+  const { locations } = useLocations()
+  const locationOptions = useMemo(
+    () => (locations || []).filter((loc) => loc.is_active !== false),
+    [locations],
+  )
 
   const year = viewDate.getFullYear()
   const month = viewDate.getMonth()
 
   const filteredTasks = useMemo(() => {
-    let tasks = [...CALENDAR_TASKS]
+    let tasks = [...EMPTY_TASKS]
 
     if (plantFilter !== 'all') {
-      const plantName = DEMO_PLANTS.find((p) => p.id === plantFilter)?.name
-      if (plantName) tasks = tasks.filter((t) => t.plant === plantName)
+      const locationName = locationOptions.find((p) => p.id === plantFilter)?.name
+      if (locationName) tasks = tasks.filter((t) => t.plant === locationName || t.location_id === plantFilter)
     }
 
     if (logFilter === 'logs') {
@@ -41,20 +51,20 @@ export function useCalendar() {
     }
 
     if (quickFilter === 'assigned') {
-      tasks = tasks.filter((_, i) => i % 2 === 0)
+      tasks = tasks.filter((t) => t.assigned_to_me)
     } else if (quickFilter !== 'all') {
       tasks = tasks.filter((t) => t.priority === quickFilter)
     }
 
     return tasks
-  }, [plantFilter, logFilter, quickFilter])
+  }, [plantFilter, logFilter, quickFilter, locationOptions])
 
   const monthTasks = useMemo(
     () => filteredTasks.filter((t) => {
       const d = new Date(t.date)
       return d.getFullYear() === year && d.getMonth() === month
     }),
-    [filteredTasks, year, month]
+    [filteredTasks, year, month],
   )
 
   const tasksByDate = useMemo(() => {
@@ -69,43 +79,65 @@ export function useCalendar() {
 
   const summary = useMemo(() => {
     const counts = { high: 0, medium: 0, low: 0, followup: 0 }
-    CALENDAR_TASKS.forEach((t) => {
+    filteredTasks.forEach((t) => {
       counts[t.priority] = (counts[t.priority] || 0) + 1
     })
-    const total = CALENDAR_TASKS.length
+    const total = filteredTasks.length
     return {
       total,
       segments: [
-        { priority: 'high', count: counts.high, percent: Math.round((counts.high / total) * 100), label: 'High' },
-        { priority: 'medium', count: counts.medium, percent: Math.round((counts.medium / total) * 100), label: 'Medium' },
-        { priority: 'low', count: counts.low, percent: Math.round((counts.low / total) * 100), label: 'Low' },
-        { priority: 'followup', count: counts.followup, percent: Math.round((counts.followup / total) * 100), label: 'Follow-up' },
+        { priority: 'high', count: counts.high, percent: total ? Math.round((counts.high / total) * 100) : 0, label: 'High' },
+        { priority: 'medium', count: counts.medium, percent: total ? Math.round((counts.medium / total) * 100) : 0, label: 'Medium' },
+        { priority: 'low', count: counts.low, percent: total ? Math.round((counts.low / total) * 100) : 0, label: 'Low' },
+        { priority: 'followup', count: counts.followup, percent: total ? Math.round((counts.followup / total) * 100) : 0, label: 'Follow-up' },
       ],
     }
-  }, [])
+  }, [filteredTasks])
 
   const quickFilterCounts = useMemo(() => ({
-    all: CALENDAR_TASKS.length,
-    assigned: Math.ceil(CALENDAR_TASKS.length / 2),
-    high: CALENDAR_TASKS.filter((t) => t.priority === 'high').length,
-    medium: CALENDAR_TASKS.filter((t) => t.priority === 'medium').length,
-    low: CALENDAR_TASKS.filter((t) => t.priority === 'low').length,
-    followup: CALENDAR_TASKS.filter((t) => t.priority === 'followup').length,
-  }), [])
+    all: filteredTasks.length,
+    assigned: filteredTasks.filter((t) => t.assigned_to_me).length,
+    high: filteredTasks.filter((t) => t.priority === 'high').length,
+    medium: filteredTasks.filter((t) => t.priority === 'medium').length,
+    low: filteredTasks.filter((t) => t.priority === 'low').length,
+    followup: filteredTasks.filter((t) => t.priority === 'followup').length,
+  }), [filteredTasks])
 
-  const goToToday = () => setViewDate(new Date(2026, 5, 28))
+  const upcomingTasks = useMemo(() => {
+    const now = startOfToday()
+    return filteredTasks
+      .filter((t) => new Date(t.date) >= now)
+      .sort((a, b) => new Date(a.date) - new Date(b.date))
+      .slice(0, 8)
+      .map((t) => ({
+        ...t,
+        date: new Date(t.date).toLocaleDateString(undefined, {
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric',
+        }),
+      }))
+  }, [filteredTasks])
+
+  const goToToday = () => {
+    const d = startOfToday()
+    setViewDate(new Date(d.getFullYear(), d.getMonth(), 1))
+  }
   const goToPrevMonth = () => setViewDate(new Date(year, month - 1, 1))
   const goToNextMonth = () => setViewDate(new Date(year, month + 1, 1))
 
   const monthLabel = viewDate.toLocaleString('default', { month: 'long', year: 'numeric' })
+  const todayDay = (
+    year === today.getFullYear() && month === today.getMonth()
+  ) ? today.getDate() : null
 
   return {
-    plants: DEMO_PLANTS,
-    workCenters: WORK_CENTERS,
+    plants: locationOptions,
+    workCenters: [],
     tasks: monthTasks,
     allFilteredTasks: filteredTasks,
     tasksByDate,
-    upcomingTasks: UPCOMING_CALENDAR_TASKS,
+    upcomingTasks,
     summary,
     quickFilterCounts,
     priorityLabels: PRIORITY_LABELS,
@@ -113,6 +145,7 @@ export function useCalendar() {
     year,
     month,
     monthLabel,
+    todayDay,
     viewMode,
     setViewMode,
     plantFilter,

@@ -21,7 +21,7 @@ function findActiveParentId(navItems, pathname) {
 export default function Sidebar({ collapsed = false, onToggle }) {
   const { signOut } = useAuth()
   const { org, orgRole } = useOrg()
-  const { canRead, loading: permsLoading } = usePermissions()
+  const { canRead, loading: permsLoading, accessRole, isOrgAdmin } = usePermissions()
   const location = useLocation()
   const navItems = org && !permsLoading ? getNavItems(org.slug, { canRead }) : []
   const [openMenu, setOpenMenu] = useState(null)
@@ -37,7 +37,10 @@ export default function Sidebar({ collapsed = false, onToggle }) {
     setOpenMenu((prev) => (prev === id ? null : id))
   }
 
-  const roleLabel = formatAccountRole(orgRole) || 'User'
+  const roleLabel = accessRole?.name
+    || (isOrgAdmin ? formatAccountRole(orgRole) || 'Admin' : null)
+    || formatAccountRole(orgRole)
+    || 'No role assigned'
 
   return (
     <aside className={`sidebar ${collapsed ? 'sidebar--collapsed' : ''}`}>
@@ -97,6 +100,7 @@ export default function Sidebar({ collapsed = false, onToggle }) {
                           `sidebar__flyout-link ${isActive ? 'sidebar__flyout-link--active' : ''}`
                         }
                       >
+                        {child.icon && <NavIcon name={child.icon} />}
                         {child.label}
                       </NavLink>
                     ))}
@@ -112,7 +116,8 @@ export default function Sidebar({ collapsed = false, onToggle }) {
                             `sidebar__sublink ${isActive ? 'sidebar__sublink--active' : ''}`
                           }
                         >
-                          {child.label}
+                          {child.icon && <NavIcon name={child.icon} />}
+                          <span>{child.label}</span>
                         </NavLink>
                       ))}
                     </div>

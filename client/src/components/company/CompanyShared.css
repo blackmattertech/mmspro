@@ -213,6 +213,10 @@
   min-width: 180px;
 }
 
+.company-form__input--search {
+  min-width: 220px;
+}
+
 .company-form__textarea {
   height: auto;
   padding: 10px 12px;
@@ -253,6 +257,20 @@
 .company-btn--secondary {
   color: var(--color-dark-navy);
   background: var(--color-light-gray-1);
+}
+
+.company-btn--danger {
+  color: var(--color-white);
+  background: var(--color-primary);
+}
+
+.company-btn--danger:hover:not(:disabled) {
+  background: #d42f3c;
+}
+
+.company-btn--danger:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .company-table-wrap {
@@ -346,10 +364,6 @@
   max-width: 220px;
 }
 
-.company-table__cell--dept-head {
-  min-width: 120px;
-}
-
 .company-table__name {
   display: block;
   font-weight: 500;
@@ -403,11 +417,6 @@
 .company-badge--location-head {
   color: #15803d;
   background: #dcfce7;
-}
-
-.company-badge--dept-head {
-  color: var(--color-primary);
-  background: var(--color-light-pink-1);
 }
 
 .company-tag-list {
@@ -532,13 +541,22 @@
 }
 
 .company-modal--wide {
-  max-width: 600px;
+  max-width: 760px;
 }
 
 .company-btn--compact {
-  padding: 8px 14px;
+  height: 32px;
+  padding: 0 14px;
   font-size: 12px;
   white-space: nowrap;
+}
+
+.company-btn--icon {
+  width: 32px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .company-creatable-select {
@@ -771,50 +789,6 @@
   background: var(--color-light-pink-1);
 }
 
-.company-head-mode {
-  margin: 0;
-  padding: 0;
-  border: none;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.company-head-mode__option {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 14px;
-  color: var(--color-dark-navy);
-  cursor: pointer;
-}
-
-.company-location-heads {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.company-location-heads-cell {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.company-location-heads-cell__row {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.company-location-heads-cell__location {
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-  color: var(--color-gray-blue);
-}
-
 .company-employee-emails {
   display: flex;
   flex-direction: column;
@@ -878,68 +852,6 @@
   border-radius: var(--radius-sm);
 }
 
-.designation-hierarchy {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.designation-hierarchy__handle {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--color-medium-gray);
-  cursor: grab;
-  padding: 2px;
-  border-radius: 4px;
-  transition: color 0.15s ease, background 0.15s ease;
-}
-
-.designation-hierarchy__handle:hover {
-  color: var(--color-dark-navy);
-  background: var(--color-light-gray-1);
-}
-
-.designation-hierarchy__handle:active {
-  cursor: grabbing;
-}
-
-.designation-hierarchy__input {
-  width: 52px;
-  padding: 6px 8px;
-  font-size: 13px;
-  font-family: inherit;
-  font-weight: 600;
-  color: var(--color-dark-navy);
-  text-align: center;
-  background: var(--color-off-white);
-  border: 1px solid var(--color-light-gray-2);
-  border-radius: var(--radius-sm);
-  outline: none;
-}
-
-.designation-hierarchy__input:focus {
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 2px rgba(230, 57, 70, 0.15);
-}
-
-.designation-hierarchy__value {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 28px;
-  font-weight: 600;
-  color: var(--color-dark-navy);
-}
-
-.designation-row--dragging {
-  opacity: 0.45;
-}
-
-.designation-row--drop-target td {
-  background: var(--color-light-pink-1);
-}
-
 .company-modal__actions {
   display: flex;
   justify-content: flex-end;
@@ -947,8 +859,31 @@
   margin-top: 8px;
 }
 
+.company-form__row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.equipment-dynamic-section {
+  margin-top: 8px;
+  padding-top: 12px;
+  border-top: 1px solid #e2e8f0;
+}
+
+.equipment-dynamic-section__title {
+  margin: 0 0 12px;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: #0f172a;
+}
+
 @media (max-width: 768px) {
   .company-form__grid {
+    grid-template-columns: 1fr;
+  }
+
+  .company-form__row {
     grid-template-columns: 1fr;
   }
 
