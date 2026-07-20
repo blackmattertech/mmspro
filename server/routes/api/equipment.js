@@ -12,6 +12,10 @@ import {
   updateEquipment,
   deleteEquipment,
 } from '../../lib/equipmentService.js'
+import {
+  buildEquipmentTemplate,
+  bulkImportEquipment,
+} from '../../lib/equipmentBulkService.js'
 
 const router = Router()
 
@@ -44,6 +48,37 @@ router.get('/', canRead, async (req, res) => {
     res.json(rows)
   } catch (err) {
     res.status(500).json({ error: err.message })
+  }
+})
+
+router.get('/template', canCreate, async (req, res) => {
+  try {
+    const buffer = await buildEquipmentTemplate(req.userProfile.org_id)
+    res.json({
+      filename: 'equipment-template.xlsx',
+      contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      data: buffer.toString('base64'),
+    })
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message })
+  }
+})
+
+router.post('/bulk', canCreate, async (req, res) => {
+  try {
+    const raw = req.body?.data
+    if (!raw || typeof raw !== 'string') {
+      return res.status(400).json({ error: 'File data is required' })
+    }
+    const base64 = raw.includes(',') ? raw.split(',').pop() : raw
+    const buffer = Buffer.from(base64, 'base64')
+    if (!buffer.length) {
+      return res.status(400).json({ error: 'File data is invalid' })
+    }
+    const result = await bulkImportEquipment(req.userProfile.org_id, buffer)
+    res.json(result)
+  } catch (err) {
+    res.status(err.status || 400).json({ error: err.message })
   }
 })
 

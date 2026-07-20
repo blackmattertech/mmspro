@@ -5,6 +5,9 @@ import {
   updateAdminAssetField,
   deleteAdminAssetField,
   reorderAdminAssetSections,
+  reorderAdminAssetParents,
+  uploadAdminSectionIcon,
+  deleteAdminSectionIcon,
 } from '../lib/api-admin-assets'
 
 export function useAdminAssetFields(orgId) {
@@ -105,6 +108,51 @@ export function useAdminAssetFields(orgId) {
     }
   }
 
+  const reorderParents = async (sectionId, ids) => {
+    setSaving(true)
+    setError(null)
+    try {
+      const data = await reorderAdminAssetParents(orgId, sectionId, ids)
+      setFields(data)
+      return data
+    } catch (err) {
+      setError(err.message)
+      throw err
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const uploadIcon = async (fieldId, file) => {
+    setSaving(true)
+    setError(null)
+    try {
+      const data = await uploadAdminSectionIcon(orgId, fieldId, file)
+      await load({ silent: true })
+      return data
+    } catch (err) {
+      setError(err.message)
+      throw err
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const removeIcon = async (fieldId) => {
+    setSaving(true)
+    setError(null)
+    try {
+      const data = await deleteAdminSectionIcon(orgId, fieldId)
+      await load({ silent: true })
+      return data
+    } catch (err) {
+      setError(err.message)
+      throw err
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const sections = fields.filter((f) => f.kind === 'section' && f.is_active !== false)
   const parents = fields.filter((f) => f.kind === 'parent' && f.is_active !== false)
 
@@ -120,6 +168,9 @@ export function useAdminAssetFields(orgId) {
     remove,
     toggleActive,
     reorderSections,
+    reorderParents,
+    uploadIcon,
+    removeIcon,
     reload: load,
   }
 }

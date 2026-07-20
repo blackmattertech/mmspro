@@ -1,5 +1,6 @@
 import { useState, useRef } from 'react'
 import CreateWorkOrderModal from '../dashboard/CreateWorkOrderModal'
+import DateField from '../ui/DateField'
 import NotificationPanel from '../dashboard/NotificationPanel'
 import { useNotifications } from '../../hooks/useNotifications'
 import '../dashboard/DashboardHeader.css'
@@ -46,18 +47,16 @@ export default function CalendarHeader({
           </div>
 
           <div className="dash-header__date-range">
-            <input
-              type="date"
+            <DateField
               className="dash-header__date"
               value={dateFrom}
-              onChange={(e) => onDateFromChange(e.target.value)}
+              onChange={onDateFromChange}
             />
             <span className="dash-header__date-sep">–</span>
-            <input
-              type="date"
+            <DateField
               className="dash-header__date"
               value={dateTo}
-              onChange={(e) => onDateToChange(e.target.value)}
+              onChange={onDateToChange}
             />
           </div>
 

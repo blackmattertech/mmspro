@@ -37,7 +37,7 @@ export default function Assets() {
         {canManage && (
           <p className="company-readonly-note">
             Sections and parent fields are configured by Super Admin per organization.
-            You can add and edit dropdown values here.
+            You can add and edit option values here.
           </p>
         )}
 

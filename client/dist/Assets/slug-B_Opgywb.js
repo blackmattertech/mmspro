@@ -1,1 +1,0 @@
-const s=/\b(technologies|technology|tech|inc|incorporated|llc|ltd|limited|corp|corporation|co|company|group|solutions|services|pvt|private)\b/gi,c=new Set(["the","a","an"]);function u(t){const o=t==null?void 0:t.trim();return o?(o.replace(s,"").trim()||o).split(/\s+/).filter(e=>e&&!c.has(e.toLowerCase())).join("").toLowerCase().replace(/[^a-z0-9]/g,"")||"org":""}export{u as g};

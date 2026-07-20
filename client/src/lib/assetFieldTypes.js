@@ -7,8 +7,23 @@ export const ASSET_FIELD_TYPES = [
   { value: 'image', label: 'Image' },
   { value: 'file', label: 'Files' },
   { value: 'dropdown', label: 'Dropdown' },
+  { value: 'radio', label: 'Radio' },
   { value: 'checkbox', label: 'Checkbox' },
 ]
+
+/** Field types that store selectable options as child rows. */
+export const OPTION_VALUE_FIELD_TYPES = new Set(['dropdown', 'radio', 'checkbox'])
+
+/** Single-choice option fields (value is one string). */
+export const SINGLE_OPTION_FIELD_TYPES = new Set(['dropdown', 'radio'])
+
+export function fieldTypeSupportsOptions(fieldType) {
+  return OPTION_VALUE_FIELD_TYPES.has(fieldType)
+}
+
+export function fieldTypeIsSingleOption(fieldType) {
+  return SINGLE_OPTION_FIELD_TYPES.has(fieldType)
+}
 
 export function kindLabel(kind) {
   if (kind === 'section') return 'Section'
@@ -29,7 +44,7 @@ export function filterFieldsByView(fields, view) {
 }
 
 export function dropdownValuesLabel(field) {
-  if (field.field_type !== 'dropdown' || !field.dropdown_options?.length) return '—'
+  if (!fieldTypeSupportsOptions(field.field_type) || !field.dropdown_options?.length) return '—'
   return field.dropdown_options.join(', ')
 }
 
@@ -54,7 +69,7 @@ export function fieldSearchText(field, view = 'all') {
     field.depends_on_option,
     field.is_active === false ? 'inactive' : 'active',
   ]
-  if (view === 'all' && field.field_type === 'dropdown' && field.dropdown_options?.length) {
+  if (view === 'all' && fieldTypeSupportsOptions(field.field_type) && field.dropdown_options?.length) {
     parts.push(field.dropdown_options.join(' '))
   }
   return parts.filter((p) => p && p !== '—').join(' ').toLowerCase()
@@ -107,7 +122,7 @@ function sortValue(field, sortBy) {
     case 'parents':
       return field.parent_count ?? 0
     case 'values':
-      if (field.field_type === 'dropdown' && field.dropdown_options?.length) {
+      if (fieldTypeSupportsOptions(field.field_type) && field.dropdown_options?.length) {
         return field.dropdown_options.join(', ')
       }
       return field.child_count ?? 0

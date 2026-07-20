@@ -1,5 +1,7 @@
 import { formatWorkOrderDate } from '../../lib/workOrderTableUtils'
 import AssignedToCell from './AssignedToCell'
+import EditIcon from '../ui/EditIcon'
+import TrashIcon from '../ui/TrashIcon'
 
 const COLUMN_CONFIG = {
   wo_number: { label: 'WO #', className: '' },
@@ -19,6 +21,10 @@ export default function WorkOrdersTable({
   emptyTitle,
   emptyHint,
   onView,
+  onEdit,
+  onDelete,
+  canEdit = false,
+  canDelete = false,
 }) {
   if (!orders.length) {
     return (
@@ -98,6 +104,28 @@ export default function WorkOrdersTable({
                   >
                     View
                   </button>
+                  {canEdit && (
+                    <button
+                      type="button"
+                      className="company-btn company-btn--secondary company-btn--compact company-btn--icon"
+                      onClick={() => onEdit?.(order)}
+                      aria-label={`Edit ${order.wo_number}`}
+                      title="Edit"
+                    >
+                      <EditIcon />
+                    </button>
+                  )}
+                  {canDelete && (
+                    <button
+                      type="button"
+                      className="company-btn company-btn--danger company-btn--compact company-btn--icon"
+                      onClick={() => onDelete?.(order)}
+                      aria-label={`Delete ${order.wo_number}`}
+                      title="Delete"
+                    >
+                      <TrashIcon />
+                    </button>
+                  )}
                 </div>
               </td>
             </tr>

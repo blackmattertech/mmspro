@@ -34,7 +34,8 @@ export default function AdminOrgEquipment() {
             {org ? `${org.name} — Equipment Fields` : 'Equipment Fields'}
           </h1>
           <p className="admin-page__subtitle">
-            Define dynamic fields for this organization&apos;s equipment records. Companies create the equipment list and fill values.
+            Define parent fields and option values for this organization&apos;s equipment records.
+            Sections are shared with Assets.
           </p>
         </div>
       </header>
@@ -51,7 +52,7 @@ export default function AdminOrgEquipment() {
           orgId={orgId}
           fieldsState={fieldsState}
           canManageSchema
-          canManageChildren={false}
+          canManageChildren
         />
       </div>
     </div>

@@ -48,6 +48,10 @@ export function isFieldDependencyMet(field, values) {
   if (!field?.depends_on_parent_id || !options.length) return true
   const parentValue = values?.[field.depends_on_parent_id]
   if (parentValue === null || parentValue === undefined || parentValue === '') return false
+  if (Array.isArray(parentValue)) {
+    const selected = parentValue.map((value) => String(value).trim().toLowerCase())
+    return options.some((option) => selected.includes(option.trim().toLowerCase()))
+  }
   const normalized = String(parentValue).trim().toLowerCase()
   return options.some((option) => option.trim().toLowerCase() === normalized)
 }

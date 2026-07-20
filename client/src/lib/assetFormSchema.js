@@ -23,6 +23,7 @@ export function buildAssetFormSchema(fields, sectionOrderIds, { activeOnly = fal
           name: parent.name,
           field_type: parent.field_type,
           sort_order: parent.sort_order,
+          is_required: Boolean(parent.is_required),
           dropdown_options: parent.dropdown_options || [],
           depends_on_parent_id: parent.depends_on_parent_id,
           depends_on_option: parent.depends_on_option,

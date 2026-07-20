@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import { useOrg } from '../../hooks/useOrg'
 import { useManualWorkOrderForm } from '../../hooks/useManualWorkOrderForm'
 import { useWorkOrderToolbar } from '../../hooks/useWorkOrderToolbar'
@@ -37,11 +37,15 @@ function WorkOrderSettingsIcon() {
 
 export default function ManualWorkOrderCreate() {
   const navigate = useNavigate()
+  const { workOrderId } = useParams()
+  const isEdit = Boolean(workOrderId)
   const { org, loading: orgLoading } = useOrg()
   const { setToolbar, clearToolbar } = useWorkOrderToolbar()
   const { canCreate, canUpdate } = usePermissions()
   const canManage = canUpdate('work_orders_manual') || canUpdate('work_orders')
   const canCreateWorkOrders = canCreate('work_orders_manual') || canCreate('work_orders')
+  const canEditWorkOrders = canUpdate('work_orders_manual') || canUpdate('work_orders')
+  const canUseForm = isEdit ? canEditWorkOrders : canCreateWorkOrders
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [settingsLoading, setSettingsLoading] = useState(false)
 
@@ -54,6 +58,7 @@ export default function ManualWorkOrderCreate() {
     assignToDepartment,
     setAssignToDepartment,
     setDepartmentTarget,
+    existingStatus,
     loading,
     saving,
     error,
@@ -62,7 +67,7 @@ export default function ManualWorkOrderCreate() {
     loadSettings,
     saveSettings,
     submit,
-  } = useManualWorkOrderForm()
+  } = useManualWorkOrderForm({ workOrderId: workOrderId || null })
 
   const goBack = useCallback(() => {
     if (org?.slug) {
@@ -83,15 +88,19 @@ export default function ManualWorkOrderCreate() {
   const handleSubmit = useCallback(async (status) => {
     try {
       await submit(status)
-      if (status === 'created' && org?.slug) {
+      if (org?.slug) {
         navigate(orgPath(org.slug, 'work-orders/manual'), {
-          state: { success: 'Work order created successfully.' },
+          state: {
+            success: isEdit
+              ? (status === 'created' ? 'Work order updated successfully.' : 'Draft updated successfully.')
+              : (status === 'created' ? 'Work order created successfully.' : 'Draft saved successfully.'),
+          },
         })
       }
     } catch {
       // Error is surfaced by the form hook
     }
-  }, [navigate, org?.slug, submit])
+  }, [navigate, org?.slug, submit, isEdit])
 
   useEffect(() => {
     const toolbarLeft = (
@@ -119,40 +128,48 @@ export default function ManualWorkOrderCreate() {
           type="button"
           className="company-btn company-btn--secondary"
           onClick={() => handleSubmit('draft')}
-          disabled={saving || !canCreateWorkOrders}
+          disabled={saving || !canUseForm}
         >
-          {saving ? 'Saving...' : 'Save as Draft'}
+          {saving ? 'Saving...' : isEdit ? 'Save Draft' : 'Save as Draft'}
         </button>
-        <button
-          type="button"
-          className="company-btn company-btn--secondary"
-          onClick={resetValues}
-          disabled={saving}
-        >
-          Reset
-        </button>
+        {!isEdit && (
+          <button
+            type="button"
+            className="company-btn company-btn--secondary"
+            onClick={resetValues}
+            disabled={saving}
+          >
+            Reset
+          </button>
+        )}
       </>
     )
 
-    const toolbarRight = canCreateWorkOrders ? (
+    const toolbarRight = canUseForm ? (
       <button
         type="button"
         className="company-btn company-btn--primary"
         onClick={() => handleSubmit('created')}
         disabled={saving}
       >
-        {saving ? 'Creating...' : 'Create Work Order'}
+        {saving
+          ? (isEdit ? 'Saving...' : 'Creating...')
+          : (isEdit
+            ? (existingStatus === 'created' ? 'Save Changes' : 'Create Work Order')
+            : 'Create Work Order')}
       </button>
     ) : null
 
     setToolbar(toolbarLeft, toolbarRight)
     return clearToolbar
   }, [
-    canCreateWorkOrders,
     canManage,
+    canUseForm,
     clearToolbar,
+    existingStatus,
     goBack,
     handleSubmit,
+    isEdit,
     openSettings,
     resetValues,
     saving,
@@ -163,10 +180,12 @@ export default function ManualWorkOrderCreate() {
     return <div className="company-loading">Loading...</div>
   }
 
-  if (!canCreateWorkOrders) {
+  if (!canUseForm) {
     return (
       <div className="company-empty">
-        You do not have permission to create work orders.
+        {isEdit
+          ? 'You do not have permission to edit work orders.'
+          : 'You do not have permission to create work orders.'}
       </div>
     )
   }
@@ -176,7 +195,9 @@ export default function ManualWorkOrderCreate() {
       {error && <div className="wo-alert wo-alert--error" role="alert">{error}</div>}
 
       <p className="wo-manual__intro">
-        Fill in the details below to create a new manual work order.
+        {isEdit
+          ? 'Update the details below and save your changes.'
+          : 'Fill in the details below to create a new manual work order.'}
       </p>
 
       <WorkOrderForm

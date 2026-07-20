@@ -3,6 +3,7 @@ import { useDepartments } from '../../hooks/useDepartments'
 import { useLocations } from '../../hooks/useLocations'
 import { useOrgLimits } from '../../hooks/useOrgLimits'
 import { useLimitExceeded } from '../../hooks/useLimitExceeded'
+import { usePermissions } from '../../hooks/usePermissions'
 import { isLimitError } from '../../lib/limitErrors'
 import GooToggle from '../ui/GooToggle'
 import TrashIcon from '../ui/TrashIcon'
@@ -11,7 +12,15 @@ import DepartmentModal, { formatDepartmentLocation } from './DepartmentModal'
 import LimitExceededCard from '../shared/LimitExceededCard'
 import './CompanyShared.css'
 
+function canPickAnyLocation({ isOrgAdmin, accessRole }) {
+  if (isOrgAdmin) return true
+  const roleName = accessRole?.name?.trim().toLowerCase() || ''
+  return roleName === 'admin'
+}
+
 export default function DepartmentsTab({ canManage }) {
+  const { isOrgAdmin, locationId: myLocationId, accessRole } = usePermissions()
+  const canSelectAnyLocation = canPickAnyLocation({ isOrgAdmin, accessRole })
   const [locationFilter, setLocationFilter] = useState('')
   const { locations, create: createLocation, saving: savingLocation } = useLocations()
   const { departments, loading, saving, error, create, update, remove, toggleActive } = useDepartments(locationFilter)
@@ -25,6 +34,8 @@ export default function DepartmentsTab({ canManage }) {
   const activeDepartments = departments.filter((d) => d.is_active !== false)
   const activeCount = activeDepartments.length
   const atDepartmentLimit = isResourceAtLimit('departments', 'department_limit', activeCount)
+  const defaultCreateLocationId = canSelectAnyLocation ? '' : (myLocationId || '')
+  const lockCreateLocation = Boolean(defaultCreateLocationId)
 
   const openCreate = () => {
     if (atDepartmentLimit) {
@@ -192,9 +203,11 @@ export default function DepartmentsTab({ canManage }) {
           departments={activeDepartments}
           saving={saving}
           nestedSaving={savingLocation}
+          defaultLocationId={editing ? '' : defaultCreateLocationId}
+          lockLocation={!editing && lockCreateLocation}
           onClose={() => setModalOpen(false)}
           onSave={handleSave}
-          onCreateLocation={handleCreateLocation}
+          onCreateLocation={canSelectAnyLocation ? handleCreateLocation : undefined}
           onLimitExceeded={tryHandleLimitError}
         />
       )}

@@ -34,7 +34,7 @@ export default function AdminOrgAssets() {
             {org ? `${org.name} — Assets` : 'Organization Assets'}
           </h1>
           <p className="admin-page__subtitle">
-            Define sections and parent fields for this organization. Companies add dropdown child values in their org app.
+            Define sections, parent fields, and dropdown child values for this organization.
           </p>
         </div>
       </header>
@@ -51,7 +51,7 @@ export default function AdminOrgAssets() {
           orgId={orgId}
           fieldsState={fieldsState}
           canManageSchema
-          canManageChildren={false}
+          canManageChildren
         />
       </div>
     </div>

@@ -93,6 +93,7 @@ export default function App() {
                 <Route path="scheduled" element={withModule('work_orders_scheduled', <ScheduledWorkOrders />)} />
                 <Route path="manual" element={withModule('work_orders_manual', <ManualWorkOrders />)} />
                 <Route path="manual/create" element={withModule('work_orders_manual', <ManualWorkOrderCreate />)} />
+                <Route path="manual/:workOrderId/edit" element={withModule('work_orders_manual', <ManualWorkOrderCreate />)} />
               </Route>
               {Object.entries(reportRouteModules).map(([slug, moduleKey]) => (
                 <Route

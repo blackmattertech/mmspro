@@ -93,6 +93,25 @@
   flex-wrap: wrap;
 }
 
+.company-panel__toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.company-alert--warning {
+  border-color: #f59e0b;
+  background: #fffbeb;
+  color: #92400e;
+}
+
+.equipment-bulk-errors {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  font-size: 0.8125rem;
+}
+
 .company-panel__count {
   font-size: 13px;
   color: var(--color-gray-blue);
@@ -876,6 +895,47 @@
   font-size: 0.9375rem;
   font-weight: 600;
   color: #0f172a;
+}
+
+.equipment-image-upload {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.equipment-image-upload__preview {
+  width: 96px;
+  height: 96px;
+  object-fit: cover;
+  border-radius: var(--radius-sm, 8px);
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+}
+
+.equipment-image-upload__placeholder {
+  width: 96px;
+  height: 96px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm, 8px);
+  border: 1px dashed #cbd5e1;
+  color: #94a3b8;
+  font-size: 0.8125rem;
+  background: #f8fafc;
+}
+
+.equipment-image-upload__actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.equipment-image-upload__hint {
+  font-size: 0.75rem;
+  color: #94a3b8;
 }
 
 @media (max-width: 768px) {

@@ -38,7 +38,7 @@ export function useOrgEquipmentFields() {
           body: JSON.stringify({ is_active: payload.is_active }),
         })
       } else {
-        throw new Error('Only dropdown values can be updated here')
+        throw new Error('Only option values can be updated here')
       }
       await load({ silent: true })
       return data

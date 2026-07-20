@@ -5,11 +5,18 @@ import {
   getFieldById,
   createAssetField,
   updateAssetFieldActive,
+  updateAssetFieldDropdownValues,
   updateAssetFieldSchema,
   deleteAssetField,
   reorderAssetSections,
+  reorderAssetParents,
   isActiveOnlyUpdate,
+  isDropdownValuesOnlyUpdate,
 } from '../../lib/assetFieldService.js'
+import {
+  uploadSectionIconFile,
+  deleteSectionIconFile,
+} from '../../lib/sectionIconStorage.js'
 
 const router = Router({ mergeParams: true })
 
@@ -40,14 +47,17 @@ router.get('/', async (req, res) => {
 })
 
 router.put('/reorder', async (req, res) => {
-  const { kind, ids } = req.body
-  if (kind !== 'section') {
-    return res.status(400).json({ error: 'kind must be "section"' })
-  }
-
+  const { kind, ids, section_id: sectionId } = req.body
   try {
-    const fields = await reorderAssetSections(req.params.orgId, ids)
-    res.json(fields)
+    if (kind === 'section') {
+      const fields = await reorderAssetSections(req.params.orgId, ids)
+      return res.json(fields)
+    }
+    if (kind === 'parent') {
+      const fields = await reorderAssetParents(req.params.orgId, sectionId, ids)
+      return res.json(fields)
+    }
+    return res.status(400).json({ error: 'kind must be "section" or "parent"' })
   } catch (err) {
     res.status(400).json({ error: err.message })
   }
@@ -78,22 +88,65 @@ router.patch('/:id', async (req, res) => {
     const existing = await getFieldById(orgId, req.params.id)
     if (!existing) return res.status(404).json({ error: 'Field not found' })
 
-    if (existing.kind === 'child') {
-      return res.status(400).json({ error: 'Child values are managed by the company from their org app' })
-    }
-
     if (isActiveOnlyUpdate(req.body)) {
       const field = await updateAssetFieldActive(orgId, req.params.id, req.body.is_active)
       return res.json(field)
     }
 
-    if (req.body.dropdown_options !== undefined) {
-      return res.status(400).json({
-        error: 'Dropdown child values are managed by the company. Define the dropdown parent field only.',
-      })
+    if (existing.kind === 'child') {
+      return res.status(400).json({ error: 'Edit child values from their option parent field' })
+    }
+
+    if (isDropdownValuesOnlyUpdate(req.body)) {
+      const field = await updateAssetFieldDropdownValues(
+        orgId,
+        req.params.id,
+        req.body.dropdown_options,
+      )
+      return res.json(field)
     }
 
     const field = await updateAssetFieldSchema(orgId, req.params.id, req.body)
+    res.json(field)
+  } catch (err) {
+    res.status(err.status || 400).json({ error: err.message })
+  }
+})
+
+router.post('/:id/icon', async (req, res) => {
+  const orgId = req.params.orgId
+  try {
+    const existing = await getFieldById(orgId, req.params.id)
+    if (!existing) return res.status(404).json({ error: 'Field not found' })
+    if (existing.kind !== 'section') {
+      return res.status(400).json({ error: 'Icons can only be uploaded for sections' })
+    }
+
+    if (existing.icon_path) {
+      await deleteSectionIconFile(existing.icon_path).catch(() => {})
+    }
+
+    const path = await uploadSectionIconFile(orgId, existing.id, req.body || {})
+    const field = await updateAssetFieldSchema(orgId, existing.id, { icon_path: path })
+    res.json(field)
+  } catch (err) {
+    res.status(err.status || 400).json({ error: err.message })
+  }
+})
+
+router.delete('/:id/icon', async (req, res) => {
+  const orgId = req.params.orgId
+  try {
+    const existing = await getFieldById(orgId, req.params.id)
+    if (!existing) return res.status(404).json({ error: 'Field not found' })
+    if (existing.kind !== 'section') {
+      return res.status(400).json({ error: 'Icons can only be removed from sections' })
+    }
+
+    if (existing.icon_path) {
+      await deleteSectionIconFile(existing.icon_path).catch(() => {})
+    }
+    const field = await updateAssetFieldSchema(orgId, existing.id, { icon_path: null })
     res.json(field)
   } catch (err) {
     res.status(err.status || 400).json({ error: err.message })

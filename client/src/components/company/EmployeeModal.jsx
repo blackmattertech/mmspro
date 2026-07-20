@@ -556,9 +556,11 @@ export default function EmployeeModal({
           departments={activeDepartments}
           saving={nestedSaving}
           nestedSaving={nestedSaving}
+          defaultLocationId={form.location_id || defaultLocationId || ''}
+          lockLocation={lockLocation}
           onClose={() => setNested(null)}
           onSave={handleNestedDepartmentSave}
-          onCreateLocation={onCreateLocation}
+          onCreateLocation={lockLocation ? undefined : onCreateLocation}
         />
       )}
 

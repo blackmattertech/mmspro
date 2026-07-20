@@ -1,10 +1,10 @@
-import { useMemo, useState, useEffect } from 'react'
+import { useMemo, useRef, useState, useEffect } from 'react'
 import { usePermissions } from '../../hooks/usePermissions'
 import { isCompanyAdmin } from '../../lib/accountRoles'
 import { useAuth } from '../../hooks/useAuth'
 import { useEquipment } from '../../hooks/useEquipment'
 import { useOrgEquipmentFields } from '../../hooks/useOrgEquipmentFields'
-import { getEquipment } from '../../lib/api-equipment'
+import { getEquipment, getEquipmentTemplate, bulkUploadEquipment } from '../../lib/api-equipment'
 import EquipmentModal from '../../components/equipment/EquipmentModal'
 import AssetsFieldsPanel from '../../components/assets/AssetsFieldsPanel'
 import AreasTab from '../../components/company/AreasTab'
@@ -41,10 +41,14 @@ export default function Equipment() {
     () => ({ search: debouncedSearch || undefined }),
     [debouncedSearch],
   )
-  const { items, loading, saving, error, create, update, remove } = useEquipment(filters)
+  const { items, loading, saving, error, create, update, remove, reload } = useEquipment(filters)
   const fieldsState = useOrgEquipmentFields()
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState(null)
+  const [bulkBusy, setBulkBusy] = useState(false)
+  const [bulkResult, setBulkResult] = useState(null)
+  const [bulkError, setBulkError] = useState(null)
+  const bulkInputRef = useRef(null)
 
   const showRecords = canRead('equipment')
   const showAreas = canRead('areas')
@@ -80,6 +84,50 @@ export default function Equipment() {
     await update(row.id, { is_active: isActive })
   }
 
+  const handleDownloadTemplate = async () => {
+    setBulkError(null)
+    try {
+      const { filename, contentType, data } = await getEquipmentTemplate()
+      const bytes = Uint8Array.from(atob(data), (c) => c.charCodeAt(0))
+      const blob = new Blob([bytes], { type: contentType })
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = filename || 'equipment-template.xlsx'
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      setBulkError(err.message)
+    }
+  }
+
+  const handleBulkFile = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setBulkBusy(true)
+    setBulkError(null)
+    setBulkResult(null)
+    try {
+      const dataUrl = await new Promise((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => resolve(reader.result)
+        reader.onerror = () => reject(new Error('Could not read the file'))
+        reader.readAsDataURL(file)
+      })
+      const base64 = String(dataUrl).split(',').pop()
+      const result = await bulkUploadEquipment(base64)
+      setBulkResult(result)
+      await reload({ silent: true })
+    } catch (err) {
+      setBulkError(err.message)
+    } finally {
+      setBulkBusy(false)
+      if (bulkInputRef.current) bulkInputRef.current.value = ''
+    }
+  }
+
   if (permLoading) {
     return (
       <div className="company-page">
@@ -102,7 +150,7 @@ export default function Equipment() {
               className={`company-tabs__btn ${view === 'records' ? 'company-tabs__btn--active' : ''}`}
               onClick={() => setView('records')}
             >
-              Records
+              Equipments
             </button>
           )}
           {showAreas && (
@@ -132,7 +180,7 @@ export default function Equipment() {
         ) : view === 'fields' ? (
           <>
             <p className="company-readonly-note">
-              Field structure is defined by Super Admin. You can manage dropdown values for equipment fields here.
+              Field structure is defined by Super Admin. You can manage option values for equipment fields here.
             </p>
             <AssetsFieldsPanel
               fieldsState={fieldsState}
@@ -160,13 +208,54 @@ export default function Equipment() {
                   />
                 </label>
                 {canManage && (
-                  <button type="button" className="company-btn company-btn--primary" onClick={openCreate}>
-                    + Add Equipment
-                  </button>
+                  <div className="company-panel__toolbar-actions">
+                    <button
+                      type="button"
+                      className="company-btn company-btn--secondary"
+                      onClick={handleDownloadTemplate}
+                    >
+                      Download template
+                    </button>
+                    <button
+                      type="button"
+                      className="company-btn company-btn--secondary"
+                      onClick={() => bulkInputRef.current?.click()}
+                      disabled={bulkBusy}
+                    >
+                      {bulkBusy ? 'Uploading…' : 'Bulk upload'}
+                    </button>
+                    <input
+                      ref={bulkInputRef}
+                      type="file"
+                      accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                      style={{ display: 'none' }}
+                      onChange={handleBulkFile}
+                    />
+                    <button type="button" className="company-btn company-btn--primary" onClick={openCreate}>
+                      + Add Equipment
+                    </button>
+                  </div>
                 )}
               </div>
 
               {error && <div className="company-error">{error}</div>}
+              {bulkError && <div className="company-error">{bulkError}</div>}
+              {bulkResult && (
+                <div className={`company-alert ${bulkResult.failed ? 'company-alert--warning' : ''}`}>
+                  <strong>{bulkResult.created}</strong> equipment created
+                  {bulkResult.failed ? `, ${bulkResult.failed} row(s) failed.` : '.'}
+                  {bulkResult.errors?.length > 0 && (
+                    <ul className="equipment-bulk-errors">
+                      {bulkResult.errors.slice(0, 10).map((err) => (
+                        <li key={err.row}>Row {err.row}: {err.message}</li>
+                      ))}
+                      {bulkResult.errors.length > 10 && (
+                        <li>…and {bulkResult.errors.length - 10} more</li>
+                      )}
+                    </ul>
+                  )}
+                </div>
+              )}
 
               {loading ? (
                 <div className="company-loading">Loading equipment…</div>
