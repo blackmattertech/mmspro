@@ -14,7 +14,9 @@ const router = Router()
 const canReadWorkOrders = requireModulePermission('work_orders', 'read')
 const canCreateWorkOrders = requireModulePermission('work_orders', 'create')
 const canUpdateWorkOrders = requireModulePermission('work_orders', 'update')
+const canDeleteWorkOrders = requireModulePermission('work_orders', 'delete')
 const canManageFormSettings = requireModulePermission('work_orders', 'update')
+const OPTION_FIELD_TYPES = new Set(['dropdown', 'radio', 'checkbox'])
 
 router.use(verifyAuth, requireOrgAccess, loadOrgPermissions)
 
@@ -28,19 +30,38 @@ function parsePagination(query, { defaultLimit = 50, maxLimit = 200 } = {}) {
   return { limit, offset }
 }
 
-async function loadOrgAssetFields(orgId) {
-  const { data, error } = await supabaseAdmin
-    .from('asset_fields')
-    .select('*')
-    .eq('org_id', orgId)
-    .order('sort_order')
-    .order('name')
+async function loadOrgWorkOrderFields(orgId) {
+  const [assetResult, equipmentResult] = await Promise.all([
+    supabaseAdmin
+      .from('asset_fields')
+      .select('*')
+      .eq('org_id', orgId)
+      .order('sort_order')
+      .order('name'),
+    supabaseAdmin
+      .from('equipment_fields')
+      .select('*')
+      .eq('org_id', orgId)
+      .order('sort_order')
+      .order('name'),
+  ])
 
-  if (error) throw error
-  return data || []
+  if (assetResult.error) throw assetResult.error
+  if (equipmentResult.error) throw equipmentResult.error
+
+  const byId = new Map()
+  for (const row of assetResult.data || []) byId.set(row.id, { ...row, field_source: 'asset' })
+  for (const row of equipmentResult.data || []) {
+    // Sections are shared and stored in asset_fields. Keep legacy equipment
+    // sections only when the migration has not copied the id yet.
+    if (row.kind === 'section' && byId.has(row.id)) continue
+    byId.set(row.id, { ...row, field_source: 'equipment' })
+  }
+
+  return [...byId.values()]
 }
 
-function enrichAssetFields(rows) {
+function enrichWorkOrderFields(rows) {
   const byId = new Map(rows.map((row) => [row.id, row]))
   const childrenByParent = new Map()
   for (const row of rows) {
@@ -60,7 +81,7 @@ function enrichAssetFields(rows) {
       ...row,
       section_name: section?.name || sectionFromParent?.name || null,
       parent_name: parent?.name || null,
-      dropdown_options: row.field_type === 'dropdown'
+      dropdown_options: OPTION_FIELD_TYPES.has(row.field_type)
         ? children.map((c) => c.name)
         : undefined,
     }
@@ -84,7 +105,7 @@ function isFieldVisible(field, settingsMap) {
 }
 
 function buildFormSchema(fields, settingsMap) {
-  const enriched = enrichAssetFields(fields)
+  const enriched = enrichWorkOrderFields(fields)
   const sections = enriched
     .filter((f) => f.kind === 'section')
     .filter((f) => isFieldVisible(f, settingsMap))
@@ -96,8 +117,10 @@ function buildFormSchema(fields, settingsMap) {
           id: parent.id,
           name: parent.name,
           field_type: parent.field_type,
+          field_source: parent.field_source || 'asset',
           sort_order: parent.sort_order,
           is_visible: true,
+          is_required: Boolean(parent.is_required),
           dropdown_options: parent.dropdown_options || [],
           depends_on_parent_id: parent.depends_on_parent_id || null,
           depends_on_option: parent.depends_on_option || null,
@@ -166,7 +189,7 @@ async function upsertWorkOrderValues(orgId, workOrderId, values, allowedFields) 
 }
 
 function buildSettingsList(fields, settingsMap) {
-  const enriched = enrichAssetFields(fields)
+  const enriched = enrichWorkOrderFields(fields)
   const sections = enriched.filter((f) => f.kind === 'section' && f.is_active !== false)
   const parents = enriched.filter((f) => f.kind === 'parent' && f.is_active !== false)
 
@@ -185,9 +208,57 @@ function buildSettingsList(fields, settingsMap) {
           name: parent.name,
           kind: 'parent',
           field_type: parent.field_type,
+          field_source: parent.field_source || 'asset',
           is_visible: isFieldVisible(parent, settingsMap),
         })),
     }))
+}
+
+/** Reorder active form sections; inactive sections keep their relative slots. */
+async function reorderWorkOrderSections(orgId, orderedSectionIds) {
+  if (!Array.isArray(orderedSectionIds) || !orderedSectionIds.length) {
+    throw Object.assign(new Error('section_ids array is required'), { status: 400 })
+  }
+
+  const fields = await loadOrgWorkOrderFields(orgId)
+  const sections = fields
+    .filter((f) => f.kind === 'section')
+    .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0) || a.name.localeCompare(b.name))
+
+  const activeSections = sections.filter((s) => s.is_active !== false)
+  const activeSet = new Set(activeSections.map((s) => s.id))
+
+  if (orderedSectionIds.length !== activeSections.length) {
+    throw Object.assign(new Error('Reorder must include all form sections'), { status: 400 })
+  }
+  if (orderedSectionIds.some((id) => !activeSet.has(id))) {
+    throw Object.assign(new Error('Invalid section id in order'), { status: 400 })
+  }
+
+  const queue = [...orderedSectionIds]
+  const finalIds = []
+  for (const section of sections) {
+    if (activeSet.has(section.id)) {
+      finalIds.push(queue.shift())
+    } else {
+      finalIds.push(section.id)
+    }
+  }
+
+  const byId = new Map(sections.map((section) => [section.id, section]))
+  const now = new Date().toISOString()
+  for (let i = 0; i < finalIds.length; i++) {
+    const section = byId.get(finalIds[i])
+    if (!section) continue
+    const table = section.field_source === 'equipment' ? 'equipment_fields' : 'asset_fields'
+    const { error } = await supabaseAdmin
+      .from(table)
+      .update({ sort_order: i, updated_at: now })
+      .eq('id', section.id)
+      .eq('org_id', orgId)
+      .eq('kind', 'section')
+    if (error) throw error
+  }
 }
 
 async function getEmployeeByProfile(orgId, profileId, { email = null } = {}) {
@@ -801,7 +872,7 @@ async function loadWorkOrderDetail(orgId, workOrderId, { employee = null } = {})
   if (valuesError) throw valuesError
 
   const [fields, settingsMap] = await Promise.all([
-    loadOrgAssetFields(orgId),
+    loadOrgWorkOrderFields(orgId),
     loadFieldSettings(orgId),
   ])
   const schema = buildFormSchema(fields, settingsMap)
@@ -873,6 +944,12 @@ function normalizeFileMeta(item) {
 function normalizeValue(fieldType, raw) {
   if (raw === null || raw === undefined || raw === '') return { value_text: null, value_json: null }
 
+  if (fieldType === 'checkbox' && Array.isArray(raw)) {
+    const values = raw.map((item) => String(item ?? '').trim()).filter(Boolean)
+    if (!values.length) return { value_text: null, value_json: null }
+    return { value_text: values.join(', '), value_json: { values } }
+  }
+
   if (fieldType === 'checkbox') {
     const checked = Boolean(raw)
     return { value_text: checked ? 'true' : 'false', value_json: { checked } }
@@ -918,7 +995,7 @@ router.get('/manual/form', canReadWorkOrders, async (req, res) => {
   try {
     const orgId = req.userProfile.org_id
     const [fields, settingsMap] = await Promise.all([
-      loadOrgAssetFields(orgId),
+      loadOrgWorkOrderFields(orgId),
       loadFieldSettings(orgId),
     ])
     res.json(await attachSectionIconUrls(buildFormSchema(fields, settingsMap)))
@@ -931,7 +1008,7 @@ router.get('/manual/form-settings', canReadWorkOrders, async (req, res) => {
   try {
     const orgId = req.userProfile.org_id
     const [fields, settingsMap] = await Promise.all([
-      loadOrgAssetFields(orgId),
+      loadOrgWorkOrderFields(orgId),
       loadFieldSettings(orgId),
     ])
     res.json({ sections: buildSettingsList(fields, settingsMap) })
@@ -944,41 +1021,50 @@ router.put('/manual/form-settings', canManageFormSettings, async (req, res) => {
   const orgId = req.userProfile.org_id
   try {
     const updates = Array.isArray(req.body?.settings) ? req.body.settings : []
-    if (!updates.length) {
+    const sectionIds = Array.isArray(req.body?.section_ids) ? req.body.section_ids : null
+    if (!updates.length && !sectionIds?.length) {
       return res.status(400).json({ error: 'No settings provided' })
     }
 
-    const fields = await loadOrgAssetFields(orgId)
-    const validIds = new Set(
-      fields
-        .filter((f) => (f.kind === 'section' || f.kind === 'parent') && f.is_active !== false)
-        .map((f) => f.id)
-    )
-
-    const now = new Date().toISOString()
-    const rows = []
-    for (const item of updates) {
-      if (!item?.field_id || !validIds.has(item.field_id)) {
-        return res.status(400).json({ error: 'Invalid field in settings' })
-      }
-      rows.push({
-        org_id: orgId,
-        field_id: item.field_id,
-        is_visible: Boolean(item.is_visible),
-        updated_at: now,
-      })
+    if (sectionIds?.length) {
+      await reorderWorkOrderSections(orgId, sectionIds)
     }
 
-    const { error } = await supabaseAdmin
-      .from('work_order_field_settings')
-      .upsert(rows, { onConflict: 'org_id,field_id' })
+    let fields = await loadOrgWorkOrderFields(orgId)
 
-    if (error) return res.status(500).json({ error: error.message })
+    if (updates.length) {
+      const validIds = new Set(
+        fields
+          .filter((f) => (f.kind === 'section' || f.kind === 'parent') && f.is_active !== false)
+          .map((f) => f.id)
+      )
+
+      const now = new Date().toISOString()
+      const rows = []
+      for (const item of updates) {
+        if (!item?.field_id || !validIds.has(item.field_id)) {
+          return res.status(400).json({ error: 'Invalid field in settings' })
+        }
+        rows.push({
+          org_id: orgId,
+          field_id: item.field_id,
+          is_visible: Boolean(item.is_visible),
+          updated_at: now,
+        })
+      }
+
+      const { error } = await supabaseAdmin
+        .from('work_order_field_settings')
+        .upsert(rows, { onConflict: 'org_id,field_id' })
+
+      if (error) return res.status(500).json({ error: error.message })
+      fields = await loadOrgWorkOrderFields(orgId)
+    }
 
     const settingsMap = await loadFieldSettings(orgId)
     res.json({ sections: buildSettingsList(fields, settingsMap) })
   } catch (err) {
-    res.status(400).json({ error: err.message })
+    res.status(err.status || 400).json({ error: err.message })
   }
 })
 
@@ -990,7 +1076,7 @@ router.post('/manual', canCreateWorkOrders, async (req, res) => {
     const values = req.body?.values && typeof req.body.values === 'object' ? req.body.values : {}
 
     const [fields, settingsMap] = await Promise.all([
-      loadOrgAssetFields(orgId),
+      loadOrgWorkOrderFields(orgId),
       loadFieldSettings(orgId),
     ])
     const schema = buildFormSchema(fields, settingsMap)
@@ -1146,7 +1232,7 @@ router.patch('/manual/:id/values', canUpdateWorkOrders, assertOrgOwnership('manu
   try {
     const values = req.body?.values && typeof req.body.values === 'object' ? req.body.values : {}
     const [fields, settingsMap] = await Promise.all([
-      loadOrgAssetFields(orgId),
+      loadOrgWorkOrderFields(orgId),
       loadFieldSettings(orgId),
     ])
     const schema = buildFormSchema(fields, settingsMap)
@@ -1155,6 +1241,128 @@ router.patch('/manual/:id/values', canUpdateWorkOrders, assertOrgOwnership('manu
     res.json({ id: req.params.id, value_count: valueCount })
   } catch (err) {
     res.status(400).json({ error: err.message })
+  }
+})
+
+router.patch('/manual/:id', canUpdateWorkOrders, assertOrgOwnership('manual_work_orders'), async (req, res) => {
+  const orgId = req.userProfile.org_id
+  const workOrderId = req.params.id
+
+  try {
+    const { data: existing, error: loadError } = await supabaseAdmin
+      .from('manual_work_orders')
+      .select('id, status, assigned_department_id, assigned_location_id')
+      .eq('org_id', orgId)
+      .eq('id', workOrderId)
+      .maybeSingle()
+
+    if (loadError) throw loadError
+    if (!existing) return res.status(404).json({ error: 'Work order not found' })
+
+    const nextStatus = req.body?.status === 'created'
+      ? 'created'
+      : req.body?.status === 'draft'
+        ? 'draft'
+        : existing.status
+
+    const assignedLocationId = req.body?.assigned_location_id !== undefined
+      ? (req.body.assigned_location_id || null)
+      : existing.assigned_location_id
+    const departmentAssignment = await validateAssignedDepartment(
+      orgId,
+      req.body?.assigned_department_id !== undefined
+        ? (req.body.assigned_department_id || null)
+        : existing.assigned_department_id,
+      assignedLocationId,
+    )
+
+    const hasEmployeeIds = Array.isArray(req.body?.assigned_employee_ids)
+    const assignedEmployeeIds = hasEmployeeIds
+      ? await validateAssignedEmployees(
+        orgId,
+        req.body.assigned_employee_ids,
+        { locationId: departmentAssignment?.assigned_location_id || assignedLocationId },
+      )
+      : null
+
+    const updates = {
+      status: nextStatus,
+      assigned_department_id: departmentAssignment?.assigned_department_id || null,
+      assigned_location_id: departmentAssignment?.assigned_location_id || assignedLocationId || null,
+      updated_at: new Date().toISOString(),
+    }
+
+    const { data: workOrder, error: updateError } = await supabaseAdmin
+      .from('manual_work_orders')
+      .update(updates)
+      .eq('id', workOrderId)
+      .eq('org_id', orgId)
+      .select('*')
+      .single()
+
+    if (updateError) throw updateError
+
+    if (assignedEmployeeIds) {
+      await syncWorkOrderAssignees(orgId, workOrderId, assignedEmployeeIds)
+    }
+
+    let valueCount = 0
+    if (req.body?.values && typeof req.body.values === 'object') {
+      const [fields, settingsMap] = await Promise.all([
+        loadOrgWorkOrderFields(orgId),
+        loadFieldSettings(orgId),
+      ])
+      const schema = buildFormSchema(fields, settingsMap)
+      const allowedFields = buildAllowedFieldsMap(schema)
+      valueCount = await upsertWorkOrderValues(orgId, workOrderId, req.body.values, allowedFields)
+    }
+
+    const enriched = await enrichWorkOrderRow(orgId, workOrder)
+    res.json({ ...enriched, value_count: valueCount })
+  } catch (err) {
+    res.status(err.status || 400).json({ error: err.message })
+  }
+})
+
+router.delete('/manual/:id', canDeleteWorkOrders, assertOrgOwnership('manual_work_orders'), async (req, res) => {
+  const orgId = req.userProfile.org_id
+  const workOrderId = req.params.id
+
+  try {
+    const { data: existing, error: loadError } = await supabaseAdmin
+      .from('manual_work_orders')
+      .select('id')
+      .eq('org_id', orgId)
+      .eq('id', workOrderId)
+      .maybeSingle()
+
+    if (loadError) throw loadError
+    if (!existing) return res.status(404).json({ error: 'Work order not found' })
+
+    // Best-effort cleanup of uploaded files under this work order folder
+    const folderPrefix = `${orgId}/${workOrderId}`
+    try {
+      const { data: files } = await supabaseAdmin.storage
+        .from('work-order-assets')
+        .list(folderPrefix, { limit: 1000 })
+      if (files?.length) {
+        const paths = files.map((file) => `${folderPrefix}/${file.name}`)
+        await supabaseAdmin.storage.from('work-order-assets').remove(paths)
+      }
+    } catch {
+      // Storage cleanup is best-effort; DB delete still proceeds
+    }
+
+    const { error: deleteError } = await supabaseAdmin
+      .from('manual_work_orders')
+      .delete()
+      .eq('id', workOrderId)
+      .eq('org_id', orgId)
+
+    if (deleteError) throw deleteError
+    res.json({ id: workOrderId, deleted: true })
+  } catch (err) {
+    res.status(err.status || 400).json({ error: err.message })
   }
 })
 

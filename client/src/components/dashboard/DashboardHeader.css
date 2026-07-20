@@ -177,6 +177,10 @@
   width: 140px;
 }
 
+.dash-header__date-range .date-field {
+  width: 140px;
+}
+
 .dash-header__date-sep {
   color: var(--color-medium-gray);
   line-height: 1;

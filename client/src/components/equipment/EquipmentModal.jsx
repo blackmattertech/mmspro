@@ -1,33 +1,47 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useBackdropClose } from '../../hooks/useBackdropClose'
 import { useLocations } from '../../hooks/useLocations'
 import { useDepartments } from '../../hooks/useDepartments'
 import { useAreas } from '../../hooks/useAreas'
 import { getEquipmentFields } from '../../lib/api-equipment'
+import { seedDateFieldDefaults } from '../../lib/dateInputDefaults'
+import DateField from '../ui/DateField'
 import '../company/CompanyShared.css'
 
-const EMPTY = {
-  name: '',
-  code: '',
-  qr_code: '',
+const IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp']
+const IMAGE_MAX_BYTES = 3 * 1024 * 1024
+
+const EMPTY_PLACEMENT = {
   location_id: '',
   department_id: '',
   area_id: '',
 }
 
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result)
+    reader.onerror = () => reject(new Error('Could not read the file'))
+    reader.readAsDataURL(file)
+  })
+}
+
 export default function EquipmentModal({ equipment, saving, onClose, onSave }) {
   const isEdit = Boolean(equipment?.id)
   const { locations } = useLocations()
-  const [form, setForm] = useState(EMPTY)
+  const [placement, setPlacement] = useState(EMPTY_PLACEMENT)
   const [fieldDefs, setFieldDefs] = useState([])
   const [values, setValues] = useState({})
+  const [imageFile, setImageFile] = useState(null)
+  const [imageRemoved, setImageRemoved] = useState(false)
   const [error, setError] = useState(null)
+  const fileInputRef = useRef(null)
   const handleBackdropClick = useBackdropClose(onClose)
 
-  const { departments } = useDepartments(form.location_id || '')
+  const { departments } = useDepartments(placement.location_id || '')
   const { areas } = useAreas({
-    locationId: form.location_id || undefined,
-    departmentId: form.department_id || undefined,
+    locationId: placement.location_id || undefined,
+    departmentId: placement.department_id || undefined,
   })
 
   useEffect(() => {
@@ -38,24 +52,25 @@ export default function EquipmentModal({ equipment, saving, onClose, onSave }) {
 
   useEffect(() => {
     if (equipment) {
-      setForm({
-        name: equipment.name || '',
-        code: equipment.code || '',
-        qr_code: equipment.qr_code || '',
+      setPlacement({
         location_id: equipment.location_id || '',
         department_id: equipment.department_id || '',
         area_id: equipment.area_id || '',
       })
       const next = {}
       for (const row of equipment.field_values || []) {
-        next[row.field_id] = row.value_text ?? ''
+        next[row.field_id] = Array.isArray(row.value_json?.values)
+          ? row.value_json.values
+          : row.value_text ?? ''
       }
       setValues(next)
     } else {
-      setForm(EMPTY)
-      setValues({})
+      setPlacement(EMPTY_PLACEMENT)
+      setValues(seedDateFieldDefaults(fieldDefs, {}))
     }
-  }, [equipment])
+    setImageFile(null)
+    setImageRemoved(false)
+  }, [equipment, fieldDefs])
 
   const activeLocations = useMemo(
     () => (locations || []).filter((l) => l.is_active !== false),
@@ -75,36 +90,93 @@ export default function EquipmentModal({ equipment, saving, onClose, onSave }) {
     for (const field of fieldDefs) {
       const key = field.section_id || 'other'
       if (!map.has(key)) {
-        map.set(key, { id: key, name: field.section_name || 'Details', fields: [] })
+        map.set(key, {
+          id: key,
+          name: field.section_name || 'Details',
+          fields: [],
+        })
       }
       map.get(key).fields.push(field)
     }
     return [...map.values()]
   }, [fieldDefs])
 
+  const imagePreview = imageFile?.preview
+    || (!imageRemoved ? equipment?.image_signed_url : null)
+
+  const handleImageChange = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (!IMAGE_TYPES.includes(file.type)) {
+      setError('Image must be PNG, JPG, or WebP')
+      return
+    }
+    if (file.size > IMAGE_MAX_BYTES) {
+      setError('Image must be 3 MB or smaller')
+      return
+    }
+    setError(null)
+    try {
+      const dataUrl = await readFileAsDataUrl(file)
+      setImageFile({ contentType: file.type, data: dataUrl, preview: dataUrl })
+      setImageRemoved(false)
+    } catch (err) {
+      setError(err.message)
+    }
+  }
+
+  const handleRemoveImage = () => {
+    setImageFile(null)
+    setImageRemoved(true)
+    if (fileInputRef.current) fileInputRef.current.value = ''
+  }
+
   const handleSubmit = async (e) => {
     e.preventDefault()
     setError(null)
-    if (!form.name.trim() || !form.code.trim()) {
-      setError('Name and code are required')
-      return
-    }
-    if (!form.location_id || !form.department_id || !form.area_id) {
+
+    if (!placement.location_id || !placement.department_id || !placement.area_id) {
       setError('Location, department, and area are required')
       return
     }
 
+    const missing = fieldDefs
+      .filter((field) => {
+        if (!field.is_required) return false
+        const value = values[field.id]
+        if (Array.isArray(value)) return value.length === 0
+        return !String(value ?? '').trim()
+      })
+      .map((field) => field.name)
+    if (missing.length) {
+      setError(`Fill the mandatory field${missing.length === 1 ? '' : 's'}: ${missing.join(', ')}`)
+      return
+    }
+
     const payload = {
-      name: form.name.trim(),
-      code: form.code.trim(),
-      qr_code: form.qr_code.trim() || null,
-      location_id: form.location_id,
-      department_id: form.department_id,
-      area_id: form.area_id,
-      values: fieldDefs.map((field) => ({
-        field_id: field.id,
-        value_text: values[field.id] ?? '',
-      })),
+      location_id: placement.location_id,
+      department_id: placement.department_id,
+      area_id: placement.area_id,
+      values: fieldDefs.map((field) => {
+        const value = values[field.id]
+        if (Array.isArray(value)) {
+          return {
+            field_id: field.id,
+            value_text: value.join(', '),
+            value_json: { values: value },
+          }
+        }
+        return {
+          field_id: field.id,
+          value_text: value ?? '',
+        }
+      }),
+    }
+
+    if (imageFile) {
+      payload.image = { contentType: imageFile.contentType, data: imageFile.data }
+    } else if (imageRemoved && isEdit) {
+      payload.remove_image = true
     }
 
     try {
@@ -114,6 +186,93 @@ export default function EquipmentModal({ equipment, saving, onClose, onSave }) {
     }
   }
 
+  const renderField = (field) => (
+    <label key={field.id} className="company-form__field">
+      <span className="company-form__label">{field.is_required ? `${field.name} *` : field.name}</span>
+      {field.field_type === 'textarea' ? (
+        <textarea
+          className="company-form__input"
+          rows={3}
+          value={values[field.id] || ''}
+          onChange={(e) => setValues((v) => ({ ...v, [field.id]: e.target.value }))}
+        />
+      ) : field.field_type === 'dropdown' ? (
+        <select
+          className="company-form__input company-form__input--select"
+          value={values[field.id] || ''}
+          onChange={(e) => setValues((v) => ({ ...v, [field.id]: e.target.value }))}
+        >
+          <option value="">Select…</option>
+          {(field.dropdown_options || []).map((opt) => (
+            <option key={opt} value={opt}>{opt}</option>
+          ))}
+        </select>
+      ) : field.field_type === 'radio' ? (
+        <div className="asset-field-dependency__options" role="radiogroup" aria-label={field.name}>
+          {(field.dropdown_options || []).map((opt) => (
+            <label key={opt} className="asset-field-dependency__option">
+              <input
+                type="radio"
+                name={`eq-field-${field.id}`}
+                value={opt}
+                checked={values[field.id] === opt}
+                onChange={() => setValues((v) => ({ ...v, [field.id]: opt }))}
+              />
+              <span>{opt}</span>
+            </label>
+          ))}
+        </div>
+      ) : field.field_type === 'checkbox' && field.dropdown_options?.length ? (
+        <div className="asset-field-dependency__options" role="group" aria-label={field.name}>
+          {(field.dropdown_options || []).map((opt) => {
+            const selected = Array.isArray(values[field.id]) ? values[field.id] : []
+            const checked = selected.includes(opt)
+            return (
+              <label key={opt} className="asset-field-dependency__option">
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={() => setValues((v) => {
+                    const current = Array.isArray(v[field.id]) ? v[field.id] : []
+                    return {
+                      ...v,
+                      [field.id]: current.includes(opt)
+                        ? current.filter((item) => item !== opt)
+                        : [...current, opt],
+                    }
+                  })}
+                />
+                <span>{opt}</span>
+              </label>
+            )
+          })}
+        </div>
+      ) : field.field_type === 'checkbox' ? (
+        <input
+          type="checkbox"
+          checked={values[field.id] === 'true' || values[field.id] === true}
+          onChange={(e) => setValues((v) => ({
+            ...v,
+            [field.id]: e.target.checked ? 'true' : 'false',
+          }))}
+        />
+      ) : field.field_type === 'date' || field.field_type === 'datetime' ? (
+        <DateField
+          value={values[field.id] || ''}
+          onChange={(val) => setValues((v) => ({ ...v, [field.id]: val }))}
+          withTime={field.field_type === 'datetime'}
+        />
+      ) : (
+        <input
+          className="company-form__input"
+          type={field.field_type === 'number' ? 'number' : 'text'}
+          value={values[field.id] || ''}
+          onChange={(e) => setValues((v) => ({ ...v, [field.id]: e.target.value }))}
+        />
+      )}
+    </label>
+  )
+
   return (
     <div className="company-modal-overlay" onMouseDown={handleBackdropClick} role="presentation">
       <div className="company-modal company-modal--wide" onClick={(e) => e.stopPropagation()} role="dialog">
@@ -122,134 +281,99 @@ export default function EquipmentModal({ equipment, saving, onClose, onSave }) {
           <button type="button" className="company-modal__close" onClick={onClose} aria-label="Close">×</button>
         </div>
         <form className="company-modal__form" onSubmit={handleSubmit}>
-          <label className="company-form__field">
-            <span className="company-form__label">Name *</span>
-            <input
-              className="company-form__input"
-              value={form.name}
-              onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-              required
-            />
-          </label>
-          <div className="company-form__row">
-            <label className="company-form__field">
-              <span className="company-form__label">Code *</span>
-              <input
-                className="company-form__input"
-                value={form.code}
-                onChange={(e) => setForm((f) => ({ ...f, code: e.target.value }))}
-                required
-              />
-            </label>
-            <label className="company-form__field">
-              <span className="company-form__label">QR code</span>
-              <input
-                className="company-form__input"
-                value={form.qr_code}
-                onChange={(e) => setForm((f) => ({ ...f, qr_code: e.target.value }))}
-              />
-            </label>
-          </div>
-
-          <label className="company-form__field">
-            <span className="company-form__label">Location *</span>
-            <select
-              className="company-form__input company-form__input--select"
-              value={form.location_id}
-              onChange={(e) => setForm((f) => ({
-                ...f,
-                location_id: e.target.value,
-                department_id: '',
-                area_id: '',
-              }))}
-              required
-            >
-              <option value="">Select location…</option>
-              {activeLocations.map((loc) => (
-                <option key={loc.id} value={loc.id}>{loc.name}</option>
-              ))}
-            </select>
-          </label>
-          <label className="company-form__field">
-            <span className="company-form__label">Department *</span>
-            <select
-              className="company-form__input company-form__input--select"
-              value={form.department_id}
-              onChange={(e) => setForm((f) => ({
-                ...f,
-                department_id: e.target.value,
-                area_id: '',
-              }))}
-              required
-              disabled={!form.location_id}
-            >
-              <option value="">Select department…</option>
-              {activeDepartments.map((dept) => (
-                <option key={dept.id} value={dept.id}>{dept.name}</option>
-              ))}
-            </select>
-          </label>
-          <label className="company-form__field">
-            <span className="company-form__label">Area *</span>
-            <select
-              className="company-form__input company-form__input--select"
-              value={form.area_id}
-              onChange={(e) => setForm((f) => ({ ...f, area_id: e.target.value }))}
-              required
-              disabled={!form.department_id}
-            >
-              <option value="">Select area…</option>
-              {activeAreas.map((area) => (
-                <option key={area.id} value={area.id}>{area.name}</option>
-              ))}
-            </select>
-          </label>
-
           {sections.map((section) => (
             <div key={section.id} className="equipment-dynamic-section">
               <h3 className="equipment-dynamic-section__title">{section.name}</h3>
-              {section.fields.map((field) => (
-                <label key={field.id} className="company-form__field">
-                  <span className="company-form__label">{field.name}</span>
-                  {field.field_type === 'textarea' ? (
-                    <textarea
-                      className="company-form__input"
-                      rows={3}
-                      value={values[field.id] || ''}
-                      onChange={(e) => setValues((v) => ({ ...v, [field.id]: e.target.value }))}
-                    />
-                  ) : field.field_type === 'dropdown' ? (
-                    <select
-                      className="company-form__input company-form__input--select"
-                      value={values[field.id] || ''}
-                      onChange={(e) => setValues((v) => ({ ...v, [field.id]: e.target.value }))}
-                    >
-                      <option value="">Select…</option>
-                      {(field.dropdown_options || []).map((opt) => (
-                        <option key={opt} value={opt}>{opt}</option>
-                      ))}
-                    </select>
-                  ) : field.field_type === 'checkbox' ? (
-                    <input
-                      type="checkbox"
-                      checked={values[field.id] === 'true' || values[field.id] === true}
-                      onChange={(e) => setValues((v) => ({
-                        ...v,
-                        [field.id]: e.target.checked ? 'true' : 'false',
-                      }))}
-                    />
-                  ) : (
-                    <input
-                      className="company-form__input"
-                      type={field.field_type === 'number' ? 'number' : field.field_type === 'date' ? 'date' : field.field_type === 'datetime' ? 'datetime-local' : 'text'}
-                      value={values[field.id] || ''}
-                      onChange={(e) => setValues((v) => ({ ...v, [field.id]: e.target.value }))}
-                    />
-                  )}
-                </label>
-              ))}
+              {section.fields.map((field) => renderField(field))}
             </div>
           ))}
+
+          <div className="equipment-dynamic-section">
+            <h3 className="equipment-dynamic-section__title">Image</h3>
+            <div className="equipment-image-upload">
+              {imagePreview ? (
+                <img className="equipment-image-upload__preview" src={imagePreview} alt="Equipment" />
+              ) : (
+                <div className="equipment-image-upload__placeholder">No image</div>
+              )}
+              <div className="equipment-image-upload__actions">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  className="equipment-image-upload__input"
+                  onChange={handleImageChange}
+                />
+                {imagePreview && (
+                  <button
+                    type="button"
+                    className="company-btn company-btn--ghost company-btn--compact"
+                    onClick={handleRemoveImage}
+                  >
+                    Remove image
+                  </button>
+                )}
+                <span className="equipment-image-upload__hint">PNG, JPG, or WebP · up to 3 MB</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="equipment-dynamic-section">
+            <h3 className="equipment-dynamic-section__title">Placement</h3>
+            <label className="company-form__field">
+              <span className="company-form__label">Location *</span>
+              <select
+                className="company-form__input company-form__input--select"
+                value={placement.location_id}
+                onChange={(e) => setPlacement((f) => ({
+                  ...f,
+                  location_id: e.target.value,
+                  department_id: '',
+                  area_id: '',
+                }))}
+                required
+              >
+                <option value="">Select location…</option>
+                {activeLocations.map((loc) => (
+                  <option key={loc.id} value={loc.id}>{loc.name}</option>
+                ))}
+              </select>
+            </label>
+            <label className="company-form__field">
+              <span className="company-form__label">Department *</span>
+              <select
+                className="company-form__input company-form__input--select"
+                value={placement.department_id}
+                onChange={(e) => setPlacement((f) => ({
+                  ...f,
+                  department_id: e.target.value,
+                  area_id: '',
+                }))}
+                required
+                disabled={!placement.location_id}
+              >
+                <option value="">Select department…</option>
+                {activeDepartments.map((dept) => (
+                  <option key={dept.id} value={dept.id}>{dept.name}</option>
+                ))}
+              </select>
+            </label>
+            <label className="company-form__field">
+              <span className="company-form__label">Area *</span>
+              <select
+                className="company-form__input company-form__input--select"
+                value={placement.area_id}
+                onChange={(e) => setPlacement((f) => ({ ...f, area_id: e.target.value }))}
+                required
+                disabled={!placement.department_id}
+              >
+                <option value="">Select area…</option>
+                {activeAreas.map((area) => (
+                  <option key={area.id} value={area.id}>{area.name}</option>
+                ))}
+              </select>
+            </label>
+          </div>
 
           {error && <div className="company-alert">{error}</div>}
           <div className="company-modal__actions">

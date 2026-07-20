@@ -44,3 +44,14 @@ img {
   display: block;
   max-width: 100%;
 }
+
+/* Brand-red accent for native controls (date pickers, checkboxes, radios) */
+input[type='date'],
+input[type='datetime-local'],
+input[type='month'],
+input[type='week'],
+input[type='time'],
+input[type='checkbox'],
+input[type='radio'] {
+  accent-color: var(--color-primary);
+}

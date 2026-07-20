@@ -26,6 +26,17 @@ export function deleteEquipment(id) {
   return apiFetch(`/api/equipment/${id}`, { method: 'DELETE' })
 }
 
+export function getEquipmentTemplate() {
+  return apiFetch('/api/equipment/template')
+}
+
+export function bulkUploadEquipment(base64Data) {
+  return apiFetch('/api/equipment/bulk', {
+    method: 'POST',
+    body: JSON.stringify({ data: base64Data }),
+  })
+}
+
 export function getEquipmentFields() {
   return apiFetch('/api/equipment-fields')
 }

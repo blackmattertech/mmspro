@@ -32,19 +32,28 @@ function scopeToPayload(locationScope) {
   return { all_locations: false, location_id: locationScope }
 }
 
+function emptyForm(defaultLocationId = '') {
+  return {
+    ...EMPTY,
+    locationScope: defaultLocationId || LOCATION_NONE,
+  }
+}
+
 export default function DepartmentModal({
   department,
   locations,
   departments,
   saving,
   nestedSaving = false,
+  defaultLocationId = '',
+  lockLocation = false,
   onClose,
   onSave,
   onCreateLocation,
   onLimitExceeded,
   nested = false,
 }) {
-  const [form, setForm] = useState(EMPTY)
+  const [form, setForm] = useState(() => emptyForm(defaultLocationId))
   const [error, setError] = useState(null)
   const [showLocationModal, setShowLocationModal] = useState(false)
   const handleBackdropClick = useBackdropClose(onClose)
@@ -59,11 +68,27 @@ export default function DepartmentModal({
         parent_id: department.parent_id || '',
       })
     } else {
-      setForm(EMPTY)
+      setForm(emptyForm(defaultLocationId))
     }
-  }, [department])
+  }, [department, defaultLocationId])
+
+  useEffect(() => {
+    if (department || !defaultLocationId) return
+    setForm((prev) => (
+      prev.locationScope && prev.locationScope !== LOCATION_NONE
+        ? prev
+        : { ...prev, locationScope: defaultLocationId }
+    ))
+  }, [department, defaultLocationId])
+
+  useEffect(() => {
+    if (!lockLocation || !defaultLocationId || department) return
+    if (form.locationScope === defaultLocationId) return
+    setForm((prev) => ({ ...prev, locationScope: defaultLocationId }))
+  }, [lockLocation, defaultLocationId, department, form.locationScope])
 
   const parentOptions = departments.filter((d) => d.id !== department?.id)
+  const canCreateLocation = Boolean(onCreateLocation) && !lockLocation
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -77,12 +102,15 @@ export default function DepartmentModal({
       return
     }
     try {
+      const locationScope = lockLocation && defaultLocationId
+        ? defaultLocationId
+        : form.locationScope
       await onSave({
         name: form.name,
         code: form.code,
         description: form.description,
         parent_id: form.parent_id || null,
-        ...scopeToPayload(form.locationScope),
+        ...scopeToPayload(locationScope),
       })
     } catch (err) {
       setError(err.message)
@@ -147,14 +175,19 @@ export default function DepartmentModal({
                   className="company-form__input company-form__input--select"
                   value={form.locationScope}
                   onChange={(e) => setForm({ ...form, locationScope: e.target.value })}
+                  disabled={lockLocation}
                 >
-                  <option value={LOCATION_ALL}>All locations</option>
-                  <option value={LOCATION_NONE}>No location</option>
+                  {!lockLocation && (
+                    <>
+                      <option value={LOCATION_ALL}>All locations</option>
+                      <option value={LOCATION_NONE}>No location</option>
+                    </>
+                  )}
                   {locations.map((loc) => (
                     <option key={loc.id} value={loc.id}>{loc.name}</option>
                   ))}
                 </select>
-                {onCreateLocation && (
+                {canCreateLocation && (
                   <button
                     type="button"
                     className="company-btn company-btn--secondary company-btn--compact"
@@ -164,6 +197,11 @@ export default function DepartmentModal({
                   </button>
                 )}
               </div>
+              {lockLocation && (
+                <span className="company-modal__hint">
+                  Location is limited to your assigned location.
+                </span>
+              )}
             </label>
 
             <label className="company-form__field">
@@ -190,7 +228,7 @@ export default function DepartmentModal({
         </div>
       </div>
 
-      {showLocationModal && onCreateLocation && (
+      {showLocationModal && canCreateLocation && (
         <LocationModal
           nested
           location={null}

@@ -1,9 +1,19 @@
+import { randomUUID } from 'node:crypto'
 import { supabaseAdmin } from '../services/supabase.js'
 import { getSignedUrl } from './signedUrlCache.js'
+import {
+  createAssetField,
+  updateAssetFieldActive,
+  updateAssetFieldSchema,
+  deleteAssetField,
+  reorderAssetSections,
+} from './assetFieldService.js'
 
 const FIELD_TYPES = new Set([
-  'text', 'textarea', 'number', 'date', 'datetime', 'image', 'file', 'checkbox', 'dropdown',
+  'text', 'textarea', 'number', 'date', 'datetime', 'image', 'file', 'checkbox', 'dropdown', 'radio',
 ])
+const OPTION_FIELD_TYPES = new Set(['dropdown', 'radio', 'checkbox'])
+const SINGLE_OPTION_FIELD_TYPES = new Set(['dropdown', 'radio'])
 
 const KINDS = new Set(['section', 'parent', 'child'])
 const ORG_ASSETS_BUCKET = 'org-assets'
@@ -115,7 +125,7 @@ function enrichFields(rows) {
       parent_name: parent?.name || null,
       parent_count: parentCount,
       child_count: childCount,
-      dropdown_options: row.field_type === 'dropdown'
+      dropdown_options: OPTION_FIELD_TYPES.has(row.field_type)
         ? children.map((c) => c.name)
         : undefined,
       depends_on_parent_name: dependsOnParent?.name || null,
@@ -125,15 +135,29 @@ function enrichFields(rows) {
 }
 
 export async function loadOrgFields(orgId) {
-  const { data, error } = await supabaseAdmin
-    .from('equipment_fields')
-    .select('*')
-    .eq('org_id', orgId)
-    .order('sort_order')
-    .order('name')
+  const [equipmentResult, assetSectionsResult] = await Promise.all([
+    supabaseAdmin
+      .from('equipment_fields')
+      .select('*')
+      .eq('org_id', orgId)
+      .order('sort_order')
+      .order('name'),
+    supabaseAdmin
+      .from('asset_fields')
+      .select('*')
+      .eq('org_id', orgId)
+      .eq('kind', 'section')
+      .order('sort_order')
+      .order('name'),
+  ])
 
-  if (error) throw error
-  return attachSectionIconUrls(enrichFields(data || []))
+  if (equipmentResult.error) throw equipmentResult.error
+  if (assetSectionsResult.error) throw assetSectionsResult.error
+
+  // Equipment and assets share the same sections (stored in asset_fields).
+  const equipmentRows = (equipmentResult.data || []).filter((row) => row.kind !== 'section')
+  const sections = assetSectionsResult.data || []
+  return attachSectionIconUrls(enrichFields([...sections, ...equipmentRows]))
 }
 
 export async function getFieldById(orgId, id) {
@@ -226,8 +250,8 @@ async function validateFieldDependency(allFields, {
   if (!dependsOn || dependsOn.kind !== 'parent') {
     throw new Error('Invalid dependency field')
   }
-  if (dependsOn.field_type !== 'dropdown') {
-    throw new Error('Dependencies must reference a dropdown parent field')
+  if (!OPTION_FIELD_TYPES.has(dependsOn.field_type)) {
+    throw new Error('Dependencies must reference a parent field with child values')
   }
   if (dependsOn.is_active === false) {
     throw new Error('Dependency field is inactive')
@@ -291,10 +315,10 @@ export async function validateFieldPayload(orgId, payload, { existingId = null, 
     if (!fieldType || !FIELD_TYPES.has(fieldType)) {
       throw new Error('Field type is required')
     }
-    if (fieldType === 'dropdown') {
+    if (OPTION_FIELD_TYPES.has(fieldType)) {
       const options = normalizeDropdownOptions(payload.dropdown_options)
-      if (requireDropdownOptions && !options.length) {
-        throw new Error('Add at least one dropdown value')
+      if (SINGLE_OPTION_FIELD_TYPES.has(fieldType) && requireDropdownOptions && !options.length) {
+        throw new Error('Add at least one option value')
       }
     }
   }
@@ -325,7 +349,7 @@ export async function validateFieldPayload(orgId, payload, { existingId = null, 
     if (kind === 'parent') {
       const hasChildren = allFields.some((f) => f.parent_id === existingId)
       if (hasChildren && payload.is_active === false) {
-        throw new Error('Cannot deactivate a parent field that has dropdown values')
+        throw new Error('Cannot deactivate a parent field that has option values')
       }
     }
   }
@@ -338,13 +362,14 @@ export async function validateFieldPayload(orgId, payload, { existingId = null, 
     field_type: fieldType,
     sort_order: normalizeSortOrder(payload.sort_order),
     is_active: payload.is_active !== undefined ? Boolean(payload.is_active) : true,
+    is_required: kind === 'parent' ? Boolean(payload.is_required) : false,
     icon_path: kind === 'section' && payload.icon_path !== undefined ? payload.icon_path : undefined,
-    dropdown_options: fieldType === 'dropdown' ? normalizeDropdownOptions(payload.dropdown_options) : [],
+    dropdown_options: OPTION_FIELD_TYPES.has(fieldType) ? normalizeDropdownOptions(payload.dropdown_options) : [],
     ...dependency,
   }
 }
 
-async function reassignSectionSortOrder(orgId, ids) {
+async function reassignSortOrder(orgId, ids, kind) {
   const now = new Date().toISOString()
   for (let i = 0; i < ids.length; i++) {
     const { error } = await supabaseAdmin
@@ -352,9 +377,13 @@ async function reassignSectionSortOrder(orgId, ids) {
       .update({ sort_order: i, updated_at: now })
       .eq('id', ids[i])
       .eq('org_id', orgId)
-      .eq('kind', 'section')
+      .eq('kind', kind)
     if (error) throw error
   }
+}
+
+async function reassignSectionSortOrder(orgId, ids) {
+  await reassignSortOrder(orgId, ids, 'section')
 }
 
 export async function validateDeactivate(orgId, existing, isActive) {
@@ -368,7 +397,7 @@ export async function validateDeactivate(orgId, existing, isActive) {
   }
   if (existing.kind === 'parent') {
     const hasChildren = allFields.some((f) => f.parent_id === existing.id)
-    if (hasChildren) throw new Error('Remove or delete dropdown values from this parent first')
+    if (hasChildren) throw new Error('Remove or delete option values from this parent first')
   }
 }
 
@@ -397,25 +426,43 @@ export async function assertDropdownOptionsRemovable(orgId, parentId, newOptions
 }
 
 export async function createEquipmentField(orgId, body) {
-  const payload = await validateFieldPayload(orgId, body, { requireDropdownOptions: false })
-  const { icon_path: iconPath, ...insertPayload } = payload
+  const kind = body.kind || (body.is_section ? 'section' : 'parent')
+  // Sections are shared with Assets and live in asset_fields.
+  if (kind === 'section' || body.is_section) {
+    return createAssetField(orgId, { ...body, is_section: true, is_parent: false })
+  }
 
-  const row = { org_id: orgId, ...insertPayload }
+  const payload = await validateFieldPayload(orgId, body, { requireDropdownOptions: false })
+  // option values are derived from child rows — never a DB column
+  const { icon_path: iconPath, dropdown_options: dropdownOptions, ...insertPayload } = payload
+
+  // Avoid INSERT ... RETURNING here. Under RLS, PostgREST can reject the
+  // representation even after the insert succeeds, leaving the UI reporting
+  // a failure for a row that was actually created.
+  const id = randomUUID()
+  const row = { id, org_id: orgId, ...insertPayload }
   if (iconPath !== undefined) row.icon_path = iconPath
 
-  const { data, error } = await supabaseAdmin
+  const { error } = await supabaseAdmin
     .from('equipment_fields')
     .insert(row)
-    .select('*')
-    .single()
 
   if (error) throw error
-  return getFieldById(orgId, data.id)
+
+  if (OPTION_FIELD_TYPES.has(insertPayload.field_type) && dropdownOptions?.length) {
+    await syncDropdownChildren(orgId, id, dropdownOptions)
+  }
+
+  return getFieldById(orgId, id)
 }
 
 export async function updateEquipmentFieldActive(orgId, id, isActive) {
   const existing = await getFieldById(orgId, id)
   if (!existing) throw Object.assign(new Error('Field not found'), { status: 404 })
+
+  if (existing.kind === 'section') {
+    return updateAssetFieldActive(orgId, id, isActive)
+  }
 
   await validateDeactivate(orgId, existing, isActive)
   const { error } = await supabaseAdmin
@@ -433,12 +480,12 @@ export async function updateEquipmentFieldActive(orgId, id, isActive) {
 export async function updateEquipmentFieldDropdownValues(orgId, id, dropdownOptions) {
   const existing = await getFieldById(orgId, id)
   if (!existing) throw Object.assign(new Error('Field not found'), { status: 404 })
-  if (existing.kind !== 'parent' || existing.field_type !== 'dropdown') {
-    throw new Error('Dropdown values can only be set on dropdown parent fields')
+  if (existing.kind !== 'parent' || !OPTION_FIELD_TYPES.has(existing.field_type)) {
+    throw new Error('Option values can only be set on option-backed parent fields')
   }
 
   const options = normalizeDropdownOptions(dropdownOptions)
-  if (!options.length) throw new Error('Add at least one dropdown value')
+  if (!options.length) throw new Error('Add at least one option value')
 
   await assertDropdownOptionsRemovable(orgId, id, options)
   await syncDropdownChildren(orgId, id, options)
@@ -449,7 +496,11 @@ export async function updateEquipmentFieldSchema(orgId, id, body) {
   const existing = await getFieldById(orgId, id)
   if (!existing) throw Object.assign(new Error('Field not found'), { status: 404 })
   if (existing.kind === 'child') {
-    throw new Error('Edit dropdown values from the parent field')
+    throw new Error('Edit option values from the parent field')
+  }
+
+  if (existing.kind === 'section') {
+    return updateAssetFieldSchema(orgId, id, body)
   }
 
   const payload = await validateFieldPayload(orgId, {
@@ -457,9 +508,10 @@ export async function updateEquipmentFieldSchema(orgId, id, body) {
     name: body.name ?? existing.name,
     field_type: body.field_type ?? existing.field_type,
     kind: existing.kind,
-    is_section: existing.kind === 'section',
-    section_id: existing.kind === 'parent' ? (body.section_id ?? existing.section_id) : null,
+    is_section: false,
+    section_id: body.section_id ?? existing.section_id,
     dropdown_options: body.dropdown_options ?? existing.dropdown_options,
+    is_required: body.is_required !== undefined ? body.is_required : existing.is_required,
     depends_on_parent_id: body.depends_on_parent_id !== undefined
       ? body.depends_on_parent_id
       : existing.depends_on_parent_id,
@@ -475,6 +527,7 @@ export async function updateEquipmentFieldSchema(orgId, id, body) {
     section_id: updatePayload.section_id,
     parent_id: updatePayload.parent_id,
     field_type: updatePayload.field_type,
+    is_required: updatePayload.is_required,
     depends_on_parent_id: updatePayload.depends_on_parent_id,
     depends_on_option: updatePayload.depends_on_option,
     sort_order: body.sort_order !== undefined ? updatePayload.sort_order : existing.sort_order,
@@ -493,8 +546,18 @@ export async function updateEquipmentFieldSchema(orgId, id, body) {
 
   if (error) throw error
 
-  if (existing.kind === 'parent' && existing.field_type === 'dropdown' && updates.field_type !== 'dropdown') {
+  if (existing.kind === 'parent' && OPTION_FIELD_TYPES.has(existing.field_type) && !OPTION_FIELD_TYPES.has(updates.field_type)) {
     await clearDropdownChildren(orgId, id)
+  } else if (
+    existing.kind === 'parent'
+    && OPTION_FIELD_TYPES.has(updates.field_type)
+    && body.dropdown_options !== undefined
+  ) {
+    const options = normalizeDropdownOptions(body.dropdown_options)
+    if (options.length) {
+      await assertDropdownOptionsRemovable(orgId, id, options)
+      await syncDropdownChildren(orgId, id, options)
+    }
   }
 
   return getFieldById(orgId, id)
@@ -506,16 +569,18 @@ export async function deleteEquipmentField(orgId, id) {
 
   if (existing.kind === 'section') {
     const allFields = await loadOrgFields(orgId)
-    const hasLinked = allFields.some((f) => f.section_id === existing.id || (
-      f.parent_id && allFields.find((p) => p.id === f.parent_id)?.section_id === existing.id
+    const hasLinked = allFields.some((f) => (
+      f.kind !== 'section' && (
+        f.section_id === existing.id
+        || (f.parent_id && allFields.find((p) => p.id === f.parent_id)?.section_id === existing.id)
+      )
     ))
     if (hasLinked) {
       throw new Error('Remove fields from this section first')
     }
-    if (existing.icon_path) {
-      await supabaseAdmin.storage.from(ORG_ASSETS_BUCKET).remove([existing.icon_path])
-    }
+    return deleteAssetField(orgId, id)
   }
+
   if (existing.kind === 'parent') {
     const allFields = await loadOrgFields(orgId)
     const dependents = allFields.filter((f) => f.depends_on_parent_id === existing.id)
@@ -537,21 +602,30 @@ export async function deleteEquipmentField(orgId, id) {
 }
 
 export async function reorderEquipmentSections(orgId, ids) {
+  await reorderAssetSections(orgId, ids)
+  return loadOrgFields(orgId)
+}
+
+export async function reorderEquipmentParents(orgId, sectionId, ids) {
+  if (!sectionId) throw new Error('section_id is required')
   if (!Array.isArray(ids) || !ids.length) {
     throw new Error('ids array is required')
   }
 
   const allFields = await loadOrgFields(orgId)
-  const sections = allFields.filter((field) => field.kind === 'section')
-  if (ids.length !== sections.length) {
-    throw new Error('Reorder must include all sections')
+  const section = allFields.find((field) => field.id === sectionId && field.kind === 'section')
+  if (!section) throw new Error('Section not found')
+
+  const parents = allFields.filter((field) => field.kind === 'parent' && field.section_id === sectionId)
+  if (ids.length !== parents.length) {
+    throw new Error('Reorder must include all parent fields in the section')
   }
 
-  const known = new Set(sections.map((section) => section.id))
+  const known = new Set(parents.map((parent) => parent.id))
   if (ids.some((fieldId) => !known.has(fieldId))) {
-    throw new Error('Invalid section id in order')
+    throw new Error('Invalid parent id in order')
   }
 
-  await reassignSectionSortOrder(orgId, ids)
+  await reassignSortOrder(orgId, ids, 'parent')
   return loadOrgFields(orgId)
 }

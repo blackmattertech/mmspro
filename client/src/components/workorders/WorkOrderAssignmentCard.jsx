@@ -310,11 +310,8 @@ export default function WorkOrderAssignmentCard({
     <section className="wo-section wo-assignment">
       <div className="wo-section__header wo-assignment__header">
         <div className="wo-section__header-left">
-          <span className="wo-section__icon wo-assignment__icon" aria-hidden="true">
-            <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-              <circle cx="9" cy="6" r="3" stroke="white" strokeWidth="1.5" />
-              <path d="M3 15.5C3 12.5 5.5 10.5 9 10.5C12.5 10.5 15 12.5 15 15.5" stroke="white" strokeWidth="1.5" strokeLinecap="round" />
-            </svg>
+          <span className="wo-section__icon wo-section__icon--image wo-assignment__icon" aria-hidden="true">
+            <span className="wo-assignment__icon-glyph" />
           </span>
           <div>
             <h2 className="wo-section__title">Assignment</h2>

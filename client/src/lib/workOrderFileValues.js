@@ -14,7 +14,7 @@ export function workOrderFilesValue(files) {
 }
 
 export function createLocalFileItem(file, fieldType) {
-  const previewUrl = fieldType === 'image' && file.type.startsWith('image/')
+  const previewUrl = file.type?.startsWith('image/')
     ? URL.createObjectURL(file)
     : null
 
@@ -23,9 +23,24 @@ export function createLocalFileItem(file, fieldType) {
     file,
     name: file.name,
     size: file.size,
-    type: file.type,
+    type: file.type || (fieldType === 'image' ? 'image/*' : ''),
     previewUrl,
   }
+}
+
+export function isImageFileItem(item) {
+  if (!item) return false
+  if (item.previewUrl) return true
+  if (item.type?.startsWith('image/')) return true
+  const name = String(item.name || item.path || '').toLowerCase()
+  return /\.(jpe?g|png|gif|webp|bmp|svg)$/i.test(name)
+}
+
+export function getFilePreviewSrc(item) {
+  if (!item) return null
+  if (item.previewUrl) return item.previewUrl
+  if (isImageFileItem(item) && item.url) return item.url
+  return null
 }
 
 export function revokeWorkOrderFilePreviews(value) {

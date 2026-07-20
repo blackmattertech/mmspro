@@ -26,6 +26,9 @@ function FieldValue({ field }) {
   const type = field.field_type
 
   if (type === 'checkbox') {
+    if (Array.isArray(field.value_json?.values)) {
+      return <span>{field.value_json.values.length ? field.value_json.values.join(', ') : '—'}</span>
+    }
     if (field.value_json?.checked == null && field.value_text == null) return <span>—</span>
     return <span>{field.value_json?.checked ? 'Yes' : 'No'}</span>
   }

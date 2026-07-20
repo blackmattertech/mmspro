@@ -1,4 +1,4 @@
-import { useState, useEffect, createContext, useContext, useMemo, useCallback } from 'react'
+import { useState, useEffect, createContext, useContext, useMemo, useCallback, useRef } from 'react'
 import { supabase, isSupabaseConfigured } from '../lib/supabase'
 import { syncAccessToken, clearAccessTokenCache, clearCompanyDetailsCache } from '../lib/api'
 import { clearOrgCache } from '../lib/orgCache'
@@ -15,6 +15,7 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null)
   const [role, setRole] = useState(null)
   const [loading, setLoading] = useState(isSupabaseConfigured)
+  const userIdRef = useRef(null)
 
   const fetchRole = useCallback(async (userId) => {
     const { data } = await supabase
@@ -26,38 +27,55 @@ export const AuthProvider = ({ children }) => {
     setLoading(false)
   }, [])
 
+  const clearSessionState = useCallback(() => {
+    userIdRef.current = null
+    clearAccessTokenCache()
+    clearCompanyDetailsCache()
+    clearOrgCache()
+    setUser(null)
+    setRole(null)
+    setLoading(false)
+  }, [])
+
   useEffect(() => {
     if (!isSupabaseConfigured || !supabase) {
       setLoading(false)
       return
     }
 
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    const applyAuthUser = (session) => {
       syncAccessToken(session)
-      setUser(session?.user ?? null)
-      if (session?.user) fetchRole(session.user.id)
-      else setLoading(false)
+      const nextUser = session?.user ?? null
+      const nextId = nextUser?.id ?? null
+
+      // Token refresh / tab focus re-emits the same user as a new object.
+      // Keep the previous reference so OrgProvider and open forms stay mounted.
+      if (nextId === userIdRef.current) {
+        return
+      }
+
+      userIdRef.current = nextId
+      setUser(nextUser)
+      if (nextUser) fetchRole(nextUser.id)
+      else clearSessionState()
+    }
+
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      applyAuthUser(session)
+      if (!session?.user) setLoading(false)
     })
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      syncAccessToken(session)
-      setUser(session?.user ?? null)
-      if (session?.user) fetchRole(session.user.id)
-      else {
-        clearAccessTokenCache()
-        clearCompanyDetailsCache()
-        clearOrgCache()
-        setRole(null)
-        setLoading(false)
-      }
+      applyAuthUser(session)
     })
 
     return () => subscription.unsubscribe()
-  }, [fetchRole])
+  }, [fetchRole, clearSessionState])
 
   const applySession = useCallback(async (session) => {
     syncAccessToken(session)
     const nextUser = session?.user ?? null
+    userIdRef.current = nextUser?.id ?? null
     setUser(nextUser)
     if (nextUser) {
       setLoading(true)
@@ -95,6 +113,7 @@ export const AuthProvider = ({ children }) => {
     clearCompanyDetailsCache()
     clearOrgCache()
     if (!isSupabaseConfigured || !supabase) {
+      userIdRef.current = null
       setUser(null)
       setRole(null)
       return { error: null }

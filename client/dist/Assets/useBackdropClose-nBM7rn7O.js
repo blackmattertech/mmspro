@@ -1,1 +1,0 @@
-import{r as t}from"./index-CD0NguUQ.js";function n(o){const e=t.useRef(!0);return t.useEffect(()=>{const r=window.setTimeout(()=>{e.current=!1},0);return()=>window.clearTimeout(r)},[]),r=>{e.current||r.target===r.currentTarget&&o()}}export{n as u};

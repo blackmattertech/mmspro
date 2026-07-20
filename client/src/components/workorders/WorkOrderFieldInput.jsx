@@ -1,9 +1,12 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import DateField from '../ui/DateField'
 import { fieldTypeLabel } from '../../lib/assetFieldTypes'
 import { validateWorkOrderFile } from '../../lib/workOrderAssets'
 import {
   createLocalFileItem,
+  getFilePreviewSrc,
   getWorkOrderFiles,
+  isImageFileItem,
   revokeWorkOrderFilePreviews,
   workOrderFilesValue,
 } from '../../lib/workOrderFileValues'
@@ -11,13 +14,9 @@ import {
 const FILE_ACCEPT = '.pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png'
 const IMAGE_ACCEPT = 'image/jpeg,image/png,image/webp,image/gif'
 const IMAGE_TILE_SIZE = 96
-
-function formatFileSize(bytes) {
-  if (!bytes) return ''
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
-}
+const FILE_ICON_SRC = '/Assets/icons/file-outline.svg'
+const VIEW_MORE_BTN_WIDTH = 104
+const FILE_CHIP_GAP = 8
 
 function ImageLightbox({ src, alt, onClose }) {
   useEffect(() => {
@@ -98,7 +97,7 @@ function ImageFieldPreview({ field, value, onChange, disabled }) {
       style={{ '--wo-image-tile-size': `${IMAGE_TILE_SIZE}px` }}
     >
       <label className="company-form__label" htmlFor={id}>
-        {field.name}
+        {field.is_required ? `${field.name} *` : field.name}
         <span className="wo-field-type-hint"> ({fieldTypeLabel('image')})</span>
       </label>
 
@@ -180,8 +179,64 @@ function FileFieldPreview({ field, value, onChange, disabled }) {
   const accept = type === 'image' ? IMAGE_ACCEPT : FILE_ACCEPT
   const files = getWorkOrderFiles(value)
   const [fieldError, setFieldError] = useState(null)
+  const [lightbox, setLightbox] = useState(null)
+  const [expanded, setExpanded] = useState(false)
+  const [collapsedVisible, setCollapsedVisible] = useState(files.length)
+  const rowRef = useRef(null)
+  const measureRef = useRef(null)
 
   useEffect(() => () => revokeWorkOrderFilePreviews(value), [value])
+
+  useLayoutEffect(() => {
+    if (!files.length) {
+      setCollapsedVisible(0)
+      return undefined
+    }
+
+    const measure = () => {
+      const row = rowRef.current
+      const measureRow = measureRef.current
+      if (!row || !measureRow) return
+
+      const chips = [...measureRow.querySelectorAll('[data-file-chip]')]
+      if (!chips.length) {
+        setCollapsedVisible(0)
+        return
+      }
+
+      const available = row.clientWidth
+      let used = 0
+      let fit = 0
+      for (let i = 0; i < chips.length; i += 1) {
+        const chipWidth = chips[i].offsetWidth
+        const remaining = chips.length - (i + 1)
+        const needMore = remaining > 0
+        const budget = needMore
+          ? available - VIEW_MORE_BTN_WIDTH - FILE_CHIP_GAP
+          : available
+        const nextUsed = used + (fit > 0 ? FILE_CHIP_GAP : 0) + chipWidth
+        if (nextUsed <= budget + 1) {
+          used = nextUsed
+          fit = i + 1
+        } else {
+          break
+        }
+      }
+
+      setCollapsedVisible(fit > 0 ? fit : 1)
+    }
+
+    measure()
+    const observer = typeof ResizeObserver !== 'undefined'
+      ? new ResizeObserver(measure)
+      : null
+    if (observer && rowRef.current) observer.observe(rowRef.current)
+    window.addEventListener('resize', measure)
+    return () => {
+      observer?.disconnect()
+      window.removeEventListener('resize', measure)
+    }
+  }, [files, expanded])
 
   const handleFileChange = (e) => {
     const selected = [...(e.target.files || [])]
@@ -199,21 +254,32 @@ function FileFieldPreview({ field, value, onChange, disabled }) {
     }
 
     setFieldError(null)
+    setExpanded(false)
     onChange(workOrderFilesValue(next))
   }
 
   const removeFile = (itemKey) => {
     const target = files.find((item) => (item.id || item.path) === itemKey)
     if (target?.previewUrl) URL.revokeObjectURL(target.previewUrl)
+    if (lightbox?.key === itemKey) setLightbox(null)
     const next = files.filter((item) => (item.id || item.path) !== itemKey)
     setFieldError(null)
     onChange(workOrderFilesValue(next))
   }
 
+  const openPreview = (item) => {
+    const src = getFilePreviewSrc(item)
+    if (!src) return
+    setLightbox({ key: item.id || item.path, src, alt: item.name || field.name })
+  }
+
+  const hiddenCount = expanded ? 0 : Math.max(0, files.length - collapsedVisible)
+  const shownFiles = expanded ? files : files.slice(0, collapsedVisible)
+
   return (
     <div className="company-form__field wo-field-upload">
       <label className="company-form__label" htmlFor={id}>
-        {field.name}
+        {field.is_required ? `${field.name} *` : field.name}
         <span className="wo-field-type-hint"> ({fieldTypeLabel(type)})</span>
       </label>
 
@@ -242,33 +308,103 @@ function FileFieldPreview({ field, value, onChange, disabled }) {
       {fieldError && <span className="wo-field-upload__error">{fieldError}</span>}
 
       {files.length > 0 && (
-        <ul className="wo-field-upload__list">
-          {files.map((item) => (
-            <li key={item.id || item.path} className="wo-field-upload__item">
-              {item.previewUrl ? (
-                <div className="wo-field-upload__preview wo-field-upload__preview--thumb">
-                  <img src={item.previewUrl} alt={item.name} />
-                </div>
-              ) : (
-                <div className="wo-field-upload__file-icon" aria-hidden="true">📄</div>
-              )}
-              <div className="wo-field-upload__item-meta">
-                <span className="wo-field-upload__filename">{item.name}</span>
-                {item.size > 0 && (
-                  <span className="wo-field-file-name">{formatFileSize(item.size)}</span>
-                )}
-              </div>
+        <div className="wo-field-upload__row-wrap">
+          {/* Off-screen measure row keeps natural chip widths for overflow calc */}
+          <div className="wo-field-upload__row wo-field-upload__row--measure" ref={measureRef} aria-hidden="true">
+            {files.map((item) => (
+              <FileChip
+                key={`measure-${item.id || item.path}`}
+                item={item}
+                disabled
+                measuring
+              />
+            ))}
+          </div>
+
+          <div
+            ref={rowRef}
+            className={`wo-field-upload__row${expanded ? ' wo-field-upload__row--expanded' : ''}`}
+          >
+            {shownFiles.map((item) => (
+              <FileChip
+                key={item.id || item.path}
+                item={item}
+                disabled={disabled}
+                onRemove={() => removeFile(item.id || item.path)}
+                onPreview={() => openPreview(item)}
+              />
+            ))}
+
+            {hiddenCount > 0 && (
               <button
                 type="button"
-                className="wo-field-upload__clear wo-field-upload__clear--inline"
-                onClick={() => removeFile(item.id || item.path)}
-                disabled={disabled}
+                className="wo-field-upload__view-more"
+                onClick={() => setExpanded(true)}
               >
-                Remove
+                View more ({hiddenCount})
               </button>
-            </li>
-          ))}
-        </ul>
+            )}
+
+            {expanded && files.length > collapsedVisible && (
+              <button
+                type="button"
+                className="wo-field-upload__view-more"
+                onClick={() => setExpanded(false)}
+              >
+                View less
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {lightbox && (
+        <ImageLightbox
+          src={lightbox.src}
+          alt={lightbox.alt}
+          onClose={() => setLightbox(null)}
+        />
+      )}
+    </div>
+  )
+}
+
+function FileChip({ item, disabled, onRemove, onPreview, measuring = false }) {
+  const previewSrc = getFilePreviewSrc(item)
+  const isImage = Boolean(previewSrc) || isImageFileItem(item)
+
+  return (
+    <div
+      className={`wo-field-upload__chip${isImage ? ' wo-field-upload__chip--image' : ''}`}
+      data-file-chip=""
+      title={item.name}
+    >
+      {isImage && previewSrc ? (
+        <button
+          type="button"
+          className="wo-field-upload__chip-preview"
+          onClick={onPreview}
+          disabled={measuring || !onPreview}
+          aria-label={`View ${item.name}`}
+        >
+          <img src={previewSrc} alt="" />
+        </button>
+      ) : (
+        <div className="wo-field-upload__chip-file">
+          <img src={FILE_ICON_SRC} alt="" className="wo-field-upload__chip-icon" />
+          <span className="wo-field-upload__chip-name">{item.name}</span>
+        </div>
+      )}
+
+      {!disabled && !measuring && (
+        <button
+          type="button"
+          className="wo-field-upload__chip-remove"
+          onClick={onRemove}
+          aria-label={`Remove ${item.name}`}
+        >
+          ×
+        </button>
       )}
     </div>
   )
@@ -276,8 +412,9 @@ function FileFieldPreview({ field, value, onChange, disabled }) {
 
 export default function WorkOrderFieldInput({ field, value, onChange, disabled }) {
   const id = `wo-field-${field.id}`
-  const label = field.name
+  const label = field.is_required ? `${field.name} *` : field.name
   const type = field.field_type
+  const optionValues = field.dropdown_options || []
 
   if (type === 'textarea') {
     return (
@@ -307,7 +444,7 @@ export default function WorkOrderFieldInput({ field, value, onChange, disabled }
           disabled={disabled}
         >
           <option value="">Select {label}</option>
-          {(field.dropdown_options || []).map((opt) => (
+          {optionValues.map((opt) => (
             <option key={opt} value={opt}>{opt}</option>
           ))}
         </select>
@@ -315,7 +452,62 @@ export default function WorkOrderFieldInput({ field, value, onChange, disabled }
     )
   }
 
+  if (type === 'radio') {
+    return (
+      <div className="company-form__field">
+        <span className="company-form__label">{label}</span>
+        <div className="asset-field-dependency__options" role="radiogroup" aria-label={field.name}>
+          {optionValues.map((opt) => (
+            <label key={opt} className="asset-field-dependency__option">
+              <input
+                type="radio"
+                name={id}
+                value={opt}
+                checked={value === opt}
+                onChange={() => onChange(opt)}
+                disabled={disabled}
+              />
+              <span>{opt}</span>
+            </label>
+          ))}
+          {!optionValues.length && (
+            <p className="company-employee-photo__login-hint">No options configured yet.</p>
+          )}
+        </div>
+      </div>
+    )
+  }
+
   if (type === 'checkbox') {
+    if (optionValues.length) {
+      const selected = Array.isArray(value) ? value : []
+      const toggleOption = (option) => {
+        const next = selected.includes(option)
+          ? selected.filter((item) => item !== option)
+          : [...selected, option]
+        onChange(next)
+      }
+
+      return (
+        <div className="company-form__field">
+          <span className="company-form__label">{label}</span>
+          <div className="asset-field-dependency__options" role="group" aria-label={field.name}>
+            {optionValues.map((opt) => (
+              <label key={opt} className="asset-field-dependency__option">
+                <input
+                  type="checkbox"
+                  checked={selected.includes(opt)}
+                  onChange={() => toggleOption(opt)}
+                  disabled={disabled}
+                />
+                <span>{opt}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+      )
+    }
+
     return (
       <div className="company-form__field wo-field-checkbox">
         <label className="wo-field-checkbox__label">
@@ -336,12 +528,10 @@ export default function WorkOrderFieldInput({ field, value, onChange, disabled }
     return (
       <div className="company-form__field">
         <label className="company-form__label" htmlFor={id}>{label}</label>
-        <input
+        <DateField
           id={id}
-          type="date"
-          className="company-form__input"
           value={value || ''}
-          onChange={(e) => onChange(e.target.value)}
+          onChange={onChange}
           disabled={disabled}
         />
       </div>
@@ -352,13 +542,12 @@ export default function WorkOrderFieldInput({ field, value, onChange, disabled }
     return (
       <div className="company-form__field">
         <label className="company-form__label" htmlFor={id}>{label}</label>
-        <input
+        <DateField
           id={id}
-          type="datetime-local"
-          className="company-form__input"
           value={value || ''}
-          onChange={(e) => onChange(e.target.value)}
+          onChange={onChange}
           disabled={disabled}
+          withTime
         />
       </div>
     )

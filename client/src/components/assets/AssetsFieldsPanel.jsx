@@ -3,16 +3,19 @@ import { useOrg } from '../../hooks/useOrg'
 import { useAssetFields } from '../../hooks/useAssetFields'
 import {
   fieldTypeLabel,
+  fieldTypeSupportsOptions,
   applyFieldFilters,
   sortAssetFields,
   kindLabel,
   dropdownValuesLabel,
   getSortOptionsForView,
   defaultSortForView,
+  nextSortOrder,
 } from '../../lib/assetFieldTypes'
 import { dependencyLabel } from '../../lib/assetFieldDependencies'
 import { readFormDraft, writeFormDraft, clearFormDraft } from '../../lib/formDraftStorage'
 import { deleteSectionIcon, uploadSectionIcon } from '../../lib/orgAssets'
+import { reorderItemsById } from '../../lib/assetFormSchema'
 import GooToggle from '../ui/GooToggle'
 import TrashIcon from '../ui/TrashIcon'
 import EditIcon from '../ui/EditIcon'
@@ -60,9 +63,49 @@ function hierarchyLabel(field) {
   return parts.length ? parts.join(' → ') : '—'
 }
 
+function DragHandle() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+      <circle cx="4.5" cy="3.5" r="1" fill="currentColor" />
+      <circle cx="9.5" cy="3.5" r="1" fill="currentColor" />
+      <circle cx="4.5" cy="7" r="1" fill="currentColor" />
+      <circle cx="9.5" cy="7" r="1" fill="currentColor" />
+      <circle cx="4.5" cy="10.5" r="1" fill="currentColor" />
+      <circle cx="9.5" cy="10.5" r="1" fill="currentColor" />
+    </svg>
+  )
+}
+
 function FieldPill({ children }) {
   if (!children || children === '—') return '—'
   return <span className="company-badge company-badge--primary">{children}</span>
+}
+
+function FieldNameCell({ field }) {
+  const isSection = field.kind === 'section'
+  return (
+    <div className="asset-field-name">
+      {isSection ? (
+        <span className="asset-field-name__icon" aria-hidden={!field.icon_signed_url}>
+          {field.icon_signed_url ? (
+            <img src={field.icon_signed_url} alt="" className="asset-field-name__icon-img" />
+          ) : (
+            <span className="asset-field-name__icon-placeholder">
+              <svg width="14" height="14" viewBox="0 0 18 18" fill="none">
+                <rect x="3" y="3" width="5" height="5" rx="1" fill="currentColor" opacity="0.35" />
+                <rect x="10" y="3" width="5" height="5" rx="1" fill="currentColor" opacity="0.25" />
+                <rect x="3" y="10" width="5" height="5" rx="1" fill="currentColor" opacity="0.25" />
+                <rect x="10" y="10" width="5" height="5" rx="1" fill="currentColor" opacity="0.15" />
+              </svg>
+            </span>
+          )}
+        </span>
+      ) : (
+        <span className="asset-field-name__icon asset-field-name__icon--spacer" aria-hidden="true" />
+      )}
+      <FieldPill>{field.name}</FieldPill>
+    </div>
+  )
 }
 
 export default function AssetsFieldsPanel({
@@ -86,6 +129,9 @@ export default function AssetsFieldsPanel({
     remove,
     toggleActive,
     reorderSections,
+    reorderParents,
+    uploadIcon,
+    removeIcon,
   } = fieldsState || internalState
   const modalStateKey = orgId ? `mms:asset-field-modal:${orgId}` : null
   const [view, setView] = useState('all')
@@ -100,7 +146,11 @@ export default function AssetsFieldsPanel({
   const [valuesOnly, setValuesOnly] = useState(false)
   const [editing, setEditing] = useState(null)
   const [togglingId, setTogglingId] = useState(null)
+  const [draggingId, setDraggingId] = useState(null)
+  const [dropTargetId, setDropTargetId] = useState(null)
   const modalRestoredRef = useRef(false)
+  const sectionCreatedCallbackRef = useRef(null)
+  const [sectionCreateOpen, setSectionCreateOpen] = useState(false)
 
   const sectionOptions = useMemo(
     () => fields.filter((f) => f.kind === 'section'),
@@ -159,6 +209,67 @@ export default function AssetsFieldsPanel({
   const showSectionFilter = view !== 'sections'
   const showParentFilter = view === 'parents' || view === 'children' || view === 'all'
 
+  const canReorderRows = Boolean(
+    canManageSchema
+    && typeof reorderSections === 'function'
+    && !search.trim()
+    && !parentFilter
+    && sortBy === 'sort_order'
+    && sortDir === 'asc'
+    && (
+      view === 'sections'
+      || (view === 'parents' && sectionFilter && typeof reorderParents === 'function')
+    )
+    && visibleFields.length > 1
+  )
+
+  const handleDragStart = (event, id) => {
+    if (!canReorderRows || saving) return
+    setDraggingId(id)
+    event.dataTransfer.effectAllowed = 'move'
+    event.dataTransfer.setData('text/plain', id)
+  }
+
+  const handleDragOver = (event, targetId) => {
+    if (!canReorderRows || !draggingId || draggingId === targetId || saving) return
+    event.preventDefault()
+    event.dataTransfer.dropEffect = 'move'
+    setDropTargetId(targetId)
+  }
+
+  const handleDragEnd = () => {
+    setDraggingId(null)
+    setDropTargetId(null)
+  }
+
+  const handleDrop = async (event, targetId) => {
+    event.preventDefault()
+    if (!canReorderRows || !draggingId || draggingId === targetId || saving) {
+      handleDragEnd()
+      return
+    }
+
+    const toIndex = visibleFields.findIndex((field) => field.id === targetId)
+    if (toIndex < 0) {
+      handleDragEnd()
+      return
+    }
+
+    const next = reorderItemsById(visibleFields, draggingId, toIndex)
+    const ids = next.map((field) => field.id)
+    handleDragEnd()
+
+    try {
+      if (view === 'sections') {
+        await reorderSections(ids)
+      } else if (view === 'parents' && sectionFilter) {
+        await reorderParents(sectionFilter, ids)
+      }
+    } catch {
+      // error surfaced via fieldsState.error
+    }
+  }
+
   const openCreate = (mode = 'all') => {
     setEditing(null)
     setModalMode(mode)
@@ -169,7 +280,7 @@ export default function AssetsFieldsPanel({
   const openEdit = (field, { valuesOnly: valuesOnlyMode = false } = {}) => {
     if (field.kind === 'child') return
     if (valuesOnlyMode) {
-      if (!canManageChildren || field.kind !== 'parent' || field.field_type !== 'dropdown') return
+      if (!canManageChildren || field.kind !== 'parent' || !fieldTypeSupportsOptions(field.field_type)) return
     } else if (!canManageSchema) {
       return
     }
@@ -184,30 +295,115 @@ export default function AssetsFieldsPanel({
     if (parent) openEdit(parent, { valuesOnly: true })
   }
 
+  const handleCreateSectionInline = async (name) => {
+    const saved = await create({
+      name,
+      is_section: true,
+      is_parent: false,
+      field_type: 'text',
+      sort_order: nextSortOrder(fields, { kind: 'section' }),
+    })
+    return saved
+  }
+
+  const handleRequestCreateSection = (onCreated) => {
+    sectionCreatedCallbackRef.current = onCreated
+    setSectionCreateOpen(true)
+  }
+
+  const handleSectionCreateSave = async (payload, iconMeta = {}) => {
+    const { iconFile, removeIcon: shouldRemoveIcon } = iconMeta
+    let saved = await create({
+      ...payload,
+      is_section: true,
+      is_parent: false,
+    })
+    const sectionId = saved?.id
+    if (sectionId && orgId) {
+      if (shouldRemoveIcon) {
+        if (typeof removeIcon === 'function') {
+          await removeIcon(sectionId)
+        }
+      } else if (iconFile) {
+        if (typeof uploadIcon === 'function') {
+          saved = await uploadIcon(sectionId, iconFile) || saved
+        } else {
+          const path = await uploadSectionIcon(orgId, sectionId, iconFile)
+          saved = await update(sectionId, { icon_path: path }) || saved
+        }
+      }
+    }
+    const created = saved || fields.find((f) => f.id === sectionId)
+    sectionCreatedCallbackRef.current?.(created)
+    sectionCreatedCallbackRef.current = null
+    setSectionCreateOpen(false)
+  }
+
   const handleSave = async (payload, iconMeta = {}) => {
-    const { iconFile, removeIcon } = iconMeta
+    const { iconFile, removeIcon: shouldRemoveIcon } = iconMeta
     const isSection = payload.is_section || editing?.kind === 'section'
 
     let saved
-    if (valuesOnly && editing) {
+    if (payload.kind === 'child') {
+      const parent = fields.find((item) => (
+        item.id === payload.parent_id
+        && item.kind === 'parent'
+        && fieldTypeSupportsOptions(item.field_type)
+      ))
+      if (!parent) throw new Error('Option parent field not found')
+      const existingValues = parent.dropdown_options || []
+      const toAdd = (payload.dropdown_options?.length
+        ? payload.dropdown_options
+        : payload.name
+          ? [payload.name]
+          : []
+      )
+        .map((value) => String(value).trim())
+        .filter(Boolean)
+      if (!toAdd.length) throw new Error('Add at least one option value')
+      const nextValues = [...existingValues]
+      for (const value of toAdd) {
+        const exists = nextValues.some((existing) => existing.toLowerCase() === value.toLowerCase())
+        if (exists) {
+          throw new Error(`"${value}" already exists under ${parent.name}`)
+        }
+        nextValues.push(value)
+      }
+      saved = await update(parent.id, {
+        dropdown_options: nextValues,
+      })
+    } else if (valuesOnly && editing) {
       saved = await update(editing.id, { dropdown_options: payload.dropdown_options })
     } else if (editing) {
-      saved = await update(editing.id, payload)
+      const { dropdown_options: optionValues, ...schemaPayload } = payload
+      saved = await update(editing.id, schemaPayload)
+      // Server rejects an empty values-only update, so only sync when options exist
+      if (optionValues?.length && canManageChildren) {
+        saved = await update(editing.id, { dropdown_options: optionValues })
+      }
     } else {
       saved = await create(payload)
     }
 
     const sectionId = editing?.id || saved?.id
     if (!valuesOnly && isSection && sectionId && orgId) {
-      if (removeIcon && editing?.icon_path) {
-        await deleteSectionIcon(editing.icon_path)
-        await update(sectionId, { icon_path: null })
-      } else if (iconFile) {
-        if (editing?.icon_path) {
+      if (shouldRemoveIcon) {
+        if (typeof removeIcon === 'function') {
+          await removeIcon(sectionId)
+        } else if (editing?.icon_path) {
           await deleteSectionIcon(editing.icon_path)
+          await update(sectionId, { icon_path: null })
         }
-        const path = await uploadSectionIcon(orgId, sectionId, iconFile)
-        await update(sectionId, { icon_path: path })
+      } else if (iconFile) {
+        if (typeof uploadIcon === 'function') {
+          await uploadIcon(sectionId, iconFile)
+        } else {
+          if (editing?.icon_path) {
+            await deleteSectionIcon(editing.icon_path)
+          }
+          const path = await uploadSectionIcon(orgId, sectionId, iconFile)
+          await update(sectionId, { icon_path: path })
+        }
       }
     }
 
@@ -216,6 +412,15 @@ export default function AssetsFieldsPanel({
 
   const handleDelete = async (field) => {
     if (!window.confirm(`Permanently delete "${field.name}"? This cannot be undone.`)) return
+    if (field.kind === 'child') {
+      const parent = fields.find((item) => item.id === field.parent_id)
+      if (!parent) throw new Error('Dropdown parent field not found')
+      const nextValues = (parent.dropdown_options || []).filter((value) => (
+        value.toLowerCase() !== field.name.toLowerCase()
+      ))
+      await update(parent.id, { dropdown_options: nextValues })
+      return
+    }
     await remove(field.id)
   }
 
@@ -242,9 +447,12 @@ export default function AssetsFieldsPanel({
     ? 'section'
     : view === 'parents'
       ? 'parent'
-      : 'all'
+      : view === 'children'
+        ? 'child'
+        : 'all'
 
-  const showAddButton = canManageSchema && view !== 'children'
+  const showAddButton = (canManageSchema && view !== 'children')
+    || (canManageChildren && view === 'children')
 
   const handleViewChange = (tabId) => {
     setView(tabId)
@@ -302,7 +510,7 @@ export default function AssetsFieldsPanel({
               className="company-btn company-btn--primary"
               onClick={() => openCreate(createModeForView)}
             >
-              + Add Field
+              {view === 'children' ? '+ Add Child' : '+ Add Field'}
             </button>
           )}
         </div>
@@ -364,6 +572,26 @@ export default function AssetsFieldsPanel({
 
       {error && <div className="company-alert">{error}</div>}
 
+      {canManageSchema && (view === 'sections' || view === 'parents') && (
+        <p className="asset-field-reorder-hint">
+          {search.trim()
+            ? 'Clear search to enable drag reordering.'
+            : view === 'sections'
+              ? (canReorderRows
+                ? 'Drag rows to change section display order.'
+                : (sortBy !== 'sort_order' || sortDir !== 'asc')
+                  ? 'Sort by Display order (ascending) to drag and reorder sections.'
+                  : 'Add more sections to reorder them by dragging.')
+              : !sectionFilter
+                ? 'Select a section to drag and reorder its parent fields.'
+                : canReorderRows
+                  ? 'Drag rows to change parent field order within this section.'
+                  : (sortBy !== 'sort_order' || sortDir !== 'asc')
+                    ? 'Sort by Display order (ascending) to drag and reorder parent fields.'
+                    : 'Add more parent fields in this section to reorder them by dragging.'}
+        </p>
+      )}
+
       {loading ? (
         <div className="company-loading">Loading fields…</div>
       ) : visibleFields.length === 0 ? (
@@ -380,14 +608,14 @@ export default function AssetsFieldsPanel({
               : 'No parent fields yet. Ask Super Admin to add parent fields first.'
           )}
           {!hasFilters && view === 'children' && (
-            canManageSchema
-              ? 'No child values yet. Companies add dropdown values in their org app after you create dropdown parents.'
-              : 'No child values yet. Ask Super Admin to add a dropdown parent field, then add values here.'
+            canManageChildren
+              ? 'No child values yet. Add a child value to an existing option-backed parent.'
+              : 'No child values yet. Ask Super Admin to add a Dropdown or Checkbox parent field, then add values here.'
           )}
           {!hasFilters && view === 'all' && (
             canManageSchema
-              ? 'No fields yet. Add sections and parent fields for this organization. Companies will add dropdown values in their app.'
-              : 'No fields yet. Super Admin adds sections and parent fields; your company adds dropdown values.'
+              ? 'No fields yet. Add sections and parent fields for this organization. Companies can add option values in their org app.'
+              : 'No fields yet. Super Admin adds sections and parent fields; your company adds option values.'
           )}
         </div>
       ) : (
@@ -395,6 +623,7 @@ export default function AssetsFieldsPanel({
           <table className="company-table master-table">
             <thead>
               <tr>
+                {canReorderRows && <th className="asset-field-drag-col" aria-label="Reorder" />}
                 <th>Name</th>
                 {view === 'all' && <th>Type</th>}
                 {view !== 'sections' && <th>Section</th>}
@@ -412,9 +641,35 @@ export default function AssetsFieldsPanel({
               </tr>
             </thead>
             <tbody>
-              {visibleFields.map((field) => (
-                <tr key={field.id} className={field.is_active === false ? 'company-table__row--inactive' : ''}>
-                  <td><FieldPill>{field.name}</FieldPill></td>
+              {visibleFields.map((field) => {
+                const isDragging = draggingId === field.id
+                const isDropTarget = dropTargetId === field.id && draggingId !== field.id
+                return (
+                <tr
+                  key={field.id}
+                  className={[
+                    field.is_active === false ? 'company-table__row--inactive' : '',
+                    isDragging ? 'asset-field-row--dragging' : '',
+                    isDropTarget ? 'asset-field-row--drop-target' : '',
+                  ].filter(Boolean).join(' ')}
+                  onDragOver={(event) => handleDragOver(event, field.id)}
+                  onDrop={(event) => handleDrop(event, field.id)}
+                >
+                  {canReorderRows && (
+                    <td className="asset-field-drag-col">
+                      <span
+                        className="asset-field-drag-handle"
+                        draggable={!saving}
+                        onDragStart={(event) => handleDragStart(event, field.id)}
+                        onDragEnd={handleDragEnd}
+                        aria-label={`Drag to reorder ${field.name}`}
+                        title="Drag to reorder"
+                      >
+                        <DragHandle />
+                      </span>
+                    </td>
+                  )}
+                  <td><FieldNameCell field={field} /></td>
                   {view === 'all' && <td>{kindLabel(field.kind)}</td>}
                   {view !== 'sections' && <td>{field.section_name || '—'}</td>}
                   {view === 'children' && (
@@ -427,7 +682,7 @@ export default function AssetsFieldsPanel({
                   {view === 'parents' && <td>{field.sort_order ?? 0}</td>}
                   {view === 'parents' && (
                     <td className="asset-field-hierarchy">
-                      {field.field_type === 'dropdown' && field.dropdown_options?.length ? (
+                      {fieldTypeSupportsOptions(field.field_type) && field.dropdown_options?.length ? (
                         <div className="company-tag-list">
                           {field.dropdown_options.map((opt) => (
                             <span key={opt} className="company-badge company-badge--primary">{opt}</span>
@@ -447,7 +702,7 @@ export default function AssetsFieldsPanel({
                     <td className="asset-field-hierarchy">
                       {field.kind === 'section'
                         ? field.name
-                        : field.field_type === 'dropdown' && field.dropdown_options?.length
+                        : fieldTypeSupportsOptions(field.field_type) && field.dropdown_options?.length
                           ? `${field.section_name || '—'} → ${field.dropdown_options.join(', ')}`
                           : hierarchyLabel(field)}
                     </td>
@@ -474,19 +729,23 @@ export default function AssetsFieldsPanel({
                       {field.kind === 'child' && canManageChildren && (
                         <button
                           type="button"
-                          className="company-btn company-btn--ghost"
+                          className="company-btn company-btn--secondary company-btn--compact company-btn--icon"
                           onClick={() => openParentValues(field)}
+                          aria-label={`Edit values for ${field.parent_name || field.name}`}
+                          title="Edit values"
                         >
-                          Edit values
+                          <EditIcon />
                         </button>
                       )}
-                      {field.kind === 'parent' && field.field_type === 'dropdown' && canManageChildren && !canManageSchema && (
+                      {field.kind === 'parent' && fieldTypeSupportsOptions(field.field_type) && canManageChildren && !canManageSchema && (
                         <button
                           type="button"
-                          className="company-btn company-btn--ghost"
+                          className="company-btn company-btn--secondary company-btn--compact company-btn--icon"
                           onClick={() => openEdit(field, { valuesOnly: true })}
+                          aria-label={`Edit values for ${field.name}`}
+                          title="Edit values"
                         >
-                          Edit values
+                          <EditIcon />
                         </button>
                       )}
                       {field.kind !== 'child' && canManageSchema && (
@@ -514,7 +773,8 @@ export default function AssetsFieldsPanel({
                     </td>
                   )}
                 </tr>
-              ))}
+                )
+              })}
             </tbody>
           </table>
         </div>
@@ -534,14 +794,36 @@ export default function AssetsFieldsPanel({
           field={editing}
           mode={modalMode}
           valuesOnly={valuesOnly}
+          canManageChildren={canManageChildren}
+          canManageSchema={canManageSchema}
           orgId={orgId}
-          sections={sections}
+          sections={sectionOptions}
           dependencySections={sectionOptions}
           parents={parents}
           allFields={fields}
           saving={saving}
           onClose={() => setModalOpen(false)}
           onSave={handleSave}
+          onCreateSection={canManageSchema ? handleCreateSectionInline : undefined}
+          onRequestCreateSection={canManageSchema ? handleRequestCreateSection : undefined}
+        />
+      )}
+
+      {sectionCreateOpen && (
+        <FieldModal
+          mode="section"
+          canManageChildren={false}
+          canManageSchema={canManageSchema}
+          orgId={orgId}
+          sections={sectionOptions}
+          parents={parents}
+          allFields={fields}
+          saving={saving}
+          onClose={() => {
+            sectionCreatedCallbackRef.current = null
+            setSectionCreateOpen(false)
+          }}
+          onSave={handleSectionCreateSave}
         />
       )}
     </div>

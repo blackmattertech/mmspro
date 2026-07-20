@@ -12,10 +12,13 @@ export function getManualWorkOrderFormSettings() {
   return workOrdersFetch('/manual/form-settings')
 }
 
-export function updateManualWorkOrderFormSettings(settings) {
+export function updateManualWorkOrderFormSettings(settings, { sectionIds } = {}) {
+  const body = {}
+  if (settings !== undefined) body.settings = settings
+  if (sectionIds !== undefined) body.section_ids = sectionIds
   return workOrdersFetch('/manual/form-settings', {
     method: 'PUT',
-    body: JSON.stringify({ settings }),
+    body: JSON.stringify(body),
   })
 }
 
@@ -43,6 +46,30 @@ export function updateManualWorkOrderValues(workOrderId, values) {
     method: 'PATCH',
     body: JSON.stringify({ values }),
   })
+}
+
+export function updateManualWorkOrder(workOrderId, {
+  status,
+  values,
+  assignedEmployeeIds,
+  assignedDepartmentId,
+  assignedLocationId,
+} = {}) {
+  const body = {}
+  if (status !== undefined) body.status = status
+  if (values !== undefined) body.values = values
+  if (assignedEmployeeIds !== undefined) body.assigned_employee_ids = assignedEmployeeIds
+  if (assignedDepartmentId !== undefined) body.assigned_department_id = assignedDepartmentId
+  if (assignedLocationId !== undefined) body.assigned_location_id = assignedLocationId
+
+  return workOrdersFetch(`/manual/${workOrderId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(body),
+  })
+}
+
+export function deleteManualWorkOrder(workOrderId) {
+  return workOrdersFetch(`/manual/${workOrderId}`, { method: 'DELETE' })
 }
 
 export function getReceivedWorkOrders() {

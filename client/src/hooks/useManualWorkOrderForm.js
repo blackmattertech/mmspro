@@ -5,7 +5,9 @@ import {
   getManualWorkOrderFormSettings,
   updateManualWorkOrderFormSettings,
   createManualWorkOrder,
+  updateManualWorkOrder,
   updateManualWorkOrderValues,
+  getManualWorkOrder,
 } from '../lib/api-work-orders'
 import { uploadWorkOrderFile, validateWorkOrderFile } from '../lib/workOrderAssets'
 import {
@@ -15,6 +17,7 @@ import {
 } from '../lib/workOrderFileValues'
 import {
   collectFieldsToClearOnChange,
+  filterVisibleFields,
   flattenSchemaFields,
 } from '../lib/assetFieldDependencies'
 import {
@@ -24,6 +27,7 @@ import {
   serializeWorkOrderValues,
   writeFormDraft,
 } from '../lib/formDraftStorage'
+import { seedDateFieldDefaults } from '../lib/dateInputDefaults'
 
 const FILE_FIELD_TYPES = new Set(['file', 'image'])
 
@@ -43,8 +47,55 @@ function revokePreviewUrls(values) {
   }
 }
 
-export function useManualWorkOrderForm() {
+function isFieldValueEmpty(field, value) {
+  if (FILE_FIELD_TYPES.has(field.field_type)) {
+    return getWorkOrderFiles(value).length === 0
+  }
+  if (field.field_type === 'checkbox') {
+    if (Array.isArray(value)) return value.length === 0
+    return !value
+  }
+  return value === null || value === undefined || String(value).trim() === ''
+}
+
+/** Required + currently visible (dependency met) fields that are still empty. */
+function findMissingRequiredFields(schema, values) {
+  const missing = []
+  for (const section of schema?.sections || []) {
+    for (const field of filterVisibleFields(section.fields, values)) {
+      if (field.is_required && isFieldValueEmpty(field, values[field.id])) {
+        missing.push(field.name)
+      }
+    }
+  }
+  return missing
+}
+
+function formValuesFromDetail(detail) {
+  const next = {}
+  for (const section of detail?.sections || []) {
+    for (const field of section.fields || []) {
+      if (field.field_type === 'checkbox') {
+        if (Array.isArray(field.value_json?.values)) {
+          next[field.id] = field.value_json.values
+        } else {
+          next[field.id] = Boolean(field.value_json?.checked)
+        }
+      } else if (FILE_FIELD_TYPES.has(field.field_type)) {
+        next[field.id] = workOrderFilesValue(field.value_json?.files || [])
+      } else if (field.field_type === 'number') {
+        next[field.id] = field.value_json?.number ?? field.value_text ?? ''
+      } else {
+        next[field.id] = field.value_text ?? ''
+      }
+    }
+  }
+  return next
+}
+
+export function useManualWorkOrderForm({ workOrderId = null } = {}) {
   const { org } = useOrg()
+  const isEdit = Boolean(workOrderId)
   const [schema, setSchema] = useState({ sections: [] })
   const [settings, setSettings] = useState({ sections: [] })
   const [values, setValues] = useState({})
@@ -52,12 +103,15 @@ export function useManualWorkOrderForm() {
   const [assignToDepartment, setAssignToDepartment] = useState(false)
   const [assignedDepartmentId, setAssignedDepartmentId] = useState(null)
   const [assignedLocationId, setAssignedLocationId] = useState(null)
+  const [existingStatus, setExistingStatus] = useState(null)
   const [formOpen, setFormOpen] = useState(true)
   const valuesRef = useRef(values)
   const draftHydratedRef = useRef(false)
+  const dateDefaultsSeededRef = useRef(false)
+  const editHydratedRef = useRef(false)
   valuesRef.current = values
 
-  const draftKey = manualWorkOrderDraftKey(org?.id)
+  const draftKey = !isEdit ? manualWorkOrderDraftKey(org?.id) : null
 
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -93,7 +147,35 @@ export function useManualWorkOrderForm() {
   }, [loadForm])
 
   useEffect(() => {
-    if (!draftKey || loading) return
+    if (!isEdit || !workOrderId || loading || editHydratedRef.current) return
+
+    let cancelled = false
+    ;(async () => {
+      try {
+        const detail = await getManualWorkOrder(workOrderId)
+        if (cancelled) return
+        setExistingStatus(detail.status || 'draft')
+        setValues(formValuesFromDetail(detail))
+        const assigneeIds = (detail.assignees || []).map((a) => a.id).filter(Boolean)
+        setAssignedEmployeeIds(assigneeIds)
+        setAssignedDepartmentId(detail.assigned_department_id || detail.assigned_department?.id || null)
+        setAssignedLocationId(detail.assigned_location_id || detail.assigned_location?.id || null)
+        setAssignToDepartment(Boolean(
+          (detail.assigned_department_id || detail.assigned_department?.id)
+          && !assigneeIds.length,
+        ))
+        editHydratedRef.current = true
+        draftHydratedRef.current = true
+      } catch (err) {
+        if (!cancelled) setError(err.message)
+      }
+    })()
+
+    return () => { cancelled = true }
+  }, [isEdit, workOrderId, loading])
+
+  useEffect(() => {
+    if (isEdit || !draftKey || loading) return
     const draft = readFormDraft(draftKey)
     if (draft) {
       if (draft.values) setValues(draft.values)
@@ -108,10 +190,16 @@ export function useManualWorkOrderForm() {
       if (draft.formOpen !== undefined) setFormOpen(draft.formOpen)
     }
     draftHydratedRef.current = true
-  }, [draftKey, loading])
+  }, [draftKey, loading, isEdit])
 
   useEffect(() => {
-    if (!draftKey || !draftHydratedRef.current) return
+    if (isEdit || !draftHydratedRef.current || loading || dateDefaultsSeededRef.current) return
+    dateDefaultsSeededRef.current = true
+    setValues((prev) => seedDateFieldDefaults(flattenSchemaFields(schema), prev))
+  }, [schema, loading, isEdit])
+
+  useEffect(() => {
+    if (isEdit || !draftKey || !draftHydratedRef.current) return
     const serialized = serializeWorkOrderValues(values)
     const hasContent = Object.keys(serialized).length > 0
       || assignedEmployeeIds.length > 0
@@ -129,7 +217,7 @@ export function useManualWorkOrderForm() {
       assignedLocationId,
       formOpen,
     })
-  }, [draftKey, values, assignedEmployeeIds, assignToDepartment, assignedDepartmentId, assignedLocationId, formOpen])
+  }, [draftKey, values, assignedEmployeeIds, assignToDepartment, assignedDepartmentId, assignedLocationId, formOpen, isEdit])
 
   useEffect(() => () => revokePreviewUrls(valuesRef.current), [])
 
@@ -153,7 +241,7 @@ export function useManualWorkOrderForm() {
 
   const resetValues = () => {
     revokePreviewUrls(values)
-    setValues({})
+    setValues(seedDateFieldDefaults(flattenSchemaFields(schema), {}))
     setAssignedEmployeeIds([])
     setAssignToDepartment(false)
     setAssignedDepartmentId(null)
@@ -168,11 +256,11 @@ export function useManualWorkOrderForm() {
     setAssignedLocationId(locationId || null)
   }, [])
 
-  const saveSettings = async (updates) => {
+  const saveSettings = async (updates, { sectionIds } = {}) => {
     setSaving(true)
     setError(null)
     try {
-      const data = await updateManualWorkOrderFormSettings(updates)
+      const data = await updateManualWorkOrderFormSettings(updates, { sectionIds })
       setSettings(data)
       await loadForm({ silent: true })
       return data
@@ -192,6 +280,13 @@ export function useManualWorkOrderForm() {
     if (status === 'created' && !assignedLocationId && !assignedEmployeeIds.length) {
       setError('Select a location (or specific employees) before creating the work order')
       return
+    }
+    if (status === 'created') {
+      const missing = findMissingRequiredFields(schema, values)
+      if (missing.length) {
+        setError(`Fill the mandatory field${missing.length === 1 ? '' : 's'}: ${missing.join(', ')}`)
+        return
+      }
     }
 
     setSaving(true)
@@ -223,13 +318,17 @@ export function useManualWorkOrderForm() {
         if (validationError) throw new Error(validationError)
       }
 
-      const workOrder = await createManualWorkOrder({
+      const payload = {
         status,
         values: textValues,
         assignedEmployeeIds,
         assignedDepartmentId: assignedDepartmentId || null,
         assignedLocationId: assignedLocationId || null,
-      })
+      }
+
+      const workOrder = isEdit
+        ? await updateManualWorkOrder(workOrderId, payload)
+        : await createManualWorkOrder(payload)
 
       if (fileEntries.length) {
         const uploadsByField = new Map()
@@ -241,23 +340,28 @@ export function useManualWorkOrderForm() {
 
         const fileValues = {}
         for (const [fieldId, uploaded] of uploadsByField) {
-          fileValues[fieldId] = workOrderFilesValue(uploaded)
+          const existingFiles = getWorkOrderFiles(values[fieldId]).filter((item) => item?.path && !item?.file)
+          fileValues[fieldId] = workOrderFilesValue([...existingFiles, ...uploaded])
         }
         await updateManualWorkOrderValues(workOrder.id, fileValues)
       }
 
       revokePreviewUrls(values)
-      setValues({})
-      setAssignedEmployeeIds([])
-      setAssignToDepartment(false)
-      setAssignedDepartmentId(null)
-      setAssignedLocationId(null)
-      if (draftKey) clearFormDraft(draftKey)
+      if (!isEdit) {
+        setValues(seedDateFieldDefaults(flattenSchemaFields(schema), {}))
+        setAssignedEmployeeIds([])
+        setAssignToDepartment(false)
+        setAssignedDepartmentId(null)
+        setAssignedLocationId(null)
+        if (draftKey) clearFormDraft(draftKey)
+      } else {
+        setExistingStatus(status)
+      }
 
       if (status === 'created') {
-        setSuccess('Work order created successfully.')
+        setSuccess(isEdit ? 'Work order updated successfully.' : 'Work order created successfully.')
       } else {
-        setSuccess('Draft saved successfully.')
+        setSuccess(isEdit ? 'Draft updated successfully.' : 'Draft saved successfully.')
       }
       return workOrder
     } catch (err) {
@@ -279,6 +383,8 @@ export function useManualWorkOrderForm() {
     setDepartmentTarget,
     formOpen,
     setFormOpen,
+    isEdit,
+    existingStatus,
     loading,
     saving,
     error,

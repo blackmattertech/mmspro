@@ -31,8 +31,10 @@ export function PermissionsProvider({ children }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
+  const userId = user?.id ?? null
+
   const load = useCallback(async () => {
-    if (!user || !org?.id) {
+    if (!userId || !org?.id) {
       setSession(null)
       setLoading(false)
       return
@@ -63,7 +65,7 @@ export function PermissionsProvider({ children }) {
     } finally {
       setLoading(false)
     }
-  }, [user, org?.id, bootstrappedSession])
+  }, [userId, org?.id, bootstrappedSession])
 
   useEffect(() => {
     if (orgLoading) return

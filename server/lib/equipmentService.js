@@ -1,9 +1,16 @@
 import { supabaseAdmin } from '../services/supabase.js'
 import { loadOrgFields } from './equipmentFieldService.js'
+import { getSignedUrl } from './signedUrlCache.js'
+import {
+  uploadEquipmentImageFile,
+  deleteEquipmentImageFile,
+} from './equipmentImageStorage.js'
+
+const ORG_ASSETS_BUCKET = 'org-assets'
 
 const EQUIPMENT_SELECT = `
   id, org_id, location_id, department_id, area_id,
-  name, code, qr_code, is_active, created_at, updated_at,
+  name, code, qr_code, image_path, is_active, created_at, updated_at,
   org_locations(id, name, code),
   departments(id, name, code),
   areas(id, name, code)
@@ -16,6 +23,76 @@ function normalizeCode(code) {
 function normalizeQr(qr) {
   const value = String(qr || '').trim()
   return value || null
+}
+
+/** Active parent fields ordered by section, then field sort order. */
+function orderedParentFields(fields) {
+  const sections = (fields || [])
+    .filter((f) => f.kind === 'section' && f.is_active !== false)
+    .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0) || a.name.localeCompare(b.name))
+  const parents = (fields || []).filter((f) => f.kind === 'parent' && f.is_active !== false)
+
+  const ordered = []
+  for (const section of sections) {
+    parents
+      .filter((p) => p.section_id === section.id)
+      .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0) || a.name.localeCompare(b.name))
+      .forEach((p) => ordered.push(p))
+  }
+  // Include any parents whose section is missing/inactive so nothing is lost.
+  const seen = new Set(ordered.map((p) => p.id))
+  parents
+    .filter((p) => !seen.has(p.id))
+    .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0) || a.name.localeCompare(b.name))
+    .forEach((p) => ordered.push(p))
+  return ordered
+}
+
+function isCodeField(field) {
+  return /(^|[^a-z])code([^a-z]|$)/i.test(String(field.name || ''))
+}
+
+function isNameField(field) {
+  return /(^|[^a-z])name([^a-z]|$)/i.test(String(field.name || ''))
+}
+
+/**
+ * Derive the fixed name/code columns from the dynamic field values.
+ * The Super Admin defines an "equipment code" field which drives uniqueness;
+ * the first configured field (or a "name" field) is used as the display label.
+ */
+function deriveEquipmentIdentity(fields, valuesInput) {
+  const parents = orderedParentFields(fields)
+  const valueByField = new Map()
+  for (const item of valuesInput || []) {
+    if (!item?.field_id) continue
+    const raw = Array.isArray(item.value_json?.values)
+      ? item.value_json.values.join(', ')
+      : (item.value_text ?? '')
+    valueByField.set(item.field_id, String(raw ?? '').trim())
+  }
+
+  const codeField = parents.find(isCodeField) || null
+  const nameField = parents.find(isNameField)
+    || parents.find((p) => !codeField || p.id !== codeField.id)
+    || codeField
+
+  const codeValue = codeField ? valueByField.get(codeField.id) || '' : ''
+  const nameValue = nameField ? valueByField.get(nameField.id) || '' : ''
+
+  return {
+    codeField,
+    nameField,
+    code: codeValue ? normalizeCode(codeValue) : null,
+    name: nameValue || codeValue || null,
+  }
+}
+
+async function attachImageUrl(row) {
+  if (!row?.image_path) return row
+  const signedUrl = await getSignedUrl(ORG_ASSETS_BUCKET, row.image_path)
+  if (!signedUrl) return row
+  return { ...row, image_signed_url: signedUrl }
 }
 
 async function assertPlacement(orgId, { location_id, department_id, area_id }) {
@@ -75,7 +152,7 @@ export async function listEquipment(orgId, {
 
   const { data, error } = await query
   if (error) throw error
-  return data || []
+  return Promise.all((data || []).map((row) => attachImageUrl(row)))
 }
 
 export async function getEquipmentById(orgId, id) {
@@ -127,7 +204,8 @@ export async function getEquipmentDetail(orgId, id) {
       }
     })
 
-  return { ...equipment, field_values: fieldValues, values }
+  const withImage = await attachImageUrl(equipment)
+  return { ...withImage, field_values: fieldValues, values }
 }
 
 async function syncEquipmentValues(orgId, equipmentId, valuesInput) {
@@ -188,13 +266,15 @@ async function syncEquipmentValues(orgId, equipmentId, valuesInput) {
 }
 
 export async function createEquipment(orgId, body) {
-  const name = body.name?.trim()
-  const code = normalizeCode(body.code)
-  if (!name) throw new Error('Name is required')
-  if (!code) throw new Error('Code is required')
   if (!body.location_id) throw new Error('Location is required')
   if (!body.department_id) throw new Error('Department is required')
   if (!body.area_id) throw new Error('Area is required')
+
+  const fields = await loadOrgFields(orgId)
+  const identity = deriveEquipmentIdentity(fields, body.values)
+  if (identity.codeField && !identity.code) {
+    throw new Error(`${identity.codeField.name} is required`)
+  }
 
   await assertPlacement(orgId, {
     location_id: body.location_id,
@@ -211,8 +291,8 @@ export async function createEquipment(orgId, body) {
       location_id: body.location_id,
       department_id: body.department_id,
       area_id: body.area_id,
-      name,
-      code,
+      name: identity.name,
+      code: identity.code,
       qr_code: qrCode,
       is_active: body.is_active !== undefined ? Boolean(body.is_active) : true,
     })
@@ -230,6 +310,15 @@ export async function createEquipment(orgId, body) {
     await syncEquipmentValues(orgId, data.id, body.values)
   }
 
+  if (body.image?.data) {
+    const imagePath = await uploadEquipmentImageFile(orgId, data.id, body.image)
+    await supabaseAdmin
+      .from('equipment')
+      .update({ image_path: imagePath, updated_at: new Date().toISOString() })
+      .eq('id', data.id)
+      .eq('org_id', orgId)
+  }
+
   return getEquipmentDetail(orgId, data.id)
 }
 
@@ -240,15 +329,15 @@ export async function updateEquipment(orgId, id, body) {
   }
 
   const updates = { updated_at: new Date().toISOString() }
-  if (body.name !== undefined) {
-    const name = body.name?.trim()
-    if (!name) throw new Error('Name is required')
-    updates.name = name
-  }
-  if (body.code !== undefined) {
-    const code = normalizeCode(body.code)
-    if (!code) throw new Error('Code is required')
-    updates.code = code
+
+  if (body.values !== undefined) {
+    const fields = await loadOrgFields(orgId)
+    const identity = deriveEquipmentIdentity(fields, body.values)
+    if (identity.codeField && !identity.code) {
+      throw new Error(`${identity.codeField.name} is required`)
+    }
+    updates.name = identity.name
+    updates.code = identity.code
   }
   if (body.qr_code !== undefined) updates.qr_code = normalizeQr(body.qr_code)
   if (body.is_active !== undefined) updates.is_active = Boolean(body.is_active)
@@ -270,6 +359,14 @@ export async function updateEquipment(orgId, id, body) {
     updates.location_id = locationId
     updates.department_id = departmentId
     updates.area_id = areaId
+  }
+
+  if (body.remove_image === true && existing.image_path) {
+    await deleteEquipmentImageFile(existing.image_path).catch(() => {})
+    updates.image_path = null
+  }
+  if (body.image?.data) {
+    updates.image_path = await uploadEquipmentImageFile(orgId, id, body.image)
   }
 
   const { error } = await supabaseAdmin
@@ -305,5 +402,10 @@ export async function deleteEquipment(orgId, id) {
     .eq('org_id', orgId)
 
   if (error) throw error
+  if (existing.image_path) {
+    await deleteEquipmentImageFile(existing.image_path).catch(() => {})
+  }
   return { id, deleted: true }
 }
+
+export { orderedParentFields, deriveEquipmentIdentity }
