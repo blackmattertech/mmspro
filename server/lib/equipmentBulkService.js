@@ -173,7 +173,8 @@ export async function bulkImportEquipment(orgId, buffer) {
   })
   if (!columns.length) throw Object.assign(new Error('Template header row is empty'), { status: 400 })
 
-  const results = { created: 0, failed: 0, errors: [] }
+  const results = { created: 0, failed: 0, errors: [], preview: [] }
+  const MAX_PREVIEW = 250
 
   for (let rowNumber = 2; rowNumber <= sheet.rowCount; rowNumber++) {
     const row = sheet.getRow(rowNumber)
@@ -218,6 +219,24 @@ export async function bulkImportEquipment(orgId, buffer) {
 
       await createEquipment(orgId, { ...placement, values })
       results.created += 1
+      if (results.preview.length < MAX_PREVIEW) {
+        let label = ''
+        for (const { header } of columns) {
+          if (PLACEMENT_COLUMNS.includes(header)) continue
+          const text = rowValues[header]
+          if (text) {
+            label = text
+            break
+          }
+        }
+        results.preview.push({
+          row: rowNumber,
+          name: label || rowValues.Area || 'Equipment',
+          location: rowValues.Location?.trim() || '',
+          department: rowValues.Department?.trim() || '',
+          area: rowValues.Area?.trim() || '',
+        })
+      }
     } catch (err) {
       results.failed += 1
       results.errors.push({ row: rowNumber, message: err.message })

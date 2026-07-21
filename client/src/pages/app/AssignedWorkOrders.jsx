@@ -36,6 +36,7 @@ export default function AssignedWorkOrders() {
         emptyTitle="No work orders assigned to others yet."
         emptyHint="When you create a work order and assign it to someone else, it will appear here."
         onView={setSelectedId}
+        paginationResetKey={`${search}|${locationFilter}`}
       />
 
       {selectedId && (

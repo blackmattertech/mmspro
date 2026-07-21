@@ -3301,7 +3301,8 @@
               "image",
               "file",
               "checkbox",
-              "dropdown"
+              "dropdown",
+              "radio"
             ],
             "nullable": true
           },
@@ -3373,7 +3374,8 @@
               "image",
               "file",
               "checkbox",
-              "dropdown"
+              "dropdown",
+              "radio"
             ]
           },
           "sort_order": {

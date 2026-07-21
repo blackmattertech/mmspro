@@ -1,4 +1,6 @@
 import { formatWorkOrderDate } from '../../lib/workOrderTableUtils'
+import { useTablePagination } from '../../hooks/useTablePagination'
+import TablePagination from '../shared/TablePagination'
 import AssignedToCell from './AssignedToCell'
 import EditIcon from '../ui/EditIcon'
 import TrashIcon from '../ui/TrashIcon'
@@ -25,7 +27,11 @@ export default function WorkOrdersTable({
   onDelete,
   canEdit = false,
   canDelete = false,
+  paginationResetKey = '',
 }) {
+  const pagination = useTablePagination(orders.length, { resetKey: paginationResetKey })
+  const pagedOrders = pagination.paginate(orders)
+
   if (!orders.length) {
     return (
       <div className="company-empty">
@@ -88,7 +94,7 @@ export default function WorkOrdersTable({
           </tr>
         </thead>
         <tbody>
-          {orders.map((order) => (
+          {pagedOrders.map((order) => (
             <tr key={order.id}>
               {columns.map((column) => (
                 <td key={column} className={COLUMN_CONFIG[column]?.className}>
@@ -132,6 +138,17 @@ export default function WorkOrdersTable({
           ))}
         </tbody>
       </table>
+      <TablePagination
+        page={pagination.page}
+        totalPages={pagination.totalPages}
+        pageSize={pagination.pageSize}
+        pageSizeOptions={pagination.pageSizeOptions}
+        totalCount={orders.length}
+        rangeStart={pagination.rangeStart}
+        rangeEnd={pagination.rangeEnd}
+        onPageChange={pagination.setPage}
+        onPageSizeChange={pagination.setPageSize}
+      />
     </div>
   )
 }

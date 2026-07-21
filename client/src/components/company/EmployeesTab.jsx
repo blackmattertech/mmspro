@@ -14,7 +14,10 @@ import TrashIcon from '../ui/TrashIcon'
 import EditIcon from '../ui/EditIcon'
 import EmployeeAvatar from './EmployeeAvatar'
 import EmployeeModal from './EmployeeModal'
+import FilterableSelect from '../ui/FilterableSelect'
 import LimitExceededCard from '../shared/LimitExceededCard'
+import TablePagination from '../shared/TablePagination'
+import { useTablePagination } from '../../hooks/useTablePagination'
 import { formatPhoneDisplay } from '../shared/PhoneInput'
 import { isLocationHeadEmployee } from '../../lib/employeeRoles'
 import './CompanyShared.css'
@@ -103,6 +106,10 @@ export default function EmployeesTab({ canManage }) {
   const filteredActiveCount = filteredEmployees.filter((e) => e.is_active !== false).length
   const atEmployeeLimit = isResourceAtLimit('employees', 'employee_limit', activeCount)
   const searchActive = Boolean(search.trim())
+
+  const paginationResetKey = `${search}|${departmentFilter}|${locationFilter}`
+  const pagination = useTablePagination(filteredEmployees.length, { resetKey: paginationResetKey })
+  const pagedEmployees = pagination.paginate(filteredEmployees)
 
   const refreshMasters = async () => {
     await Promise.all([reloadLocations(), reloadDepartments(), reloadLimits()])
@@ -203,30 +210,31 @@ export default function EmployeesTab({ canManage }) {
           </label>
           <label className="company-filter">
             <span>Department</span>
-            <select
-              className="company-form__input company-form__input--select"
+            <FilterableSelect
+              className="company-form__input--select"
               value={departmentFilter}
-              onChange={(e) => setDepartmentFilter(e.target.value)}
-            >
-              <option value="">All departments</option>
-              {activeDepartments.map((dept) => (
-                <option key={dept.id} value={dept.id}>{dept.name}</option>
-              ))}
-            </select>
+              onChange={setDepartmentFilter}
+              options={activeDepartments}
+              getOptionValue={(dept) => dept.id}
+              getOptionLabel={(dept) => dept.name}
+              emptyLabel="All departments"
+              placeholder="All departments"
+            />
           </label>
           <label className="company-filter">
             <span>Location</span>
-            <select
-              className="company-form__input company-form__input--select"
+            <FilterableSelect
+              className="company-form__input--select"
               value={locationFilter}
-              onChange={(e) => setLocationFilter(e.target.value)}
+              onChange={setLocationFilter}
+              options={activeLocations}
+              getOptionValue={(loc) => loc.id}
+              getOptionLabel={(loc) => loc.name}
               disabled={!canSelectAnyLocation && Boolean(myLocationId)}
-            >
-              {canSelectAnyLocation && <option value="">All locations</option>}
-              {activeLocations.map((loc) => (
-                <option key={loc.id} value={loc.id}>{loc.name}</option>
-              ))}
-            </select>
+              allowEmpty={canSelectAnyLocation}
+              emptyLabel="All locations"
+              placeholder="All locations"
+            />
           </label>
           <p className="company-panel__count">
             {searchActive
@@ -267,7 +275,7 @@ export default function EmployeesTab({ canManage }) {
               </tr>
             </thead>
             <tbody>
-              {filteredEmployees.map((employee) => {
+              {pagedEmployees.map((employee) => {
                 const isActive = employee.is_active !== false
                 const showLocationHead = isLocationHeadEmployee(employee)
                 return (
@@ -357,6 +365,17 @@ export default function EmployeesTab({ canManage }) {
               })}
             </tbody>
           </table>
+          <TablePagination
+            page={pagination.page}
+            totalPages={pagination.totalPages}
+            pageSize={pagination.pageSize}
+            pageSizeOptions={pagination.pageSizeOptions}
+            totalCount={filteredEmployees.length}
+            rangeStart={pagination.rangeStart}
+            rangeEnd={pagination.rangeEnd}
+            onPageChange={pagination.setPage}
+            onPageSizeChange={pagination.setPageSize}
+          />
         </div>
       )}
 

@@ -1,0 +1,119 @@
+.import-jobs-banner {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 20px;
+  background: var(--color-white);
+  border-bottom: 1px solid var(--color-light-gray-1);
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.06);
+}
+
+.import-jobs-banner__item {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-light-gray-1);
+}
+
+.import-jobs-banner__item--running {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+}
+
+.import-jobs-banner__item--success {
+  background: #ecfdf5;
+  border-color: #a7f3d0;
+}
+
+.import-jobs-banner__item--partial {
+  background: #fffbeb;
+  border-color: #fde68a;
+}
+
+.import-jobs-banner__item--failed,
+.import-jobs-banner__item--error {
+  background: var(--color-light-pink-1);
+  border-color: #f5c6cb;
+}
+
+.import-jobs-banner__body {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+}
+
+.import-jobs-banner__spinner {
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+  flex-shrink: 0;
+  border: 2px solid var(--color-light-gray-1);
+  border-top-color: var(--color-primary);
+  border-radius: 50%;
+  animation: import-jobs-spin 0.7s linear infinite;
+}
+
+@keyframes import-jobs-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.import-jobs-banner__text {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-dark-navy);
+}
+
+.import-jobs-banner__hint {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--color-gray-blue);
+  font-weight: 400;
+}
+
+.import-jobs-banner__actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.import-jobs-banner__link {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-primary);
+  text-decoration: none;
+}
+
+.import-jobs-banner__link:hover {
+  text-decoration: underline;
+}
+
+.import-jobs-banner__dismiss {
+  font-size: 13px;
+  font-family: inherit;
+  color: var(--color-gray-blue);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px 0;
+}
+
+.import-jobs-banner__dismiss:hover {
+  color: var(--color-dark-navy);
+}
+
+.import-jobs-banner__footer {
+  margin: 0;
+  font-size: 12px;
+  color: var(--color-gray-blue);
+}

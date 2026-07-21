@@ -39,6 +39,7 @@ export default function ReceivedWorkOrders() {
         emptyTitle="No work orders received yet."
         emptyHint="Work orders assigned to you, your location, or your department appear here."
         onView={setSelectedId}
+        paginationResetKey={`${search}|${locationFilter}`}
       />
 
       {selectedId && (

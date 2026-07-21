@@ -3,6 +3,7 @@ import { useDepartments } from '../../hooks/useDepartments'
 import { useEmployees } from '../../hooks/useEmployees'
 import { updateWorkOrderAssignment } from '../../lib/api-work-orders'
 import EmployeeAvatar from '../company/EmployeeAvatar'
+import FilterableSelect from '../ui/FilterableSelect'
 import '../company/CompanyShared.css'
 
 export default function WorkOrderAssignmentActions({ detail, onUpdated }) {
@@ -108,20 +109,20 @@ export default function WorkOrderAssignmentActions({ detail, onUpdated }) {
           {canLH && (
             <label className="company-form__field">
               <span className="company-form__label">Department</span>
-              <select
-                className="company-form__input company-form__input--select"
+              <FilterableSelect
+                className="company-form__input--select"
                 value={departmentId}
-                onChange={(e) => {
-                  setDepartmentId(e.target.value)
+                onChange={(next) => {
+                  setDepartmentId(next)
                   setEmployeeIds([])
                 }}
+                options={activeDepartments}
+                getOptionValue={(dept) => dept.id}
+                getOptionLabel={(dept) => dept.name}
+                emptyLabel="All employees at location…"
+                placeholder="All employees at location…"
                 disabled={saving || departmentsLoading}
-              >
-                <option value="">All employees at location…</option>
-                {activeDepartments.map((dept) => (
-                  <option key={dept.id} value={dept.id}>{dept.name}</option>
-                ))}
-              </select>
+              />
             </label>
           )}
 

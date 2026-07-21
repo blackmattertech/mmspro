@@ -1,1 +1,0 @@
-.app-shell{min-height:100vh;min-height:100dvh;background:var(--color-off-white)}.app-shell__main{margin-left:260px;min-height:100vh;min-height:100dvh;transition:margin-left .2s ease}.app-shell--sidebar-collapsed .app-shell__main{margin-left:72px}@media (max-width: 1024px){.app-shell__main,.app-shell--sidebar-collapsed .app-shell__main{margin-left:0}}

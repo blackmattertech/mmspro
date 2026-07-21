@@ -11,6 +11,7 @@ import { WORK_ORDER_TABS, getWorkOrderActiveTab, isWorkOrderTabActive } from '..
 import { createFilterRule, countActiveAdvancedRules } from '../../lib/workOrderFilters'
 import WorkOrderTypeModal from './WorkOrderTypeModal'
 import WorkOrderAdvancedFilter from './WorkOrderAdvancedFilter'
+import FilterableSelect from '../ui/FilterableSelect'
 import '../company/CompanyShared.css'
 import './WorkOrdersPage.css'
 import './WorkOrderAdvancedFilter.css'
@@ -95,18 +96,20 @@ export default function WorkOrdersLayout() {
           {!isCreatePage && (
             <div className="wo-page__location-filter">
               <label htmlFor="wo-location-filter" className="wo-page__location-label">Location</label>
-              <select
+              <FilterableSelect
                 id="wo-location-filter"
-                className="wo-page__location-select"
                 value={locationFilter}
-                onChange={(e) => setLocationFilter(e.target.value)}
+                onChange={setLocationFilter}
+                options={[
+                  ...(canSeeAllLocations ? [{ value: 'all', label: 'All Locations' }] : []),
+                  ...activeLocations.map((loc) => ({ value: loc.id, label: loc.name })),
+                ]}
+                getOptionValue={(opt) => opt.value}
+                getOptionLabel={(opt) => opt.label}
                 disabled={!canSeeAllLocations}
-              >
-                {canSeeAllLocations && <option value="all">All Locations</option>}
-                {activeLocations.map((loc) => (
-                  <option key={loc.id} value={loc.id}>{loc.name}</option>
-                ))}
-              </select>
+                allowEmpty={false}
+                inputClassName="wo-page__location-select"
+              />
             </div>
           )}
 

@@ -6,6 +6,7 @@ import { useAreas } from '../../hooks/useAreas'
 import { getEquipmentFields } from '../../lib/api-equipment'
 import { seedDateFieldDefaults } from '../../lib/dateInputDefaults'
 import DateField from '../ui/DateField'
+import FilterableSelect from '../ui/FilterableSelect'
 import '../company/CompanyShared.css'
 
 const IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp']
@@ -197,16 +198,13 @@ export default function EquipmentModal({ equipment, saving, onClose, onSave }) {
           onChange={(e) => setValues((v) => ({ ...v, [field.id]: e.target.value }))}
         />
       ) : field.field_type === 'dropdown' ? (
-        <select
-          className="company-form__input company-form__input--select"
+        <FilterableSelect
           value={values[field.id] || ''}
-          onChange={(e) => setValues((v) => ({ ...v, [field.id]: e.target.value }))}
-        >
-          <option value="">Select…</option>
-          {(field.dropdown_options || []).map((opt) => (
-            <option key={opt} value={opt}>{opt}</option>
-          ))}
-        </select>
+          onChange={(next) => setValues((v) => ({ ...v, [field.id]: next }))}
+          options={field.dropdown_options || []}
+          placeholder="Select…"
+          className="company-form__input--select"
+        />
       ) : field.field_type === 'radio' ? (
         <div className="asset-field-dependency__options" role="radiogroup" aria-label={field.name}>
           {(field.dropdown_options || []).map((opt) => (
@@ -322,56 +320,53 @@ export default function EquipmentModal({ equipment, saving, onClose, onSave }) {
             <h3 className="equipment-dynamic-section__title">Placement</h3>
             <label className="company-form__field">
               <span className="company-form__label">Location *</span>
-              <select
-                className="company-form__input company-form__input--select"
+              <FilterableSelect
                 value={placement.location_id}
-                onChange={(e) => setPlacement((f) => ({
+                onChange={(location_id) => setPlacement((f) => ({
                   ...f,
-                  location_id: e.target.value,
+                  location_id,
                   department_id: '',
                   area_id: '',
                 }))}
+                options={activeLocations}
+                getOptionValue={(loc) => loc.id}
+                getOptionLabel={(loc) => loc.name}
+                placeholder="Select location…"
                 required
-              >
-                <option value="">Select location…</option>
-                {activeLocations.map((loc) => (
-                  <option key={loc.id} value={loc.id}>{loc.name}</option>
-                ))}
-              </select>
+                className="company-form__input--select"
+              />
             </label>
             <label className="company-form__field">
               <span className="company-form__label">Department *</span>
-              <select
-                className="company-form__input company-form__input--select"
+              <FilterableSelect
                 value={placement.department_id}
-                onChange={(e) => setPlacement((f) => ({
+                onChange={(department_id) => setPlacement((f) => ({
                   ...f,
-                  department_id: e.target.value,
+                  department_id,
                   area_id: '',
                 }))}
+                options={activeDepartments}
+                getOptionValue={(dept) => dept.id}
+                getOptionLabel={(dept) => dept.name}
+                placeholder="Select department…"
                 required
                 disabled={!placement.location_id}
-              >
-                <option value="">Select department…</option>
-                {activeDepartments.map((dept) => (
-                  <option key={dept.id} value={dept.id}>{dept.name}</option>
-                ))}
-              </select>
+                className="company-form__input--select"
+              />
             </label>
             <label className="company-form__field">
               <span className="company-form__label">Area *</span>
-              <select
-                className="company-form__input company-form__input--select"
+              <FilterableSelect
                 value={placement.area_id}
-                onChange={(e) => setPlacement((f) => ({ ...f, area_id: e.target.value }))}
+                onChange={(area_id) => setPlacement((f) => ({ ...f, area_id }))}
+                options={activeAreas}
+                getOptionValue={(area) => area.id}
+                getOptionLabel={(area) => area.name}
+                placeholder="Select area…"
                 required
                 disabled={!placement.department_id}
-              >
-                <option value="">Select area…</option>
-                {activeAreas.map((area) => (
-                  <option key={area.id} value={area.id}>{area.name}</option>
-                ))}
-              </select>
+                className="company-form__input--select"
+              />
             </label>
           </div>
 

@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
 import { generateOrgSlug } from '../../lib/slug'
 import { LIMIT_ITEMS, PLAN_DEFAULTS, formatLimitValue } from '../../lib/orgLimits'
+import FilterableSelect from '../ui/FilterableSelect'
+import '../../components/company/CompanyShared.css'
 import './CreateOrgModal.css'
 
 const PLANS = [
@@ -93,15 +95,15 @@ export default function CreateOrgModal({ onClose, onSubmit, saving }) {
 
           <label className="admin-modal__field">
             <span className="admin-modal__label">Plan</span>
-            <select
-              className="admin-modal__input"
+            <FilterableSelect
+              inputClassName="admin-modal__input"
               value={plan}
-              onChange={(e) => setPlan(e.target.value)}
-            >
-              {PLANS.map((p) => (
-                <option key={p.value} value={p.value}>{p.label}</option>
-              ))}
-            </select>
+              onChange={setPlan}
+              options={PLANS}
+              getOptionValue={(p) => p.value}
+              getOptionLabel={(p) => p.label}
+              allowEmpty={false}
+            />
             <span className="admin-modal__hint">
               Default limits:{' '}
               {LIMIT_ITEMS.map((item, index) => (

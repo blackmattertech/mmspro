@@ -1,4 +1,6 @@
 import { useState } from 'react'
+import FilterableSelect from '../ui/FilterableSelect'
+import '../company/CompanyShared.css'
 import './CreateWorkOrderModal.css'
 
 export default function CreateWorkOrderModal({
@@ -48,27 +50,35 @@ export default function CreateWorkOrderModal({
 
           <div className="modal__field">
             <label htmlFor="wo-location">Location</label>
-            <select
+            <FilterableSelect
               id="wo-location"
               value={locationId}
-              onChange={(e) => setLocationId(e.target.value)}
+              onChange={setLocationId}
+              options={locations}
+              getOptionValue={(loc) => loc.id}
+              getOptionLabel={(loc) => loc.name}
               disabled={locationLocked || !locations.length}
               required
-            >
-              {!locations.length && <option value="">No locations available</option>}
-              {locations.map((loc) => (
-                <option key={loc.id} value={loc.id}>{loc.name}</option>
-              ))}
-            </select>
+              allowEmpty={false}
+              placeholder={locations.length ? 'Select location…' : 'No locations available'}
+            />
           </div>
 
           <div className="modal__field">
             <label htmlFor="wo-priority">Priority</label>
-            <select id="wo-priority" value={priority} onChange={(e) => setPriority(e.target.value)}>
-              <option value="high">High</option>
-              <option value="medium">Medium</option>
-              <option value="low">Low</option>
-            </select>
+            <FilterableSelect
+              id="wo-priority"
+              value={priority}
+              onChange={setPriority}
+              options={[
+                { value: 'high', label: 'High' },
+                { value: 'medium', label: 'Medium' },
+                { value: 'low', label: 'Low' },
+              ]}
+              getOptionValue={(opt) => opt.value}
+              getOptionLabel={(opt) => opt.label}
+              allowEmpty={false}
+            />
           </div>
 
           <div className="modal__actions">

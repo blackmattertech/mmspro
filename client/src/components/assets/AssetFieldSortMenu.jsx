@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { getSortOptionsForView } from '../../lib/assetFieldTypes'
+import FilterableSelect from '../ui/FilterableSelect'
+import '../company/CompanyShared.css'
 
 function SortIcon() {
   return (
@@ -57,26 +59,30 @@ export default function AssetFieldSortMenu({ view, sortBy, sortDir, onChange }) 
         <div className="asset-field-sort-menu" role="dialog" aria-label="Sort options">
           <label className="asset-field-sort-menu__field">
             <span className="asset-field-sort-menu__label">Sort by</span>
-            <select
-              className="company-form__input company-form__input--select"
+            <FilterableSelect
+              className="company-form__input--select"
               value={sortBy}
-              onChange={(e) => onChange({ sortBy: e.target.value, sortDir })}
-            >
-              {options.map((opt) => (
-                <option key={opt.value} value={opt.value}>{opt.label}</option>
-              ))}
-            </select>
+              onChange={(next) => onChange({ sortBy: next, sortDir })}
+              options={options}
+              getOptionValue={(opt) => opt.value}
+              getOptionLabel={(opt) => opt.label}
+              allowEmpty={false}
+            />
           </label>
           <label className="asset-field-sort-menu__field">
             <span className="asset-field-sort-menu__label">Order</span>
-            <select
-              className="company-form__input company-form__input--select"
+            <FilterableSelect
+              className="company-form__input--select"
               value={sortDir}
-              onChange={(e) => onChange({ sortBy, sortDir: e.target.value })}
-            >
-              <option value="asc">{orderLabels.asc}</option>
-              <option value="desc">{orderLabels.desc}</option>
-            </select>
+              onChange={(next) => onChange({ sortBy, sortDir: next })}
+              options={[
+                { value: 'asc', label: orderLabels.asc },
+                { value: 'desc', label: orderLabels.desc },
+              ]}
+              getOptionValue={(opt) => opt.value}
+              getOptionLabel={(opt) => opt.label}
+              allowEmpty={false}
+            />
           </label>
         </div>
       )}

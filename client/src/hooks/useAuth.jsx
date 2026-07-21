@@ -1,4 +1,5 @@
 import { useState, useEffect, createContext, useContext, useMemo, useCallback, useRef } from 'react'
+import { clearLocalSupabaseAuthStorage, readRememberMe, writeRememberMe, writeSavedEmail } from '../lib/authPreferences'
 import { supabase, isSupabaseConfigured } from '../lib/supabase'
 import { syncAccessToken, clearAccessTokenCache, clearCompanyDetailsCache } from '../lib/api'
 import { clearOrgCache } from '../lib/orgCache'
@@ -41,6 +42,10 @@ export const AuthProvider = ({ children }) => {
     if (!isSupabaseConfigured || !supabase) {
       setLoading(false)
       return
+    }
+
+    if (!readRememberMe()) {
+      clearLocalSupabaseAuthStorage()
     }
 
     const applyAuthUser = (session) => {
@@ -88,8 +93,15 @@ export const AuthProvider = ({ children }) => {
     }
   }, [fetchRole])
 
-  const signIn = useCallback(async (email, password) => {
+  const signIn = useCallback(async (email, password, options = {}) => {
     if (!isSupabaseConfigured || !supabase) return AUTH_UNAVAILABLE
+    const rememberMe = options.rememberMe !== false
+    writeRememberMe(rememberMe)
+    if (!rememberMe) {
+      clearLocalSupabaseAuthStorage()
+    }
+    writeSavedEmail(email, rememberMe)
+
     clearAccessTokenCache()
     clearCompanyDetailsCache()
     clearOrgCache()

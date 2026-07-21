@@ -1,9 +1,11 @@
 import { useState, useRef, useEffect } from 'react'
 import NotificationPanel from './NotificationPanel'
 import DateField from '../ui/DateField'
+import FilterableSelect from '../ui/FilterableSelect'
 import { useOrg } from '../../hooks/useOrg'
 import { useNotifications } from '../../hooks/useNotifications'
 import { getOrgAssetSignedUrl } from '../../lib/orgAssets'
+import '../company/CompanyShared.css'
 import './DashboardHeader.css'
 
 export default function DashboardHeader({
@@ -70,18 +72,20 @@ export default function DashboardHeader({
         <div className="dash-header__right">
           <div className="dash-header__filter">
             <label className="dash-header__filter-label" htmlFor="dash-location-filter">Location</label>
-            <select
+            <FilterableSelect
               id="dash-location-filter"
-              className="dash-header__select"
               value={locationFilter}
-              onChange={(e) => onLocationChange(e.target.value)}
+              onChange={onLocationChange}
+              options={[
+                ...(canSeeAllLocations ? [{ value: 'all', label: 'All Locations' }] : []),
+                ...locations.map((loc) => ({ value: loc.id, label: loc.name })),
+              ]}
+              getOptionValue={(opt) => opt.value}
+              getOptionLabel={(opt) => opt.label}
               disabled={!canSeeAllLocations}
-            >
-              {canSeeAllLocations && <option value="all">All Locations</option>}
-              {locations.map((loc) => (
-                <option key={loc.id} value={loc.id}>{loc.name}</option>
-              ))}
-            </select>
+              allowEmpty={false}
+              inputClassName="dash-header__select"
+            />
           </div>
 
           <div className="dash-header__date-range">

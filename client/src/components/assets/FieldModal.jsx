@@ -4,6 +4,7 @@ import { useOrg } from '../../hooks/useOrg'
 import GooToggle from '../ui/GooToggle'
 import SectionIconUpload from './SectionIconUpload'
 import CreatableSelect from '../company/CreatableSelect'
+import FilterableSelect from '../ui/FilterableSelect'
 import {
   ASSET_FIELD_TYPES,
   fieldTypeLabel,
@@ -17,6 +18,7 @@ import {
   readFormDraft,
   writeFormDraft,
 } from '../../lib/formDraftStorage'
+import { INFO_BUTTON_ICON_SRC } from '../../lib/infoIcon'
 import '../company/CompanyShared.css'
 import './AssetsFields.css'
 
@@ -70,6 +72,35 @@ function formFromField(field, parents) {
   }
 }
 
+function parseBulkFieldOptions(text) {
+  const parts = String(text || '')
+    .split(/[\n\r,;\t]+/)
+    .map((value) => value.trim())
+    .filter(Boolean)
+  const seen = new Set()
+  const unique = []
+  for (const value of parts) {
+    const key = value.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    unique.push(value)
+  }
+  return unique
+}
+
+function mergeFieldOptionLists(existing, incoming, { replace = false } = {}) {
+  const base = replace ? [] : (existing || []).map((o) => String(o).trim()).filter(Boolean)
+  const seen = new Set(base.map((o) => o.toLowerCase()))
+  const next = [...base]
+  for (const value of incoming) {
+    const key = value.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    next.push(value)
+  }
+  return next.length ? next : ['']
+}
+
 export default function FieldModal({
   field,
   mode = 'all',
@@ -98,6 +129,7 @@ export default function FieldModal({
   const [iconPreview, setIconPreview] = useState(null)
   const [iconFile, setIconFile] = useState(null)
   const [removeIcon, setRemoveIcon] = useState(false)
+  const [bulkPasteText, setBulkPasteText] = useState('')
   const [iconError, setIconError] = useState(null)
   const [creatingSection, setCreatingSection] = useState(false)
   const [extraSections, setExtraSections] = useState([])
@@ -141,6 +173,8 @@ export default function FieldModal({
       setIconFile(null)
       setRemoveIcon(false)
       setIconError(null)
+      setBulkPasteText('')
+      setError(null)
       hydratedRef.current = true
       return
     }
@@ -149,6 +183,7 @@ export default function FieldModal({
     setIconFile(null)
     setRemoveIcon(false)
     setIconError(null)
+    setBulkPasteText('')
 
     const draft = readFormDraft(draftKey)
     if (draft) {
@@ -242,6 +277,24 @@ export default function FieldModal({
       ...prev,
       dropdown_options: prev.dropdown_options.filter((_, i) => i !== index),
     }))
+  }
+
+  const showBulkOptionPaste = valuesOnly || isChild
+
+  const applyBulkPaste = (replace) => {
+    const parsed = parseBulkFieldOptions(bulkPasteText)
+    if (!parsed.length) {
+      setError('Paste at least one value (one per line, or separated by commas).')
+      return
+    }
+    setError(null)
+    setForm((prev) => ({
+      ...prev,
+      dropdown_options: mergeFieldOptionLists(prev.dropdown_options, parsed, { replace }),
+    }))
+    if (replace) {
+      setBulkPasteText('')
+    }
   }
 
   const handleSectionChange = (sectionId) => {
@@ -513,19 +566,16 @@ export default function FieldModal({
               {form.section_id && (
                 <label className="company-form__field">
                   <span className="company-form__label">2. Parent *</span>
-                  <select
-                    className="company-form__input company-form__input--select"
+                  <FilterableSelect
                     value={form.parent_id}
-                    onChange={(e) => updateForm({ parent_id: e.target.value })}
+                    onChange={(parent_id) => updateForm({ parent_id })}
+                    options={childParentOptions}
+                    getOptionValue={(parent) => parent.id}
+                    getOptionLabel={(parent) => `${parent.name} (${fieldTypeLabel(parent.field_type)})`}
+                    placeholder="Select parent…"
                     required
-                  >
-                    <option value="">Select parent…</option>
-                    {childParentOptions.map((parent) => (
-                      <option key={parent.id} value={parent.id}>
-                        {parent.name} ({fieldTypeLabel(parent.field_type)})
-                      </option>
-                    ))}
-                  </select>
+                    className="company-form__input--select"
+                  />
                   {!childParentOptions.length && (
                     <p className="asset-field-dependency__empty">
                       No Dropdown or Checkbox parents in this section.
@@ -557,11 +607,11 @@ export default function FieldModal({
                       aria-label="Groups parent fields and option values."
                     >
                       <img
-                        src="/Assets/icons/info-circle-outline.svg"
+                        src={INFO_BUTTON_ICON_SRC}
                         alt=""
                         className="asset-field-info__icon"
-                        width="18"
-                        height="18"
+                        width={22}
+                        height={22}
                       />
                       <span className="asset-field-info__tooltip" role="tooltip">
                         Groups parent fields and option values.
@@ -595,11 +645,11 @@ export default function FieldModal({
                       aria-label="Input field under a section. For Dropdown, Radio, or Checkbox, add option values in this form."
                     >
                       <img
-                        src="/Assets/icons/info-circle-outline.svg"
+                        src={INFO_BUTTON_ICON_SRC}
                         alt=""
                         className="asset-field-info__icon"
-                        width="18"
-                        height="18"
+                        width={22}
+                        height={22}
                       />
                       <span className="asset-field-info__tooltip" role="tooltip">
                         Input field under a section. For Dropdown, Radio, or Checkbox, add option values in this form.
@@ -682,11 +732,9 @@ export default function FieldModal({
           {showFieldType && (
             <label className="company-form__field">
               <span className="company-form__label">Field type *</span>
-              <select
-                className="company-form__input company-form__input--select"
+              <FilterableSelect
                 value={form.field_type}
-                onChange={(e) => {
-                  const nextType = e.target.value
+                onChange={(nextType) => {
                   updateForm({
                     field_type: nextType,
                     dropdown_options: fieldTypeSupportsOptions(nextType)
@@ -694,12 +742,14 @@ export default function FieldModal({
                       : [''],
                   })
                 }}
+                options={ASSET_FIELD_TYPES}
+                getOptionValue={(type) => type.value}
+                getOptionLabel={(type) => type.label}
+                placeholder="Select type"
                 required
-              >
-                {ASSET_FIELD_TYPES.map((type) => (
-                  <option key={type.value} value={type.value}>{type.label}</option>
-                ))}
-              </select>
+                allowEmpty={false}
+                className="company-form__input--select"
+              />
             </label>
           )}
 
@@ -713,6 +763,38 @@ export default function FieldModal({
                   ? `Each value is stored as a child option for this ${fieldTypeLabel(selectedChildParent?.field_type || field?.field_type || form.field_type) || 'field'}.`
                   : `Optional. Each value is stored as a child option for this ${fieldTypeLabel(form.field_type) || 'field'}. You can also add values later.`}
               </p>
+              {showBulkOptionPaste && (
+                <div className="asset-bulk-options-paste">
+                  <label className="asset-bulk-options-paste__field">
+                    <span className="company-form__label">Paste multiple at once</span>
+                    <textarea
+                      className="company-form__input company-form__textarea asset-bulk-options-paste__textarea"
+                      rows={4}
+                      value={bulkPasteText}
+                      onChange={(e) => setBulkPasteText(e.target.value)}
+                      placeholder={'One value per line\nOr comma-separated: SS, MS, PPFRP'}
+                    />
+                  </label>
+                  <div className="asset-bulk-options-paste__actions">
+                    <button
+                      type="button"
+                      className="company-btn company-btn--secondary"
+                      onClick={() => applyBulkPaste(false)}
+                      disabled={saving || !bulkPasteText.trim()}
+                    >
+                      Add to list
+                    </button>
+                    <button
+                      type="button"
+                      className="company-btn company-btn--ghost"
+                      onClick={() => applyBulkPaste(true)}
+                      disabled={saving || !bulkPasteText.trim()}
+                    >
+                      Replace list
+                    </button>
+                  </div>
+                </div>
+              )}
               <div className="asset-dropdown-options">
                 {form.dropdown_options.map((opt, index) => (
                   <div key={index} className="asset-dropdown-options__row">
@@ -754,11 +836,11 @@ export default function FieldModal({
                         aria-label="Users must fill this field before submitting the form."
                       >
                         <img
-                          src="/Assets/icons/info-circle-outline.svg"
+                          src={INFO_BUTTON_ICON_SRC}
                           alt=""
                           className="asset-field-info__icon"
-                          width="18"
-                          height="18"
+                          width={22}
+                          height={22}
                         />
                         <span className="asset-field-info__tooltip" role="tooltip">
                           Users must fill this field before submitting the form.
@@ -783,11 +865,11 @@ export default function FieldModal({
                         aria-label="Link to any section, parent, and one or more child values. This field appears when any selected value is chosen on the work order form."
                       >
                         <img
-                          src="/Assets/icons/info-circle-outline.svg"
+                          src={INFO_BUTTON_ICON_SRC}
                           alt=""
                           className="asset-field-info__icon"
-                          width="18"
-                          height="18"
+                          width={22}
+                          height={22}
                         />
                         <span className="asset-field-info__tooltip" role="tooltip">
                           Link to any section, parent, and one or more child values. This field appears when any selected value is chosen on the work order form.
@@ -808,17 +890,16 @@ export default function FieldModal({
                   <label className="company-form__field">
                     <span className="company-form__label">1. Section *</span>
                     <div className="company-creatable-select">
-                      <select
-                        className="company-form__input company-form__input--select"
+                      <FilterableSelect
                         value={form.dependency_section_id}
-                        onChange={(e) => handleDependencySectionChange(e.target.value)}
+                        onChange={handleDependencySectionChange}
+                        options={sectionChoices}
+                        getOptionValue={(section) => section.id}
+                        getOptionLabel={sectionOptionLabel}
+                        placeholder="Select section…"
                         required
-                      >
-                        <option value="">Select section…</option>
-                        {sectionChoices.map((section) => (
-                          <option key={section.id} value={section.id}>{sectionOptionLabel(section)}</option>
-                        ))}
-                      </select>
+                        className="company-form__input--select"
+                      />
                       {canCreateSectionInline && (
                         <button
                           type="button"
@@ -835,19 +916,16 @@ export default function FieldModal({
                   {form.dependency_section_id && (
                     <label className="company-form__field">
                       <span className="company-form__label">2. Parent *</span>
-                      <select
-                        className="company-form__input company-form__input--select"
+                      <FilterableSelect
                         value={form.depends_on_parent_id}
-                        onChange={(e) => handleDependencyParentChange(e.target.value)}
+                        onChange={handleDependencyParentChange}
+                        options={dependencyParentOptions}
+                        getOptionValue={(parent) => parent.id}
+                        getOptionLabel={(parent) => `${parent.name} (${fieldTypeLabel(parent.field_type)})`}
+                        placeholder="Select parent…"
                         required
-                      >
-                        <option value="">Select parent…</option>
-                        {dependencyParentOptions.map((parent) => (
-                          <option key={parent.id} value={parent.id}>
-                            {parent.name} ({fieldTypeLabel(parent.field_type)})
-                          </option>
-                        ))}
-                      </select>
+                        className="company-form__input--select"
+                      />
                       {!dependencyParentOptions.length && (
                         <p className="asset-field-dependency__empty">
                           No parent fields in this section yet.

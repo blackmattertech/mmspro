@@ -8,9 +8,12 @@ import { getEquipment, getEquipmentTemplate, bulkUploadEquipment } from '../../l
 import EquipmentModal from '../../components/equipment/EquipmentModal'
 import AssetsFieldsPanel from '../../components/assets/AssetsFieldsPanel'
 import AreasTab from '../../components/company/AreasTab'
+import NavIcon from '../../components/layout/NavIcon'
 import GooToggle from '../../components/ui/GooToggle'
 import TrashIcon from '../../components/ui/TrashIcon'
 import EditIcon from '../../components/ui/EditIcon'
+import TablePagination from '../../components/shared/TablePagination'
+import { useTablePagination } from '../../hooks/useTablePagination'
 import './Company.css'
 import '../../components/company/CompanyShared.css'
 
@@ -25,7 +28,7 @@ export default function Equipment() {
   } = usePermissions()
   const canManage = canCreate('equipment') || canUpdate('equipment') || canDelete('equipment')
   const canManageAreas = canCreate('areas') || canUpdate('areas') || canDelete('areas')
-  const canManageChildren = isCompanyAdmin(role) || canUpdate('equipment')
+  const canManageFieldOptions = isCompanyAdmin(role) || canUpdate('equipment')
   const [view, setView] = useState(() => (canRead('equipment') ? 'records' : 'areas'))
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
@@ -43,6 +46,8 @@ export default function Equipment() {
   )
   const { items, loading, saving, error, create, update, remove, reload } = useEquipment(filters)
   const fieldsState = useOrgEquipmentFields()
+  const equipmentPagination = useTablePagination(items.length, { resetKey: debouncedSearch })
+  const pagedItems = equipmentPagination.paginate(items)
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState(null)
   const [bulkBusy, setBulkBusy] = useState(false)
@@ -52,7 +57,7 @@ export default function Equipment() {
 
   const showRecords = canRead('equipment')
   const showAreas = canRead('areas')
-  const showFields = canRead('equipment')
+  const showFieldOptions = canRead('equipment')
 
   const openCreate = () => {
     setEditing(null)
@@ -162,7 +167,7 @@ export default function Equipment() {
               Areas
             </button>
           )}
-          {showFields && (
+          {showFieldOptions && (
             <button
               type="button"
               className={`company-tabs__btn ${view === 'fields' ? 'company-tabs__btn--active' : ''}`}
@@ -180,12 +185,18 @@ export default function Equipment() {
         ) : view === 'fields' ? (
           <>
             <p className="company-readonly-note">
-              Field structure is defined by Super Admin. You can manage option values for equipment fields here.
+              Equipment field structure is defined by Super Admin. Add dropdown option values for equipment fields (e.g. Equipment Details) here.
             </p>
+            {!canManageFieldOptions && (
+              <p className="company-readonly-note">
+                You have read-only access. Contact a company admin to change option values.
+              </p>
+            )}
             <AssetsFieldsPanel
               fieldsState={fieldsState}
               canManageSchema={false}
-              canManageChildren={canManageChildren}
+              canManageChildren={canManageFieldOptions}
+              fieldScope="equipment"
             />
           </>
         ) : (
@@ -211,17 +222,23 @@ export default function Equipment() {
                   <div className="company-panel__toolbar-actions">
                     <button
                       type="button"
-                      className="company-btn company-btn--secondary"
+                      className="company-btn company-btn--secondary equipment-bulk-btn"
                       onClick={handleDownloadTemplate}
                     >
+                      <span className="equipment-bulk-btn__icon" aria-hidden="true">
+                        <NavIcon name="download" />
+                      </span>
                       Download template
                     </button>
                     <button
                       type="button"
-                      className="company-btn company-btn--secondary"
+                      className="company-btn company-btn--secondary equipment-bulk-btn"
                       onClick={() => bulkInputRef.current?.click()}
                       disabled={bulkBusy}
                     >
+                      <span className="equipment-bulk-btn__icon" aria-hidden="true">
+                        <NavIcon name="upload" />
+                      </span>
                       {bulkBusy ? 'Uploading…' : 'Bulk upload'}
                     </button>
                     <input
@@ -278,7 +295,7 @@ export default function Equipment() {
                       </tr>
                     </thead>
                     <tbody>
-                      {items.map((row) => (
+                      {pagedItems.map((row) => (
                         <tr key={row.id}>
                           <td>{row.name}</td>
                           <td>{row.code || '—'}</td>
@@ -319,6 +336,17 @@ export default function Equipment() {
                       ))}
                     </tbody>
                   </table>
+                  <TablePagination
+                    page={equipmentPagination.page}
+                    totalPages={equipmentPagination.totalPages}
+                    pageSize={equipmentPagination.pageSize}
+                    pageSizeOptions={equipmentPagination.pageSizeOptions}
+                    totalCount={items.length}
+                    rangeStart={equipmentPagination.rangeStart}
+                    rangeEnd={equipmentPagination.rangeEnd}
+                    onPageChange={equipmentPagination.setPage}
+                    onPageSizeChange={equipmentPagination.setPageSize}
+                  />
                 </div>
               )}
             </div>

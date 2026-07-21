@@ -5,6 +5,7 @@ import {
   LOCATION_NONE,
 } from '../../lib/departmentLocation'
 import LocationModal from './LocationModal'
+import FilterableSelect from '../ui/FilterableSelect'
 import './CompanyShared.css'
 
 const EMPTY = {
@@ -90,6 +91,16 @@ export default function DepartmentModal({
   const parentOptions = departments.filter((d) => d.id !== department?.id)
   const canCreateLocation = Boolean(onCreateLocation) && !lockLocation
 
+  const locationScopeOptions = [
+    ...(!lockLocation
+      ? [
+          { value: LOCATION_ALL, label: 'All locations' },
+          { value: LOCATION_NONE, label: 'No location' },
+        ]
+      : []),
+    ...locations.map((loc) => ({ value: loc.id, label: loc.name })),
+  ]
+
   const handleSubmit = async (e) => {
     e.preventDefault()
     setError(null)
@@ -171,22 +182,16 @@ export default function DepartmentModal({
             <label className="company-form__field">
               <span className="company-form__label">Location</span>
               <div className="company-creatable-select">
-                <select
-                  className="company-form__input company-form__input--select"
+                <FilterableSelect
+                  className="company-form__input--select"
                   value={form.locationScope}
-                  onChange={(e) => setForm({ ...form, locationScope: e.target.value })}
+                  onChange={(next) => setForm({ ...form, locationScope: next })}
+                  options={locationScopeOptions}
+                  getOptionValue={(opt) => opt.value}
+                  getOptionLabel={(opt) => opt.label}
                   disabled={lockLocation}
-                >
-                  {!lockLocation && (
-                    <>
-                      <option value={LOCATION_ALL}>All locations</option>
-                      <option value={LOCATION_NONE}>No location</option>
-                    </>
-                  )}
-                  {locations.map((loc) => (
-                    <option key={loc.id} value={loc.id}>{loc.name}</option>
-                  ))}
-                </select>
+                  allowEmpty={false}
+                />
                 {canCreateLocation && (
                   <button
                     type="button"
@@ -206,16 +211,16 @@ export default function DepartmentModal({
 
             <label className="company-form__field">
               <span className="company-form__label">Parent Department</span>
-              <select
-                className="company-form__input company-form__input--select"
+              <FilterableSelect
+                className="company-form__input--select"
                 value={form.parent_id}
-                onChange={(e) => setForm({ ...form, parent_id: e.target.value })}
-              >
-                <option value="">None</option>
-                {parentOptions.map((d) => (
-                  <option key={d.id} value={d.id}>{d.code ? `${d.code} — ` : ''}{d.name}</option>
-                ))}
-              </select>
+                onChange={(next) => setForm({ ...form, parent_id: next })}
+                options={parentOptions}
+                getOptionValue={(d) => d.id}
+                getOptionLabel={(d) => `${d.code ? `${d.code} — ` : ''}${d.name}`}
+                emptyLabel="None"
+                placeholder="None"
+              />
             </label>
             {error && <p className="company-alert">{error}</p>}
             <div className="company-modal__actions">

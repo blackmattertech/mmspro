@@ -7,6 +7,7 @@ import GooToggle from '../ui/GooToggle'
 import LocationModal from './LocationModal'
 import DepartmentModal from './DepartmentModal'
 import PhoneInput from '../shared/PhoneInput'
+import FilterableSelect from '../ui/FilterableSelect'
 import ImageCropModal from '../shared/ImageCropModal'
 import {
   departmentsForEmployeeLocation,
@@ -504,18 +505,24 @@ export default function EmployeeModal({
 
             <label className="company-form__field">
               <span className="company-form__label">Access Role</span>
-              <select
-                className="company-form__input company-form__input--select"
+              <FilterableSelect
+                className="company-form__input--select"
                 value={form.access_role_id}
-                onChange={(e) => setForm({ ...form, access_role_id: e.target.value })}
-              >
-                <option value="">
-                  {findDefaultUserRole(availableAccessRoles) ? 'User (default)' : 'No role assigned'}
-                </option>
-                {availableAccessRoles.map((role) => (
-                  <option key={role.id} value={role.id}>{role.name}</option>
-                ))}
-              </select>
+                onChange={(next) => setForm({ ...form, access_role_id: next })}
+                options={availableAccessRoles}
+                getOptionValue={(role) => role.id}
+                getOptionLabel={(role) => role.name}
+                emptyLabel={
+                  findDefaultUserRole(availableAccessRoles)
+                    ? 'User (default)'
+                    : 'No role assigned'
+                }
+                placeholder={
+                  findDefaultUserRole(availableAccessRoles)
+                    ? 'User (default)'
+                    : 'No role assigned'
+                }
+              />
               {accessRoles.length === 0 ? (
                 <span className="company-modal__hint">
                   No access roles yet. Create them under Configuration → Roles &amp; Access.

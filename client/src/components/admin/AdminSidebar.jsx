@@ -1,13 +1,17 @@
+import { useMemo } from 'react'
 import { NavLink } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
-import { ADMIN_NAV_ITEMS } from '../../config/adminNavigation'
+import { ADMIN_NAV_ITEMS, getAdminShortcutOptions } from '../../config/adminNavigation'
+import { ADMIN_QUICK_ACCESS_SCOPE } from '../../hooks/useQuickAccess'
 import NavIcon from '../layout/NavIcon'
+import SidebarQuickAccess from '../layout/SidebarQuickAccess'
 import SidebarUserFooter from '../layout/SidebarUserFooter'
 import '../layout/Sidebar.css'
 import './AdminSidebar.css'
 
 export default function AdminSidebar({ collapsed = false, onToggle }) {
   const { signOut } = useAuth()
+  const quickAccessOptions = useMemo(() => getAdminShortcutOptions(), [])
 
   return (
     <aside className={`sidebar admin-sidebar ${collapsed ? 'sidebar--collapsed' : ''}`}>
@@ -51,6 +55,11 @@ export default function AdminSidebar({ collapsed = false, onToggle }) {
       </nav>
 
       <div className="sidebar__footer">
+        <SidebarQuickAccess
+          collapsed={collapsed}
+          scope={ADMIN_QUICK_ACCESS_SCOPE}
+          options={quickAccessOptions}
+        />
         <SidebarUserFooter
           collapsed={collapsed}
           roleLabel="Super Admin"

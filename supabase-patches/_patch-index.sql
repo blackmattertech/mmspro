@@ -46,6 +46,12 @@
 --   37-work-order-assignment-cascade.sql → 37-work-order-assignment-cascade — Location-only cascade (includes 36 cols)
 --   38-equipment-inventory.sql          → 38-equipment-inventory — Areas + equipment + dynamic fields
 --   39-drop-designations-department-heads.sql → 39-drop-designations-department-heads — Remove designation + dept head
+--   40-field-required.sql                 → 40-field-required — Required field flag
+--   41-field-type-radio.sql             → 41-field-type-radio — Radio field type
+--   42-equipment-share-asset-sections.sql → 42-equipment-share-asset-sections
+--   43-equipment-dynamic-identity.sql   → 43-equipment-dynamic-identity
+--   44-work-requests.sql                → 44-work-requests — Work request module
+--   45-work-request-draft-number.sql    → 45-work-request-draft-number — Draft WR numbers
 --
 -- OTHER:
 --   supabase.sql                  → supabase — Full schema (new projects)

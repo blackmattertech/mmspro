@@ -6,6 +6,8 @@ import {
   isAtOrOverLimit,
   limitInputValue,
 } from '../../lib/orgLimits'
+import FilterableSelect from '../ui/FilterableSelect'
+import '../../components/company/CompanyShared.css'
 import './CreateOrgModal.css'
 import './OrgLimitsModal.css'
 
@@ -114,15 +116,15 @@ export default function OrgLimitsModal({ org, onClose, onSubmit, saving }) {
         <form className="admin-modal__form" onSubmit={handleSubmit}>
           <label className="admin-modal__field">
             <span className="admin-modal__label">Plan</span>
-            <select
-              className="admin-modal__input"
+            <FilterableSelect
+              inputClassName="admin-modal__input"
               value={plan}
-              onChange={(e) => handlePlanChange(e.target.value)}
-            >
-              {PLANS.map((p) => (
-                <option key={p.value} value={p.value}>{p.label}</option>
-              ))}
-            </select>
+              onChange={handlePlanChange}
+              options={PLANS}
+              getOptionValue={(p) => p.value}
+              getOptionLabel={(p) => p.label}
+              allowEmpty={false}
+            />
           </label>
 
           <label className="org-limits-modal__checkbox">

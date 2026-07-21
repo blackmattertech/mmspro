@@ -2,6 +2,7 @@ import {
   COMPANY_PAGE_MODULE_KEYS,
   MODULE_LEGACY_EXPAND,
   WORK_ORDER_MODULE_KEYS,
+  WORK_REQUEST_MODULE_KEYS,
   REPORT_MODULE_KEYS,
 } from '../lib/accessModules'
 
@@ -14,15 +15,28 @@ const APP_SEGMENTS = [
     moduleKey: 'dashboard',
   },
   {
+    id: 'work-request',
+    label: 'Work Request',
+    icon: 'clipboard',
+    moduleKey: 'work_request',
+    children: [
+      { label: 'Create Work Request', segment: 'work-request/create', moduleKey: 'work_request_create', icon: 'addSquare' },
+      { label: 'My Requests', segment: 'work-request/my', moduleKey: 'work_request_my', icon: 'profileIncoming' },
+      { label: 'Incoming Requests', segment: 'work-request/incoming', moduleKey: 'work_request_incoming', icon: 'arrowDownLeft' },
+      { label: 'Outgoing Requests', segment: 'work-request/outgoing', moduleKey: 'work_request_outgoing', icon: 'arrowUpRight' },
+      { label: 'All Requests', segment: 'work-request/all', moduleKey: 'work_request_all', icon: 'arrowSwap' },
+    ],
+  },
+  {
     id: 'work-orders',
     label: 'Work Orders',
     icon: 'document',
     moduleKey: 'work_orders',
     children: [
-      { label: 'Received', segment: 'work-orders/received', moduleKey: 'work_orders_received' },
-      { label: 'Assigned', segment: 'work-orders/assigned', moduleKey: 'work_orders_assigned' },
-      { label: 'Scheduled', segment: 'work-orders/scheduled', moduleKey: 'work_orders_scheduled' },
-      { label: 'Manual', segment: 'work-orders/manual', moduleKey: 'work_orders_manual' },
+      { label: 'Received', segment: 'work-orders/received', moduleKey: 'work_orders_received', icon: 'addItem' },
+      { label: 'Assigned', segment: 'work-orders/assigned', moduleKey: 'work_orders_assigned', icon: 'userAdd' },
+      { label: 'Scheduled', segment: 'work-orders/scheduled', moduleKey: 'work_orders_scheduled', icon: 'alarmCheck' },
+      { label: 'Manual', segment: 'work-orders/manual', moduleKey: 'work_orders_manual', icon: 'bill' },
     ],
   },
   {
@@ -68,6 +82,8 @@ const APP_SEGMENTS = [
     children: [
       { label: 'Roles & Access', segment: 'configuration/roles', moduleKey: 'roles_access', icon: 'key' },
       { label: 'Settings', segment: 'configuration/settings', moduleKey: 'settings', icon: 'settings' },
+      { label: 'Import', segment: 'configuration/import', moduleKey: 'settings', icon: 'upload' },
+      { label: 'Export', segment: 'configuration/export', moduleKey: 'settings', icon: 'download' },
     ],
   },
 ]
@@ -84,6 +100,12 @@ export function moduleKeyForPath(pathname, orgSlug) {
   const rest = pathname === `/${orgSlug}` ? 'dashboard' : pathname.slice(prefix.length)
 
   if (rest.startsWith('dashboard')) return 'dashboard'
+  if (rest.startsWith('work-request/create')) return 'work_request_create'
+  if (rest.startsWith('work-request/my')) return 'work_request_my'
+  if (rest.startsWith('work-request/incoming')) return 'work_request_incoming'
+  if (rest.startsWith('work-request/outgoing')) return 'work_request_outgoing'
+  if (rest.startsWith('work-request/all')) return 'work_request_all'
+  if (rest.startsWith('work-request')) return 'work_request'
   if (rest.startsWith('work-orders/received')) return 'work_orders_received'
   if (rest.startsWith('work-orders/assigned')) return 'work_orders_assigned'
   if (rest.startsWith('work-orders/scheduled')) return 'work_orders_scheduled'
@@ -101,6 +123,8 @@ export function moduleKeyForPath(pathname, orgSlug) {
   if (rest.startsWith('masters/equipment')) return 'equipment'
   if (rest.startsWith('configuration/roles')) return 'roles_access'
   if (rest.startsWith('configuration/settings')) return 'settings'
+  if (rest.startsWith('configuration/import')) return 'settings'
+  if (rest.startsWith('configuration/export')) return 'settings'
   if (rest.startsWith('configuration')) return 'settings'
   if (rest.startsWith('masters')) return 'company'
   return null
@@ -111,6 +135,9 @@ export function moduleKeysForPath(pathname, orgSlug) {
   if (!key) return []
   if (key === 'company' || COMPANY_PAGE_MODULE_KEYS.includes(key)) {
     return COMPANY_PAGE_MODULE_KEYS
+  }
+  if (WORK_REQUEST_MODULE_KEYS.includes(key)) {
+    return [key, 'work_request']
   }
   if (WORK_ORDER_MODULE_KEYS.includes(key)) {
     return [key, 'work_orders']
@@ -149,4 +176,36 @@ export function getNavItems(orgSlug, { canRead } = {}) {
     .filter(Boolean)
 }
 
-export { MODULE_LEGACY_EXPAND, COMPANY_PAGE_MODULE_KEYS, WORK_ORDER_MODULE_KEYS }
+/** Flatten nav into leaf pages that can be pinned as shortcuts. */
+export function getShortcutOptions(orgSlug, { canRead } = {}) {
+  const options = []
+  for (const item of getNavItems(orgSlug, { canRead })) {
+    if (item.children) {
+      for (const child of item.children) {
+        options.push({
+          id: child.segment,
+          label: child.label,
+          path: child.path,
+          icon: child.icon || item.icon || 'document',
+          group: item.label,
+        })
+      }
+    } else {
+      options.push({
+        id: item.segment || item.id,
+        label: item.label,
+        path: item.path,
+        icon: item.icon || 'document',
+        group: null,
+      })
+    }
+  }
+  return options
+}
+
+export {
+  MODULE_LEGACY_EXPAND,
+  COMPANY_PAGE_MODULE_KEYS,
+  WORK_ORDER_MODULE_KEYS,
+  WORK_REQUEST_MODULE_KEYS,
+}
