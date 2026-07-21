@@ -4,6 +4,7 @@ import { useDepartments } from '../../hooks/useDepartments'
 import { useEmployees } from '../../hooks/useEmployees'
 import EmployeeAvatar from '../company/EmployeeAvatar'
 import GooToggle from '../ui/GooToggle'
+import FilterableSelect from '../ui/FilterableSelect'
 import { formatPhoneDisplay } from '../shared/PhoneInput'
 import '../../components/company/CompanyShared.css'
 import './ManualWorkOrder.css'
@@ -342,34 +343,32 @@ export default function WorkOrderAssignmentCard({
         <div className="wo-assignment__filters">
           <label className="company-form__field">
             <span className="company-form__label">Location *</span>
-            <select
-              className="company-form__input company-form__input--select"
+            <FilterableSelect
+              className="company-form__input--select"
               value={locationId}
-              onChange={(e) => handleLocationChange(e.target.value)}
+              onChange={handleLocationChange}
+              options={activeLocations}
+              getOptionValue={(loc) => loc.id}
+              getOptionLabel={(loc) => loc.name}
+              placeholder="Select location..."
               disabled={disabled || locationsLoading}
-            >
-              <option value="">Select location...</option>
-              {activeLocations.map((loc) => (
-                <option key={loc.id} value={loc.id}>{loc.name}</option>
-              ))}
-            </select>
+              allowEmpty={false}
+            />
           </label>
 
           <label className="company-form__field">
             <span className="company-form__label">Department (optional)</span>
-            <select
-              className="company-form__input company-form__input--select"
+            <FilterableSelect
+              className="company-form__input--select"
               value={departmentId}
-              onChange={(e) => handleDepartmentChange(e.target.value)}
+              onChange={handleDepartmentChange}
+              options={activeDepartments}
+              getOptionValue={(dept) => dept.id}
+              getOptionLabel={(dept) => dept.name}
+              placeholder={!locationId ? 'Select location first' : 'Location Head will assign…'}
+              emptyLabel={!locationId ? 'Select location first' : 'Location Head will assign…'}
               disabled={disabled || !locationId || departmentsLoading}
-            >
-              <option value="">
-                {!locationId ? 'Select location first' : 'Location Head will assign…'}
-              </option>
-              {activeDepartments.map((dept) => (
-                <option key={dept.id} value={dept.id}>{dept.name}</option>
-              ))}
-            </select>
+            />
           </label>
         </div>
 

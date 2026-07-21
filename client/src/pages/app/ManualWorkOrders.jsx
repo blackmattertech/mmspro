@@ -85,6 +85,7 @@ export default function ManualWorkOrders() {
         onDelete={handleDelete}
         canEdit={canEdit}
         canDelete={canRemove}
+        paginationResetKey={`${search}|${locationFilter}`}
       />
 
       {selectedId && (

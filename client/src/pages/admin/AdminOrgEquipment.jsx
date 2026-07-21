@@ -53,6 +53,7 @@ export default function AdminOrgEquipment() {
           fieldsState={fieldsState}
           canManageSchema
           canManageChildren
+          fieldScope="equipment"
         />
       </div>
     </div>

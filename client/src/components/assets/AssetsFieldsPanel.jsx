@@ -16,12 +16,16 @@ import { dependencyLabel } from '../../lib/assetFieldDependencies'
 import { readFormDraft, writeFormDraft, clearFormDraft } from '../../lib/formDraftStorage'
 import { deleteSectionIcon, uploadSectionIcon } from '../../lib/orgAssets'
 import { reorderItemsById } from '../../lib/assetFormSchema'
+import { scopeAssetFields } from '../../lib/assetFieldScope'
 import GooToggle from '../ui/GooToggle'
 import TrashIcon from '../ui/TrashIcon'
 import EditIcon from '../ui/EditIcon'
 import FieldModal from './FieldModal'
 import AssetFieldSortMenu from './AssetFieldSortMenu'
 import AssetFormLayoutModal from './AssetFormLayoutModal'
+import TablePagination from '../shared/TablePagination'
+import FilterableSelect from '../ui/FilterableSelect'
+import { useTablePagination } from '../../hooks/useTablePagination'
 import '../company/CompanyShared.css'
 import './AssetsFields.css'
 import './AssetFormLayoutModal.css'
@@ -113,6 +117,7 @@ export default function AssetsFieldsPanel({
   canManageChildren,
   orgId: orgIdProp,
   fieldsState,
+  fieldScope = 'all',
 }) {
   const { org } = useOrg()
   const orgId = orgIdProp || org?.id
@@ -134,7 +139,26 @@ export default function AssetsFieldsPanel({
     removeIcon,
   } = fieldsState || internalState
   const modalStateKey = orgId ? `mms:asset-field-modal:${orgId}` : null
-  const [view, setView] = useState('all')
+  const scopedFields = useMemo(
+    () => scopeAssetFields(fields, fieldScope),
+    [fields, fieldScope],
+  )
+  const viewTabs = useMemo(() => {
+    if (fieldScope === 'equipment' && !canManageSchema) {
+      return [
+        { id: 'parents', label: 'Equipment fields' },
+        { id: 'children', label: 'Option values' },
+      ]
+    }
+    if (fieldScope === 'assets' && !canManageSchema) {
+      return VIEW_TABS.filter((tab) => tab.id !== 'sections')
+    }
+    return VIEW_TABS
+  }, [fieldScope, canManageSchema])
+  const [view, setView] = useState(() => {
+    if (fieldScope === 'equipment' && !canManageSchema) return 'children'
+    return 'all'
+  })
   const [search, setSearch] = useState('')
   const [sectionFilter, setSectionFilter] = useState('')
   const [parentFilter, setParentFilter] = useState('')
@@ -153,15 +177,15 @@ export default function AssetsFieldsPanel({
   const [sectionCreateOpen, setSectionCreateOpen] = useState(false)
 
   const sectionOptions = useMemo(
-    () => fields.filter((f) => f.kind === 'section'),
-    [fields],
+    () => scopedFields.filter((f) => f.kind === 'section'),
+    [scopedFields],
   )
 
   const parentOptions = useMemo(() => {
-    let list = fields.filter((f) => f.kind === 'parent')
+    let list = scopedFields.filter((f) => f.kind === 'parent')
     if (sectionFilter) list = list.filter((f) => f.section_id === sectionFilter)
     return list
-  }, [fields, sectionFilter])
+  }, [scopedFields, sectionFilter])
 
   useEffect(() => {
     if (!modalStateKey || loading || modalRestoredRef.current) return
@@ -170,17 +194,23 @@ export default function AssetsFieldsPanel({
       modalRestoredRef.current = true
       return
     }
-    if (saved.editingId && !fields.some((f) => f.id === saved.editingId)) return
+    if (saved.editingId && !scopedFields.some((f) => f.id === saved.editingId)) return
 
     modalRestoredRef.current = true
     setModalOpen(true)
     setModalMode(saved.mode || 'all')
     if (saved.editingId) {
-      setEditing(fields.find((f) => f.id === saved.editingId) || null)
+      setEditing(scopedFields.find((f) => f.id === saved.editingId) || null)
     } else {
       setEditing(null)
     }
-  }, [modalStateKey, loading, fields])
+  }, [modalStateKey, loading, scopedFields])
+
+  useEffect(() => {
+    if (!viewTabs.some((tab) => tab.id === view)) {
+      setView(viewTabs[0]?.id || 'all')
+    }
+  }, [view, viewTabs])
 
   useEffect(() => {
     if (!modalStateKey) return
@@ -196,16 +226,19 @@ export default function AssetsFieldsPanel({
   }, [modalOpen, modalMode, editing, modalStateKey])
 
   const visibleFields = useMemo(() => {
-    const filtered = applyFieldFilters(fields, {
+    const filtered = applyFieldFilters(scopedFields, {
       view,
       search,
       sectionId: sectionFilter,
       parentId: parentFilter,
     })
     return sortAssetFields(filtered, { sortBy, sortDir })
-  }, [fields, view, search, sectionFilter, parentFilter, sortBy, sortDir])
+  }, [scopedFields, view, search, sectionFilter, parentFilter, sortBy, sortDir])
 
   const hasFilters = Boolean(search.trim() || sectionFilter || parentFilter)
+  const fieldsPaginationResetKey = `${view}|${search}|${sectionFilter}|${parentFilter}|${sortBy}|${sortDir}`
+  const fieldsPagination = useTablePagination(visibleFields.length, { resetKey: fieldsPaginationResetKey })
+  const pagedVisibleFields = fieldsPagination.paginate(visibleFields)
   const showSectionFilter = view !== 'sections'
   const showParentFilter = view === 'parents' || view === 'children' || view === 'all'
 
@@ -291,7 +324,7 @@ export default function AssetsFieldsPanel({
   }
 
   const openParentValues = (childField) => {
-    const parent = fields.find((f) => f.id === childField.parent_id)
+    const parent = scopedFields.find((f) => f.id === childField.parent_id)
     if (parent) openEdit(parent, { valuesOnly: true })
   }
 
@@ -345,7 +378,7 @@ export default function AssetsFieldsPanel({
 
     let saved
     if (payload.kind === 'child') {
-      const parent = fields.find((item) => (
+      const parent = scopedFields.find((item) => (
         item.id === payload.parent_id
         && item.kind === 'parent'
         && fieldTypeSupportsOptions(item.field_type)
@@ -413,7 +446,7 @@ export default function AssetsFieldsPanel({
   const handleDelete = async (field) => {
     if (!window.confirm(`Permanently delete "${field.name}"? This cannot be undone.`)) return
     if (field.kind === 'child') {
-      const parent = fields.find((item) => item.id === field.parent_id)
+      const parent = scopedFields.find((item) => item.id === field.parent_id)
       if (!parent) throw new Error('Dropdown parent field not found')
       const nextValues = (parent.dropdown_options || []).filter((value) => (
         value.toLowerCase() !== field.name.toLowerCase()
@@ -481,7 +514,7 @@ export default function AssetsFieldsPanel({
     <div className="company-panel">
       <div className="company-panel__toolbar">
         <nav className="asset-field-tabs" aria-label="Field views">
-          {VIEW_TABS.map((tab) => (
+          {viewTabs.map((tab) => (
             <button
               key={tab.id}
               type="button"
@@ -538,31 +571,31 @@ export default function AssetsFieldsPanel({
         {showSectionFilter && (
           <label className="company-filter">
             <span>Section</span>
-            <select
-              className="company-form__input company-form__input--select"
+            <FilterableSelect
+              className="company-form__input--select"
               value={sectionFilter}
-              onChange={(e) => handleSectionFilterChange(e.target.value)}
-            >
-              <option value="">All sections</option>
-              {sectionOptions.map((section) => (
-                <option key={section.id} value={section.id}>{section.name}</option>
-              ))}
-            </select>
+              onChange={handleSectionFilterChange}
+              options={sectionOptions}
+              getOptionValue={(section) => section.id}
+              getOptionLabel={(section) => section.name}
+              emptyLabel="All sections"
+              placeholder="All sections"
+            />
           </label>
         )}
         {showParentFilter && (
           <label className="company-filter">
             <span>Parent</span>
-            <select
-              className="company-form__input company-form__input--select"
+            <FilterableSelect
+              className="company-form__input--select"
               value={parentFilter}
-              onChange={(e) => setParentFilter(e.target.value)}
-            >
-              <option value="">All parents</option>
-              {parentOptions.map((parent) => (
-                <option key={parent.id} value={parent.id}>{parent.name}</option>
-              ))}
-            </select>
+              onChange={setParentFilter}
+              options={parentOptions}
+              getOptionValue={(parent) => parent.id}
+              getOptionLabel={(parent) => parent.name}
+              emptyLabel="All parents"
+              placeholder="All parents"
+            />
           </label>
         )}
         <p className="company-panel__count">
@@ -641,7 +674,7 @@ export default function AssetsFieldsPanel({
               </tr>
             </thead>
             <tbody>
-              {visibleFields.map((field) => {
+              {pagedVisibleFields.map((field) => {
                 const isDragging = draggingId === field.id
                 const isDropTarget = dropTargetId === field.id && draggingId !== field.id
                 return (
@@ -777,6 +810,17 @@ export default function AssetsFieldsPanel({
               })}
             </tbody>
           </table>
+          <TablePagination
+            page={fieldsPagination.page}
+            totalPages={fieldsPagination.totalPages}
+            pageSize={fieldsPagination.pageSize}
+            pageSizeOptions={fieldsPagination.pageSizeOptions}
+            totalCount={visibleFields.length}
+            rangeStart={fieldsPagination.rangeStart}
+            rangeEnd={fieldsPagination.rangeEnd}
+            onPageChange={fieldsPagination.setPage}
+            onPageSizeChange={fieldsPagination.setPageSize}
+          />
         </div>
       )}
 
@@ -799,8 +843,8 @@ export default function AssetsFieldsPanel({
           orgId={orgId}
           sections={sectionOptions}
           dependencySections={sectionOptions}
-          parents={parents}
-          allFields={fields}
+          parents={scopedFields.filter((f) => f.kind === 'parent')}
+          allFields={scopedFields}
           saving={saving}
           onClose={() => setModalOpen(false)}
           onSave={handleSave}
@@ -816,8 +860,8 @@ export default function AssetsFieldsPanel({
           canManageSchema={canManageSchema}
           orgId={orgId}
           sections={sectionOptions}
-          parents={parents}
-          allFields={fields}
+          parents={scopedFields.filter((f) => f.kind === 'parent')}
+          allFields={scopedFields}
           saving={saving}
           onClose={() => {
             sectionCreatedCallbackRef.current = null

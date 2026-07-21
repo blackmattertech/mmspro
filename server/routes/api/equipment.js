@@ -16,6 +16,7 @@ import {
   buildEquipmentTemplate,
   bulkImportEquipment,
 } from '../../lib/equipmentBulkService.js'
+import { attachFailedFileToResult } from '../../lib/importErrorWorkbook.js'
 
 const router = Router()
 
@@ -76,7 +77,8 @@ router.post('/bulk', canCreate, async (req, res) => {
       return res.status(400).json({ error: 'File data is invalid' })
     }
     const result = await bulkImportEquipment(req.userProfile.org_id, buffer)
-    res.json(result)
+    const payload = await attachFailedFileToResult(result, buffer, 'equipment-import-failed-rows.xlsx')
+    res.json(payload)
   } catch (err) {
     res.status(err.status || 400).json({ error: err.message })
   }

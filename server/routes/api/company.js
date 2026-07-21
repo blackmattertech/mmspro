@@ -19,6 +19,8 @@ import {
 import { getScopedLocationId, hasModulePermission } from '../../lib/orgPermissions.js'
 import { canManageOrg } from '../../lib/accountRoles.js'
 import { getSignedUrl } from '../../lib/signedUrlCache.js'
+import { buildAreasTemplate, bulkImportAreas } from '../../lib/areaBulkService.js'
+import { attachFailedFileToResult } from '../../lib/importErrorWorkbook.js'
 
 const router = Router()
 
@@ -1298,6 +1300,38 @@ router.get('/areas', canReadAreas, async (req, res) => {
   const { data, error } = await query
   if (error) return res.status(500).json({ error: error.message })
   res.json(data || [])
+})
+
+router.get('/areas/template', canCreateAreas, async (req, res) => {
+  try {
+    const buffer = await buildAreasTemplate(req.userProfile.org_id)
+    res.json({
+      filename: 'areas-template.xlsx',
+      contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      data: buffer.toString('base64'),
+    })
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message })
+  }
+})
+
+router.post('/areas/bulk', canCreateAreas, async (req, res) => {
+  try {
+    const raw = req.body?.data
+    if (!raw || typeof raw !== 'string') {
+      return res.status(400).json({ error: 'File data is required' })
+    }
+    const base64 = raw.includes(',') ? raw.split(',').pop() : raw
+    const buffer = Buffer.from(base64, 'base64')
+    if (!buffer.length) {
+      return res.status(400).json({ error: 'File data is invalid' })
+    }
+    const result = await bulkImportAreas(req.userProfile.org_id, buffer)
+    const payload = await attachFailedFileToResult(result, buffer, 'areas-import-failed-rows.xlsx')
+    res.json(payload)
+  } catch (err) {
+    res.status(err.status || 400).json({ error: err.message })
+  }
 })
 
 router.post('/areas', canCreateAreas, async (req, res) => {

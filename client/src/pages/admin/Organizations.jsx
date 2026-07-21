@@ -4,13 +4,15 @@ import { useAdminOrganizations } from '../../hooks/useAdminOrganizations'
 import CreateOrgModal from '../../components/admin/CreateOrgModal'
 import OrgLimitsModal from '../../components/admin/OrgLimitsModal'
 import GooToggle from '../../components/ui/GooToggle'
+import FilterableSelect from '../../components/ui/FilterableSelect'
+import TablePagination from '../../components/shared/TablePagination'
+import { useTablePagination } from '../../hooks/useTablePagination'
 import { LIMIT_ITEMS, formatUsage, isAtOrOverLimit } from '../../lib/orgLimits'
+import '../../components/company/CompanyShared.css'
 import '../../components/admin/OrgLimitsModal.css'
 import './AdminPage.css'
 import './Organizations.css'
 import './AdminOrgAssets.css'
-
-const PAGE_SIZE = 10
 
 const KPI_CARDS = [
   { key: 'total', label: 'Total Organizations', icon: 'grid', tone: 'purple' },
@@ -200,7 +202,6 @@ export default function Organizations() {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [sortBy, setSortBy] = useState('newest')
-  const [page, setPage] = useState(1)
   const [togglingId, setTogglingId] = useState(null)
 
   const {
@@ -220,11 +221,9 @@ export default function Organizations() {
     [organizations, search, statusFilter, sortBy],
   )
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
-  const currentPage = Math.min(page, totalPages)
-  const pageRows = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
-  const rangeStart = filtered.length ? (currentPage - 1) * PAGE_SIZE + 1 : 0
-  const rangeEnd = Math.min(currentPage * PAGE_SIZE, filtered.length)
+  const paginationResetKey = `${search}|${statusFilter}|${sortBy}`
+  const pagination = useTablePagination(filtered.length, { resetKey: paginationResetKey })
+  const pageRows = pagination.paginate(filtered)
 
   const handleToggle = async (org, isActive) => {
     setTogglingId(org.id)
@@ -298,7 +297,7 @@ export default function Organizations() {
                 value={search}
                 onChange={(e) => {
                   setSearch(e.target.value)
-                  setPage(1)
+                  pagination.setPage(1)
                 }}
               />
             </div>
@@ -306,29 +305,39 @@ export default function Organizations() {
             <div className="admin-org-toolbar__filters">
               <label className="admin-org-filter">
                 <span>Status</span>
-                <select
+                <FilterableSelect
+                  className="company-form__input--select"
                   value={statusFilter}
-                  onChange={(e) => {
-                    setStatusFilter(e.target.value)
-                    setPage(1)
+                  onChange={(next) => {
+                    setStatusFilter(next)
+                    pagination.setPage(1)
                   }}
-                >
-                  <option value="all">All</option>
-                  <option value="active">Active</option>
-                  <option value="inactive">Disabled</option>
-                </select>
+                  options={[
+                    { value: 'all', label: 'All' },
+                    { value: 'active', label: 'Active' },
+                    { value: 'inactive', label: 'Disabled' },
+                  ]}
+                  getOptionValue={(opt) => opt.value}
+                  getOptionLabel={(opt) => opt.label}
+                  allowEmpty={false}
+                />
               </label>
 
               <label className="admin-org-filter">
                 <span>Sort by</span>
-                <select
+                <FilterableSelect
+                  className="company-form__input--select"
                   value={sortBy}
-                  onChange={(e) => setSortBy(e.target.value)}
-                >
-                  <option value="newest">Newest</option>
-                  <option value="oldest">Oldest</option>
-                  <option value="name">Name A–Z</option>
-                </select>
+                  onChange={setSortBy}
+                  options={[
+                    { value: 'newest', label: 'Newest' },
+                    { value: 'oldest', label: 'Oldest' },
+                    { value: 'name', label: 'Name A–Z' },
+                  ]}
+                  getOptionValue={(opt) => opt.value}
+                  getOptionLabel={(opt) => opt.label}
+                  allowEmpty={false}
+                />
               </label>
             </div>
           </div>
@@ -415,30 +424,18 @@ export default function Organizations() {
               </div>
 
               <footer className="admin-org-footer">
-                <span className="admin-org-footer__count">
-                  Showing {rangeStart} to {rangeEnd} of {filtered.length} organizations
-                </span>
-                <div className="admin-org-pagination">
-                  <button
-                    type="button"
-                    className="admin-org-pagination__btn"
-                    disabled={currentPage <= 1}
-                    onClick={() => setPage((p) => Math.max(1, p - 1))}
-                    aria-label="Previous page"
-                  >
-                    ‹
-                  </button>
-                  <span className="admin-org-pagination__page">{currentPage}</span>
-                  <button
-                    type="button"
-                    className="admin-org-pagination__btn"
-                    disabled={currentPage >= totalPages}
-                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                    aria-label="Next page"
-                  >
-                    ›
-                  </button>
-                </div>
+                <TablePagination
+                  className="admin-org-footer__pagination"
+                  page={pagination.page}
+                  totalPages={pagination.totalPages}
+                  pageSize={pagination.pageSize}
+                  pageSizeOptions={pagination.pageSizeOptions}
+                  totalCount={filtered.length}
+                  rangeStart={pagination.rangeStart}
+                  rangeEnd={pagination.rangeEnd}
+                  onPageChange={pagination.setPage}
+                  onPageSizeChange={pagination.setPageSize}
+                />
               </footer>
             </>
           )}

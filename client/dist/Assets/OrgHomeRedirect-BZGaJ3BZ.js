@@ -1,1 +1,0 @@
-import{a5 as i,b as n,j as a,a6 as r}from"./index-QNjowOLC.js";function u(){const{orgSlug:e}=i(),{loading:s,firstReadablePath:t,canRead:o}=n();return s?a.jsx("div",{className:"loading",children:"Loading..."}):e?o("dashboard")?a.jsx(r,{to:`/${e}/dashboard`,replace:!0}):a.jsx(r,{to:t(e),replace:!0}):a.jsx(r,{to:"/login",replace:!0})}export{u as default};

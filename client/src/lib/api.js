@@ -198,6 +198,17 @@ export function deleteArea(id) {
   return companyFetch(`/areas/${id}`, { method: 'DELETE' })
 }
 
+export function getAreasTemplate() {
+  return companyFetch('/areas/template')
+}
+
+export function bulkUploadAreas(base64Data) {
+  return companyFetch('/areas/bulk', {
+    method: 'POST',
+    body: JSON.stringify({ data: base64Data }),
+  })
+}
+
 export function adminFetch(path, options = {}) {
   return apiFetch(`/admin-api${path}`, options)
 }

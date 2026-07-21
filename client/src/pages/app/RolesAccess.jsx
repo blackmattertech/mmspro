@@ -9,6 +9,8 @@ import AssignEmployeesModal from '../../components/roles/AssignEmployeesModal'
 import EmployeeAvatar from '../../components/company/EmployeeAvatar'
 import TrashIcon from '../../components/ui/TrashIcon'
 import EditIcon from '../../components/ui/EditIcon'
+import TablePagination from '../../components/shared/TablePagination'
+import { useTablePagination } from '../../hooks/useTablePagination'
 import '../../components/company/CompanyShared.css'
 import './RolesAccess.css'
 
@@ -69,6 +71,8 @@ export default function RolesAccess() {
     () => roles.filter((r) => r.is_active !== false),
     [roles],
   )
+  const rolesPagination = useTablePagination(activeRoles.length)
+  const pagedRoles = rolesPagination.paginate(activeRoles)
 
   const selectedRole = useMemo(
     () => roles.find((r) => r.id === selectedId) || null,
@@ -234,7 +238,7 @@ export default function RolesAccess() {
                     </tr>
                   </thead>
                   <tbody>
-                    {activeRoles.map((role) => {
+                    {pagedRoles.map((role) => {
                       const isSelected = selectedId === role.id
                       const samples = role.sample_employees || []
                       const total = role.employee_count || 0
@@ -342,6 +346,17 @@ export default function RolesAccess() {
                     })}
                   </tbody>
                 </table>
+                <TablePagination
+                  page={rolesPagination.page}
+                  totalPages={rolesPagination.totalPages}
+                  pageSize={rolesPagination.pageSize}
+                  pageSizeOptions={rolesPagination.pageSizeOptions}
+                  totalCount={activeRoles.length}
+                  rangeStart={rolesPagination.rangeStart}
+                  rangeEnd={rolesPagination.rangeEnd}
+                  onPageChange={rolesPagination.setPage}
+                  onPageSizeChange={rolesPagination.setPageSize}
+                />
               </div>
             )}
           </div>

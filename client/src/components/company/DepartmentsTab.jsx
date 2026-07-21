@@ -9,7 +9,10 @@ import GooToggle from '../ui/GooToggle'
 import TrashIcon from '../ui/TrashIcon'
 import EditIcon from '../ui/EditIcon'
 import DepartmentModal, { formatDepartmentLocation } from './DepartmentModal'
+import FilterableSelect from '../ui/FilterableSelect'
 import LimitExceededCard from '../shared/LimitExceededCard'
+import TablePagination from '../shared/TablePagination'
+import { useTablePagination } from '../../hooks/useTablePagination'
 import './CompanyShared.css'
 
 function canPickAnyLocation({ isOrgAdmin, accessRole }) {
@@ -36,6 +39,8 @@ export default function DepartmentsTab({ canManage }) {
   const atDepartmentLimit = isResourceAtLimit('departments', 'department_limit', activeCount)
   const defaultCreateLocationId = canSelectAnyLocation ? '' : (myLocationId || '')
   const lockCreateLocation = Boolean(defaultCreateLocationId)
+  const pagination = useTablePagination(departments.length, { resetKey: locationFilter })
+  const pagedDepartments = pagination.paginate(departments)
 
   const openCreate = () => {
     if (atDepartmentLimit) {
@@ -103,16 +108,16 @@ export default function DepartmentsTab({ canManage }) {
         <div className="company-panel__filters">
           <label className="company-filter">
             <span>Location</span>
-            <select
-              className="company-form__input company-form__input--select"
+            <FilterableSelect
+              className="company-form__input--select"
               value={locationFilter}
-              onChange={(e) => setLocationFilter(e.target.value)}
-            >
-              <option value="">All locations</option>
-              {activeLocations.map((loc) => (
-                <option key={loc.id} value={loc.id}>{loc.name}</option>
-              ))}
-            </select>
+              onChange={setLocationFilter}
+              options={activeLocations}
+              getOptionValue={(loc) => loc.id}
+              getOptionLabel={(loc) => loc.name}
+              emptyLabel="All locations"
+              placeholder="All locations"
+            />
           </label>
           <p className="company-panel__count">
             {activeCount} active · {departments.length} total department(s)
@@ -145,7 +150,7 @@ export default function DepartmentsTab({ canManage }) {
               </tr>
             </thead>
             <tbody>
-              {departments.map((dept) => {
+              {pagedDepartments.map((dept) => {
                 const isActive = dept.is_active !== false
                 return (
                   <tr key={dept.id} className={!isActive ? 'company-table__row--inactive' : undefined}>
@@ -192,6 +197,17 @@ export default function DepartmentsTab({ canManage }) {
               })}
             </tbody>
           </table>
+          <TablePagination
+            page={pagination.page}
+            totalPages={pagination.totalPages}
+            pageSize={pagination.pageSize}
+            pageSizeOptions={pagination.pageSizeOptions}
+            totalCount={departments.length}
+            rangeStart={pagination.rangeStart}
+            rangeEnd={pagination.rangeEnd}
+            onPageChange={pagination.setPage}
+            onPageSizeChange={pagination.setPageSize}
+          />
         </div>
       )}
 

@@ -1,3 +1,5 @@
+import FilterableSelect from '../ui/FilterableSelect'
+
 export default function CreatableSelect({
   label,
   value,
@@ -18,20 +20,17 @@ export default function CreatableSelect({
         {required && ' *'}
       </span>
       <div className="company-creatable-select">
-        <select
-          className="company-form__input company-form__input--select"
+        <FilterableSelect
           value={value}
-          onChange={(e) => onChange(e.target.value)}
+          onChange={onChange}
+          options={options}
+          getOptionValue={getOptionValue}
+          getOptionLabel={getOptionLabel}
+          placeholder={placeholder}
           disabled={disabled}
           required={required}
-        >
-          <option value="">{placeholder}</option>
-          {options.map((option) => (
-            <option key={getOptionValue(option)} value={getOptionValue(option)}>
-              {getOptionLabel(option)}
-            </option>
-          ))}
-        </select>
+          className="company-form__input--select"
+        />
         {onCreate && (
           <button
             type="button"

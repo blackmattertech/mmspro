@@ -327,6 +327,7 @@
 }
 
 .checkbox {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -336,9 +337,15 @@
 
 .checkbox__input {
   position: absolute;
+  left: 0;
+  top: 50%;
+  z-index: 1;
+  width: 18px;
+  height: 18px;
+  margin: 0;
   opacity: 0;
-  width: 0;
-  height: 0;
+  cursor: pointer;
+  transform: translateY(-50%);
 }
 
 .checkbox__box {

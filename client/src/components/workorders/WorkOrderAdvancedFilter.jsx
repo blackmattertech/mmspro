@@ -1,39 +1,52 @@
 import { useEffect, useRef, useState } from 'react'
+import FilterableSelect from '../ui/FilterableSelect'
 import {
   ADVANCED_FILTER_FIELDS,
   FILTER_JOIN_OPTIONS,
   createFilterRule,
   getOperatorsForField,
 } from '../../lib/workOrderFilters'
+import '../company/CompanyShared.css'
 import './WorkOrderAdvancedFilter.css'
+
+const WO_STATUS_OPTIONS = [
+  { value: 'created', label: 'Created' },
+  { value: 'draft', label: 'Draft' },
+]
+
+function AdvSelect(props) {
+  return (
+    <FilterableSelect
+      inputClassName="wo-adv-filter__select"
+      {...props}
+    />
+  )
+}
 
 function FilterValueInput({ rule, locations, onChange }) {
   if (rule.field === 'location') {
     return (
-      <select
-        className="wo-adv-filter__select"
+      <AdvSelect
         value={rule.value}
-        onChange={(e) => onChange(e.target.value)}
-      >
-        <option value="">Select location...</option>
-        {locations.map((loc) => (
-          <option key={loc.id} value={loc.id}>{loc.name}</option>
-        ))}
-      </select>
+        onChange={onChange}
+        options={locations}
+        getOptionValue={(loc) => loc.id}
+        getOptionLabel={(loc) => loc.name}
+        placeholder="Select location..."
+      />
     )
   }
 
   if (rule.field === 'status') {
     return (
-      <select
-        className="wo-adv-filter__select"
+      <AdvSelect
         value={rule.value}
-        onChange={(e) => onChange(e.target.value)}
-      >
-        <option value="">Select status...</option>
-        <option value="created">Created</option>
-        <option value="draft">Draft</option>
-      </select>
+        onChange={onChange}
+        options={WO_STATUS_OPTIONS}
+        getOptionValue={(o) => o.value}
+        getOptionLabel={(o) => o.label}
+        placeholder="Select status..."
+      />
     )
   }
 
@@ -119,42 +132,41 @@ export default function WorkOrderAdvancedFilter({
               return (
                 <div key={rule.id} className="wo-adv-filter__rule">
                   {index > 0 ? (
-                    <select
-                      className="wo-adv-filter__join"
+                    <AdvSelect
                       value={rule.join}
-                      onChange={(e) => updateRule(rule.id, { join: e.target.value })}
-                    >
-                      {FILTER_JOIN_OPTIONS.map((option) => (
-                        <option key={option.id} value={option.id}>{option.label}</option>
-                      ))}
-                    </select>
+                      onChange={(join) => updateRule(rule.id, { join })}
+                      options={FILTER_JOIN_OPTIONS}
+                      getOptionValue={(option) => option.id}
+                      getOptionLabel={(option) => option.label}
+                      allowEmpty={false}
+                      inputClassName="wo-adv-filter__join"
+                    />
                   ) : (
                     <span className="wo-adv-filter__where">Where</span>
                   )}
 
-                  <select
-                    className="wo-adv-filter__select"
+                  <AdvSelect
                     value={rule.field}
-                    onChange={(e) => updateRule(rule.id, {
-                      field: e.target.value,
-                      operator: getOperatorsForField(e.target.value)[0]?.id || 'contains',
+                    onChange={(field) => updateRule(rule.id, {
+                      field,
+                      operator: getOperatorsForField(field)[0]?.id || 'contains',
                       value: '',
                     })}
-                  >
-                    {ADVANCED_FILTER_FIELDS.map((field) => (
-                      <option key={field.id} value={field.id}>{field.label}</option>
-                    ))}
-                  </select>
+                    options={ADVANCED_FILTER_FIELDS}
+                    getOptionValue={(field) => field.id}
+                    getOptionLabel={(field) => field.label}
+                    allowEmpty={false}
+                  />
 
-                  <select
-                    className="wo-adv-filter__select wo-adv-filter__select--operator"
+                  <AdvSelect
                     value={rule.operator}
-                    onChange={(e) => updateRule(rule.id, { operator: e.target.value })}
-                  >
-                    {operators.map((operator) => (
-                      <option key={operator.id} value={operator.id}>{operator.label}</option>
-                    ))}
-                  </select>
+                    onChange={(operator) => updateRule(rule.id, { operator })}
+                    options={operators}
+                    getOptionValue={(operator) => operator.id}
+                    getOptionLabel={(operator) => operator.label}
+                    allowEmpty={false}
+                    className="wo-adv-filter__select--operator"
+                  />
 
                   <FilterValueInput
                     rule={rule}

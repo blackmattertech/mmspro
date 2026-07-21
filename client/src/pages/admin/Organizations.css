@@ -238,6 +238,13 @@
   flex-wrap: wrap;
 }
 
+.admin-org-footer__pagination {
+  width: 100%;
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
+}
+
 .admin-org-footer__count {
   font-size: 13px;
   color: var(--color-gray-blue);

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
 import { supabase } from '../../lib/supabase'
+import { readRememberMe, readSavedEmail, writeRememberMe, writeSavedEmail } from '../../lib/authPreferences'
 import { requestPasswordReset } from '../../lib/api'
 import './Login.css'
 
@@ -63,10 +64,10 @@ function EyeIcon({ open }) {
 }
 
 export default function Login() {
-  const [email, setEmail] = useState('')
+  const [email, setEmail] = useState(() => readSavedEmail())
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
-  const [rememberMe, setRememberMe] = useState(true)
+  const [rememberMe, setRememberMe] = useState(() => readRememberMe())
   const [formMode, setFormMode] = useState('signin')
   const [error, setError] = useState(null)
   const [success, setSuccess] = useState(null)
@@ -147,7 +148,7 @@ export default function Login() {
       return
     }
 
-    const { data, error: signInError } = await signIn(email, password)
+    const { data, error: signInError } = await signIn(email, password, { rememberMe })
     if (signInError) {
       setLoading(false)
       return setError(signInError.message)
@@ -301,7 +302,12 @@ export default function Login() {
                   <input
                     type="checkbox"
                     checked={rememberMe}
-                    onChange={(e) => setRememberMe(e.target.checked)}
+                    onChange={(e) => {
+                      const checked = e.target.checked
+                      setRememberMe(checked)
+                      writeRememberMe(checked)
+                      if (!checked) writeSavedEmail(email, false)
+                    }}
                     className="checkbox__input"
                   />
                   <span className="checkbox__box" aria-hidden="true">

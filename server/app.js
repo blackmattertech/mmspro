@@ -13,6 +13,7 @@ import assetsRoutes from './routes/api/assets.js'
 import equipmentRoutes from './routes/api/equipment.js'
 import equipmentFieldsRoutes from './routes/api/equipmentFields.js'
 import workOrdersRoutes from './routes/api/workOrders.js'
+import workRequestsRoutes from './routes/api/workRequests.js'
 import profileRoutes from './routes/api/profile.js'
 import rolesRoutes from './routes/api/roles.js'
 
@@ -70,6 +71,7 @@ app.use('/api/assets', assetsRoutes)
 app.use('/api/equipment', equipmentRoutes)
 app.use('/api/equipment-fields', equipmentFieldsRoutes)
 app.use('/api/work-orders', workOrdersRoutes)
+app.use('/api/work-requests', workRequestsRoutes)
 app.use('/api/profile', profileRoutes)
 app.use('/api', apiRoutes)
 app.use('/api/notifications', notificationRoutes)

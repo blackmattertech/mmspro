@@ -10,6 +10,8 @@ import EditIcon from '../ui/EditIcon'
 import LocationModal from './LocationModal'
 import LocationHeadCell from './LocationHeadCell'
 import LimitExceededCard from '../shared/LimitExceededCard'
+import TablePagination from '../shared/TablePagination'
+import { useTablePagination } from '../../hooks/useTablePagination'
 import './CompanyShared.css'
 
 export default function LocationsTab({ canManage }) {
@@ -23,6 +25,8 @@ export default function LocationsTab({ canManage }) {
 
   const activeCount = locations.filter((l) => l.is_active !== false).length
   const atLocationLimit = isResourceAtLimit('locations', 'location_limit', activeCount)
+  const pagination = useTablePagination(locations.length)
+  const pagedLocations = pagination.paginate(locations)
 
   const openCreate = () => {
     if (atLocationLimit) {
@@ -106,7 +110,7 @@ export default function LocationsTab({ canManage }) {
               </tr>
             </thead>
             <tbody>
-              {locations.map((loc) => {
+              {pagedLocations.map((loc) => {
                 const isActive = loc.is_active !== false
                 return (
                   <tr key={loc.id} className={!isActive ? 'company-table__row--inactive' : undefined}>
@@ -164,6 +168,17 @@ export default function LocationsTab({ canManage }) {
               })}
             </tbody>
           </table>
+          <TablePagination
+            page={pagination.page}
+            totalPages={pagination.totalPages}
+            pageSize={pagination.pageSize}
+            pageSizeOptions={pagination.pageSizeOptions}
+            totalCount={locations.length}
+            rangeStart={pagination.rangeStart}
+            rangeEnd={pagination.rangeEnd}
+            onPageChange={pagination.setPage}
+            onPageSizeChange={pagination.setPageSize}
+          />
         </div>
       )}
 

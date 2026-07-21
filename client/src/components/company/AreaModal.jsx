@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useBackdropClose } from '../../hooks/useBackdropClose'
 import { useLocations } from '../../hooks/useLocations'
 import { useDepartments } from '../../hooks/useDepartments'
+import FilterableSelect from '../ui/FilterableSelect'
 import '../company/CompanyShared.css'
 
 const EMPTY = {
@@ -97,36 +98,36 @@ export default function AreaModal({ area, saving, onClose, onSave }) {
           </label>
           <label className="company-form__field">
             <span className="company-form__label">Location *</span>
-            <select
-              className="company-form__input company-form__input--select"
+            <FilterableSelect
+              className="company-form__input--select"
               value={form.location_id}
-              onChange={(e) => setForm((f) => ({
+              onChange={(next) => setForm((f) => ({
                 ...f,
-                location_id: e.target.value,
+                location_id: next,
                 department_id: '',
               }))}
+              options={activeLocations}
+              getOptionValue={(loc) => loc.id}
+              getOptionLabel={(loc) => loc.name}
+              placeholder="Select location…"
               required
-            >
-              <option value="">Select location…</option>
-              {activeLocations.map((loc) => (
-                <option key={loc.id} value={loc.id}>{loc.name}</option>
-              ))}
-            </select>
+              allowEmpty={false}
+            />
           </label>
           <label className="company-form__field">
             <span className="company-form__label">Department *</span>
-            <select
-              className="company-form__input company-form__input--select"
+            <FilterableSelect
+              className="company-form__input--select"
               value={form.department_id}
-              onChange={(e) => setForm((f) => ({ ...f, department_id: e.target.value }))}
+              onChange={(next) => setForm((f) => ({ ...f, department_id: next }))}
+              options={activeDepartments}
+              getOptionValue={(dept) => dept.id}
+              getOptionLabel={(dept) => dept.name}
+              placeholder="Select department…"
               required
               disabled={!form.location_id}
-            >
-              <option value="">Select department…</option>
-              {activeDepartments.map((dept) => (
-                <option key={dept.id} value={dept.id}>{dept.name}</option>
-              ))}
-            </select>
+              allowEmpty={false}
+            />
           </label>
           {error && <div className="company-alert">{error}</div>}
           <div className="company-modal__actions">

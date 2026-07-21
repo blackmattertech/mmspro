@@ -52,6 +52,7 @@ export default function AdminOrgAssets() {
           fieldsState={fieldsState}
           canManageSchema
           canManageChildren
+          fieldScope="assets"
         />
       </div>
     </div>

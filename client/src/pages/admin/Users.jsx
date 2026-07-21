@@ -1,5 +1,8 @@
 import { useState, useEffect } from 'react'
 import { getAdminUsers } from '../../lib/api'
+import TablePagination from '../../components/shared/TablePagination'
+import { useTablePagination } from '../../hooks/useTablePagination'
+import '../../components/company/CompanyShared.css'
 import './AdminPage.css'
 
 const ROLE_LABELS = {
@@ -19,6 +22,9 @@ export default function Users() {
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false))
   }, [])
+
+  const pagination = useTablePagination(users.length)
+  const pagedUsers = pagination.paginate(users)
 
   return (
     <div className="admin-page">
@@ -56,7 +62,7 @@ export default function Users() {
                       <td colSpan={4} className="admin-table__empty">No users found.</td>
                     </tr>
                   ) : (
-                    users.map((user) => (
+                    pagedUsers.map((user) => (
                       <tr key={user.id}>
                         <td className="admin-table__name">{user.email || '—'}</td>
                         <td>{ROLE_LABELS[user.role] || user.role}</td>
@@ -67,6 +73,17 @@ export default function Users() {
                   )}
                 </tbody>
               </table>
+              <TablePagination
+                page={pagination.page}
+                totalPages={pagination.totalPages}
+                pageSize={pagination.pageSize}
+                pageSizeOptions={pagination.pageSizeOptions}
+                totalCount={users.length}
+                rangeStart={pagination.rangeStart}
+                rangeEnd={pagination.rangeEnd}
+                onPageChange={pagination.setPage}
+                onPageSizeChange={pagination.setPageSize}
+              />
             </div>
           )}
         </div>

@@ -5,6 +5,7 @@ import {
   emptyPermissions,
   MODULE_LEGACY_EXPAND,
   WORK_ORDER_MODULE_KEYS,
+  WORK_REQUEST_MODULE_KEYS,
   REPORT_MODULE_KEYS,
   COMPANY_PAGE_MODULE_KEYS,
 } from '../lib/accessModules'
@@ -89,6 +90,9 @@ export function PermissionsProvider({ children }) {
         if (moduleKey === parent && children.some((child) => granted(child))) return true
       }
 
+      if (moduleKey === 'work_request' && WORK_REQUEST_MODULE_KEYS.some((key) => granted(key))) {
+        return true
+      }
       if (moduleKey === 'work_orders' && WORK_ORDER_MODULE_KEYS.some((key) => granted(key))) {
         return true
       }
@@ -102,6 +106,12 @@ export function PermissionsProvider({ children }) {
     const firstReadablePath = (orgSlug) => {
       const order = [
         ['dashboard', 'dashboard'],
+        ['work_request_create', 'work-request/create'],
+        ['work_request_my', 'work-request/my'],
+        ['work_request_incoming', 'work-request/incoming'],
+        ['work_request_outgoing', 'work-request/outgoing'],
+        ['work_request_all', 'work-request/all'],
+        ['work_request', 'work-request/create'],
         ['work_orders_manual', 'work-orders/manual'],
         ['work_orders_received', 'work-orders/received'],
         ['work_orders', 'work-orders/manual'],

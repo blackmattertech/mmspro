@@ -1,4 +1,5 @@
 import { lazy, Suspense } from 'react'
+import { WORK_REQUEST_MODULE_KEYS } from './lib/accessModules'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider } from './hooks/useAuth'
 import { OrgProvider } from './hooks/useOrg'
@@ -20,6 +21,10 @@ const ReceivedWorkOrders = lazy(() => import('./pages/app/ReceivedWorkOrders'))
 const AssignedWorkOrders = lazy(() => import('./pages/app/AssignedWorkOrders'))
 const ScheduledWorkOrders = lazy(() => import('./pages/app/ScheduledWorkOrders'))
 const PlaceholderPage = lazy(() => import('./pages/app/PlaceholderPage'))
+const ConfigurationImport = lazy(() => import('./pages/app/ConfigurationImport'))
+const WorkRequestCreate = lazy(() => import('./pages/app/WorkRequestCreate'))
+const WorkRequestListPage = lazy(() => import('./pages/app/WorkRequestListPage'))
+const WorkRequestsRouteLayout = lazy(() => import('./components/workrequests/WorkRequestsRouteLayout'))
 const RolesAccess = lazy(() => import('./pages/app/RolesAccess'))
 const OrgHomeRedirect = lazy(() => import('./components/shared/OrgHomeRedirect'))
 const AdminDashboard = lazy(() => import('./pages/admin/Dashboard'))
@@ -83,6 +88,51 @@ export default function App() {
             <Route path="/:orgSlug" element={<OrgRoute>{withSuspense(<AppLayout />)}</OrgRoute>}>
               <Route index element={withSuspense(<OrgHomeRedirect />)} />
               <Route path="dashboard" element={withModule('dashboard', <Dashboard />)} />
+              <Route
+                path="work-request"
+                element={withModule([...WORK_REQUEST_MODULE_KEYS, 'work_request'], <WorkRequestsRouteLayout />)}
+              >
+                <Route
+                  path="create"
+                  element={withModule(['work_request_create', 'work_request'], <WorkRequestCreate />)}
+                />
+                <Route
+                  path="my"
+                  element={withModule(['work_request_my', 'work_request'], (
+                    <WorkRequestListPage
+                      filter="my"
+                      emptyHint="Work requests you submitted appear here."
+                    />
+                  ))}
+                />
+                <Route
+                  path="incoming"
+                  element={withModule(['work_request_incoming', 'work_request'], (
+                    <WorkRequestListPage
+                      filter="incoming"
+                      emptyHint="Requests routed to your department appear here."
+                    />
+                  ))}
+                />
+                <Route
+                  path="outgoing"
+                  element={withModule(['work_request_outgoing', 'work_request'], (
+                    <WorkRequestListPage
+                      filter="outgoing"
+                      emptyHint="Requests your department sent to others appear here."
+                    />
+                  ))}
+                />
+                <Route
+                  path="all"
+                  element={withModule(['work_request_all', 'work_request'], (
+                    <WorkRequestListPage
+                      filter="all"
+                      emptyHint="No work requests in this organization yet."
+                    />
+                  ))}
+                />
+              </Route>
               <Route path="calendar" element={withModule('calendar', <Calendar />)} />
               <Route path="masters/company" element={withModule(companyPageModules, <Company />)} />
               <Route path="masters/assets" element={withModule('assets', <Assets />)} />
@@ -116,6 +166,14 @@ export default function App() {
               <Route
                 path="configuration/settings"
                 element={withModule('settings', <PlaceholderPage title="settings" />)}
+              />
+              <Route
+                path="configuration/import"
+                element={withModule('settings', <ConfigurationImport />)}
+              />
+              <Route
+                path="configuration/export"
+                element={withModule('settings', <PlaceholderPage title="Export" />)}
               />
             </Route>
 

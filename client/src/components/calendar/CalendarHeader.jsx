@@ -1,8 +1,10 @@
 import { useState, useRef } from 'react'
 import CreateWorkOrderModal from '../dashboard/CreateWorkOrderModal'
 import DateField from '../ui/DateField'
+import FilterableSelect from '../ui/FilterableSelect'
 import NotificationPanel from '../dashboard/NotificationPanel'
 import { useNotifications } from '../../hooks/useNotifications'
+import '../company/CompanyShared.css'
 import '../dashboard/DashboardHeader.css'
 
 export default function CalendarHeader({
@@ -33,17 +35,19 @@ export default function CalendarHeader({
         <div className="dash-header__right">
           <div className="dash-header__filter">
             <label className="dash-header__filter-label" htmlFor="cal-plant-filter">Location</label>
-            <select
+            <FilterableSelect
               id="cal-plant-filter"
-              className="dash-header__select"
               value={plantFilter}
-              onChange={(e) => onPlantChange(e.target.value)}
-            >
-              <option value="all">All Locations</option>
-              {(plants || []).map((p) => (
-                <option key={p.id} value={p.id}>{p.name}</option>
-              ))}
-            </select>
+              onChange={onPlantChange}
+              options={[
+                { value: 'all', label: 'All Locations' },
+                ...(plants || []).map((p) => ({ value: p.id, label: p.name })),
+              ]}
+              getOptionValue={(opt) => opt.value}
+              getOptionLabel={(opt) => opt.label}
+              allowEmpty={false}
+              inputClassName="dash-header__select"
+            />
           </div>
 
           <div className="dash-header__date-range">

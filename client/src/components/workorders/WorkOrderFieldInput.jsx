@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import DateField from '../ui/DateField'
+import FilterableSelect from '../ui/FilterableSelect'
 import { fieldTypeLabel } from '../../lib/assetFieldTypes'
 import { validateWorkOrderFile } from '../../lib/workOrderAssets'
 import {
@@ -436,18 +437,15 @@ export default function WorkOrderFieldInput({ field, value, onChange, disabled }
     return (
       <div className="company-form__field">
         <label className="company-form__label" htmlFor={id}>{label}</label>
-        <select
+        <FilterableSelect
           id={id}
-          className="company-form__input company-form__input--select"
           value={value || ''}
-          onChange={(e) => onChange(e.target.value)}
+          onChange={onChange}
+          options={optionValues}
+          placeholder={`Select ${label}`}
           disabled={disabled}
-        >
-          <option value="">Select {label}</option>
-          {optionValues.map((opt) => (
-            <option key={opt} value={opt}>{opt}</option>
-          ))}
-        </select>
+          className="company-form__input--select"
+        />
       </div>
     )
   }

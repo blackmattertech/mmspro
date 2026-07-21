@@ -33,6 +33,7 @@ export default function ScheduledWorkOrders() {
         columns={SCHEDULED_COLUMNS}
         emptyTitle="No scheduled work orders yet."
         emptyHint="Recurring and preventive work orders will appear here once scheduling is enabled."
+        paginationResetKey={`${search}|${locationFilter}`}
       />
     </>
   )

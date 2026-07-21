@@ -24,7 +24,7 @@ export default function Assets() {
       <header className="company-page__header">
         <h1 className="company-page__title">Assets</h1>
         <p className="company-page__subtitle">
-          Manage dropdown child values for your organization&apos;s asset forms
+          Manage dropdown option values for work order and other asset forms. Equipment field options are under Equipment.
         </p>
       </header>
 
@@ -37,13 +37,14 @@ export default function Assets() {
         {canManage && (
           <p className="company-readonly-note">
             Sections and parent fields are configured by Super Admin per organization.
-            You can add and edit option values here.
+            You can add and edit option values here. For equipment master fields (e.g. Equipment Details), use Equipment → Field options.
           </p>
         )}
 
         <AssetsFieldsPanel
           canManageSchema={canManageSchema}
           canManageChildren={canManageChildren}
+          fieldScope="assets"
         />
       </div>
     </div>

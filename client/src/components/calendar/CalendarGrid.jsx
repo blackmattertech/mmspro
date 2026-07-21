@@ -1,5 +1,7 @@
 import { TASK_TYPE_COLORS, TASK_TYPE_BG } from '../../data/calendarDemo'
 import { buildCalendarGrid } from '../../hooks/useCalendar'
+import FilterableSelect from '../ui/FilterableSelect'
+import '../company/CompanyShared.css'
 
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
@@ -23,35 +25,43 @@ export function CalendarFilters({
   return (
     <div className="cal-filters">
       <div className="cal-filters__dropdowns">
-        <select
-          className="cal-filters__select"
+        <FilterableSelect
+          inputClassName="cal-filters__select"
           value={logFilter}
-          onChange={(e) => onLogFilterChange(e.target.value)}
-        >
-          <option value="all">All Logs</option>
-          <option value="logs">Logs Only</option>
-          <option value="followups">Follow-ups Only</option>
-        </select>
-        <select
-          className="cal-filters__select"
+          onChange={onLogFilterChange}
+          options={[
+            { value: 'all', label: 'All Logs' },
+            { value: 'logs', label: 'Logs Only' },
+            { value: 'followups', label: 'Follow-ups Only' },
+          ]}
+          getOptionValue={(opt) => opt.value}
+          getOptionLabel={(opt) => opt.label}
+          allowEmpty={false}
+        />
+        <FilterableSelect
+          inputClassName="cal-filters__select"
           value={plantFilter}
-          onChange={(e) => onPlantFilterChange(e.target.value)}
-        >
-          <option value="all">All Locations</option>
-          {(plants || []).map((p) => (
-            <option key={p.id} value={p.id}>{p.name}</option>
-          ))}
-        </select>
-        <select
-          className="cal-filters__select"
+          onChange={onPlantFilterChange}
+          options={[
+            { value: 'all', label: 'All Locations' },
+            ...(plants || []).map((p) => ({ value: p.id, label: p.name })),
+          ]}
+          getOptionValue={(opt) => opt.value}
+          getOptionLabel={(opt) => opt.label}
+          allowEmpty={false}
+        />
+        <FilterableSelect
+          inputClassName="cal-filters__select"
           value={workCenterFilter}
-          onChange={(e) => onWorkCenterFilterChange(e.target.value)}
-        >
-          <option value="all">All Work Centers</option>
-          {(workCenters || []).map((wc) => (
-            <option key={wc.id} value={wc.id}>{wc.name}</option>
-          ))}
-        </select>
+          onChange={onWorkCenterFilterChange}
+          options={[
+            { value: 'all', label: 'All Work Centers' },
+            ...(workCenters || []).map((wc) => ({ value: wc.id, label: wc.name })),
+          ]}
+          getOptionValue={(opt) => opt.value}
+          getOptionLabel={(opt) => opt.label}
+          allowEmpty={false}
+        />
       </div>
 
       <div className="cal-legend">

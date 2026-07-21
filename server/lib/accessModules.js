@@ -12,6 +12,17 @@ export const ACCESS_MODULE_GROUPS = [
     ],
   },
   {
+    id: 'work_request',
+    label: 'Work Request',
+    modules: [
+      { key: 'work_request_create', label: 'Create Work Request', actions: ['create', 'read', 'update', 'delete'] },
+      { key: 'work_request_my', label: 'My Requests', actions: ['create', 'read', 'update', 'delete'] },
+      { key: 'work_request_incoming', label: 'Incoming Requests', actions: ['create', 'read', 'update', 'delete'] },
+      { key: 'work_request_outgoing', label: 'Outgoing Requests', actions: ['create', 'read', 'update', 'delete'] },
+      { key: 'work_request_all', label: 'All Requests', actions: ['create', 'read', 'update', 'delete'] },
+    ],
+  },
+  {
     id: 'work_orders',
     label: 'Work Orders',
     modules: [
@@ -73,6 +84,13 @@ export const ACCESS_MODULES = ACCESS_MODULE_GROUPS.flatMap((group) =>
 )
 
 export const MODULE_LEGACY_EXPAND = {
+  work_request: [
+    'work_request_create',
+    'work_request_my',
+    'work_request_incoming',
+    'work_request_outgoing',
+    'work_request_all',
+  ],
   work_orders: [
     'work_orders_received',
     'work_orders_assigned',
@@ -89,6 +107,15 @@ export const MODULE_LEGACY_EXPAND = {
   // Older roles used company.update for locations/depts CRUD.
   company: ['locations', 'departments'],
 }
+
+export const WORK_REQUEST_MODULE_KEYS = [
+  'work_request',
+  'work_request_create',
+  'work_request_my',
+  'work_request_incoming',
+  'work_request_outgoing',
+  'work_request_all',
+]
 
 export const WORK_ORDER_MODULE_KEYS = [
   'work_orders',

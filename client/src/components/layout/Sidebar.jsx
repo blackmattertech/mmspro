@@ -1,12 +1,14 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
 import { useOrg } from '../../hooks/useOrg'
 import { usePermissions } from '../../hooks/usePermissions'
-import { getNavItems } from '../../config/navigation'
+import { getNavItems, getShortcutOptions } from '../../config/navigation'
+import { orgQuickAccessScope } from '../../hooks/useQuickAccess'
 import { formatAccountRole } from '../../lib/accountRoles'
 import NavIcon from './NavIcon'
 import SidebarUserFooter from './SidebarUserFooter'
+import SidebarQuickAccess from './SidebarQuickAccess'
 import './Sidebar.css'
 
 function findActiveParentId(navItems, pathname) {
@@ -24,6 +26,11 @@ export default function Sidebar({ collapsed = false, onToggle }) {
   const { canRead, loading: permsLoading, accessRole, isOrgAdmin } = usePermissions()
   const location = useLocation()
   const navItems = org && !permsLoading ? getNavItems(org.slug, { canRead }) : []
+  const quickAccessScope = org ? orgQuickAccessScope(org.id) : null
+  const quickAccessOptions = useMemo(
+    () => (org && !permsLoading ? getShortcutOptions(org.slug, { canRead }) : []),
+    [org, canRead, permsLoading],
+  )
   const [openMenu, setOpenMenu] = useState(null)
 
   useEffect(() => {
@@ -69,13 +76,12 @@ export default function Sidebar({ collapsed = false, onToggle }) {
         {navItems.map((item) => {
           if (item.children) {
             const isOpen = !collapsed && openMenu === item.id
-            const isChildActive = item.children.some((c) => location.pathname === c.path)
 
             return (
               <div key={item.id} className="sidebar__group">
                 <button
                   type="button"
-                  className={`sidebar__link sidebar__link--parent ${isChildActive ? 'sidebar__link--active' : ''}`}
+                  className={`sidebar__link sidebar__link--parent`}
                   onClick={() => toggleMenu(item.id)}
                 >
                   <NavIcon name={item.icon} />
@@ -96,6 +102,7 @@ export default function Sidebar({ collapsed = false, onToggle }) {
                       <NavLink
                         key={child.path}
                         to={child.path}
+                        end
                         className={({ isActive }) =>
                           `sidebar__flyout-link ${isActive ? 'sidebar__flyout-link--active' : ''}`
                         }
@@ -112,6 +119,7 @@ export default function Sidebar({ collapsed = false, onToggle }) {
                         <NavLink
                           key={child.path}
                           to={child.path}
+                          end
                           className={({ isActive }) =>
                             `sidebar__sublink ${isActive ? 'sidebar__sublink--active' : ''}`
                           }
@@ -146,6 +154,13 @@ export default function Sidebar({ collapsed = false, onToggle }) {
       </nav>
 
       <div className="sidebar__footer">
+        {org && !permsLoading && (
+          <SidebarQuickAccess
+            collapsed={collapsed}
+            scope={quickAccessScope}
+            options={quickAccessOptions}
+          />
+        )}
         <SidebarUserFooter
           collapsed={collapsed}
           roleLabel={roleLabel}
