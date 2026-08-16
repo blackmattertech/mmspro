@@ -39,12 +39,25 @@ export function getWorkRequestDepartmentEmployees(id) {
   return workRequestsFetch(`/${id}/department-employees`)
 }
 
-export function approveWorkRequest(id, { assignedEmployeeIds, assignmentRemarks }) {
+export function approveWorkRequest(id, {
+  assignedEmployeeIds,
+  assignmentRemarks,
+  workCenter,
+  priority,
+  plannedStartAt,
+  plannedEndAt,
+  plannedDurationHours,
+}) {
   return workRequestsFetch(`/${id}/approve`, {
     method: 'POST',
     body: JSON.stringify({
       assigned_employee_ids: assignedEmployeeIds,
       assignment_remarks: assignmentRemarks,
+      work_center: workCenter,
+      priority,
+      planned_start_at: plannedStartAt || null,
+      planned_end_at: plannedEndAt || null,
+      planned_duration_hours: plannedDurationHours ?? null,
     }),
   })
 }

@@ -162,6 +162,7 @@ export function applyWorkRequestFilters(rows, {
   priorityFilter,
   advancedRules,
   departments,
+  fieldFilter,
 } = {}) {
   let result = rows || []
 
@@ -190,6 +191,30 @@ export function applyWorkRequestFilters(rows, {
 
   if (priorityFilter && priorityFilter !== 'all') {
     result = result.filter((row) => row.priority === priorityFilter)
+  }
+
+  if (fieldFilter?.field && String(fieldFilter.value || '').trim()) {
+    const query = String(fieldFilter.value).trim().toLowerCase()
+    const typeLabels = {
+      inter_department: 'inter inter department',
+      intra_department: 'intra intra department',
+      user_self: 'self user self',
+      manual: 'manual',
+    }
+    const getters = {
+      status: (row) => `${row.status || ''} ${(row.status || '').replace(/_/g, ' ')}`,
+      priority: (row) => row.priority,
+      request_number: (row) => row.request_number,
+      description: (row) => row.problem_description,
+      type: (row) => `${row.request_type || ''} ${typeLabels[row.request_type] || ''}`,
+      from: (row) => row.order_from?.name,
+      to: (row) => row.order_to?.name,
+      requester: (row) => row.requester?.full_name || row.requester?.email,
+    }
+    const getter = getters[fieldFilter.field]
+    if (getter) {
+      result = result.filter((row) => String(getter(row) || '').toLowerCase().includes(query))
+    }
   }
 
   result = applyAdvancedWorkRequestFilters(result, advancedRules, departments)

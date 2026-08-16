@@ -1,5 +1,7 @@
 import { useState, useMemo, useEffect } from 'react'
 import { useOrg } from '../../hooks/useOrg'
+import { orgPath } from '../../config/navigation'
+import PageBack from '../../components/shared/PageBack'
 import { useRoles } from '../../hooks/useRoles'
 import { useEmployees } from '../../hooks/useEmployees'
 import { getRolesCapabilities } from '../../lib/api-roles'
@@ -10,7 +12,14 @@ import EmployeeAvatar from '../../components/company/EmployeeAvatar'
 import TrashIcon from '../../components/ui/TrashIcon'
 import EditIcon from '../../components/ui/EditIcon'
 import TablePagination from '../../components/shared/TablePagination'
+import TableColumnPicker from '../../components/shared/TableColumnPicker'
+import TableFilterToolbar from '../../components/shared/TableFilterToolbar'
 import { useTablePagination } from '../../hooks/useTablePagination'
+import { useTableColumnPrefs } from '../../hooks/useTableColumnPrefs'
+import { TABLE_SORT_OPTIONS, applyTableFilters } from '../../lib/tableFilters'
+import '../../components/shared/TableColumnPicker.css'
+import '../../components/shared/TableFilterToolbar.css'
+import '../../components/workorders/WorkOrdersPage.css'
 import '../../components/company/CompanyShared.css'
 import './RolesAccess.css'
 
@@ -24,8 +33,13 @@ const EMPTY_CAPS = {
   can_assign: false,
 }
 
+const ROLE_FILTER_FIELDS = [
+  { value: 'name', label: 'Name' },
+  { value: 'description', label: 'Description' },
+]
+
 export default function RolesAccess() {
-  const { loading: orgLoading } = useOrg()
+  const { org, loading: orgLoading } = useOrg()
   const [capability, setCapability] = useState(EMPTY_CAPS)
   const [capsLoading, setCapsLoading] = useState(true)
 
@@ -46,6 +60,10 @@ export default function RolesAccess() {
   })
 
   const [selectedId, setSelectedId] = useState(null)
+  const [search, setSearch] = useState('')
+  const [filterField, setFilterField] = useState('')
+  const [filterValue, setFilterValue] = useState('')
+  const [sortBy, setSortBy] = useState('name_asc')
   const [editorMode, setEditorMode] = useState(null)
   const [assignOpen, setAssignOpen] = useState(false)
   const [permDraft, setPermDraft] = useState(null)
@@ -71,8 +89,35 @@ export default function RolesAccess() {
     () => roles.filter((r) => r.is_active !== false),
     [roles],
   )
-  const rolesPagination = useTablePagination(activeRoles.length)
-  const pagedRoles = rolesPagination.paginate(activeRoles)
+
+  const filteredRoles = useMemo(() => applyTableFilters(activeRoles, {
+    search,
+    searchHaystack: (role) => [role.name, role.description].filter(Boolean).join(' '),
+    fieldFilter: { field: filterField, value: filterValue },
+    fieldFilterGetters: {
+      name: (role) => role.name,
+      description: (role) => role.description,
+    },
+    sortBy,
+    getName: (role) => role.name,
+    getCreatedAt: (role) => role.created_at,
+  }), [activeRoles, search, filterField, filterValue, sortBy])
+
+  const rolesPagination = useTablePagination(filteredRoles.length, { resetKey: `${search}|${filterField}|${filterValue}|${sortBy}` })
+  const pagedRoles = rolesPagination.paginate(filteredRoles)
+  const roleColumnDefs = useMemo(() => ([
+    { id: 'name', label: 'Role' },
+    { id: 'description', label: 'Description' },
+    { id: 'employees', label: 'Employees' },
+    { id: 'actions', label: 'Actions', locked: true },
+  ]), [])
+  const {
+    isVisible: isRoleColumnVisible,
+    toggleColumn: toggleRoleColumn,
+    resetColumns: resetRoleColumns,
+    columnDefs: rolePickerColumns,
+    visibleColumnIds: roleVisibleColumnIds,
+  } = useTableColumnPrefs('roles-access', roleColumnDefs)
 
   const selectedRole = useMemo(
     () => roles.find((r) => r.id === selectedId) || null,
@@ -172,6 +217,10 @@ export default function RolesAccess() {
     <div className="roles-page">
       <header className="roles-page__header">
         <div>
+          <PageBack
+            to={org?.slug ? orgPath(org.slug, 'dashboard') : '#'}
+            label="Dashboard"
+          />
           <h1 className="roles-page__title">Roles & Access</h1>
           <p className="roles-page__subtitle">
             Create roles, define module permissions, and assign them to employees
@@ -200,20 +249,41 @@ export default function RolesAccess() {
 
         {!showEditor && (
           <div className="company-panel">
-            <div className="company-panel__toolbar">
-              <p className="company-panel__count">
-                {activeRoles.length} role{activeRoles.length === 1 ? '' : 's'}
-              </p>
-              {canCreate && (
-                <button
-                  type="button"
-                  className="company-btn company-btn--primary"
-                  onClick={openCreate}
-                  disabled={!canOpenCreate}
-                >
-                  + Create Role
-                </button>
-              )}
+            <div className="company-panel__toolbar company-panel__toolbar--filters">
+              <TableFilterToolbar
+                search={{
+                  value: search,
+                  onChange: setSearch,
+                  placeholder: 'Search roles...',
+                  ariaLabel: 'Search roles',
+                }}
+                filter={{
+                  fields: ROLE_FILTER_FIELDS,
+                  field: filterField,
+                  onFieldChange: setFilterField,
+                  value: filterValue,
+                  onValueChange: setFilterValue,
+                }}
+                sort={{ value: sortBy, onChange: setSortBy, options: TABLE_SORT_OPTIONS }}
+                actions={canCreate && (
+                  <button
+                    type="button"
+                    className="company-btn company-btn--primary"
+                    onClick={openCreate}
+                    disabled={!canOpenCreate}
+                  >
+                    + Create Role
+                  </button>
+                )}
+                columnPicker={(
+                  <TableColumnPicker
+                    columnDefs={rolePickerColumns}
+                    visibleColumnIds={roleVisibleColumnIds}
+                    onToggle={toggleRoleColumn}
+                    onReset={resetRoleColumns}
+                  />
+                )}
+              />
             </div>
 
             {loading ? (
@@ -226,15 +296,18 @@ export default function RolesAccess() {
               <div className="company-empty">
                 No roles yet. Create a role to define what each team member can access.
               </div>
+            ) : filteredRoles.length === 0 ? (
+              <div className="company-empty">No roles match your filters.</div>
             ) : (
               <div className="company-table-wrap">
+                <div className="company-table-scroll">
                 <table className="company-table master-table">
                   <thead>
                     <tr>
-                      <th>Role</th>
-                      <th>Description</th>
-                      <th>Employees</th>
-                      <th>Actions</th>
+                      {isRoleColumnVisible('name') && <th>Role</th>}
+                      {isRoleColumnVisible('description') && <th>Description</th>}
+                      {isRoleColumnVisible('employees') && <th>Employees</th>}
+                      {isRoleColumnVisible('actions') && <th>Actions</th>}
                     </tr>
                   </thead>
                   <tbody>
@@ -249,98 +322,106 @@ export default function RolesAccess() {
                           key={role.id}
                           className={isSelected ? 'company-table__row--selected' : undefined}
                         >
-                          <td>
-                            <button
-                              type="button"
-                              className="company-link roles-table__name-btn"
-                              onClick={() => handleSelectRole(role)}
-                            >
-                              <span className="company-table__name">{role.name}</span>
-                            </button>
-                          </td>
-                          <td>{role.description || '—'}</td>
-                          <td>
-                            {total === 0 ? (
-                              <span className="roles-table__empty">—</span>
-                            ) : (
-                              <div className="roles-table__people">
-                                {samples.slice(0, 4).map((emp) => {
-                                  const headedNames = (emp.headed_locations || [])
-                                    .map((loc) => loc.name)
-                                    .filter(Boolean)
-                                  const locationLabel = headedNames.length
-                                    ? headedNames.join(', ')
-                                    : (emp.org_locations?.name || null)
-                                  const tip = [emp.name || emp.emp_id, locationLabel].filter(Boolean).join(' · ')
-
-                                  return (
-                                    <div
-                                      key={emp.id}
-                                      className="roles-table__person"
-                                      data-tooltip={tip}
-                                    >
-                                      <span className="roles-table__avatar">
-                                        <EmployeeAvatar employee={emp} />
-                                      </span>
-                                    </div>
-                                  )
-                                })}
-                                {extra > 0 && (
-                                  <span
-                                    className="roles-table__more"
-                                    data-tooltip={`${extra} more employee${extra === 1 ? '' : 's'}`}
-                                  >
-                                    +{extra}
-                                  </span>
-                                )}
-                              </div>
-                            )}
-                          </td>
-                          <td>
-                            <div className="company-table__actions">
+                          {isRoleColumnVisible('name') && (
+                            <td>
                               <button
                                 type="button"
-                                className="company-link"
+                                className="company-link roles-table__name-btn"
                                 onClick={() => handleSelectRole(role)}
                               >
-                                {isSelected ? 'Hide access' : 'View access'}
+                                <span className="company-table__name">{role.name}</span>
                               </button>
-                              {canAssign && (
+                            </td>
+                          )}
+                          {isRoleColumnVisible('description') && (
+                            <td>{role.description || '—'}</td>
+                          )}
+                          {isRoleColumnVisible('employees') && (
+                            <td>
+                              {total === 0 ? (
+                                <span className="roles-table__empty">—</span>
+                              ) : (
+                                <div className="roles-table__people">
+                                  {samples.slice(0, 4).map((emp) => {
+                                    const headedNames = (emp.headed_locations || [])
+                                      .map((loc) => loc.name)
+                                      .filter(Boolean)
+                                    const locationLabel = headedNames.length
+                                      ? headedNames.join(', ')
+                                      : (emp.org_locations?.name || null)
+                                    const tip = [emp.name || emp.emp_id, locationLabel].filter(Boolean).join(' · ')
+
+                                    return (
+                                      <div
+                                        key={emp.id}
+                                        className="roles-table__person"
+                                        data-tooltip={tip}
+                                      >
+                                        <span className="roles-table__avatar">
+                                          <EmployeeAvatar employee={emp} />
+                                        </span>
+                                      </div>
+                                    )
+                                  })}
+                                  {extra > 0 && (
+                                    <span
+                                      className="roles-table__more"
+                                      data-tooltip={`${extra} more employee${extra === 1 ? '' : 's'}`}
+                                    >
+                                      +{extra}
+                                    </span>
+                                  )}
+                                </div>
+                              )}
+                            </td>
+                          )}
+                          {isRoleColumnVisible('actions') && (
+                            <td>
+                              <div className="company-table__actions">
                                 <button
                                   type="button"
                                   className="company-link"
-                                  onClick={() => {
-                                    setSelectedId(role.id)
-                                    setAssignOpen(true)
-                                  }}
+                                  onClick={() => handleSelectRole(role)}
                                 >
-                                  Assign
+                                  {isSelected ? 'Hide access' : 'View access'}
                                 </button>
-                              )}
-                              {canUpdate && (
-                                <button
-                                  type="button"
-                                  className="company-btn company-btn--secondary company-btn--compact company-btn--icon"
-                                  onClick={() => openEdit(role)}
-                                  aria-label={`Edit ${role.name}`}
-                                  title="Edit"
-                                >
-                                  <EditIcon />
-                                </button>
-                              )}
-                              {canDelete && (
-                                <button
-                                  type="button"
-                                  className="company-btn company-btn--danger company-btn--compact company-btn--icon"
-                                  onClick={() => handleDelete(role)}
-                                  aria-label={`Delete ${role.name}`}
-                                  title="Delete"
-                                >
-                                  <TrashIcon />
-                                </button>
-                              )}
-                            </div>
-                          </td>
+                                {canAssign && (
+                                  <button
+                                    type="button"
+                                    className="company-link"
+                                    onClick={() => {
+                                      setSelectedId(role.id)
+                                      setAssignOpen(true)
+                                    }}
+                                  >
+                                    Assign
+                                  </button>
+                                )}
+                                {canUpdate && (
+                                  <button
+                                    type="button"
+                                    className="company-btn company-btn--secondary company-btn--compact company-btn--icon"
+                                    onClick={() => openEdit(role)}
+                                    aria-label={`Edit ${role.name}`}
+                                    title="Edit"
+                                  >
+                                    <EditIcon />
+                                  </button>
+                                )}
+                                {canDelete && (
+                                  <button
+                                    type="button"
+                                    className="company-btn company-btn--danger company-btn--compact company-btn--icon"
+                                    onClick={() => handleDelete(role)}
+                                    aria-label={`Delete ${role.name}`}
+                                    title="Delete"
+                                  >
+                                    <TrashIcon />
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          )}
                         </tr>
                       )
                     })}
@@ -351,12 +432,13 @@ export default function RolesAccess() {
                   totalPages={rolesPagination.totalPages}
                   pageSize={rolesPagination.pageSize}
                   pageSizeOptions={rolesPagination.pageSizeOptions}
-                  totalCount={activeRoles.length}
+                  totalCount={filteredRoles.length}
                   rangeStart={rolesPagination.rangeStart}
                   rangeEnd={rolesPagination.rangeEnd}
                   onPageChange={rolesPagination.setPage}
                   onPageSizeChange={rolesPagination.setPageSize}
                 />
+                </div>
               </div>
             )}
           </div>

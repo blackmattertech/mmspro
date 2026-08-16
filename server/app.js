@@ -1,5 +1,6 @@
 import express from 'express'
 import cors from 'cors'
+import compression from 'compression'
 import swaggerUi from 'swagger-ui-express'
 import 'dotenv/config'
 import { getCorsOrigins } from './lib/appUrl.js'
@@ -14,6 +15,9 @@ import equipmentRoutes from './routes/api/equipment.js'
 import equipmentFieldsRoutes from './routes/api/equipmentFields.js'
 import workOrdersRoutes from './routes/api/workOrders.js'
 import workRequestsRoutes from './routes/api/workRequests.js'
+import warrantiesRoutes from './routes/api/warranties.js'
+import vendorsRoutes from './routes/api/vendors.js'
+import tasksRoutes from './routes/api/tasks.js'
 import profileRoutes from './routes/api/profile.js'
 import rolesRoutes from './routes/api/roles.js'
 
@@ -21,6 +25,17 @@ const app = express()
 const isDev = process.env.NODE_ENV !== 'production'
 const allowedOrigins = getCorsOrigins()
 const DEV_PORTS = new Set(['5173', '4173', '3000'])
+
+app.use(compression())
+
+function isDevTunnelHost(hostname) {
+  return (
+    /(?:^|\.)ngrok(?:-free)?\.(?:dev|app|io)$/i.test(hostname) ||
+    /ngrok/i.test(hostname) ||
+    hostname.endsWith('.trycloudflare.com') ||
+    hostname.endsWith('.loca.lt')
+  )
+}
 
 function isAllowedOrigin(origin) {
   if (!origin) return true
@@ -31,7 +46,8 @@ function isAllowedOrigin(origin) {
   try {
     const url = new URL(origin)
     if (url.protocol !== 'http:' && url.protocol !== 'https:') return false
-    return DEV_PORTS.has(url.port)
+    if (DEV_PORTS.has(url.port)) return true
+    return url.protocol === 'https:' && isDevTunnelHost(url.hostname)
   } catch {
     return false
   }
@@ -48,7 +64,7 @@ app.use(
       }
     },
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'ngrok-skip-browser-warning'],
   })
 )
 app.use(express.json({ limit: '4mb' }))
@@ -72,6 +88,9 @@ app.use('/api/equipment', equipmentRoutes)
 app.use('/api/equipment-fields', equipmentFieldsRoutes)
 app.use('/api/work-orders', workOrdersRoutes)
 app.use('/api/work-requests', workRequestsRoutes)
+app.use('/api/warranties', warrantiesRoutes)
+app.use('/api/vendors', vendorsRoutes)
+app.use('/api/tasks', tasksRoutes)
 app.use('/api/profile', profileRoutes)
 app.use('/api', apiRoutes)
 app.use('/api/notifications', notificationRoutes)

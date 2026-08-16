@@ -8,6 +8,7 @@ import { orgPath } from '../../config/navigation'
 import WorkOrderForm from '../../components/workorders/WorkOrderForm'
 import WorkOrderAssignmentCard from '../../components/workorders/WorkOrderAssignmentCard'
 import WorkOrderFieldSettingsModal from '../../components/workorders/WorkOrderFieldSettingsModal'
+import PageBack from '../../components/shared/PageBack'
 import '../../components/company/CompanyShared.css'
 import '../../components/workorders/ManualWorkOrder.css'
 import '../../components/workorders/WorkOrdersPage.css'
@@ -105,14 +106,7 @@ export default function ManualWorkOrderCreate() {
   useEffect(() => {
     const toolbarLeft = (
       <>
-        <button
-          type="button"
-          className="company-btn company-btn--secondary"
-          onClick={goBack}
-          disabled={saving}
-        >
-          Cancel
-        </button>
+        <PageBack onClick={goBack} className="page-back--inline" />
         {canManage && (
           <button
             type="button"

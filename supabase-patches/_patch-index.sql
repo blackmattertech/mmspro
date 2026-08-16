@@ -52,6 +52,22 @@
 --   43-equipment-dynamic-identity.sql   → 43-equipment-dynamic-identity
 --   44-work-requests.sql                → 44-work-requests — Work request module
 --   45-work-request-draft-number.sql    → 45-work-request-draft-number — Draft WR numbers
+--   46-work-request-form-field-values.sql → 46-work-request-form-field-values — WR form values
+--   47-approve-permissions.sql          → 47-approve-permissions — WR/WO approve permissions
+--   48-warranty-tasks-permissions.sql   → 48-warranty-tasks-permissions — Warranty & tasks modules
+--   49-warranty-manager.sql             → 49-warranty-manager — Warranty records and line items
+--   50-vendor-master.sql                → 50-vendor-master — Vendor master records
+--   51-warranty-vendor-link.sql         → 51-warranty-vendor-link — Warranty vendor FK
+--   52-warranty-serial-format.sql        → 52-warranty-serial-format — WM/YYYY/0000 S.No.
+--   53-task-management.sql               → 53-task-management — Task Management module
+--   54-task-meta-descriptions.sql          → 54-task-meta-descriptions — Status/priority descriptions
+--   55-warranty-documents.sql              → 55-warranty-documents — Warranty document attachments
+--   56-org-assets-warranty-documents.sql     → 56-org-assets-warranty-documents — PDF/docs in org-assets
+--   57-performance-indexes-2.sql             → 57-performance-indexes-2 — Additional performance indexes
+--   58-trigram-search-indexes.sql            → 58-trigram-search-indexes — Trigram indexes for search
+--   59-task-spec-compliance.sql              → 59-task-spec-compliance — Task spec fields & masters
+--   60-task-performance.sql                  → 60-task-performance — Task indexes & counts RPC
+--   61-work-order-wr-spec-compliance.sql      → 61-work-order-wr-spec-compliance — WR/WO CMMS lifecycle
 --
 -- OTHER:
 --   supabase.sql                  → supabase — Full schema (new projects)

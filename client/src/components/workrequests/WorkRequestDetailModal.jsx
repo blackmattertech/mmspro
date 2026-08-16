@@ -7,6 +7,7 @@ import {
   requestWorkRequestInfo,
   getWorkRequestDepartmentEmployees,
 } from '../../lib/api-work-requests'
+import PageBack from '../shared/PageBack'
 import '../company/CompanyShared.css'
 import '../workorders/WorkOrdersPage.css'
 import '../workorders/ManualWorkOrder.css'
@@ -43,11 +44,20 @@ export default function WorkRequestDetailModal({
   const [employees, setEmployees] = useState([])
   const [assigneeIds, setAssigneeIds] = useState([])
   const [assignmentRemarks, setAssignmentRemarks] = useState('')
+  const [workCenter, setWorkCenter] = useState('')
+  const [approvePriority, setApprovePriority] = useState('medium')
+  const [plannedStartAt, setPlannedStartAt] = useState('')
+  const [plannedEndAt, setPlannedEndAt] = useState('')
   const [rejectReason, setRejectReason] = useState('')
   const [infoMessage, setInfoMessage] = useState('')
   const [actionError, setActionError] = useState(null)
   const [acting, setActing] = useState(false)
   const [mode, setMode] = useState(null)
+
+  useEffect(() => {
+    if (!detail) return
+    if (detail.priority) setApprovePriority(detail.priority)
+  }, [detail?.id, detail?.priority])
 
   const showActions = canApprove && detail && ACTIONABLE.has(detail.status)
 
@@ -109,13 +119,16 @@ export default function WorkRequestDetailModal({
         aria-modal="true"
       >
         <header className="wr-detail-sheet__header">
-          <div>
-            <p className="wr-detail-sheet__eyebrow">Work request</p>
-            <h2 id="wr-detail-title" className="wr-detail-sheet__title">
-              {detail
-                ? (detail.request_number || (detail.status === 'draft' ? 'Draft' : '—'))
-                : 'Loading…'}
-            </h2>
+          <div className="wr-detail-sheet__header-main">
+            <PageBack onClick={onClose} />
+            <div>
+              <p className="wr-detail-sheet__eyebrow">Work request</p>
+              <h2 id="wr-detail-title" className="wr-detail-sheet__title">
+                {detail
+                  ? (detail.request_number || (detail.status === 'draft' ? 'Draft' : '—'))
+                  : 'Loading…'}
+              </h2>
+            </div>
           </div>
           <button type="button" className="wr-detail-sheet__close" onClick={onClose} aria-label="Close">
             ×
@@ -148,7 +161,15 @@ export default function WorkRequestDetailModal({
                     {detail.requester?.full_name || detail.requester?.email || '—'}
                   </MetaItem>
                   <MetaItem label="Request date">{formatDate(detail.request_date)}</MetaItem>
-                  {detail.manual_work_order_id && (
+                  {detail.linked_work_order && (
+                    <MetaItem label="Work order">
+                      {detail.linked_work_order.wo_number || detail.manual_work_order_id?.slice(0, 8)}
+                      {detail.execution_status
+                        ? ` · ${detail.execution_status.replace(/_/g, ' ')}`
+                        : ''}
+                    </MetaItem>
+                  )}
+                  {!detail.linked_work_order && detail.manual_work_order_id && (
                     <MetaItem label="Work order">
                       Linked · {detail.manual_work_order_id.slice(0, 8)}…
                     </MetaItem>
@@ -258,6 +279,46 @@ export default function WorkRequestDetailModal({
                             })}
                           </div>
                         </label>
+                        <label className="company-form__field">
+                          <span className="company-form__label">Work center</span>
+                          <input
+                            className="company-form__input"
+                            value={workCenter}
+                            onChange={(e) => setWorkCenter(e.target.value)}
+                            placeholder="e.g. Mechanical Workshop"
+                            required
+                          />
+                        </label>
+                        <label className="company-form__field">
+                          <span className="company-form__label">Priority</span>
+                          <select
+                            className="company-form__input"
+                            value={approvePriority}
+                            onChange={(e) => setApprovePriority(e.target.value)}
+                          >
+                            <option value="high">High</option>
+                            <option value="medium">Medium</option>
+                            <option value="low">Low</option>
+                          </select>
+                        </label>
+                        <label className="company-form__field">
+                          <span className="company-form__label">Planned start</span>
+                          <input
+                            type="datetime-local"
+                            className="company-form__input"
+                            value={plannedStartAt}
+                            onChange={(e) => setPlannedStartAt(e.target.value)}
+                          />
+                        </label>
+                        <label className="company-form__field">
+                          <span className="company-form__label">Planned end</span>
+                          <input
+                            type="datetime-local"
+                            className="company-form__input"
+                            value={plannedEndAt}
+                            onChange={(e) => setPlannedEndAt(e.target.value)}
+                          />
+                        </label>
                         <label className="company-form__field company-form__field--full">
                           <span className="company-form__label">Assignment remarks</span>
                           <textarea
@@ -271,10 +332,18 @@ export default function WorkRequestDetailModal({
                           <button
                             type="button"
                             className="company-btn company-btn--primary"
-                            disabled={acting || !assigneeIds.length}
+                            disabled={acting || !assigneeIds.length || !workCenter.trim()}
                             onClick={() => runAction(() => approveWorkRequest(requestId, {
                               assignedEmployeeIds: assigneeIds,
                               assignmentRemarks,
+                              workCenter: workCenter.trim(),
+                              priority: approvePriority,
+                              plannedStartAt: plannedStartAt
+                                ? new Date(plannedStartAt).toISOString()
+                                : null,
+                              plannedEndAt: plannedEndAt
+                                ? new Date(plannedEndAt).toISOString()
+                                : null,
                             }))}
                           >
                             {acting ? 'Saving…' : 'Confirm approval'}

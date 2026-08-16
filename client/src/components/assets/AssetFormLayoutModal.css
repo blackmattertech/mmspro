@@ -27,7 +27,6 @@
 }
 
 .asset-layout-modal {
-  max-width: min(1120px, 96vw);
   display: flex;
   flex-direction: column;
   overflow: hidden;

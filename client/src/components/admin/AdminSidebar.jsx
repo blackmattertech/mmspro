@@ -3,6 +3,7 @@ import { NavLink } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
 import { ADMIN_NAV_ITEMS, getAdminShortcutOptions } from '../../config/adminNavigation'
 import { ADMIN_QUICK_ACCESS_SCOPE } from '../../hooks/useQuickAccess'
+import { assetUrl } from '../../lib/assets'
 import NavIcon from '../layout/NavIcon'
 import SidebarQuickAccess from '../layout/SidebarQuickAccess'
 import SidebarUserFooter from '../layout/SidebarUserFooter'
@@ -16,7 +17,7 @@ export default function AdminSidebar({ collapsed = false, onToggle }) {
   return (
     <aside className={`sidebar admin-sidebar ${collapsed ? 'sidebar--collapsed' : ''}`}>
       <div className="sidebar__brand">
-        <img src="/Assets/images/logo.svg" alt="MMS PRO" className="sidebar__logo" />
+        <img src={assetUrl('Assets/images/logo.svg')} alt="MMS PRO" className="sidebar__logo" />
         {!collapsed && (
           <div className="sidebar__brand-text">
             <span className="sidebar__brand-name">MMS PRO</span>

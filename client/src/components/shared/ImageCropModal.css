@@ -1,9 +1,18 @@
 .image-crop-overlay {
   z-index: 1200;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 24px !important;
+  left: 0 !important;
 }
 
 .image-crop-modal {
   max-width: 400px;
+  width: 100%;
+  height: auto;
+  max-height: 90vh;
+  border-radius: var(--radius-md);
+  overflow-y: auto;
 }
 
 .image-crop-modal__body {

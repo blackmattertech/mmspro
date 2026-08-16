@@ -3,6 +3,12 @@ import { loadOrgFields } from './equipmentFieldService.js'
 import { listEquipment, getEquipmentDetail, deriveEquipmentIdentity, orderedParentFields } from './equipmentService.js'
 import { notifyOrg } from '../services/notifications.js'
 import { buildManualWorkOrderFormSchema } from './manualWorkOrderForm.js'
+import {
+  generateWorkOrderNumber,
+  addWorkOrderTimelineEvent,
+  addWorkOrderAuditEntry,
+  mapRequestTypeToSource,
+} from './workOrderService.js'
 
 export async function getEmployeeByProfile(orgId, profileId, { email = null } = {}) {
   if (!profileId && !email) return null
@@ -331,6 +337,7 @@ export async function getWorkRequestFormContext(orgId, profileId, email, { isOrg
       { value: 'inter_department', label: 'Inter Department' },
       { value: 'intra_department', label: 'Intra Department' },
       { value: 'user_self', label: 'User Self Request' },
+      { value: 'manual', label: 'Manual Work Request' },
     ],
     priorities: [
       { value: 'high', label: 'High' },
@@ -430,6 +437,12 @@ export async function createWorkRequest(orgId, profileId, email, body, { isOrgAd
 
   if (!orderToId) {
     const err = new Error('Order To department is required.')
+    err.status = 400
+    throw err
+  }
+
+  if (requestType === 'inter_department' && orderToId === orderFromId) {
+    const err = new Error('Inter-department requests must select a different Order To department.')
     err.status = 400
     throw err
   }
@@ -543,6 +556,36 @@ export async function createWorkRequest(orgId, profileId, email, body, { isOrgAd
     }
   }
 
+  // Spec: Intra / User Self / Manual (and Inter when approval disabled) auto-convert to WO
+  if (!isDraft && status === 'submitted') {
+    try {
+      const { updated, workOrder, woNumber } = await createLinkedWorkOrderFromRequest(
+        orgId,
+        profileId,
+        row,
+        { autoApproved: true },
+      )
+      try {
+        await notifyOrg(orgId, {
+          title: 'Work order generated',
+          body: `${requestNumber} → ${woNumber}`,
+          data: {
+            work_request_id: row.id,
+            work_order_id: workOrder.id,
+            type: 'work_order_generated',
+          },
+          url: '/',
+        })
+      } catch {
+        // non-blocking
+      }
+      return enrichWorkRequest(updated)
+    } catch (convertError) {
+      // Request is saved; conversion failure should not hide the WR
+      console.error('Auto WO conversion failed:', convertError.message)
+    }
+  }
+
   return enrichWorkRequest(row)
 }
 
@@ -563,6 +606,165 @@ async function syncWorkOrderAssignees(orgId, workOrderId, employeeIds) {
 
   const { error } = await supabaseAdmin.from('manual_work_order_assignees').insert(rows)
   if (error) throw error
+}
+
+/**
+ * Create a linked manual work order from a work request (approval or auto-convert).
+ */
+async function createLinkedWorkOrderFromRequest(orgId, profileId, wr, {
+  assigneeIds = [],
+  workCenter = null,
+  priority = null,
+  assignmentRemarks = null,
+  plannedStartAt = null,
+  plannedEndAt = null,
+  plannedDurationHours = null,
+  autoApproved = false,
+} = {}) {
+  const { data: equipment } = await supabaseAdmin
+    .from('equipment')
+    .select('location_id, department_id')
+    .eq('id', wr.equipment_id)
+    .maybeSingle()
+
+  const departmentId = equipment?.department_id || wr.order_to_department_id
+  let locationId = equipment?.location_id || null
+  if (departmentId && !locationId) {
+    const { data: dept } = await supabaseAdmin
+      .from('departments')
+      .select('location_id')
+      .eq('id', departmentId)
+      .maybeSingle()
+    locationId = dept?.location_id || null
+  }
+  // Constraint: department assignment requires a location
+  const assignedDepartmentId = locationId ? departmentId : null
+  const assignedLocationId = locationId
+
+  const woNumber = await generateWorkOrderNumber(orgId, departmentId)
+  const sourceType = mapRequestTypeToSource(wr.request_type, wr.is_breakdown)
+  const resolvedPriority = ['high', 'medium', 'low'].includes(priority) ? priority : wr.priority
+  const resolvedWorkCenter = String(workCenter || '').trim() || 'General'
+
+  const { data: workOrder, error: woError } = await supabaseAdmin
+    .from('manual_work_orders')
+    .insert({
+      org_id: orgId,
+      status: 'assigned',
+      wo_number: woNumber,
+      source_type: sourceType,
+      created_by: profileId,
+      supervisor_id: profileId,
+      requester_id: wr.requested_by,
+      assigned_department_id: assignedDepartmentId,
+      assigned_location_id: assignedLocationId,
+      work_request_id: wr.id,
+      equipment_id: wr.equipment_id,
+      asset_hierarchy: wr.asset_hierarchy || [],
+      problem_description: wr.problem_description,
+      is_breakdown: Boolean(wr.is_breakdown),
+      priority: resolvedPriority,
+      attachments: Array.isArray(wr.attachments) ? wr.attachments : [],
+      form_field_values: wr.form_field_values && typeof wr.form_field_values === 'object'
+        ? wr.form_field_values
+        : {},
+      work_center: resolvedWorkCenter,
+      special_instructions: assignmentRemarks?.trim() || null,
+      planned_start_at: plannedStartAt || null,
+      planned_end_at: plannedEndAt || null,
+      planned_duration_hours: plannedDurationHours ?? null,
+    })
+    .select('*')
+    .single()
+
+  if (woError) throw woError
+
+  if (assigneeIds.length) {
+    await syncWorkOrderAssignees(orgId, workOrder.id, assigneeIds)
+  }
+
+  await addWorkOrderTimelineEvent(
+    orgId,
+    workOrder.id,
+    'work_order_generated',
+    `Work order ${woNumber} generated from ${wr.request_number}.`,
+    profileId,
+    { newStatus: 'assigned', metadata: { work_request_id: wr.id, auto_approved: autoApproved } },
+  )
+
+  if (assigneeIds.length) {
+    await addWorkOrderTimelineEvent(
+      orgId,
+      workOrder.id,
+      'technician_assigned',
+      'Technician(s) assigned.',
+      profileId,
+      { newStatus: 'assigned', metadata: { assignee_ids: assigneeIds } },
+    )
+  }
+
+  await addWorkOrderAuditEntry(
+    orgId,
+    workOrder.id,
+    profileId,
+    autoApproved ? 'auto_created_from_work_request' : 'created_from_work_request',
+    {
+      newStatus: 'assigned',
+      departmentId,
+      remarks: assignmentRemarks?.trim() || null,
+      metadata: { work_request_id: wr.id, wo_number: woNumber },
+    },
+  )
+
+  const now = new Date().toISOString()
+  const { data: updated, error: updateError } = await supabaseAdmin
+    .from('work_requests')
+    .update({
+      status: 'approved',
+      execution_status: 'assigned',
+      approved_by: profileId,
+      approved_at: now,
+      approval_remarks: assignmentRemarks?.trim() || (autoApproved ? 'Auto-converted (no approval required).' : null),
+      manual_work_order_id: workOrder.id,
+      updated_at: now,
+    })
+    .eq('id', wr.id)
+    .select('*')
+    .single()
+
+  if (updateError) throw updateError
+
+  await addTimelineEvent(
+    orgId,
+    wr.id,
+    autoApproved ? 'auto_approved' : 'approved',
+    autoApproved
+      ? `Work request auto-converted. Work order ${woNumber} generated.`
+      : `Work request approved. Work order ${woNumber} generated.`,
+    profileId,
+    { manual_work_order_id: workOrder.id, wo_number: woNumber, assignee_ids: assigneeIds },
+  )
+  await addTimelineEvent(
+    orgId,
+    wr.id,
+    'work_order_generated',
+    `Work order ${woNumber} linked.`,
+    profileId,
+    { manual_work_order_id: workOrder.id, wo_number: woNumber },
+  )
+
+  if (assigneeIds.length) {
+    await addTimelineEvent(
+      orgId,
+      wr.id,
+      'technician_assigned',
+      'Technician(s) assigned.',
+      profileId,
+      { assignee_ids: assigneeIds },
+    )
+  }
+
+  return { workOrder, updated, woNumber }
 }
 
 export async function approveWorkRequest(orgId, profileId, workRequestId, body) {
@@ -596,57 +798,42 @@ export async function approveWorkRequest(orgId, profileId, workRequestId, body) 
     throw err
   }
 
-  const { data: equipment } = await supabaseAdmin
-    .from('equipment')
-    .select('location_id, department_id')
-    .eq('id', wr.equipment_id)
-    .maybeSingle()
-
-  const { data: workOrder, error: woError } = await supabaseAdmin
-    .from('manual_work_orders')
-    .insert({
-      org_id: orgId,
-      status: 'created',
-      created_by: profileId,
-      assigned_department_id: equipment?.department_id || wr.order_to_department_id,
-      assigned_location_id: equipment?.location_id || null,
-      work_request_id: wr.id,
-    })
-    .select('*')
-    .single()
-
-  if (woError) throw woError
-
-  await syncWorkOrderAssignees(orgId, workOrder.id, assigneeIds)
-
-  const now = new Date().toISOString()
-  const { data: updated, error: updateError } = await supabaseAdmin
-    .from('work_requests')
-    .update({
-      status: 'approved',
-      approved_by: profileId,
-      approved_at: now,
-      approval_remarks: body?.assignment_remarks?.trim() || null,
-      manual_work_order_id: workOrder.id,
-      updated_at: now,
-    })
-    .eq('id', wr.id)
-    .select('*')
-    .single()
-
-  if (updateError) throw updateError
-
-  await addTimelineEvent(
+  const { workOrder, updated, woNumber } = await createLinkedWorkOrderFromRequest(
     orgId,
-    wr.id,
-    'approved',
-    'Work request approved and work order created.',
     profileId,
-    { manual_work_order_id: workOrder.id, assignee_ids: assigneeIds },
+    wr,
+    {
+      assigneeIds,
+      workCenter: body?.work_center,
+      priority: body?.priority,
+      assignmentRemarks: body?.assignment_remarks,
+      plannedStartAt: body?.planned_start_at,
+      plannedEndAt: body?.planned_end_at,
+      plannedDurationHours: body?.planned_duration_hours,
+      autoApproved: false,
+    },
   )
 
+  try {
+    await notifyOrg(orgId, {
+      title: 'Work request approved',
+      body: `${wr.request_number} → ${woNumber}`,
+      data: {
+        work_request_id: wr.id,
+        work_order_id: workOrder.id,
+        type: 'work_request_approved',
+      },
+      url: '/',
+    })
+  } catch {
+    // non-blocking
+  }
+
   const enriched = await enrichWorkRequest(updated)
-  return { ...enriched, work_order: { id: workOrder.id } }
+  return {
+    ...enriched,
+    work_order: { id: workOrder.id, wo_number: woNumber, status: workOrder.status },
+  }
 }
 
 export async function rejectWorkRequest(orgId, profileId, workRequestId, reason) {
@@ -692,6 +879,18 @@ export async function rejectWorkRequest(orgId, profileId, workRequestId, reason)
   if (updateError) throw updateError
 
   await addTimelineEvent(orgId, workRequestId, 'rejected', text, profileId)
+
+  try {
+    await notifyOrg(orgId, {
+      title: 'Work request rejected',
+      body: text.slice(0, 160),
+      data: { work_request_id: workRequestId, type: 'work_request_rejected' },
+      url: '/',
+    })
+  } catch {
+    // non-blocking
+  }
+
   return enrichWorkRequest(updated)
 }
 
@@ -720,6 +919,18 @@ export async function requestMoreInfo(orgId, profileId, workRequestId, message) 
   }
 
   await addTimelineEvent(orgId, workRequestId, 'need_info', text, profileId)
+
+  try {
+    await notifyOrg(orgId, {
+      title: 'Clarification requested',
+      body: text.slice(0, 160),
+      data: { work_request_id: workRequestId, type: 'work_request_need_info' },
+      url: '/',
+    })
+  } catch {
+    // non-blocking
+  }
+
   return enrichWorkRequest(updated)
 }
 
@@ -734,32 +945,82 @@ const WR_SELECT = `
 
 export async function enrichWorkRequest(row) {
   if (!row) return null
+  const [enriched] = await enrichWorkRequests([row])
+  return enriched ?? null
+}
 
-  let timeline = []
-  const { data: events } = await supabaseAdmin
-    .from('work_request_timeline')
-    .select('id, event_type, message, actor_id, metadata, created_at')
-    .eq('work_request_id', row.id)
-    .order('created_at', { ascending: true })
+async function enrichWorkRequests(rows) {
+  if (!rows?.length) return []
 
-  timeline = events || []
+  const workRequestIds = rows.map((row) => row.id)
+  const manualWorkOrderIds = [...new Set(
+    rows.map((row) => row.manual_work_order_id).filter(Boolean),
+  )]
 
-  let assignees = []
-  if (row.manual_work_order_id) {
-    const { data: links } = await supabaseAdmin
-      .from('manual_work_order_assignees')
-      .select('employee_id, org_employees(id, name, emp_id)')
-      .eq('work_order_id', row.manual_work_order_id)
+  const [timelineResult, assigneeResult, woResult] = await Promise.all([
+    supabaseAdmin
+      .from('work_request_timeline')
+      .select('id, work_request_id, event_type, message, actor_id, metadata, created_at')
+      .in('work_request_id', workRequestIds)
+      .order('created_at', { ascending: true }),
+    manualWorkOrderIds.length
+      ? supabaseAdmin
+        .from('manual_work_order_assignees')
+        .select('work_order_id, employee_id, org_employees(id, name, emp_id)')
+        .in('work_order_id', manualWorkOrderIds)
+      : Promise.resolve({ data: [], error: null }),
+    manualWorkOrderIds.length
+      ? supabaseAdmin
+        .from('manual_work_orders')
+        .select('id, wo_number, status, work_center, priority')
+        .in('id', manualWorkOrderIds)
+      : Promise.resolve({ data: [], error: null }),
+  ])
 
-    assignees = (links || []).map((l) => l.org_employees).filter(Boolean)
+  if (timelineResult.error) throw timelineResult.error
+  if (assigneeResult.error) throw assigneeResult.error
+  if (woResult.error) throw woResult.error
+
+  const timelineByRequest = new Map()
+  for (const event of timelineResult.data || []) {
+    if (!timelineByRequest.has(event.work_request_id)) {
+      timelineByRequest.set(event.work_request_id, [])
+    }
+    timelineByRequest.get(event.work_request_id).push(event)
   }
 
-  return {
-    ...row,
-    timeline,
-    assigned_technicians: assignees,
-    is_breakdown_label: row.is_breakdown ? 'Yes' : 'No',
+  const assigneesByWorkOrder = new Map()
+  for (const link of assigneeResult.data || []) {
+    if (!assigneesByWorkOrder.has(link.work_order_id)) {
+      assigneesByWorkOrder.set(link.work_order_id, [])
+    }
+    if (link.org_employees) {
+      assigneesByWorkOrder.get(link.work_order_id).push(link.org_employees)
+    }
   }
+
+  const woById = new Map((woResult.data || []).map((wo) => [wo.id, wo]))
+
+  return rows.map((row) => {
+    const linkedWo = row.manual_work_order_id ? woById.get(row.manual_work_order_id) : null
+    return {
+      ...row,
+      timeline: timelineByRequest.get(row.id) || [],
+      assigned_technicians: row.manual_work_order_id
+        ? (assigneesByWorkOrder.get(row.manual_work_order_id) || [])
+        : [],
+      is_breakdown_label: row.is_breakdown ? 'Yes' : 'No',
+      linked_work_order: linkedWo
+        ? {
+          id: linkedWo.id,
+          wo_number: linkedWo.wo_number,
+          status: linkedWo.status,
+          work_center: linkedWo.work_center,
+          priority: linkedWo.priority,
+        }
+        : null,
+    }
+  })
 }
 
 export async function listWorkRequests(orgId, filter, { profileId, departmentId } = {}) {
@@ -780,7 +1041,7 @@ export async function listWorkRequests(orgId, filter, { profileId, departmentId 
   const { data, error } = await query.limit(200)
   if (error) throw error
 
-  const rows = await Promise.all((data || []).map((row) => enrichWorkRequest(row)))
+  const rows = await enrichWorkRequests(data || [])
   return rows
 }
 

@@ -1,0 +1,156 @@
+.warranty-expiring-filter {
+  display: flex;
+  align-items: center;
+  gap: 10px 12px;
+  flex-wrap: nowrap;
+  margin: 0 16px 16px;
+  padding: 10px 14px;
+  border: 1px solid var(--color-light-gray-1);
+  border-radius: var(--radius-sm);
+  background: var(--color-off-white);
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.warranty-expiring-filter__title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-dark-navy);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.warranty-expiring-filter__mode {
+  display: inline-flex;
+  gap: 3px;
+  padding: 2px;
+  border-radius: var(--radius-pill);
+  background: var(--color-white);
+  border: 1px solid var(--color-light-gray-1);
+  flex-shrink: 0;
+}
+
+.warranty-expiring-filter__mode-btn {
+  border: none;
+  background: transparent;
+  color: var(--color-gray-blue);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  font-family: inherit;
+  white-space: nowrap;
+}
+
+.warranty-expiring-filter__mode-btn--active {
+  background: var(--color-dark-navy);
+  color: var(--color-white);
+}
+
+.warranty-expiring-filter__presets {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.warranty-expiring-filter__preset {
+  border: 1px solid var(--color-light-gray-1);
+  background: var(--color-white);
+  color: var(--color-dark-navy);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  font-family: inherit;
+  white-space: nowrap;
+}
+
+.warranty-expiring-filter__preset--active,
+.warranty-expiring-filter__preset:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  background: var(--color-light-pink-1);
+}
+
+.warranty-expiring-filter__range {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.warranty-expiring-filter__field {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.warranty-expiring-filter__label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-gray-blue);
+  white-space: nowrap;
+}
+
+.warranty-expiring-filter__field .company-form__input {
+  width: 52px;
+  min-height: 30px;
+  padding: 0 8px;
+  font-size: 12px;
+}
+
+.warranty-expiring-filter__sep {
+  font-size: 11px;
+  color: var(--color-gray-blue);
+  flex-shrink: 0;
+}
+
+.warranty-expiring-filter__date-range {
+  flex: 1;
+  min-width: 200px;
+  max-width: 260px;
+}
+
+.warranty-expiring-filter__date-range .date-range-field__input {
+  min-height: 30px;
+  font-size: 12px;
+}
+
+.warranty-expiring-filter__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.warranty-expiring-filter__applied {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 16px 12px;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--color-light-pink-1);
+  border: 1px solid rgba(227, 30, 36, 0.15);
+  font-size: 13px;
+  color: var(--color-dark-navy);
+}
+
+.warranty-expiring-filter__applied-label {
+  flex: 1;
+  min-width: 0;
+}
+
+.warranty-expiring-filter__applied strong {
+  font-weight: 600;
+}
+
+@media (max-width: 1100px) {
+  .warranty-expiring-filter {
+    flex-wrap: wrap;
+  }
+}

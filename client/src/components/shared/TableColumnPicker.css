@@ -1,0 +1,121 @@
+.table-column-picker {
+  position: relative;
+  display: inline-flex;
+  overflow: visible;
+}
+
+.table-column-picker__trigger {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.table-column-picker__trigger--open,
+.table-column-picker__trigger[aria-expanded="true"] {
+  color: var(--color-white);
+  background: var(--color-primary);
+}
+
+.table-column-picker__trigger--open:hover,
+.table-column-picker__trigger[aria-expanded="true"]:hover {
+  color: var(--color-white);
+  background: #d42f3c;
+}
+
+.table-column-picker__badge {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--color-white);
+  background: var(--color-primary);
+  border: 2px solid var(--color-white);
+  border-radius: var(--radius-pill);
+  pointer-events: none;
+}
+
+.table-column-picker__menu {
+  position: fixed;
+  z-index: 1200;
+  width: min(280px, 88vw);
+  display: flex;
+  flex-direction: column;
+  padding: 10px 0;
+  background: var(--color-white);
+  border: 1px solid var(--color-light-gray-2);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+}
+
+.table-column-picker__menu-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 14px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-gray-blue);
+  border-bottom: 1px solid var(--color-light-gray-1);
+}
+
+.table-column-picker__reset {
+  padding: 0;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: inherit;
+  color: var(--color-primary);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.table-column-picker__reset:hover {
+  text-decoration: underline;
+}
+
+.table-column-picker__list {
+  list-style: none;
+  margin: 0;
+  padding: 8px 0 0;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.table-column-picker__option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  font-size: 13px;
+  color: var(--color-dark-navy);
+  cursor: pointer;
+}
+
+.table-column-picker__option:hover {
+  background: var(--color-off-white);
+}
+
+.table-column-picker__option input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--color-primary);
+}
+
+.company-table-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 6px 6px 10px 0;
+  overflow: visible;
+}

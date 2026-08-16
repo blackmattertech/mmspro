@@ -1,0 +1,148 @@
+/**
+ * Full-width dialogs — overlays fill the main content area (sidebar stays visible).
+ * Opt out with `.company-modal-overlay--popup` / `.company-modal--popup` for centered cards.
+ */
+
+.modal-overlay:not(.image-crop-overlay):not(.task-voice-overlay):not(.task-meta-edit-overlay):not(.task-meta-settings-overlay):not(.company-modal-overlay--popup),
+.company-modal-overlay:not(.image-crop-overlay):not(.task-voice-overlay):not(.task-meta-edit-overlay):not(.task-meta-settings-overlay):not(.company-modal-overlay--popup),
+.admin-modal-overlay {
+  align-items: stretch;
+  justify-content: stretch;
+  padding: 0;
+}
+
+.company-modal-overlay--nested {
+  left: 0 !important;
+  z-index: 1100;
+}
+
+.modal:not(.image-crop-modal):not(.task-meta-edit-modal):not(.task-meta-settings-modal):not(.company-modal--popup),
+.company-modal:not(.image-crop-modal):not(.task-meta-edit-modal):not(.task-meta-settings-modal):not(.company-modal--popup),
+.admin-modal {
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  max-height: none;
+  border-radius: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.modal__header,
+.company-modal__header {
+  flex-shrink: 0;
+}
+
+.modal__header-main {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+}
+
+.modal__actions,
+.company-modal__actions,
+.company-modal__footer {
+  flex-shrink: 0;
+}
+
+.company-modal:not(.image-crop-modal):not(.task-meta-edit-modal):not(.task-meta-settings-modal):not(.company-modal--popup) .company-modal__form {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* Centered popup card (e.g. Add/Edit Location) */
+.company-modal-overlay--popup {
+  left: 0 !important;
+  right: 0;
+  z-index: 1100;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 24px !important;
+}
+
+.company-modal--popup {
+  width: min(560px, 100%);
+  max-width: 560px;
+  height: auto;
+  max-height: min(90vh, 900px);
+  border-radius: var(--radius-md);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.company-modal--popup-wide {
+  width: min(720px, 100%);
+  max-width: 720px;
+}
+
+.company-modal--popup .company-modal__form {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.modal.wo-received-detail,
+.modal.wo-settings-modal {
+  display: flex;
+  flex-direction: column;
+}
+
+.wo-received-detail__body,
+.wo-settings-modal__body {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+  overflow-y: auto;
+}
+
+.asset-layout-modal__body {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.wo-type-modal__body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.modal__form {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* App shell: align with main content, not over the sidebar */
+.app-shell .modal-overlay:not(.image-crop-overlay):not(.task-voice-overlay):not(.task-meta-edit-overlay):not(.task-meta-settings-overlay):not(.company-modal-overlay--popup),
+.app-shell .company-modal-overlay:not(.image-crop-overlay):not(.task-voice-overlay):not(.task-meta-edit-overlay):not(.task-meta-settings-overlay):not(.company-modal-overlay--popup) {
+  left: var(--sidebar-width, 260px);
+}
+
+.app-shell--sidebar-collapsed .modal-overlay:not(.image-crop-overlay):not(.task-voice-overlay):not(.task-meta-edit-overlay):not(.task-meta-settings-overlay):not(.company-modal-overlay--popup),
+.app-shell--sidebar-collapsed .company-modal-overlay:not(.image-crop-overlay):not(.task-voice-overlay):not(.task-meta-edit-overlay):not(.task-meta-settings-overlay):not(.company-modal-overlay--popup) {
+  left: var(--sidebar-collapsed-width, 72px);
+}
+
+@media (max-width: 1024px) {
+  .app-shell .modal-overlay:not(.image-crop-overlay):not(.task-voice-overlay):not(.task-meta-edit-overlay):not(.task-meta-settings-overlay):not(.company-modal-overlay--popup),
+  .app-shell .company-modal-overlay:not(.image-crop-overlay):not(.task-voice-overlay):not(.task-meta-edit-overlay):not(.task-meta-settings-overlay):not(.company-modal-overlay--popup),
+  .app-shell--sidebar-collapsed .modal-overlay:not(.image-crop-overlay):not(.task-voice-overlay):not(.task-meta-edit-overlay):not(.task-meta-settings-overlay):not(.company-modal-overlay--popup),
+  .app-shell--sidebar-collapsed .company-modal-overlay:not(.image-crop-overlay):not(.task-voice-overlay):not(.task-meta-edit-overlay):not(.task-meta-settings-overlay):not(.company-modal-overlay--popup) {
+    left: 0;
+  }
+}
+
+.company-modal-overlay.task-voice-overlay,
+.company-modal-overlay.task-meta-settings-overlay {
+  left: 0 !important;
+  right: 0;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 24px !important;
+}

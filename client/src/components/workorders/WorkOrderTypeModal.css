@@ -1,6 +1,5 @@
 .wo-type-modal {
-  max-width: 560px;
-  width: calc(100% - 32px);
+  width: 100%;
 }
 
 .wo-type-modal__body {

@@ -5,7 +5,10 @@ import { useWorkOrderDetail } from '../../hooks/useWorkOrderList'
 import { getReceivedWorkOrder } from '../../lib/api-work-orders'
 import { getWorkOrderFileSignedUrl } from '../../lib/workOrderAssets'
 import { getStoredWorkOrderFiles } from '../../lib/workOrderFileValues'
+import PageBack from '../shared/PageBack'
 import WorkOrderAssignmentActions from './WorkOrderAssignmentActions'
+import WorkOrderLifecyclePanel, { formatStatus } from './WorkOrderLifecyclePanel'
+import '../shared/RecordDetailLayout.css'
 import '../dashboard/CreateWorkOrderModal.css'
 import '../company/CompanyShared.css'
 import './ManualWorkOrder.css'
@@ -67,6 +70,7 @@ export default function ReceivedWorkOrderDetailModal({
   onClose,
   fetchWorkOrder = getReceivedWorkOrder,
   onAssignmentUpdated,
+  onEdit,
 }) {
   const { detail, loading, error, reload } = useWorkOrderDetail(orderId, fetchWorkOrder)
   const [localDetail, setLocalDetail] = useState(null)
@@ -95,10 +99,20 @@ export default function ReceivedWorkOrderDetailModal({
         aria-labelledby="wo-received-detail-title"
       >
         <div className="modal__header">
-          <h2 id="wo-received-detail-title" className="modal__title">
-            Work Order {view?.wo_number || ''}
-          </h2>
-          <button type="button" className="modal__close" onClick={onClose} aria-label="Close">×</button>
+          <div className="modal__header-main">
+            <PageBack onClick={onClose} />
+            <h2 id="wo-received-detail-title" className="modal__title">
+              Work Order {view?.wo_number || ''}
+            </h2>
+          </div>
+          <div className="record-detail-layout__actions">
+            {onEdit && view && (
+              <button type="button" className="company-btn company-btn--primary" onClick={() => onEdit(view)}>
+                Edit
+              </button>
+            )}
+            <button type="button" className="modal__close" onClick={onClose} aria-label="Close">×</button>
+          </div>
         </div>
 
         <div className="wo-received-detail__body">
@@ -134,17 +148,21 @@ export default function ReceivedWorkOrderDetailModal({
                 </div>
                 <div>
                   <span className="wo-received-detail__label">Status</span>
-                  <span className="wo-received-badge">{view.status}</span>
+                  <span className={`wo-status wo-status--${view.status}`}>
+                    {formatStatus(view.status)}
+                  </span>
                 </div>
               </div>
 
-              {view.summary && (
+              {view.summary && !view.problem_description && (
                 <p className="wo-received-detail__summary">{view.summary}</p>
               )}
 
               {view.assignment_actions && (
                 <WorkOrderAssignmentActions detail={view} onUpdated={handleUpdated} />
               )}
+
+              <WorkOrderLifecyclePanel detail={view} onUpdated={handleUpdated} />
 
               {sections.map((section) => (
                 <section key={section.id} className="wo-received-detail__section">
@@ -159,10 +177,6 @@ export default function ReceivedWorkOrderDetailModal({
                   </dl>
                 </section>
               ))}
-
-              {!sections.length && (
-                <p className="wo-received-detail__status">No field values recorded.</p>
-              )}
             </>
           )}
         </div>

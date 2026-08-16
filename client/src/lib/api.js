@@ -24,6 +24,23 @@ const API_URL = resolveApiUrl()
 let cachedAccessToken = null
 let cachedTokenExpiresAt = 0
 
+function isNgrokHostname(hostname) {
+  return /ngrok/i.test(hostname || '')
+}
+
+function ngrokSkipHeaders(requestUrl) {
+  try {
+    const host = new URL(requestUrl, typeof window !== 'undefined' ? window.location.href : 'http://localhost').hostname
+    if (isNgrokHostname(host)) return { 'ngrok-skip-browser-warning': '1' }
+  } catch {
+    // ignore invalid URLs
+  }
+  if (typeof window !== 'undefined' && isNgrokHostname(window.location.hostname)) {
+    return { 'ngrok-skip-browser-warning': '1' }
+  }
+  return {}
+}
+
 export function syncAccessToken(session) {
   cachedAccessToken = session?.access_token || null
   cachedTokenExpiresAt = session?.expires_at || 0
@@ -50,11 +67,13 @@ export async function apiFetch(path, options = {}) {
   const { _retried, ...fetchOptions } = options
   const token = await getAccessToken({ forceRefresh: Boolean(_retried) })
 
-  const res = await fetch(`${API_URL}${path}`, {
+  const url = `${API_URL}${path}`
+  const res = await fetch(url, {
     ...fetchOptions,
     headers: {
       'Content-Type': 'application/json',
       ...(token && { Authorization: `Bearer ${token}` }),
+      ...ngrokSkipHeaders(url),
       ...fetchOptions.headers,
     },
   })
@@ -204,6 +223,39 @@ export function getAreasTemplate() {
 
 export function bulkUploadAreas(base64Data) {
   return companyFetch('/areas/bulk', {
+    method: 'POST',
+    body: JSON.stringify({ data: base64Data }),
+  })
+}
+
+export function getLocationsTemplate() {
+  return companyFetch('/locations/template')
+}
+
+export function bulkUploadLocations(base64Data) {
+  return companyFetch('/locations/bulk', {
+    method: 'POST',
+    body: JSON.stringify({ data: base64Data }),
+  })
+}
+
+export function getDepartmentsTemplate() {
+  return companyFetch('/departments/template')
+}
+
+export function bulkUploadDepartments(base64Data) {
+  return companyFetch('/departments/bulk', {
+    method: 'POST',
+    body: JSON.stringify({ data: base64Data }),
+  })
+}
+
+export function getEmployeesTemplate() {
+  return companyFetch('/employees/template')
+}
+
+export function bulkUploadEmployees(base64Data) {
+  return companyFetch('/employees/bulk', {
     method: 'POST',
     body: JSON.stringify({ data: base64Data }),
   })

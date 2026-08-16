@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useMemo } from 'react'
 import { Link, Outlet, useNavigate, useLocation } from 'react-router-dom'
 import { useOrg } from '../../hooks/useOrg'
 import { useProfile } from '../../hooks/useProfile'
@@ -8,13 +8,23 @@ import { useWorkOrderToolbar } from '../../hooks/useWorkOrderToolbar'
 import { usePermissions } from '../../hooks/usePermissions'
 import { orgPath } from '../../config/navigation'
 import { WORK_ORDER_TABS, getWorkOrderActiveTab, isWorkOrderTabActive } from '../../config/workOrders'
-import { createFilterRule, countActiveAdvancedRules } from '../../lib/workOrderFilters'
+import { createFilterRule, countActiveAdvancedRules, WO_SORT_OPTIONS } from '../../lib/workOrderFilters'
 import WorkOrderTypeModal from './WorkOrderTypeModal'
 import WorkOrderAdvancedFilter from './WorkOrderAdvancedFilter'
-import FilterableSelect from '../ui/FilterableSelect'
+import TableFilterToolbar from '../shared/TableFilterToolbar'
 import '../company/CompanyShared.css'
+import '../shared/TableFilterToolbar.css'
 import './WorkOrdersPage.css'
 import './WorkOrderAdvancedFilter.css'
+
+const WO_FILTER_FIELDS = [
+  { value: 'location', label: 'Location' },
+  { value: 'status', label: 'Status' },
+  { value: 'summary', label: 'Summary' },
+  { value: 'wo_number', label: 'WO #' },
+  { value: 'assignee', label: 'Assignee' },
+  { value: 'creator', label: 'Created by' },
+]
 
 export default function WorkOrdersLayout() {
   const navigate = useNavigate()
@@ -25,8 +35,10 @@ export default function WorkOrdersLayout() {
   const { counts } = useWorkOrderCounts()
   const { toolbarLeft, toolbarRight } = useWorkOrderToolbar()
   const { isOrgAdmin, canCreate, canRead, locationId: scopedLocationId } = usePermissions()
-  const [locationFilter, setLocationFilter] = useState('all')
   const [search, setSearch] = useState('')
+  const [filterField, setFilterField] = useState('')
+  const [filterValue, setFilterValue] = useState('')
+  const [sortBy, setSortBy] = useState('newest')
   const [advancedRules, setAdvancedRules] = useState([createFilterRule()])
   const [showCreateModal, setShowCreateModal] = useState(false)
 
@@ -47,15 +59,10 @@ export default function WorkOrdersLayout() {
     return all.filter((loc) => loc.id === userLocationId)
   }, [locations, canSeeAllLocations, userLocationId])
 
-  useEffect(() => {
-    if (!canSeeAllLocations && userLocationId) {
-      setLocationFilter(userLocationId)
-    }
-  }, [canSeeAllLocations, userLocationId])
-
+  const locationFilter = canSeeAllLocations ? 'all' : (userLocationId || 'all')
   const advancedFilterCount = countActiveAdvancedRules(advancedRules)
-  const locationFilterActive = locationFilter !== 'all' ? 1 : 0
-  const totalFilterCount = advancedFilterCount + locationFilterActive
+  const fieldFilterActive = filterField && String(filterValue || '').trim() ? 1 : 0
+  const totalFilterCount = advancedFilterCount + fieldFilterActive
 
   const handleAddWorkOrder = () => {
     if (activeTab === 'manual' && org?.slug) {
@@ -64,6 +71,15 @@ export default function WorkOrdersLayout() {
     }
     setShowCreateModal(true)
   }
+
+  const outletContext = useMemo(() => ({
+    search,
+    locationFilter,
+    sortBy,
+    advancedRules,
+    fieldFilter: { field: filterField, value: filterValue },
+    locations: activeLocations,
+  }), [search, locationFilter, sortBy, advancedRules, filterField, filterValue, activeLocations])
 
   return (
     <div className="company-page wo-page">
@@ -93,70 +109,67 @@ export default function WorkOrdersLayout() {
         </nav>
 
         <div className="wo-page__bar-controls">
-          {!isCreatePage && (
-            <div className="wo-page__location-filter">
-              <label htmlFor="wo-location-filter" className="wo-page__location-label">Location</label>
-              <FilterableSelect
-                id="wo-location-filter"
-                value={locationFilter}
-                onChange={setLocationFilter}
-                options={[
-                  ...(canSeeAllLocations ? [{ value: 'all', label: 'All Locations' }] : []),
-                  ...activeLocations.map((loc) => ({ value: loc.id, label: loc.name })),
-                ]}
-                getOptionValue={(opt) => opt.value}
-                getOptionLabel={(opt) => opt.label}
-                disabled={!canSeeAllLocations}
-                allowEmpty={false}
-                inputClassName="wo-page__location-select"
-              />
-            </div>
-          )}
-
           {toolbarLeft}
 
           {!isCreatePage && (
-            <input
-              type="search"
-              className="company-form__input wo-page__search"
-              placeholder="Search work orders..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
+            <TableFilterToolbar
+              search={{
+                value: search,
+                onChange: setSearch,
+                placeholder: 'Search work orders...',
+                ariaLabel: 'Search work orders',
+              }}
+              filter={{
+                fields: WO_FILTER_FIELDS,
+                field: filterField,
+                onFieldChange: setFilterField,
+                value: filterValue,
+                onValueChange: setFilterValue,
+              }}
+              sort={{ value: sortBy, onChange: setSortBy, options: WO_SORT_OPTIONS }}
+              actions={(
+                <>
+                  <WorkOrderAdvancedFilter
+                    rules={advancedRules}
+                    onChange={setAdvancedRules}
+                    locations={activeLocations}
+                    activeCount={totalFilterCount}
+                  />
+                  {toolbarRight}
+                  {canCreateWorkOrders && (
+                    <button
+                      type="button"
+                      className="company-btn company-btn--primary wo-page__add-btn"
+                      onClick={handleAddWorkOrder}
+                    >
+                      + Add Work Order
+                    </button>
+                  )}
+                </>
+              )}
             />
           )}
 
-          {!isCreatePage && (
-            <WorkOrderAdvancedFilter
-              rules={advancedRules}
-              onChange={setAdvancedRules}
-              locations={activeLocations}
-              activeCount={totalFilterCount}
-            />
-          )}
-
-          {toolbarRight}
-
-          {!isCreatePage && canCreateWorkOrders && (
-            <button
-              type="button"
-              className="company-btn company-btn--primary wo-page__add-btn"
-              onClick={handleAddWorkOrder}
-            >
-              + Add Work Order
-            </button>
+          {isCreatePage && (
+            <>
+              {toolbarRight}
+              {canCreateWorkOrders && (
+                <button
+                  type="button"
+                  className="company-btn company-btn--primary wo-page__add-btn"
+                  onClick={handleAddWorkOrder}
+                >
+                  + Add Work Order
+                </button>
+              )}
+            </>
           )}
         </div>
       </div>
 
       <div className="wo-page__content">
         <div className="company-panel">
-          <Outlet context={{
-            search,
-            locationFilter,
-            advancedRules,
-            locations: activeLocations,
-          }}
-          />
+          <Outlet context={outletContext} />
         </div>
       </div>
 

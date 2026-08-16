@@ -236,6 +236,7 @@ function assertRoleInScope(role, capability, userId) {
 }
 
 router.get('/modules', (_req, res) => {
+  res.set('Cache-Control', 'private, max-age=60')
   res.json({ groups: ACCESS_MODULE_GROUPS, modules: ACCESS_MODULES })
 })
 

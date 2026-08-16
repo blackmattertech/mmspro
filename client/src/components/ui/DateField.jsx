@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import TimeField from './TimeField'
 import './DateField.css'
 
 const WEEKDAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
@@ -227,15 +228,13 @@ export default function DateField({
         {withTime && (
           <div className="date-field__time">
             <span className="date-field__time-label">Time</span>
-            <input
-              type="time"
-              className="date-field__time-input"
+            <TimeField
               value={parsed?.time || ''}
-              onChange={(e) => {
+              onChange={(time) => {
                 const base = parsed || {
                   y: now.getFullYear(), m: now.getMonth(), d: now.getDate(),
                 }
-                emit(base.y, base.m, base.d, e.target.value)
+                emit(base.y, base.m, base.d, time)
               }}
             />
           </div>

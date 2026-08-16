@@ -4,7 +4,7 @@
   "type": "module",
   "main": "index.js",
   "engines": {
-    "node": "20.x"
+    "node": "24.x"
   },
   "scripts": {
     "build": "node scripts/build-openapi.js",
@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.39.0",
+    "compression": "^1.8.1",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
     "exceljs": "^4.4.0",

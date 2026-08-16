@@ -3,11 +3,23 @@ import { verifyAuth } from '../../middleware/auth.js'
 import { requireOrgAccess, assertOrgOwnership } from '../../middleware/orgAccess.js'
 import {
   requireModulePermission,
+  requireAnyModulePermission,
   loadOrgPermissions,
 } from '../../middleware/modulePermission.js'
 import { supabaseAdmin } from '../../services/supabase.js'
-import { getScopedLocationId } from '../../lib/orgPermissions.js'
+import { getScopedLocationId, hasModulePermission } from '../../lib/orgPermissions.js'
 import { getSignedUrl, getSignedUrls } from '../../lib/signedUrlCache.js'
+import {
+  generateWorkOrderNumber,
+  displayWorkOrderNumber,
+  addWorkOrderTimelineEvent,
+  addWorkOrderAuditEntry,
+  updateWorkOrderLifecycle,
+  loadWorkOrderTimeline,
+  WO_OPEN_LIST_STATUSES,
+  PERMIT_TYPES,
+  STATUS_TRANSITIONS,
+} from '../../lib/workOrderService.js'
 
 const router = Router()
 
@@ -16,6 +28,11 @@ const canCreateWorkOrders = requireModulePermission('work_orders', 'create')
 const canUpdateWorkOrders = requireModulePermission('work_orders', 'update')
 const canDeleteWorkOrders = requireModulePermission('work_orders', 'delete')
 const canManageFormSettings = requireModulePermission('work_orders', 'update')
+const canApproveWorkOrders = requireAnyModulePermission([
+  ['work_orders_approve', 'update'],
+  ['work_orders_received', 'update'],
+  ['work_orders', 'update'],
+])
 const OPTION_FIELD_TYPES = new Set(['dropdown', 'radio', 'checkbox'])
 
 router.use(verifyAuth, requireOrgAccess, loadOrgPermissions)
@@ -309,7 +326,7 @@ async function listReceivedWorkOrderIds(orgId, employee) {
           .select('id')
           .eq('org_id', orgId)
           .eq('assigned_location_id', employee.location_id)
-          .eq('status', 'created')
+          .in('status', WO_OPEN_LIST_STATUSES)
       : Promise.resolve({ data: [], error: null }),
     employee.department_id
       ? supabaseAdmin
@@ -317,7 +334,7 @@ async function listReceivedWorkOrderIds(orgId, employee) {
           .select('id, assigned_location_id')
           .eq('org_id', orgId)
           .eq('assigned_department_id', employee.department_id)
-          .eq('status', 'created')
+          .in('status', WO_OPEN_LIST_STATUSES)
       : Promise.resolve({ data: [], error: null }),
   ])
 
@@ -500,6 +517,19 @@ async function buildAssignmentActions(orgId, detail, employee, session = null) {
     }
   }
 
+  const canApprove = session?.is_org_admin
+    || hasModulePermission(session, 'work_orders_approve', 'update')
+    || hasModulePermission(session, 'work_orders_received', 'update')
+    || hasModulePermission(session, 'work_orders', 'update')
+
+  if (!canApprove) {
+    return {
+      can_reassign_as_location_head: false,
+      can_claim_self: false,
+      employee_id: employee.id,
+    }
+  }
+
   const isLH = await isLocationHeadFor(orgId, employee, detail.assigned_location_id, session)
   const inDeptPool = employeeMatchesDepartmentAssignment(employee, detail)
   const locationPool = Boolean(
@@ -651,6 +681,32 @@ function shortWorkOrderId(id) {
   return String(id || '').slice(0, 8).toUpperCase()
 }
 
+function resolveDisplayWoNumber(row) {
+  return displayWorkOrderNumber(row) || shortWorkOrderId(row?.id)
+}
+
+/** Map legacy "created" filter to assigned; support "open" for active lifecycle. */
+function normalizeStatusFilter(status) {
+  if (!status || status === 'all') return null
+  if (status === 'created') return 'assigned'
+  return status
+}
+
+function applyWorkOrderStatusFilter(query, status) {
+  const normalized = normalizeStatusFilter(status)
+  if (!normalized) return query
+  if (normalized === 'open') return query.in('status', WO_OPEN_LIST_STATUSES)
+  return query.eq('status', normalized)
+}
+
+function isAssignableStatus(status) {
+  return status === 'assigned' || status === 'returned_rework'
+}
+
+function isReceivedVisibleStatus(status) {
+  return WO_OPEN_LIST_STATUSES.includes(status) || status === 'completed' || status === 'verified'
+}
+
 async function attachSummaries(orgId, workOrders) {
   if (!workOrders.length) return workOrders
 
@@ -674,8 +730,8 @@ async function attachSummaries(orgId, workOrders) {
 
   return workOrders.map((row) => ({
     ...row,
-    wo_number: shortWorkOrderId(row.id),
-    summary: summaryByWo.get(row.id) || 'Work order',
+    wo_number: resolveDisplayWoNumber(row),
+    summary: summaryByWo.get(row.id) || row.problem_description?.slice(0, 120) || 'Work order',
   }))
 }
 
@@ -706,7 +762,7 @@ async function buildWorkOrderListResponse(orgId, rows, existingAssigneesByWo = n
   }))
 }
 
-async function listReceivedWorkOrders(orgId, profile, { status = 'created', limit = 50, offset = 0 } = {}) {
+async function listReceivedWorkOrders(orgId, profile, { status = 'open', limit = 50, offset = 0 } = {}) {
   const employee = await getEmployeeByProfile(orgId, profile?.id, { email: profile?.email })
   if (!employee) return []
 
@@ -715,13 +771,13 @@ async function listReceivedWorkOrders(orgId, profile, { status = 'created', limi
 
   let query = supabaseAdmin
     .from('manual_work_orders')
-    .select('id, status, created_at, updated_at, created_by, assigned_department_id, assigned_location_id')
+    .select('id, status, wo_number, source_type, priority, problem_description, created_at, updated_at, created_by, assigned_department_id, assigned_location_id, work_request_id, work_center')
     .eq('org_id', orgId)
     .in('id', workOrderIds)
     .order('created_at', { ascending: false })
     .range(offset, offset + limit - 1)
 
-  if (status) query = query.eq('status', status)
+  query = applyWorkOrderStatusFilter(query, status)
 
   const { data, error } = await query
   if (error) throw error
@@ -738,48 +794,66 @@ function isAssignedByMeRow(wo, assignees, myEmployeeId) {
 }
 
 /** Lightweight count for badge — no summaries, creators, or signed URLs. */
-async function countAssignedByMe(orgId, profile, { status = 'created' } = {}) {
+async function countAssignedByMe(orgId, profile, { status = 'open' } = {}) {
   const profileId = profile?.id || profile
   const employee = await getEmployeeByProfile(orgId, profileId, { email: profile?.email })
   const myEmployeeId = employee?.id
+  const normalized = normalizeStatusFilter(status) || 'open'
 
-  let query = supabaseAdmin
+  const baseQuery = () => {
+    let q = supabaseAdmin
+      .from('manual_work_orders')
+      .select('id', { count: 'exact', head: true })
+      .eq('org_id', orgId)
+      .eq('created_by', profileId)
+    return applyWorkOrderStatusFilter(q, normalized)
+  }
+
+  const { count: deptLocCount, error: deptLocError } = await baseQuery()
+    .or('assigned_department_id.not.is.null,assigned_location_id.not.is.null')
+  if (deptLocError) throw deptLocError
+
+  let assigneeQuery = supabaseAdmin
     .from('manual_work_orders')
     .select('id, assigned_department_id, assigned_location_id')
     .eq('org_id', orgId)
     .eq('created_by', profileId)
+    .is('assigned_department_id', null)
+    .is('assigned_location_id', null)
+  assigneeQuery = applyWorkOrderStatusFilter(assigneeQuery, normalized)
 
-  if (status) query = query.eq('status', status)
+  const { data: assigneeOnlyRows, error: assigneeOnlyError } = await assigneeQuery
 
-  const { data: workOrders, error } = await query
-  if (error) throw error
-  if (!workOrders?.length) return 0
+  if (assigneeOnlyError) throw assigneeOnlyError
+  if (!assigneeOnlyRows?.length) return deptLocCount || 0
 
   const assigneesByWo = await loadAssigneesForWorkOrders(
     orgId,
-    workOrders.map((row) => row.id),
+    assigneeOnlyRows.map((row) => row.id),
     { withPhotos: false },
   )
 
-  return workOrders.filter((wo) =>
+  const assigneeOnlyCount = assigneeOnlyRows.filter((wo) =>
     isAssignedByMeRow(wo, assigneesByWo.get(wo.id) || [], myEmployeeId),
   ).length
+
+  return (deptLocCount || 0) + assigneeOnlyCount
 }
 
-async function listAssignedByMeWorkOrders(orgId, profile, { status = 'created', limit = 50, offset = 0 } = {}) {
+async function listAssignedByMeWorkOrders(orgId, profile, { status = 'open', limit = 50, offset = 0 } = {}) {
   const profileId = profile?.id || profile
   const employee = await getEmployeeByProfile(orgId, profileId, { email: profile?.email })
   const myEmployeeId = employee?.id
 
   let query = supabaseAdmin
     .from('manual_work_orders')
-    .select('id, status, created_at, updated_at, created_by, assigned_department_id, assigned_location_id')
+    .select('id, status, wo_number, source_type, priority, problem_description, created_at, updated_at, created_by, assigned_department_id, assigned_location_id, work_request_id, work_center')
     .eq('org_id', orgId)
     .eq('created_by', profileId)
     .order('created_at', { ascending: false })
     .range(offset, offset + limit - 1)
 
-  if (status) query = query.eq('status', status)
+  query = applyWorkOrderStatusFilter(query, status)
 
   const { data: workOrders, error } = await query
   if (error) throw error
@@ -805,7 +879,7 @@ async function loadAssignedByMeDetail(orgId, workOrderId, profile) {
   const detail = await loadWorkOrderDetail(orgId, workOrderId)
   if (!detail) return null
   if (detail.created_by !== profileId) return null
-  if (detail.status !== 'created') return null
+  if (!isReceivedVisibleStatus(detail.status) && detail.status !== 'draft') return null
 
   const assignees = detail.assignees || []
   const hasDepartment = Boolean(detail.assigned_department_id)
@@ -861,7 +935,7 @@ async function loadWorkOrderDetail(orgId, workOrderId, { employee = null } = {})
 
   if (error) throw error
   if (!workOrder) return null
-  if (employee && workOrder.status !== 'created') return null
+  if (employee && !isReceivedVisibleStatus(workOrder.status) && workOrder.status !== 'draft') return null
 
   const { data: values, error: valuesError } = await supabaseAdmin
     .from('manual_work_order_values')
@@ -870,6 +944,8 @@ async function loadWorkOrderDetail(orgId, workOrderId, { employee = null } = {})
     .eq('work_order_id', workOrderId)
 
   if (valuesError) throw valuesError
+
+  const timeline = await loadWorkOrderTimeline(workOrderId)
 
   const [fields, settingsMap] = await Promise.all([
     loadOrgWorkOrderFields(orgId),
@@ -927,7 +1003,14 @@ async function loadWorkOrderDetail(orgId, workOrderId, { employee = null } = {})
   }
 
   const enriched = await enrichWorkOrderRow(orgId, workOrder)
-  return { ...enriched, sections }
+  return {
+    ...enriched,
+    wo_number: resolveDisplayWoNumber(workOrder),
+    sections,
+    timeline,
+    permit_type_options: PERMIT_TYPES,
+    allowed_next_statuses: STATUS_TRANSITIONS[workOrder.status] || [],
+  }
 }
 
 function normalizeFileMeta(item) {
@@ -1072,7 +1155,8 @@ router.post('/manual', canCreateWorkOrders, async (req, res) => {
   const orgId = req.userProfile.org_id
   const userId = req.userProfile.id
   try {
-    const status = req.body?.status === 'created' ? 'created' : 'draft'
+    const wantsSubmit = req.body?.status === 'created' || req.body?.status === 'assigned'
+    const status = wantsSubmit ? 'assigned' : 'draft'
     const values = req.body?.values && typeof req.body.values === 'object' ? req.body.values : {}
 
     const [fields, settingsMap] = await Promise.all([
@@ -1093,14 +1177,29 @@ router.post('/manual', canCreateWorkOrders, async (req, res) => {
       { locationId: departmentAssignment?.assigned_location_id || assignedLocationId },
     )
 
+    const departmentId = departmentAssignment?.assigned_department_id || null
+    let woNumber = null
+    if (status === 'assigned' && departmentId) {
+      woNumber = await generateWorkOrderNumber(orgId, departmentId)
+    }
+
     const { data: workOrder, error: woError } = await supabaseAdmin
       .from('manual_work_orders')
       .insert({
         org_id: orgId,
         status,
+        wo_number: woNumber,
+        source_type: 'manual',
         created_by: userId,
+        supervisor_id: userId,
         assigned_department_id: departmentAssignment?.assigned_department_id || null,
         assigned_location_id: departmentAssignment?.assigned_location_id || null,
+        priority: ['high', 'medium', 'low'].includes(req.body?.priority) ? req.body.priority : 'medium',
+        problem_description: req.body?.problem_description?.trim() || null,
+        work_center: req.body?.work_center?.trim() || null,
+        special_instructions: req.body?.special_instructions?.trim() || null,
+        planned_start_at: req.body?.planned_start_at || null,
+        planned_end_at: req.body?.planned_end_at || null,
       })
       .select('*')
       .single()
@@ -1111,15 +1210,33 @@ router.post('/manual', canCreateWorkOrders, async (req, res) => {
 
     const valueCount = await upsertWorkOrderValues(orgId, workOrder.id, values, allowedFields)
 
+    if (status === 'assigned') {
+      await addWorkOrderTimelineEvent(
+        orgId,
+        workOrder.id,
+        'work_order_generated',
+        woNumber ? `Manual work order ${woNumber} created.` : 'Manual work order created.',
+        userId,
+        { newStatus: 'assigned' },
+      )
+      await addWorkOrderAuditEntry(
+        orgId,
+        workOrder.id,
+        userId,
+        'manual_created',
+        { newStatus: 'assigned', departmentId },
+      )
+    }
+
     const enriched = await enrichWorkOrderRow(orgId, workOrder)
 
-    res.status(201).json({ ...enriched, value_count: valueCount })
+    res.status(201).json({ ...enriched, wo_number: resolveDisplayWoNumber(workOrder), value_count: valueCount })
   } catch (err) {
     res.status(400).json({ error: err.message })
   }
 })
 
-router.patch('/manual/:id/assignment', canReadWorkOrders, assertOrgOwnership('manual_work_orders'), async (req, res) => {
+router.patch('/manual/:id/assignment', canApproveWorkOrders, assertOrgOwnership('manual_work_orders'), async (req, res) => {
   const orgId = req.userProfile.org_id
   const profileId = req.userProfile.id
   const workOrderId = req.params.id
@@ -1138,8 +1255,8 @@ router.patch('/manual/:id/assignment', canReadWorkOrders, assertOrgOwnership('ma
 
     if (woError) throw woError
     if (!workOrder) return res.status(404).json({ error: 'Work order not found' })
-    if (workOrder.status !== 'created') {
-      return res.status(400).json({ error: 'Only created work orders can be reassigned' })
+    if (!isAssignableStatus(workOrder.status)) {
+      return res.status(400).json({ error: 'Only assigned work orders can be reassigned' })
     }
 
     const isLH = await isLocationHeadFor(
@@ -1244,6 +1361,30 @@ router.patch('/manual/:id/values', canUpdateWorkOrders, assertOrgOwnership('manu
   }
 })
 
+router.patch('/:id/lifecycle', canUpdateWorkOrders, assertOrgOwnership('manual_work_orders'), async (req, res) => {
+  const orgId = req.userProfile.org_id
+  const profileId = req.userProfile.id
+  try {
+    const updated = await updateWorkOrderLifecycle(orgId, profileId, req.params.id, req.body || {})
+    const detail = await loadWorkOrderDetail(orgId, updated.id)
+    res.json(detail)
+  } catch (err) {
+    res.status(err.status || 400).json({ error: err.message })
+  }
+})
+
+router.patch('/manual/:id/lifecycle', canUpdateWorkOrders, assertOrgOwnership('manual_work_orders'), async (req, res) => {
+  const orgId = req.userProfile.org_id
+  const profileId = req.userProfile.id
+  try {
+    const updated = await updateWorkOrderLifecycle(orgId, profileId, req.params.id, req.body || {})
+    const detail = await loadWorkOrderDetail(orgId, updated.id)
+    res.json(detail)
+  } catch (err) {
+    res.status(err.status || 400).json({ error: err.message })
+  }
+})
+
 router.patch('/manual/:id', canUpdateWorkOrders, assertOrgOwnership('manual_work_orders'), async (req, res) => {
   const orgId = req.userProfile.org_id
   const workOrderId = req.params.id
@@ -1251,7 +1392,7 @@ router.patch('/manual/:id', canUpdateWorkOrders, assertOrgOwnership('manual_work
   try {
     const { data: existing, error: loadError } = await supabaseAdmin
       .from('manual_work_orders')
-      .select('id, status, assigned_department_id, assigned_location_id')
+      .select('id, status, wo_number, assigned_department_id, assigned_location_id')
       .eq('org_id', orgId)
       .eq('id', workOrderId)
       .maybeSingle()
@@ -1259,11 +1400,15 @@ router.patch('/manual/:id', canUpdateWorkOrders, assertOrgOwnership('manual_work
     if (loadError) throw loadError
     if (!existing) return res.status(404).json({ error: 'Work order not found' })
 
-    const nextStatus = req.body?.status === 'created'
-      ? 'created'
-      : req.body?.status === 'draft'
-        ? 'draft'
-        : existing.status
+    const requestedStatus = req.body?.status
+    let nextStatus = existing.status
+    if (requestedStatus === 'draft') nextStatus = 'draft'
+    else if (requestedStatus === 'created' || requestedStatus === 'assigned') nextStatus = 'assigned'
+    else if (typeof requestedStatus === 'string' && STATUS_TRANSITIONS[existing.status]?.includes(requestedStatus)) {
+      nextStatus = requestedStatus
+    } else if (requestedStatus && requestedStatus !== existing.status) {
+      return res.status(400).json({ error: `Invalid status transition to ${requestedStatus}` })
+    }
 
     const assignedLocationId = req.body?.assigned_location_id !== undefined
       ? (req.body.assigned_location_id || null)
@@ -1290,6 +1435,14 @@ router.patch('/manual/:id', canUpdateWorkOrders, assertOrgOwnership('manual_work
       assigned_department_id: departmentAssignment?.assigned_department_id || null,
       assigned_location_id: departmentAssignment?.assigned_location_id || assignedLocationId || null,
       updated_at: new Date().toISOString(),
+    }
+
+    if (nextStatus === 'assigned' && existing.status === 'draft' && !existing.wo_number) {
+      const deptId = updates.assigned_department_id
+      if (deptId) {
+        updates.wo_number = await generateWorkOrderNumber(orgId, deptId)
+        updates.source_type = 'manual'
+      }
     }
 
     const { data: workOrder, error: updateError } = await supabaseAdmin
@@ -1380,10 +1533,10 @@ router.get('/dashboard', canReadWorkOrders, async (req, res) => {
 
     let query = supabaseAdmin
       .from('manual_work_orders')
-      .select('id, status, created_at, updated_at, created_by, assigned_department_id, assigned_location_id')
+      .select('id, status, wo_number, created_at, updated_at, created_by, assigned_department_id, assigned_location_id, problem_description')
       .eq('org_id', orgId)
       .order('created_at', { ascending: false })
-      .limit(2000)
+      .limit(500)
 
     if (dateFrom) query = query.gte('created_at', new Date(dateFrom).toISOString())
     if (dateTo) {
@@ -1482,9 +1635,9 @@ router.get('/dashboard', canReadWorkOrders, async (req, res) => {
 
       return {
         id: row.id,
-        wo_number: shortWorkOrderId(row.id),
-        title: 'Work order',
-        summary: 'Work order',
+        wo_number: resolveDisplayWoNumber(row),
+        title: row.problem_description?.slice(0, 80) || 'Work order',
+        summary: row.problem_description?.slice(0, 120) || 'Work order',
         status: row.status,
         created_at: row.created_at,
         updated_at: row.updated_at,
@@ -1541,7 +1694,15 @@ router.get('/dashboard', canReadWorkOrders, async (req, res) => {
       })
     }
 
-    const status_breakdown = ['created', 'draft'].map((status) => ({
+    const status_breakdown = [
+      'assigned',
+      'accepted',
+      'in_progress',
+      'completed',
+      'verified',
+      'closed',
+      'draft',
+    ].map((status) => ({
       status,
       count: statusCounts[status] || 0,
       percent: total ? Math.round(((statusCounts[status] || 0) / total) * 1000) / 10 : 0,
@@ -1580,13 +1741,16 @@ router.get('/dashboard', canReadWorkOrders, async (req, res) => {
       recent_orders,
       stats: {
         total,
-        created: statusCounts.created || 0,
+        created: statusCounts.assigned || 0,
         draft: statusCounts.draft || 0,
         assigned,
         received,
-        open: statusCounts.created || 0,
-        inProgress: statusCounts.draft || 0,
-        completed: assigned,
+        open: (statusCounts.assigned || 0)
+          + (statusCounts.accepted || 0)
+          + (statusCounts.started || 0)
+          + (statusCounts.in_progress || 0),
+        inProgress: (statusCounts.in_progress || 0) + (statusCounts.started || 0),
+        completed: (statusCounts.completed || 0) + (statusCounts.verified || 0) + (statusCounts.closed || 0),
         overdue: received,
         trendPercent,
         slaPercent: null,
@@ -1620,7 +1784,7 @@ router.get('/counts', canReadWorkOrders, async (req, res) => {
           .select('id', { count: 'exact', head: true })
           .eq('org_id', orgId)
           .in('id', workOrderIds)
-          .eq('status', 'created')
+          .in('status', WO_OPEN_LIST_STATUSES)
         if (error) throw error
         return count || 0
       })(),
@@ -1629,7 +1793,8 @@ router.get('/counts', canReadWorkOrders, async (req, res) => {
         .from('manual_work_orders')
         .select('id', { count: 'exact', head: true })
         .eq('org_id', orgId)
-        .eq('status', 'created')
+        .eq('source_type', 'manual')
+        .in('status', WO_OPEN_LIST_STATUSES)
         .then(({ count, error }) => {
           if (error) throw error
           return count || 0
@@ -1653,7 +1818,7 @@ router.get('/manual/orders', canReadWorkOrders, async (req, res) => {
   try {
     const { data, error } = await supabaseAdmin
       .from('manual_work_orders')
-      .select('id, status, created_at, updated_at, created_by, assigned_department_id, assigned_location_id')
+      .select('id, status, wo_number, source_type, priority, problem_description, created_at, updated_at, created_by, assigned_department_id, assigned_location_id, work_request_id')
       .eq('org_id', orgId)
       .order('created_at', { ascending: false })
       .range(offset, offset + limit - 1)

@@ -1,0 +1,63 @@
+.page-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--color-primary);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.4;
+  text-decoration: none;
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+
+.page-back:hover {
+  color: #d42f3c;
+}
+
+.page-back:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+.page-back__icon {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  display: block;
+  background-color: currentColor;
+  mask-repeat: no-repeat;
+  mask-position: center;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  -webkit-mask-size: contain;
+}
+
+.page-back--icon-only {
+  width: 36px;
+  height: 36px;
+  justify-content: center;
+  border-radius: 10px;
+}
+
+.page-back--icon-only:hover {
+  background: var(--color-light-pink-1);
+}
+
+.page-back--header {
+  align-self: center;
+  flex-shrink: 0;
+}
+
+.company-page__header > .page-back:not(.page-back--inline),
+.wo-page__top > .page-back:not(.page-back--inline),
+.roles-page__header .page-back:not(.page-back--inline),
+.placeholder-page > .page-back:not(.page-back--inline),
+.admin-page__subtitle .page-back:not(.page-back--inline) {
+  margin-bottom: 10px;
+}

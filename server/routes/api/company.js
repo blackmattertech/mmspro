@@ -18,8 +18,16 @@ import {
 } from '../../lib/orgLimits.js'
 import { getScopedLocationId, hasModulePermission } from '../../lib/orgPermissions.js'
 import { canManageOrg } from '../../lib/accountRoles.js'
-import { getSignedUrl } from '../../lib/signedUrlCache.js'
+import { getSignedUrl, getSignedUrls } from '../../lib/signedUrlCache.js'
 import { buildAreasTemplate, bulkImportAreas } from '../../lib/areaBulkService.js'
+import {
+  buildLocationsTemplate,
+  bulkImportLocations,
+  buildDepartmentsTemplate,
+  bulkImportDepartments,
+  buildEmployeesTemplate,
+  bulkImportEmployees,
+} from '../../lib/companyMasterBulkService.js'
 import { attachFailedFileToResult } from '../../lib/importErrorWorkbook.js'
 
 const router = Router()
@@ -223,6 +231,66 @@ async function attachLocationHeadPhoto(location) {
   return result
 }
 
+async function attachLocationHeadsFromRoles(orgId, locations) {
+  const list = (Array.isArray(locations) ? locations : [locations]).filter(Boolean)
+  if (!list.length) return locations
+
+  const { data: roles, error: rolesError } = await supabaseAdmin
+    .from('org_access_roles')
+    .select('id')
+    .eq('org_id', orgId)
+    .ilike('name', 'location head')
+
+  if (rolesError) throw rolesError
+
+  const roleIds = (roles || []).map((role) => role.id)
+  const roleHeadsByLocation = new Map()
+
+  if (roleIds.length) {
+    const { data: employees, error: empError } = await supabaseAdmin
+      .from('org_employees')
+      .select('id, emp_id, name, photo_url, location_id')
+      .eq('org_id', orgId)
+      .neq('is_active', false)
+      .in('access_role_id', roleIds)
+      .not('location_id', 'is', null)
+
+    if (empError) throw empError
+
+    for (const employee of employees || []) {
+      const existing = roleHeadsByLocation.get(employee.location_id) || []
+      existing.push(employee)
+      roleHeadsByLocation.set(employee.location_id, existing)
+    }
+  }
+
+  const enriched = await Promise.all(list.map(async (location) => {
+    const withPhoto = await attachLocationHeadPhoto(location)
+    const headsById = new Map()
+
+    if (withPhoto.head_employee?.id) {
+      headsById.set(withPhoto.head_employee.id, withPhoto.head_employee)
+    }
+
+    for (const employee of roleHeadsByLocation.get(location.id) || []) {
+      if (!headsById.has(employee.id)) {
+        headsById.set(employee.id, employee)
+      }
+    }
+
+    const location_heads = await Promise.all(
+      [...headsById.values()].map((employee) => attachEmployeePhotoUrl(employee)),
+    )
+
+    return {
+      ...withPhoto,
+      location_heads,
+    }
+  }))
+
+  return Array.isArray(locations) ? enriched : enriched[0]
+}
+
 async function validateLocationHead(orgId, locationId, headEmployeeId) {
   if (!headEmployeeId) return
 
@@ -260,7 +328,7 @@ router.get('/locations', canReadLocations, async (req, res) => {
   const { data, error } = await query
 
   if (error) return res.status(500).json({ error: error.message })
-  const withHeads = await Promise.all((data || []).map(attachLocationHeadPhoto))
+  const withHeads = await attachLocationHeadsFromRoles(req.userProfile.org_id, data || [])
   res.json(withHeads)
 })
 
@@ -408,20 +476,21 @@ router.patch('/locations/:id', canUpdateLocations, assertOrgOwnership('org_locat
     return res.status(500).json({ error: error.message })
   }
 
-  res.json(await attachLocationHeadPhoto(data))
+  res.json(await attachLocationHeadsFromRoles(orgId, data))
 })
 
 router.delete('/locations/:id', canDeleteLocations, assertOrgOwnership('org_locations'), async (req, res) => {
+  const orgId = req.userProfile.org_id
   const { data, error } = await supabaseAdmin
     .from('org_locations')
     .update({ is_active: false, updated_at: new Date().toISOString() })
     .eq('id', req.params.id)
-    .eq('org_id', req.userProfile.org_id)
+    .eq('org_id', orgId)
     .select(LOCATION_SELECT)
     .single()
 
   if (error) return res.status(500).json({ error: error.message })
-  res.json(await attachLocationHeadPhoto(data))
+  res.json(await attachLocationHeadsFromRoles(orgId, data))
 })
 
 // ── Departments ──
@@ -776,10 +845,20 @@ async function attachEmployeeHeadMeta(orgId, employees) {
 }
 
 async function decorateEmployees(orgId, employees) {
-  const withPhotos = Array.isArray(employees)
-    ? await Promise.all(employees.map(attachEmployeePhotoUrl))
-    : await attachEmployeePhotoUrl(employees)
-  return attachEmployeeHeadMeta(orgId, withPhotos)
+  const list = Array.isArray(employees) ? employees : [employees]
+  const photoPaths = list.map((employee) => employee?.photo_url).filter(Boolean)
+  const signedByPath = photoPaths.length
+    ? await getSignedUrls(ORG_ASSETS_BUCKET, photoPaths)
+    : new Map()
+
+  const withPhotos = list.map((employee) => {
+    if (!employee?.photo_url) return employee
+    const signedUrl = signedByPath.get(employee.photo_url) || null
+    return signedUrl ? { ...employee, photo_signed_url: signedUrl } : employee
+  })
+
+  const enriched = await attachEmployeeHeadMeta(orgId, withPhotos)
+  return Array.isArray(employees) ? enriched : enriched[0]
 }
 
 async function getEmployeeById(orgId, id) {
@@ -1328,6 +1407,102 @@ router.post('/areas/bulk', canCreateAreas, async (req, res) => {
     }
     const result = await bulkImportAreas(req.userProfile.org_id, buffer)
     const payload = await attachFailedFileToResult(result, buffer, 'areas-import-failed-rows.xlsx')
+    res.json(payload)
+  } catch (err) {
+    res.status(err.status || 400).json({ error: err.message })
+  }
+})
+
+router.get('/locations/template', canCreateLocations, async (req, res) => {
+  try {
+    const buffer = await buildLocationsTemplate()
+    res.json({
+      filename: 'locations-template.xlsx',
+      contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      data: buffer.toString('base64'),
+    })
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message })
+  }
+})
+
+router.post('/locations/bulk', canCreateLocations, async (req, res) => {
+  try {
+    const raw = req.body?.data
+    if (!raw || typeof raw !== 'string') {
+      return res.status(400).json({ error: 'File data is required' })
+    }
+    const base64 = raw.includes(',') ? raw.split(',').pop() : raw
+    const buffer = Buffer.from(base64, 'base64')
+    if (!buffer.length) {
+      return res.status(400).json({ error: 'File data is invalid' })
+    }
+    const result = await bulkImportLocations(req.userProfile.org_id, buffer)
+    const payload = await attachFailedFileToResult(result, buffer, 'locations-import-failed-rows.xlsx')
+    res.json(payload)
+  } catch (err) {
+    res.status(err.status || 400).json({ error: err.message })
+  }
+})
+
+router.get('/departments/template', canCreateDepartments, async (req, res) => {
+  try {
+    const buffer = await buildDepartmentsTemplate(req.userProfile.org_id)
+    res.json({
+      filename: 'departments-template.xlsx',
+      contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      data: buffer.toString('base64'),
+    })
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message })
+  }
+})
+
+router.post('/departments/bulk', canCreateDepartments, async (req, res) => {
+  try {
+    const raw = req.body?.data
+    if (!raw || typeof raw !== 'string') {
+      return res.status(400).json({ error: 'File data is required' })
+    }
+    const base64 = raw.includes(',') ? raw.split(',').pop() : raw
+    const buffer = Buffer.from(base64, 'base64')
+    if (!buffer.length) {
+      return res.status(400).json({ error: 'File data is invalid' })
+    }
+    const result = await bulkImportDepartments(req.userProfile.org_id, buffer)
+    const payload = await attachFailedFileToResult(result, buffer, 'departments-import-failed-rows.xlsx')
+    res.json(payload)
+  } catch (err) {
+    res.status(err.status || 400).json({ error: err.message })
+  }
+})
+
+router.get('/employees/template', canCreateEmployees, async (req, res) => {
+  try {
+    const buffer = await buildEmployeesTemplate(req.userProfile.org_id)
+    res.json({
+      filename: 'employees-template.xlsx',
+      contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      data: buffer.toString('base64'),
+    })
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message })
+  }
+})
+
+router.post('/employees/bulk', canCreateEmployees, async (req, res) => {
+  try {
+    const raw = req.body?.data
+    if (!raw || typeof raw !== 'string') {
+      return res.status(400).json({ error: 'File data is required' })
+    }
+    const base64 = raw.includes(',') ? raw.split(',').pop() : raw
+    const buffer = Buffer.from(base64, 'base64')
+    if (!buffer.length) {
+      return res.status(400).json({ error: 'File data is invalid' })
+    }
+    const result = await bulkImportEmployees(req.userProfile.org_id, buffer)
+    const payload = await attachFailedFileToResult(result, buffer, 'employees-import-failed-rows.xlsx')
     res.json(payload)
   } catch (err) {
     res.status(err.status || 400).json({ error: err.message })

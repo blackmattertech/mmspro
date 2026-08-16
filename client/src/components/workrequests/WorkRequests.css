@@ -33,7 +33,7 @@
 .wr-page__toolbar-row--filters {
   padding-top: 10px;
   padding-bottom: 12px;
-  overflow-x: auto;
+  overflow: visible;
 }
 
 .wr-page__bar-controls {
@@ -291,7 +291,6 @@
 }
 
 .wr-detail-modal {
-  max-width: 640px;
   width: 100%;
 }
 
@@ -346,6 +345,14 @@
   background: var(--color-white);
 }
 
+.wr-detail-sheet__header-main {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+}
+
 .wr-detail-sheet__eyebrow {
   margin: 0 0 4px;
   font-size: 12px;
@@ -396,8 +403,7 @@
   grid-template-columns: minmax(0, 1fr) minmax(280px, 340px);
   gap: 28px;
   align-items: start;
-  max-width: 1400px;
-  margin: 0 auto;
+  width: 100%;
 }
 
 @media (max-width: 900px) {
@@ -509,6 +515,84 @@
 
 .wo-received-detail__field--full {
   grid-column: 1 / -1;
+}
+
+.wr-table-wrap {
+  overflow-x: hidden;
+}
+
+.wr-table {
+  table-layout: fixed;
+  width: 100%;
+}
+
+.wr-table.master-table thead th {
+  white-space: normal;
+  word-break: break-word;
+  line-height: 1.3;
+  vertical-align: bottom;
+  padding-left: 10px;
+  padding-right: 10px;
+}
+
+.wr-table.master-table tbody td {
+  vertical-align: top;
+  padding-left: 10px;
+  padding-right: 10px;
+  overflow: hidden;
+}
+
+.wr-table__cell {
+  min-width: 0;
+}
+
+.wr-table__cell--id {
+  width: 12%;
+}
+
+.wr-table__cell--type {
+  width: 6%;
+}
+
+.wr-table__cell--dept {
+  width: 9%;
+}
+
+.wr-table__cell--text {
+  width: 16%;
+}
+
+.wr-table__cell--priority,
+.wr-table__cell--short {
+  width: 7%;
+}
+
+.wr-table__cell--status {
+  width: 8%;
+}
+
+.wr-table__cell--person {
+  width: 10%;
+}
+
+.wr-table__cell--date {
+  width: 10%;
+}
+
+.wr-table__clamp {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  word-break: break-word;
+  line-height: 1.35;
+}
+
+.wr-table__ellipsis {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .wr-list-row {

@@ -67,7 +67,9 @@ router.get('/', async (req, res) => {
   const orgIds = (orgs || []).map((org) => org.id)
   const [usageByOrg, profilesResult] = await Promise.all([
     getBulkOrgUsage(orgIds),
-    supabaseAdmin.from('profiles').select('org_id'),
+    orgIds.length
+      ? supabaseAdmin.from('profiles').select('org_id').in('org_id', orgIds)
+      : Promise.resolve({ data: [], error: null }),
   ])
 
   if (profilesResult.error) {

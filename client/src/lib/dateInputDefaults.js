@@ -1,4 +1,4 @@
-/** Local calendar date as `YYYY-MM-DD` for `<input type="date">`. */
+/** Local calendar date as `YYYY-MM-DD` for DateField. */
 export function todayDateValue(date = new Date()) {
   const y = date.getFullYear()
   const m = String(date.getMonth() + 1).padStart(2, '0')
@@ -6,7 +6,7 @@ export function todayDateValue(date = new Date()) {
   return `${y}-${m}-${day}`
 }
 
-/** Local datetime as `YYYY-MM-DDTHH:mm` for `<input type="datetime-local">`. */
+/** Local datetime as `YYYY-MM-DDTHH:mm` for DateField with time. */
 export function nowDateTimeLocalValue(date = new Date()) {
   const y = date.getFullYear()
   const m = String(date.getMonth() + 1).padStart(2, '0')

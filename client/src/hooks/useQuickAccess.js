@@ -74,16 +74,6 @@ export function useQuickAccess(scope) {
     })
   }, [scope, userId])
 
-  const pruneTo = useCallback((allowedIds) => {
-    const allowed = new Set(allowedIds)
-    setIds((prev) => {
-      const next = prev.filter((id) => allowed.has(id))
-      if (next.length === prev.length) return prev
-      writeIds(scope, userId, next)
-      return next
-    })
-  }, [scope, userId])
-
   const clear = useCallback(() => {
     persist([])
   }, [persist])
@@ -92,7 +82,6 @@ export function useQuickAccess(scope) {
     ids,
     add,
     remove,
-    pruneTo,
     clear,
     max: MAX_QUICK_ACCESS,
     canAdd: Boolean(scope) && ids.length < MAX_QUICK_ACCESS,

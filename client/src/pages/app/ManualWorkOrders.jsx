@@ -26,7 +26,7 @@ export default function ManualWorkOrders() {
   const canRemove = canDelete('work_orders_manual') || canDelete('work_orders')
   const [selectedId, setSelectedId] = useState(null)
   const [actionError, setActionError] = useState(null)
-  const { search, locationFilter, advancedRules, locations } = useOutletContext()
+  const { search, locationFilter, sortBy, advancedRules, fieldFilter, locations } = useOutletContext()
   const fetchManualOrders = useCallback(() => getManualWorkOrders(), [])
   const { orders, loading, error, reload } = useWorkOrderList(fetchManualOrders)
   const successMessage = location.state?.success
@@ -34,9 +34,11 @@ export default function ManualWorkOrders() {
   const filteredOrders = useMemo(() => applyWorkOrderFilters(orders, {
     search,
     locationFilter,
+    sortBy,
     advancedRules,
+    fieldFilter,
     locations,
-  }), [orders, search, locationFilter, advancedRules, locations])
+  }), [orders, search, locationFilter, sortBy, advancedRules, fieldFilter, locations])
 
   const handleEdit = useCallback((order) => {
     if (!org?.slug || !order?.id) return
@@ -78,6 +80,7 @@ export default function ManualWorkOrders() {
       <WorkOrdersTable
         orders={filteredOrders}
         columns={MANUAL_COLUMNS}
+        tableId="work-orders-manual"
         emptyTitle="No manual work orders yet."
         emptyHint="Click + Add Work Order to create a manual work order."
         onView={setSelectedId}
@@ -85,7 +88,7 @@ export default function ManualWorkOrders() {
         onDelete={handleDelete}
         canEdit={canEdit}
         canDelete={canRemove}
-        paginationResetKey={`${search}|${locationFilter}`}
+        paginationResetKey={`${search}|${locationFilter}|${fieldFilter?.field}|${fieldFilter?.value}|${sortBy}`}
       />
 
       {selectedId && (
@@ -93,6 +96,7 @@ export default function ManualWorkOrders() {
           orderId={selectedId}
           fetchWorkOrder={getManualWorkOrder}
           onClose={() => setSelectedId(null)}
+          onEdit={canEdit ? handleEdit : undefined}
         />
       )}
     </>

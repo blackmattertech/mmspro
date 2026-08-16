@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, useEffect } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { usePermissions } from '../../hooks/usePermissions'
 import { isCompanyAdmin } from '../../lib/accountRoles'
 import { useAuth } from '../../hooks/useAuth'
@@ -13,9 +13,29 @@ import GooToggle from '../../components/ui/GooToggle'
 import TrashIcon from '../../components/ui/TrashIcon'
 import EditIcon from '../../components/ui/EditIcon'
 import TablePagination from '../../components/shared/TablePagination'
+import TableColumnPicker from '../../components/shared/TableColumnPicker'
+import TableFilterToolbar from '../../components/shared/TableFilterToolbar'
 import { useTablePagination } from '../../hooks/useTablePagination'
+import { useTableColumnPrefs } from '../../hooks/useTableColumnPrefs'
+import { useDebouncedValue } from '../../hooks/useDebouncedValue'
+import { TABLE_SORT_OPTIONS, applyTableFilters } from '../../lib/tableFilters'
+import { stopTableRowClick, tableRowClickProps } from '../../lib/clickableTableRow'
+import RecordDetailModal from '../../components/shared/RecordDetailModal'
+import { EquipmentDetailContent } from '../../components/company/CompanyRecordDetails'
+import '../../components/shared/TableColumnPicker.css'
+import '../../components/shared/TableFilterToolbar.css'
+import '../../components/workorders/WorkOrdersPage.css'
 import './Company.css'
 import '../../components/company/CompanyShared.css'
+
+const EQUIPMENT_FILTER_FIELDS = [
+  { value: 'name', label: 'Name' },
+  { value: 'code', label: 'Code' },
+  { value: 'location', label: 'Location' },
+  { value: 'department', label: 'Department' },
+  { value: 'area', label: 'Area' },
+  { value: 'status', label: 'Status', placeholder: 'active or inactive' },
+]
 
 export default function Equipment() {
   const { role } = useAuth()
@@ -27,18 +47,33 @@ export default function Equipment() {
     canDelete,
   } = usePermissions()
   const canManage = canCreate('equipment') || canUpdate('equipment') || canDelete('equipment')
+  const equipmentColumnDefs = useMemo(() => {
+    const cols = [
+      { id: 'name', label: 'Name' },
+      { id: 'code', label: 'Code' },
+      { id: 'location', label: 'Location' },
+      { id: 'department', label: 'Department' },
+      { id: 'area', label: 'Area' },
+      { id: 'active', label: 'Active' },
+    ]
+    if (canManage) cols.push({ id: 'actions', label: 'Actions', locked: true })
+    return cols
+  }, [canManage])
+  const {
+    isVisible: isEquipmentColumnVisible,
+    toggleColumn: toggleEquipmentColumn,
+    resetColumns: resetEquipmentColumns,
+    columnDefs: equipmentPickerColumns,
+    visibleColumnIds: equipmentVisibleColumnIds,
+  } = useTableColumnPrefs('masters-equipment', equipmentColumnDefs)
   const canManageAreas = canCreate('areas') || canUpdate('areas') || canDelete('areas')
   const canManageFieldOptions = isCompanyAdmin(role) || canUpdate('equipment')
   const [view, setView] = useState(() => (canRead('equipment') ? 'records' : 'areas'))
   const [search, setSearch] = useState('')
-  const [debouncedSearch, setDebouncedSearch] = useState('')
-
-  useEffect(() => {
-    const id = window.setTimeout(() => {
-      setDebouncedSearch(search.trim())
-    }, 300)
-    return () => window.clearTimeout(id)
-  }, [search])
+  const [filterField, setFilterField] = useState('')
+  const [filterValue, setFilterValue] = useState('')
+  const [sortBy, setSortBy] = useState('name_asc')
+  const debouncedSearch = useDebouncedValue(search.trim())
 
   const filters = useMemo(
     () => ({ search: debouncedSearch || undefined }),
@@ -46,10 +81,28 @@ export default function Equipment() {
   )
   const { items, loading, saving, error, create, update, remove, reload } = useEquipment(filters)
   const fieldsState = useOrgEquipmentFields()
-  const equipmentPagination = useTablePagination(items.length, { resetKey: debouncedSearch })
-  const pagedItems = equipmentPagination.paginate(items)
+
+  const filteredItems = useMemo(() => applyTableFilters(items, {
+    fieldFilter: { field: filterField, value: filterValue },
+    fieldFilterGetters: {
+      name: (row) => row.name,
+      code: (row) => row.code,
+      location: (row) => row.locations?.name,
+      department: (row) => row.departments?.name,
+      area: (row) => row.areas?.name,
+      status: (row) => (row.is_active === false ? 'inactive' : 'active'),
+    },
+    sortBy,
+    getName: (row) => row.name || row.code,
+    getCreatedAt: (row) => row.created_at,
+  }), [items, filterField, filterValue, sortBy])
+
+  const filterResetKey = `${debouncedSearch}|${filterField}|${filterValue}|${sortBy}`
+  const equipmentPagination = useTablePagination(filteredItems.length, { resetKey: filterResetKey })
+  const pagedItems = equipmentPagination.paginate(filteredItems)
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState(null)
+  const [viewing, setViewing] = useState(null)
   const [bulkBusy, setBulkBusy] = useState(false)
   const [bulkResult, setBulkResult] = useState(null)
   const [bulkError, setBulkError] = useState(null)
@@ -63,6 +116,8 @@ export default function Equipment() {
     setEditing(null)
     setModalOpen(true)
   }
+
+  const openView = (row) => setViewing(row)
 
   const openEdit = async (row) => {
     try {
@@ -208,57 +263,72 @@ export default function Equipment() {
             )}
 
             <div className="company-panel">
-              <div className="company-panel__toolbar">
-                <label className="company-filter">
-                  <span>Search</span>
-                  <input
-                    className="company-form__input"
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                    placeholder="Search equipment…"
-                  />
-                </label>
-                {canManage && (
-                  <div className="company-panel__toolbar-actions">
-                    <button
-                      type="button"
-                      className="company-btn company-btn--secondary equipment-bulk-btn"
-                      onClick={handleDownloadTemplate}
-                    >
-                      <span className="equipment-bulk-btn__icon" aria-hidden="true">
-                        <NavIcon name="download" />
-                      </span>
-                      Download template
-                    </button>
-                    <button
-                      type="button"
-                      className="company-btn company-btn--secondary equipment-bulk-btn"
-                      onClick={() => bulkInputRef.current?.click()}
-                      disabled={bulkBusy}
-                    >
-                      <span className="equipment-bulk-btn__icon" aria-hidden="true">
-                        <NavIcon name="upload" />
-                      </span>
-                      {bulkBusy ? 'Uploading…' : 'Bulk upload'}
-                    </button>
-                    <input
-                      ref={bulkInputRef}
-                      type="file"
-                      accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                      style={{ display: 'none' }}
-                      onChange={handleBulkFile}
+              <div className="company-panel__toolbar company-panel__toolbar--filters">
+                <TableFilterToolbar
+                  search={{
+                    value: search,
+                    onChange: setSearch,
+                    placeholder: 'Search equipment...',
+                    ariaLabel: 'Search equipment',
+                  }}
+                  filter={{
+                    fields: EQUIPMENT_FILTER_FIELDS,
+                    field: filterField,
+                    onFieldChange: setFilterField,
+                    value: filterValue,
+                    onValueChange: setFilterValue,
+                  }}
+                  sort={{ value: sortBy, onChange: setSortBy, options: TABLE_SORT_OPTIONS }}
+                  actions={canManage && (
+                    <>
+                      <button
+                        type="button"
+                        className="company-btn company-btn--secondary equipment-bulk-btn"
+                        onClick={handleDownloadTemplate}
+                      >
+                        <span className="equipment-bulk-btn__icon" aria-hidden="true">
+                          <NavIcon name="download" />
+                        </span>
+                        Download template
+                      </button>
+                      <button
+                        type="button"
+                        className="company-btn company-btn--secondary equipment-bulk-btn"
+                        onClick={() => bulkInputRef.current?.click()}
+                        disabled={bulkBusy}
+                      >
+                        <span className="equipment-bulk-btn__icon" aria-hidden="true">
+                          <NavIcon name="upload" />
+                        </span>
+                        {bulkBusy ? 'Uploading…' : 'Bulk upload'}
+                      </button>
+                      <input
+                        ref={bulkInputRef}
+                        type="file"
+                        accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                        style={{ display: 'none' }}
+                        onChange={handleBulkFile}
+                      />
+                      <button type="button" className="company-btn company-btn--primary" onClick={openCreate}>
+                        + Add Equipment
+                      </button>
+                    </>
+                  )}
+                  columnPicker={(
+                    <TableColumnPicker
+                      columnDefs={equipmentPickerColumns}
+                      visibleColumnIds={equipmentVisibleColumnIds}
+                      onToggle={toggleEquipmentColumn}
+                      onReset={resetEquipmentColumns}
                     />
-                    <button type="button" className="company-btn company-btn--primary" onClick={openCreate}>
-                      + Add Equipment
-                    </button>
-                  </div>
-                )}
+                  )}
+                />
               </div>
 
               {error && <div className="company-error">{error}</div>}
               {bulkError && <div className="company-error">{bulkError}</div>}
               {bulkResult && (
-                <div className={`company-alert ${bulkResult.failed ? 'company-alert--warning' : ''}`}>
+                <div className={`company-alert ${bulkResult.failed ? 'company-alert--warning' : 'company-alert--success'}`}>
                   <strong>{bulkResult.created}</strong> equipment created
                   {bulkResult.failed ? `, ${bulkResult.failed} row(s) failed.` : '.'}
                   {bulkResult.errors?.length > 0 && (
@@ -280,38 +350,49 @@ export default function Equipment() {
                 <div className="company-empty">
                   No equipment yet. Create areas first, then add equipment records.
                 </div>
+              ) : filteredItems.length === 0 ? (
+                <div className="company-empty">No equipment matches your filters.</div>
               ) : (
                 <div className="company-table-wrap">
+                  <div className="company-table-scroll">
                   <table className="company-table">
                     <thead>
                       <tr>
-                        <th>Name</th>
-                        <th>Code</th>
-                        <th>Location</th>
-                        <th>Department</th>
-                        <th>Area</th>
-                        <th>Active</th>
-                        {canManage && <th>Actions</th>}
+                        {isEquipmentColumnVisible('name') && <th>Name</th>}
+                        {isEquipmentColumnVisible('code') && <th>Code</th>}
+                        {isEquipmentColumnVisible('location') && <th>Location</th>}
+                        {isEquipmentColumnVisible('department') && <th>Department</th>}
+                        {isEquipmentColumnVisible('area') && <th>Area</th>}
+                        {isEquipmentColumnVisible('active') && <th>Active</th>}
+                        {canManage && isEquipmentColumnVisible('actions') && <th>Actions</th>}
                       </tr>
                     </thead>
                     <tbody>
                       {pagedItems.map((row) => (
-                        <tr key={row.id}>
-                          <td>{row.name}</td>
-                          <td>{row.code || '—'}</td>
-                          <td>{row.locations?.name || '—'}</td>
-                          <td>{row.departments?.name || '—'}</td>
-                          <td>{row.areas?.name || '—'}</td>
-                          <td>
-                            <GooToggle
-                              checked={row.is_active !== false}
-                              disabled={!canManage || saving}
-                              onChange={(checked) => handleToggle(row, checked)}
-                              ariaLabel={`Toggle ${row.name}`}
-                            />
-                          </td>
-                          {canManage && (
-                            <td className="company-table__actions">
+                        <tr
+                          key={row.id}
+                          {...tableRowClickProps({
+                            onOpen: () => openView(row),
+                            label: `View ${row.name}`,
+                          })}
+                        >
+                          {isEquipmentColumnVisible('name') && <td>{row.name}</td>}
+                          {isEquipmentColumnVisible('code') && <td>{row.code || '—'}</td>}
+                          {isEquipmentColumnVisible('location') && <td>{row.locations?.name || '—'}</td>}
+                          {isEquipmentColumnVisible('department') && <td>{row.departments?.name || '—'}</td>}
+                          {isEquipmentColumnVisible('area') && <td>{row.areas?.name || '—'}</td>}
+                          {isEquipmentColumnVisible('active') && (
+                            <td onClick={stopTableRowClick}>
+                              <GooToggle
+                                checked={row.is_active !== false}
+                                disabled={!canManage || saving}
+                                onChange={(checked) => handleToggle(row, checked)}
+                                ariaLabel={`Toggle ${row.name}`}
+                              />
+                            </td>
+                          )}
+                          {canManage && isEquipmentColumnVisible('actions') && (
+                            <td className="company-table__actions" onClick={stopTableRowClick}>
                               <button
                                 type="button"
                                 className="company-btn company-btn--secondary company-btn--compact company-btn--icon"
@@ -341,15 +422,31 @@ export default function Equipment() {
                     totalPages={equipmentPagination.totalPages}
                     pageSize={equipmentPagination.pageSize}
                     pageSizeOptions={equipmentPagination.pageSizeOptions}
-                    totalCount={items.length}
+                    totalCount={filteredItems.length}
                     rangeStart={equipmentPagination.rangeStart}
                     rangeEnd={equipmentPagination.rangeEnd}
                     onPageChange={equipmentPagination.setPage}
                     onPageSizeChange={equipmentPagination.setPageSize}
                   />
+                  </div>
                 </div>
               )}
             </div>
+
+            {viewing && (
+              <RecordDetailModal
+                title={viewing.name}
+                subtitle={viewing.code ? `Code ${viewing.code}` : undefined}
+                onClose={() => setViewing(null)}
+                onEdit={canManage ? () => {
+                  const record = viewing
+                  setViewing(null)
+                  openEdit(record)
+                } : undefined}
+              >
+                <EquipmentDetailContent equipment={viewing} />
+              </RecordDetailModal>
+            )}
 
             {modalOpen && (
               <EquipmentModal

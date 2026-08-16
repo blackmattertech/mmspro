@@ -47,6 +47,20 @@ const APP_SEGMENTS = [
     moduleKey: 'calendar',
   },
   {
+    id: 'warranty-manager',
+    label: 'Warranty Manager',
+    segment: 'warranty-manager',
+    icon: 'shieldLock',
+    moduleKey: 'warranty_manager',
+  },
+  {
+    id: 'tasks-followups',
+    label: 'Tasks & Follow-ups',
+    segment: 'tasks-and-followups',
+    icon: 'alarmCheck',
+    moduleKey: 'tasks_followups',
+  },
+  {
     id: 'reports',
     label: 'Reports',
     icon: 'chart',
@@ -73,6 +87,7 @@ const APP_SEGMENTS = [
       },
       { label: 'Assets', segment: 'masters/assets', moduleKey: 'assets', icon: 'asset' },
       { label: 'Equipment', segment: 'masters/equipment', moduleKey: 'equipment', icon: 'washer', altModuleKeys: ['areas'] },
+      { label: 'Vendors', segment: 'masters/vendors', icon: 'userCheck', showWithoutPermission: true },
     ],
   },
   {
@@ -112,6 +127,8 @@ export function moduleKeyForPath(pathname, orgSlug) {
   if (rest.startsWith('work-orders/manual')) return 'work_orders_manual'
   if (rest.startsWith('work-orders')) return 'work_orders'
   if (rest.startsWith('calendar')) return 'calendar'
+  if (rest.startsWith('warranty-manager')) return 'warranty_manager'
+  if (rest.startsWith('tasks-and-followups')) return 'tasks_followups'
   if (rest.startsWith('reports/daily-logs')) return 'reports_daily_logs'
   if (rest.startsWith('reports/plant-wise')) return 'reports_plant_wise'
   if (rest.startsWith('reports/open-logs')) return 'reports_open_logs'
@@ -151,6 +168,7 @@ export function moduleKeysForPath(pathname, orgSlug) {
 export function getNavItems(orgSlug, { canRead } = {}) {
   const allow = typeof canRead === 'function' ? canRead : () => true
   const allowItem = (item) => {
+    if (item.showWithoutPermission) return true
     if (allow(item.moduleKey)) return true
     return (item.altModuleKeys || []).some((key) => allow(key))
   }
