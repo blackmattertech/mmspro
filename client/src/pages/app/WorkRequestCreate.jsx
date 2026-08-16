@@ -12,10 +12,13 @@ import WorkRequestAssetFields from '../../components/workrequests/WorkRequestAss
 import WorkRequestSectionHead from '../../components/workrequests/WorkRequestSectionHead'
 import WorkRequestBreakdownFields from '../../components/workrequests/WorkRequestBreakdownFields'
 import FilterableSelect from '../../components/ui/FilterableSelect'
+import PageBack from '../../components/shared/PageBack'
 import {
   clearBreakdownFieldValues,
   missingRequiredBreakdownFields,
 } from '../../lib/workRequestBreakdownFields'
+import { uploadWorkOrderFile } from '../../lib/workOrderAssets'
+import { createId } from '../../lib/id'
 import '../../components/company/CompanyShared.css'
 import '../../components/assets/AssetsFields.css'
 import '../../components/workorders/WorkOrdersPage.css'
@@ -97,6 +100,7 @@ export default function WorkRequestCreate() {
   const [maintenanceFieldValues, setMaintenanceFieldValues] = useState({})
   const [priority, setPriority] = useState('medium')
   const [remarks, setRemarks] = useState('')
+  const [attachmentFiles, setAttachmentFiles] = useState([])
 
   const assetSections = ctx?.asset_sections || []
   const maintenanceSchema = ctx?.maintenance_form_schema || { sections: [] }
@@ -205,7 +209,7 @@ export default function WorkRequestCreate() {
   const canSaveDraft = Boolean(orderToId && (!orderFromSelectable || effectiveOrderFromId))
 
   const buildPayload = useCallback(
-    (saveAs) => ({
+    (saveAs, attachments = []) => ({
       save_as: saveAs,
       request_type: requestType,
       ...(orderFromSelectable ? { order_from_department_id: effectiveOrderFromId || null } : {}),
@@ -215,7 +219,7 @@ export default function WorkRequestCreate() {
       is_breakdown: isBreakdown,
       priority,
       remarks,
-      attachments: [],
+      attachments,
       form_field_values: maintenanceFieldValues,
     }),
     [
@@ -243,6 +247,10 @@ export default function WorkRequestCreate() {
           setError('Select an asset / equipment before submitting.')
           return
         }
+        if (requestType === 'inter_department' && orderToId && effectiveOrderFromId && orderToId === effectiveOrderFromId) {
+          setError('Inter-department requests must select a different Order To department.')
+          return
+        }
         const missingBreakdown = missingRequiredBreakdownFields(
           maintenanceSchema,
           isBreakdown,
@@ -265,7 +273,19 @@ export default function WorkRequestCreate() {
       setSaveMode(saveAs)
       setError(null)
       try {
-        await createWorkRequest(buildPayload(saveAs))
+        const draftKey = createId()
+        const uploaded = []
+        for (const file of attachmentFiles) {
+          const meta = await uploadWorkOrderFile(
+            org.id,
+            `work-requests/${draftKey}`,
+            'attachments',
+            file,
+            'file',
+          )
+          uploaded.push(meta)
+        }
+        await createWorkRequest(buildPayload(saveAs, uploaded))
         if (org?.slug) {
           const message = saveAs === 'draft'
             ? 'Work request saved as draft.'
@@ -279,7 +299,22 @@ export default function WorkRequestCreate() {
         setSaveMode(null)
       }
     },
-    [buildPayload, effectiveOrderFromId, equipmentId, isBreakdown, navigate, orderFromSelectable, orderToId, org?.slug, problem, maintenanceSchema, maintenanceFieldValues],
+    [
+      attachmentFiles,
+      buildPayload,
+      effectiveOrderFromId,
+      equipmentId,
+      isBreakdown,
+      navigate,
+      orderFromSelectable,
+      orderToId,
+      org?.id,
+      org?.slug,
+      problem,
+      maintenanceSchema,
+      maintenanceFieldValues,
+      requestType,
+    ],
   )
 
   const handleSubmit = useCallback(
@@ -319,6 +354,10 @@ export default function WorkRequestCreate() {
   return (
     <div className="company-page wo-page">
       <header className="wo-page__top">
+        <PageBack
+          to={org?.slug ? orgPath(org.slug, 'work-request/my') : '#'}
+          label="Work Requests"
+        />
         <h1 className="wo-page__title">Create Work Request</h1>
         <p className="wo-page__subtitle">
           Submit a maintenance request for your department or another executing department.
@@ -529,6 +568,24 @@ export default function WorkRequestCreate() {
                     allowEmpty={false}
                     className="company-form__input--select"
                   />
+                </label>
+                <label className="company-form__field company-form__field--full">
+                  <span className="company-form__label">Attachment</span>
+                  <input
+                    type="file"
+                    className="company-form__input"
+                    multiple
+                    disabled={saving}
+                    onChange={(e) => {
+                      const files = Array.from(e.target.files || [])
+                      setAttachmentFiles(files)
+                    }}
+                  />
+                  {attachmentFiles.length > 0 && (
+                    <p className="wo-manual__note" style={{ marginTop: 8, marginBottom: 0 }}>
+                      {attachmentFiles.length} file(s) selected
+                    </p>
+                  )}
                 </label>
                 <label className="company-form__field company-form__field--full">
                   <span className="company-form__label">Remarks</span>

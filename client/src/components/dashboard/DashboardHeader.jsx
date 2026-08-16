@@ -55,7 +55,7 @@ export default function DashboardHeader({
           <div className="dash-header__brand">
             <div className="dash-header__logo-wrap" aria-hidden={!logoUrl && !companyName}>
               {logoUrl ? (
-                <img src={logoUrl} alt="" className="dash-header__logo" />
+                <img src={logoUrl} alt="" className="dash-header__logo" loading="lazy" decoding="async" />
               ) : (
                 <span className="dash-header__logo-fallback">{logoLetter}</span>
               )}

@@ -217,51 +217,65 @@ async function syncEquipmentValues(orgId, equipmentId, valuesInput) {
   )
 
   for (const item of valuesInput) {
-    const fieldId = item.field_id
-    if (!fieldId || !parents.has(fieldId)) {
+    if (!item.field_id || !parents.has(item.field_id)) {
       throw new Error('Invalid equipment field')
     }
+  }
 
+  const validItems = valuesInput
+  if (!validItems.length) return
+
+  const fieldIds = validItems.map((item) => item.field_id)
+  const { data: existingRows, error: existingError } = await supabaseAdmin
+    .from('equipment_values')
+    .select('id, field_id')
+    .eq('equipment_id', equipmentId)
+    .in('field_id', fieldIds)
+
+  if (existingError) throw existingError
+
+  const existingByField = new Map((existingRows || []).map((row) => [row.field_id, row.id]))
+  const now = new Date().toISOString()
+  const inserts = []
+  const updates = []
+
+  for (const item of validItems) {
+    const fieldId = item.field_id
     const valueText = item.value_text !== undefined
       ? (item.value_text == null ? null : String(item.value_text))
       : undefined
     const valueJson = item.value_json !== undefined ? item.value_json : undefined
 
-    const payload = {
-      org_id: orgId,
-      equipment_id: equipmentId,
-      field_id: fieldId,
-      updated_at: new Date().toISOString(),
-    }
-    if (valueText !== undefined) payload.value_text = valueText
-    if (valueJson !== undefined) payload.value_json = valueJson
-
-    const { data: existing } = await supabaseAdmin
-      .from('equipment_values')
-      .select('id')
-      .eq('equipment_id', equipmentId)
-      .eq('field_id', fieldId)
-      .maybeSingle()
-
-    if (existing) {
-      const updates = { updated_at: payload.updated_at }
-      if (valueText !== undefined) updates.value_text = valueText
-      if (valueJson !== undefined) updates.value_json = valueJson
-      const { error } = await supabaseAdmin
-        .from('equipment_values')
-        .update(updates)
-        .eq('id', existing.id)
-      if (error) throw error
+    const existingId = existingByField.get(fieldId)
+    if (existingId) {
+      const updatesPayload = { updated_at: now }
+      if (valueText !== undefined) updatesPayload.value_text = valueText
+      if (valueJson !== undefined) updatesPayload.value_json = valueJson
+      updates.push({ id: existingId, payload: updatesPayload })
     } else {
-      const { error } = await supabaseAdmin
-        .from('equipment_values')
-        .insert({
-          ...payload,
-          value_text: valueText ?? null,
-          value_json: valueJson ?? null,
-        })
-      if (error) throw error
+      inserts.push({
+        org_id: orgId,
+        equipment_id: equipmentId,
+        field_id: fieldId,
+        updated_at: now,
+        value_text: valueText ?? null,
+        value_json: valueJson ?? null,
+      })
     }
+  }
+
+  if (updates.length) {
+    await Promise.all(updates.map(({ id, payload }) => supabaseAdmin
+      .from('equipment_values')
+      .update(payload)
+      .eq('id', id)))
+  }
+
+  if (inserts.length) {
+    const { error: insertError } = await supabaseAdmin
+      .from('equipment_values')
+      .insert(inserts)
+    if (insertError) throw insertError
   }
 }
 

@@ -1,11 +1,16 @@
+import { useMemo, useCallback } from 'react'
 import { formatWorkOrderDate } from '../../lib/workOrderTableUtils'
+import { stopTableRowClick, tableRowClickProps } from '../../lib/clickableTableRow'
 import { useTablePagination } from '../../hooks/useTablePagination'
+import { useTableColumnPrefs } from '../../hooks/useTableColumnPrefs'
 import TablePagination from '../shared/TablePagination'
+import TableColumnPicker from '../shared/TableColumnPicker'
 import AssignedToCell from './AssignedToCell'
 import EditIcon from '../ui/EditIcon'
 import TrashIcon from '../ui/TrashIcon'
+import '../shared/TableColumnPicker.css'
 
-const COLUMN_CONFIG = {
+export const WORK_ORDER_COLUMN_CONFIG = {
   wo_number: { label: 'WO #', className: '' },
   summary: { label: 'Summary', className: 'wo-table__summary' },
   assignees: { label: 'Assigned to', className: 'wo-table__assignees' },
@@ -17,9 +22,19 @@ const COLUMN_CONFIG = {
   status: { label: 'Status', className: '' },
 }
 
+const COLUMN_CONFIG = WORK_ORDER_COLUMN_CONFIG
+
+function buildColumnDefs(columnIds) {
+  return columnIds.map((id) => ({
+    id,
+    label: COLUMN_CONFIG[id]?.label || id,
+  }))
+}
+
 export default function WorkOrdersTable({
   orders,
   columns,
+  tableId,
   emptyTitle,
   emptyHint,
   onView,
@@ -29,30 +44,20 @@ export default function WorkOrdersTable({
   canDelete = false,
   paginationResetKey = '',
 }) {
+  const columnDefs = useMemo(() => buildColumnDefs(columns), [columns])
+  const {
+    visibleColumnIds,
+    toggleColumn,
+    resetColumns,
+  } = useTableColumnPrefs(tableId, columnDefs)
+
   const pagination = useTablePagination(orders.length, { resetKey: paginationResetKey })
   const pagedOrders = pagination.paginate(orders)
 
-  if (!orders.length) {
-    return (
-      <div className="company-empty">
-        <p>{emptyTitle}</p>
-        {emptyHint && <p className="wo-page__empty-hint">{emptyHint}</p>}
-      </div>
-    )
-  }
-
-  const renderCell = (order, column) => {
+  const renderCell = useCallback((order, column) => {
     switch (column) {
       case 'wo_number':
-        return (
-          <button
-            type="button"
-            className="company-link"
-            onClick={() => onView?.(order.id)}
-          >
-            {order.wo_number}
-          </button>
-        )
+        return order.wo_number || '—'
       case 'summary':
         return (
           <span className="company-table__name">{order.summary || '—'}</span>
@@ -75,19 +80,39 @@ export default function WorkOrdersTable({
         return formatWorkOrderDate(order.scheduled_at)
       case 'status':
         return (
-          <span className={`wo-status wo-status--${order.status}`}>{order.status}</span>
+          <span className={`wo-status wo-status--${order.status}`}>
+            {String(order.status || '').replace(/_/g, ' ')}
+          </span>
         )
       default:
         return '—'
     }
+  }, [])
+
+  if (!orders.length) {
+    return (
+      <div className="company-empty">
+        <p>{emptyTitle}</p>
+        {emptyHint && <p className="wo-page__empty-hint">{emptyHint}</p>}
+      </div>
+    )
   }
 
   return (
     <div className="company-table-wrap">
+      <div className="company-table-scroll">
+      <div className="company-table-toolbar">
+        <TableColumnPicker
+          columnDefs={columnDefs}
+          visibleColumnIds={visibleColumnIds}
+          onToggle={toggleColumn}
+          onReset={resetColumns}
+        />
+      </div>
       <table className="company-table master-table">
         <thead>
           <tr>
-            {columns.map((column) => (
+            {visibleColumnIds.map((column) => (
               <th key={column}>{COLUMN_CONFIG[column]?.label || column}</th>
             ))}
             <th>Actions</th>
@@ -95,21 +120,29 @@ export default function WorkOrdersTable({
         </thead>
         <tbody>
           {pagedOrders.map((order) => (
-            <tr key={order.id}>
-              {columns.map((column) => (
+            <tr
+              key={order.id}
+              {...(onView ? tableRowClickProps({
+                onOpen: () => onView(order.id),
+                label: `View work order ${order.wo_number}`,
+              }) : {})}
+            >
+              {visibleColumnIds.map((column) => (
                 <td key={column} className={COLUMN_CONFIG[column]?.className}>
                   {renderCell(order, column)}
                 </td>
               ))}
-              <td>
+              <td onClick={stopTableRowClick}>
                 <div className="company-table__actions">
-                  <button
-                    type="button"
-                    className="company-link"
-                    onClick={() => onView?.(order.id)}
-                  >
-                    View
-                  </button>
+                  {onView && (
+                    <button
+                      type="button"
+                      className="company-link"
+                      onClick={() => onView(order.id)}
+                    >
+                      View
+                    </button>
+                  )}
                   {canEdit && (
                     <button
                       type="button"
@@ -149,6 +182,7 @@ export default function WorkOrdersTable({
         onPageChange={pagination.setPage}
         onPageSizeChange={pagination.setPageSize}
       />
+      </div>
     </div>
   )
 }

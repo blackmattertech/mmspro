@@ -1,6 +1,7 @@
 import 'dotenv/config'
 import app from './app.js'
 import { getCorsOrigins, getPublicAppUrl } from './lib/appUrl.js'
+import { startTaskScheduler } from './lib/taskScheduler.js'
 
 const configuredPort = Number(process.env.PORT) || 5050
 const PORT = configuredPort === 5000 ? 5050 : configuredPort
@@ -30,6 +31,7 @@ const server = app.listen(PORT, HOST, () => {
       'APP_PUBLIC_URL is not set — password/invite links use localhost and will not work from email on other devices. Set APP_PUBLIC_URL in server/.env to your public domain, ngrok URL, or LAN IP.'
     )
   }
+  startTaskScheduler()
 })
 
 server.on('error', (err) => {

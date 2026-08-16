@@ -11,7 +11,6 @@
 
 .admin-modal {
   width: 100%;
-  max-width: 480px;
   background: var(--color-white);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-lg);

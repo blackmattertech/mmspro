@@ -6,6 +6,7 @@ import { usePermissions } from '../../hooks/usePermissions'
 import { getNavItems, getShortcutOptions } from '../../config/navigation'
 import { orgQuickAccessScope } from '../../hooks/useQuickAccess'
 import { formatAccountRole } from '../../lib/accountRoles'
+import { assetUrl } from '../../lib/assets'
 import NavIcon from './NavIcon'
 import SidebarUserFooter from './SidebarUserFooter'
 import SidebarQuickAccess from './SidebarQuickAccess'
@@ -27,9 +28,13 @@ export default function Sidebar({ collapsed = false, onToggle }) {
   const location = useLocation()
   const navItems = org && !permsLoading ? getNavItems(org.slug, { canRead }) : []
   const quickAccessScope = org ? orgQuickAccessScope(org.id) : null
+  const shortcutCatalog = useMemo(
+    () => (org ? getShortcutOptions(org.slug) : []),
+    [org?.slug],
+  )
   const quickAccessOptions = useMemo(
     () => (org && !permsLoading ? getShortcutOptions(org.slug, { canRead }) : []),
-    [org, canRead, permsLoading],
+    [org?.slug, canRead, permsLoading],
   )
   const [openMenu, setOpenMenu] = useState(null)
 
@@ -52,7 +57,7 @@ export default function Sidebar({ collapsed = false, onToggle }) {
   return (
     <aside className={`sidebar ${collapsed ? 'sidebar--collapsed' : ''}`}>
       <div className="sidebar__brand">
-        <img src="/Assets/images/logo.svg" alt="MMS PRO" className="sidebar__logo" />
+        <img src={assetUrl('Assets/images/logo.svg')} alt="MMS PRO" className="sidebar__logo" />
         {!collapsed && (
           <div className="sidebar__brand-text">
             <span className="sidebar__brand-name">MMS PRO</span>
@@ -154,11 +159,12 @@ export default function Sidebar({ collapsed = false, onToggle }) {
       </nav>
 
       <div className="sidebar__footer">
-        {org && !permsLoading && (
+        {org && (
           <SidebarQuickAccess
             collapsed={collapsed}
             scope={quickAccessScope}
             options={quickAccessOptions}
+            catalog={shortcutCatalog}
           />
         )}
         <SidebarUserFooter

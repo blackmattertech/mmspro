@@ -70,6 +70,7 @@ export default function EmployeeModal({
   const [error, setError] = useState(null)
   const [photoFile, setPhotoFile] = useState(null)
   const [photoPreview, setPhotoPreview] = useState(null)
+  const [removePhoto, setRemovePhoto] = useState(false)
   const [cropSource, setCropSource] = useState(null)
   const [nested, setNested] = useState(null)
   const photoInputRef = useRef(null)
@@ -100,30 +101,47 @@ export default function EmployeeModal({
   })
 
   useEffect(() => {
-    if (employee) {
-      setForm({
-        emp_id: employee.emp_id || '',
-        name: employee.name || '',
-        mobile: employee.mobile || '',
-        email: employee.email || '',
-        additional_emails: (employee.org_employee_emails || []).map((row) => row.email),
-        location_id: employee.location_id || '',
-        department_id: employee.department_id || '',
-        manager_id: employee.manager_id || '',
-        access_role_id: employee.access_role_id || '',
-        login_required: employee.login_required === true,
-      })
-      setPhotoPreview(employee.photo_signed_url || null)
-    } else {
-      const defaultRole = findDefaultUserRole(accessRoles)
-      setForm({
-        ...EMPTY,
-        location_id: defaultLocationId || '',
-        access_role_id: defaultRole?.id || '',
-      })
-      setPhotoPreview(null)
+    let cancelled = false
+
+    async function hydrate() {
+      if (employee) {
+        setForm({
+          emp_id: employee.emp_id || '',
+          name: employee.name || '',
+          mobile: employee.mobile || '',
+          email: employee.email || '',
+          additional_emails: (employee.org_employee_emails || []).map((row) => row.email),
+          location_id: employee.location_id || '',
+          department_id: employee.department_id || '',
+          manager_id: employee.manager_id || '',
+          access_role_id: employee.access_role_id || '',
+          login_required: employee.login_required === true,
+        })
+        try {
+          const preview = await loadEmployeePhotoPreview(employee)
+          if (!cancelled) setPhotoPreview(preview)
+        } catch {
+          if (!cancelled) setPhotoPreview(null)
+        }
+      } else {
+        const defaultRole = findDefaultUserRole(accessRoles)
+        setForm({
+          ...EMPTY,
+          location_id: defaultLocationId || '',
+          access_role_id: defaultRole?.id || '',
+        })
+        if (!cancelled) setPhotoPreview(null)
+      }
+      if (!cancelled) {
+        setPhotoFile(null)
+        setRemovePhoto(false)
+      }
     }
-    setPhotoFile(null)
+
+    hydrate()
+    return () => {
+      cancelled = true
+    }
   }, [employee, defaultLocationId])
 
   useEffect(() => {
@@ -207,7 +225,15 @@ export default function EmployeeModal({
     if (cropSource?.url) URL.revokeObjectURL(cropSource.url)
     setCropSource(null)
     setPhotoFile(file)
+    setRemovePhoto(false)
     setPhotoPreview(URL.createObjectURL(file))
+  }
+
+  const handleRemovePhoto = () => {
+    if (photoPreview?.startsWith('blob:')) URL.revokeObjectURL(photoPreview)
+    setPhotoFile(null)
+    setPhotoPreview(null)
+    setRemovePhoto(Boolean(employee?.photo_url || employee?.photo_signed_url))
   }
 
   const handleSubmit = async (e) => {
@@ -256,7 +282,7 @@ export default function EmployeeModal({
         manager_id: form.manager_id || null,
         access_role_id: form.access_role_id || null,
         login_required: form.login_required,
-      }, photoFile)
+      }, photoFile, { removePhoto })
     } catch (err) {
       setError(err.message)
     }
@@ -314,10 +340,20 @@ export default function EmployeeModal({
 
   return (
     <>
-      <div className="company-modal-overlay" onMouseDown={handleBackdropClick}>
-        <div className="company-modal company-modal--wide" onClick={(e) => e.stopPropagation()}>
+      <div
+        className="company-modal-overlay company-modal-overlay--popup"
+        onMouseDown={handleBackdropClick}
+        role="presentation"
+      >
+        <div
+          className="company-modal company-modal--popup company-modal--popup-wide"
+          onClick={(e) => e.stopPropagation()}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="employee-modal-title"
+        >
           <div className="company-modal__header">
-            <h2>{employee ? 'Edit Employee' : 'Add Employee'}</h2>
+            <h2 id="employee-modal-title">{employee ? 'Edit Employee' : 'Add Employee'}</h2>
             <button type="button" className="company-modal__close" onClick={onClose} aria-label="Close">×</button>
           </div>
           <form className="company-modal__form" onSubmit={handleSubmit}>
@@ -354,6 +390,15 @@ export default function EmployeeModal({
                   >
                     {photoPreview ? 'Change Photo' : 'Upload Photo'}
                   </button>
+                  {photoPreview && (
+                    <button
+                      type="button"
+                      className="company-btn company-btn--secondary company-btn--compact"
+                      onClick={handleRemovePhoto}
+                    >
+                      Remove
+                    </button>
+                  )}
                   <p className="company-logo__hint">JPEG, PNG, WebP or GIF. Max 5 MB.</p>
                 </div>
               </div>

@@ -2,57 +2,73 @@ import { useMemo, useState } from 'react'
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useOrg } from '../../hooks/useOrg'
 import { usePermissions } from '../../hooks/usePermissions'
-import { useDepartments } from '../../hooks/useDepartments'
+import { useTableColumnPrefs } from '../../hooks/useTableColumnPrefs'
 import { orgPath } from '../../config/navigation'
 import {
   WORK_REQUEST_TABS,
+  getWorkRequestActiveTab,
   isWorkRequestTabActive,
 } from '../../config/workRequests'
-import {
-  createWorkRequestFilterRule,
-  countActiveWorkRequestFilterRules,
-  WR_STATUS_FILTER_OPTIONS,
-  WR_PRIORITY_FILTER_OPTIONS,
-  WR_SORT_OPTIONS,
-} from '../../lib/workRequestFilters'
-import WorkRequestAdvancedFilter from './WorkRequestAdvancedFilter'
-import FilterableSelect from '../ui/FilterableSelect'
+import { WR_SORT_OPTIONS } from '../../lib/workRequestFilters'
+import TableFilterToolbar from '../shared/TableFilterToolbar'
+import TableColumnPicker from '../shared/TableColumnPicker'
 import NavIcon from '../layout/NavIcon'
+import { WORK_REQUEST_COLUMNS } from './workRequestColumns'
 import '../company/CompanyShared.css'
+import '../shared/TableFilterToolbar.css'
+import '../shared/TableColumnPicker.css'
 import '../workorders/WorkOrdersPage.css'
-import '../workorders/WorkOrderAdvancedFilter.css'
 import './WorkRequests.css'
+
+const WR_FILTER_FIELDS = [
+  { value: 'status', label: 'Status', placeholder: 'e.g. submitted, approved' },
+  { value: 'priority', label: 'Priority', placeholder: 'high, medium, or low' },
+  { value: 'request_number', label: 'Request #' },
+  { value: 'description', label: 'Description' },
+  { value: 'type', label: 'Type', placeholder: 'inter, intra, self, or manual' },
+  { value: 'from', label: 'From' },
+  { value: 'to', label: 'To' },
+  { value: 'requester', label: 'Requester' },
+]
 
 export default function WorkRequestsLayout() {
   const location = useLocation()
   const navigate = useNavigate()
   const { org } = useOrg()
   const { canRead, canCreate } = usePermissions()
-  const { departments } = useDepartments('')
   const [search, setSearch] = useState('')
-  const [statusFilter, setStatusFilter] = useState('all')
-  const [priorityFilter, setPriorityFilter] = useState('all')
+  const [filterField, setFilterField] = useState('')
+  const [filterValue, setFilterValue] = useState('')
   const [sortBy, setSortBy] = useState('newest')
-  const [advancedRules, setAdvancedRules] = useState([createWorkRequestFilterRule()])
 
-  const isCreatePage = location.pathname.includes('/work-request/create')
-  const isListPage = !isCreatePage
+  const activeTab = getWorkRequestActiveTab(location.pathname)
+  const listFilter = activeTab && activeTab !== 'create' ? activeTab : null
+  const isCreatePage = activeTab === 'create'
+  const isListPage = Boolean(listFilter)
+
+  const {
+    visibleColumnIds,
+    toggleColumn,
+    resetColumns,
+    columnDefs,
+  } = useTableColumnPrefs(
+    listFilter ? `work-requests-${listFilter}` : '',
+    WORK_REQUEST_COLUMNS,
+  )
 
   const visibleTabs = useMemo(
     () => WORK_REQUEST_TABS.filter((tab) => canRead(tab.moduleKey) || canRead('work_request')),
     [canRead],
   )
 
-  const activeDepartments = useMemo(
-    () => (departments || []).filter((d) => d.is_active !== false),
-    [departments],
-  )
-
-  const advancedCount = countActiveWorkRequestFilterRules(advancedRules)
-  const quickFilterCount = (statusFilter !== 'all' ? 1 : 0) + (priorityFilter !== 'all' ? 1 : 0)
-  const totalFilterCount = advancedCount + quickFilterCount
-
   const canCreateRequest = canCreate('work_request_create') || canCreate('work_request')
+
+  const outletContext = useMemo(() => ({
+    search,
+    fieldFilter: { field: filterField, value: filterValue },
+    sortBy,
+    visibleColumnIds,
+  }), [search, filterField, filterValue, sortBy, visibleColumnIds])
 
   return (
     <div className="company-page wo-page">
@@ -84,66 +100,22 @@ export default function WorkRequestsLayout() {
 
         {isListPage && (
           <div className="wr-page__toolbar-row wr-page__toolbar-row--filters">
-            <div className="wo-page__bar-controls wr-page__bar-controls">
-              <input
-                type="search"
-                className="company-form__input wo-page__search"
-                placeholder="Search work requests..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                aria-label="Search work requests"
-              />
-
-              <div className="wo-page__location-filter">
-                <label htmlFor="wr-status-filter" className="wo-page__location-label">Status</label>
-                <FilterableSelect
-                  id="wr-status-filter"
-                  value={statusFilter}
-                  onChange={setStatusFilter}
-                  options={WR_STATUS_FILTER_OPTIONS}
-                  getOptionValue={(opt) => opt.value}
-                  getOptionLabel={(opt) => opt.label}
-                  allowEmpty={false}
-                  inputClassName="wo-page__location-select"
-                />
-              </div>
-
-              <div className="wo-page__location-filter">
-                <label htmlFor="wr-priority-filter" className="wo-page__location-label">Priority</label>
-                <FilterableSelect
-                  id="wr-priority-filter"
-                  value={priorityFilter}
-                  onChange={setPriorityFilter}
-                  options={WR_PRIORITY_FILTER_OPTIONS}
-                  getOptionValue={(opt) => opt.value}
-                  getOptionLabel={(opt) => opt.label}
-                  allowEmpty={false}
-                  inputClassName="wo-page__location-select"
-                />
-              </div>
-
-              <div className="wo-page__location-filter">
-                <label htmlFor="wr-sort" className="wo-page__location-label">Sort</label>
-                <FilterableSelect
-                  id="wr-sort"
-                  value={sortBy}
-                  onChange={setSortBy}
-                  options={WR_SORT_OPTIONS}
-                  getOptionValue={(opt) => opt.value}
-                  getOptionLabel={(opt) => opt.label}
-                  allowEmpty={false}
-                  inputClassName="wo-page__location-select"
-                />
-              </div>
-
-              <WorkRequestAdvancedFilter
-                rules={advancedRules}
-                onChange={setAdvancedRules}
-                departments={activeDepartments}
-                activeCount={totalFilterCount}
-              />
-
-              {canCreateRequest && (
+            <TableFilterToolbar
+              search={{
+                value: search,
+                onChange: setSearch,
+                placeholder: 'Search work requests...',
+                ariaLabel: 'Search work requests',
+              }}
+              filter={{
+                fields: WR_FILTER_FIELDS,
+                field: filterField,
+                onFieldChange: setFilterField,
+                value: filterValue,
+                onValueChange: setFilterValue,
+              }}
+              sort={{ value: sortBy, onChange: setSortBy, options: WR_SORT_OPTIONS }}
+              actions={canCreateRequest ? (
                 <button
                   type="button"
                   className="wr-page__create-btn"
@@ -153,8 +125,17 @@ export default function WorkRequestsLayout() {
                 >
                   <NavIcon name="addSquare" />
                 </button>
+              ) : null}
+              columnPicker={(
+                <TableColumnPicker
+                  key={listFilter}
+                  columnDefs={columnDefs}
+                  visibleColumnIds={visibleColumnIds}
+                  onToggle={toggleColumn}
+                  onReset={resetColumns}
+                />
               )}
-            </div>
+            />
           </div>
         )}
       </div>
@@ -164,15 +145,7 @@ export default function WorkRequestsLayout() {
           <Outlet />
         ) : (
           <div className="company-panel">
-            <Outlet context={{
-              search,
-              statusFilter,
-              priorityFilter,
-              sortBy,
-              advancedRules,
-              departments: activeDepartments,
-            }}
-            />
+            <Outlet context={outletContext} />
           </div>
         )}
       </div>

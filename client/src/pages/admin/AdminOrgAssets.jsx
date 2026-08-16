@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { useParams } from 'react-router-dom'
 import { getOrganization } from '../../lib/api'
+import PageBack from '../../components/shared/PageBack'
 import { useAdminAssetFields } from '../../hooks/useAdminAssetFields'
 import AssetsFieldsPanel from '../../components/assets/AssetsFieldsPanel'
 import '../app/Company.css'
@@ -26,9 +27,7 @@ export default function AdminOrgAssets() {
       <header className="admin-page__header">
         <div>
           <p className="admin-page__subtitle">
-            <Link to="/admin/organizations" className="admin-org-assets__back">
-              ← Organizations
-            </Link>
+            <PageBack to="/admin/organizations" label="Organizations" />
           </p>
           <h1 className="admin-page__title">
             {org ? `${org.name} — Assets` : 'Organization Assets'}

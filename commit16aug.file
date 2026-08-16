@@ -1,0 +1,121 @@
+Commit notes — 16 Aug 2026
+==========================
+Base: 9d01eb91 (21 Jul 2026) — "workrequests"
+Branch: workrequest
+
+Suggested subject
+-----------------
+Add tasks, warranty, vendors, branded reset email, and employee detail UX
+
+
+Suggested description (paste below the subject)
+-----------------------------------------------
+
+## Summary
+Work since the last commit (9d01eb91, 21 Jul 2026) adds three major modules (Tasks & Follow-ups, Warranty Manager, Vendor master), tightens work-request / work-order lifecycle, moves static assets to ImageKit, and refreshes auth email plus company-master detail UX.
+
+## New modules
+
+### Tasks & Follow-ups
+- Full task manager: list, kanban, create/edit, detail, comments, activity, attachments
+- Voice assistant for task capture
+- Configurable statuses/priorities, recurrence, reminders, visibility
+- Server: task service, scheduler, recurrence/reminder jobs, attachment storage
+- SQL: 53-task-management, 54-task-meta-descriptions, 59-task-spec-compliance, 60-task-performance
+- Permissions: 48-warranty-tasks-permissions
+
+### Warranty Manager
+- Warranty records, line items, serial format (WM/YYYY/0000), vendor link, document attachments
+- SQL: 49-warranty-manager, 51-warranty-vendor-link, 52-warranty-serial-format, 55-warranty-documents, 56-org-assets-warranty-documents
+
+### Vendor master
+- Vendor CRUD, list/detail pages, bulk import, validation
+- SQL: 50-vendor-master
+- Server: vendorService, vendorBulkService, /api/vendors
+
+## Work requests & work orders
+- WR/WO CMMS lifecycle (numbering, source, planning, permits, execution docs, timeline, WR↔WO sync)
+- SQL: 61-work-order-wr-spec-compliance, 47-approve-permissions
+- Work-order lifecycle panel, stronger WR filters/list table, bulk of workRequestService updates
+- Approve permissions for WR/WO
+
+## Company masters & UI
+- Clickable master tables with shared record-detail modal/layout
+- Employee detail page (16 Aug): profile header, Active badge, Overview / Activity / Permissions / Security tabs, 2×2 cards (Contact, Organization, Access & Login, Notes), created/updated/member-since footer
+- Shared table toolbar: search, filter, sort, column picker, pagination prefs
+- Master bulk upload for employees (and related import helpers)
+- Shared DetailView, RecordDetailModal, RecordDetailLayout, PageBack
+- Red back button throughout detail views using ImageKit arrow-left2-outline.svg; returns to the previous screen
+- Locations / departments / areas / equipment detail views use the same record-detail pattern
+- Roles & Access list/filter improvements
+- Dialogs: full-page overlays beside the sidebar (dialogs.css)
+
+## Auth / password-reset email
+- Branded MMS PRO reset/setup email (desktop + mobile)
+- Hero images and logo from ImageKit:
+  - Desktop: images/logindesktop.png
+  - Mobile: images/loginmobile.png
+  - Logo: images/logo.svg
+- Full-width layout (no grey gutter card)
+- No CID/inline attachments; icons load from hosted ImageKit URLs
+- Templates: server/templates/password-reset.html and supabase/email-templates/password-reset.html
+
+## Assets & infra
+- Static images/icons served from ImageKit (client/src/lib/assets.js, VITE_IMAGEKIT_URL_ENDPOINT)
+- Local public icons/images removed in favor of ImageKit; keep a few new icons (filter, sort, upload, email-*)
+- Vite PWA/proxy/ngrok host allowances, Vercel routing updates
+- Node 24 (.nvmrc, engines)
+- Performance indexes: 57-performance-indexes-2, 58-trigram-search-indexes
+- India locations helper, job queue, company master bulk service
+- Dev tunnel script (scripts/)
+
+## SQL patches to apply (in order, after existing 46)
+47-approve-permissions.sql
+48-warranty-tasks-permissions.sql
+49-warranty-manager.sql
+50-vendor-master.sql
+51-warranty-vendor-link.sql
+52-warranty-serial-format.sql
+53-task-management.sql
+54-task-meta-descriptions.sql
+55-warranty-documents.sql
+56-org-assets-warranty-documents.sql
+57-performance-indexes-2.sql
+58-trigram-search-indexes.sql
+59-task-spec-compliance.sql
+60-task-performance.sql
+61-work-order-wr-spec-compliance.sql
+
+
+Do not commit
+-------------
+- client/.env, server/.env (secrets)
+- node_modules/, client/node_modules/, server/node_modules/
+- client/dist/ (build output)
+- .DS_Store
+- Accidental npm package "24" in root package.json if that was not intentional
+- node_modules/.DS_Store and other junk under node_modules
+
+Suggested git add (safe)
+------------------------
+Source, SQL patches, templates, docs, .nvmrc, .env.example files, public icons that are new.
+Exclude env files, dist, node_modules, and OS junk.
+
+
+This session only (16 Aug) — if splitting commits
+-------------------------------------------------
+1. Password-reset email template (full-width, ImageKit assets, no attachments)
+   - server/templates/password-reset.html
+   - supabase/email-templates/password-reset.html
+   - server/services/email.js (no InlinedAttachments)
+2. Employee detail UI
+   - client/src/components/company/CompanyRecordDetails.jsx
+   - client/src/components/company/EmployeeDetail.css
+   - client/src/components/company/EmployeesTab.jsx
+   - client/src/components/shared/RecordDetailModal.jsx
+   - client/src/components/shared/RecordDetailLayout.css
+   - client/src/components/company/CompanyShared.css
+3. App-wide red back button
+   - client/src/components/shared/PageBack.jsx
+   - client/src/components/shared/PageBack.css
+   - RecordDetailModal header uses PageBack to close / go previous

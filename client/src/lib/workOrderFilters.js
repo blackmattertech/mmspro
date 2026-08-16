@@ -153,7 +153,14 @@ export function applyLocationFilter(orders, locationId) {
   return orders.filter((order) => getAssigneeLocationIds(order).includes(locationId))
 }
 
-export function applyWorkOrderFilters(orders, { search, locationFilter, advancedRules, locations } = {}) {
+export function applyWorkOrderFilters(orders, {
+  search,
+  locationFilter,
+  advancedRules,
+  locations,
+  sortBy,
+  fieldFilter,
+} = {}) {
   let result = orders || []
 
   if (search?.trim()) {
@@ -173,11 +180,54 @@ export function applyWorkOrderFilters(orders, { search, locationFilter, advanced
   }
 
   result = applyLocationFilter(result, locationFilter)
+
+  if (fieldFilter?.field && String(fieldFilter.value || '').trim()) {
+    const query = String(fieldFilter.value).trim().toLowerCase()
+    const getters = {
+      location: (order) => getAssigneeLocationNames(order).join(' '),
+      status: (order) => order.status,
+      summary: (order) => order.summary,
+      wo_number: (order) => order.wo_number,
+      assignee: (order) => (order.assignees || []).map((a) => a.name).join(' '),
+      creator: (order) => order.creator?.email || order.creator?.full_name,
+    }
+    const getter = getters[fieldFilter.field]
+    if (getter) {
+      result = result.filter((order) => String(getter(order) || '').toLowerCase().includes(query))
+    }
+  }
+
   result = applyAdvancedFilters(result, advancedRules, locations)
+
+  if (sortBy) {
+    result = sortWorkOrders(result, sortBy)
+  }
 
   return result
 }
 
 export function countActiveAdvancedRules(rules) {
   return (rules || []).filter((rule) => rule.field && String(rule.value ?? '').trim()).length
+}
+
+export const WO_SORT_OPTIONS = [
+  { value: 'newest', label: 'Newest first' },
+  { value: 'oldest', label: 'Oldest first' },
+  { value: 'wo_number', label: 'WO # A–Z' },
+  { value: 'summary', label: 'Summary A–Z' },
+]
+
+export function sortWorkOrders(orders, sortBy = 'newest') {
+  const list = [...(orders || [])]
+  switch (sortBy) {
+    case 'oldest':
+      return list.sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0))
+    case 'wo_number':
+      return list.sort((a, b) => String(a.wo_number || '').localeCompare(String(b.wo_number || ''), undefined, { sensitivity: 'base' }))
+    case 'summary':
+      return list.sort((a, b) => String(a.summary || '').localeCompare(String(b.summary || ''), undefined, { sensitivity: 'base' }))
+    case 'newest':
+    default:
+      return list.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))
+  }
 }

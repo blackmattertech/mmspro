@@ -1,0 +1,16 @@
+export const WORK_REQUEST_COLUMNS = [
+  { id: 'wr_number', label: 'WR #' },
+  { id: 'type', label: 'Type' },
+  { id: 'order_from', label: 'From' },
+  { id: 'order_to', label: 'To' },
+  { id: 'problem', label: 'Problem' },
+  { id: 'priority', label: 'Priority' },
+  { id: 'status', label: 'Status' },
+  { id: 'breakdown', label: 'Breakdown', defaultVisible: false },
+  { id: 'requester', label: 'Requested by', defaultVisible: false },
+  { id: 'equipment', label: 'Equipment', defaultVisible: false },
+  { id: 'remarks', label: 'Remarks', defaultVisible: false },
+  { id: 'assigned', label: 'Assigned technicians', defaultVisible: false },
+  { id: 'work_order', label: 'Work order', defaultVisible: false },
+  { id: 'request_date', label: 'Requested' },
+]

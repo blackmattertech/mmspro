@@ -1,7 +1,11 @@
-import { useMemo, useRef, useState } from 'react'
+import { useMemo, useRef, useState, useEffect } from 'react'
+import { useSearchParams } from 'react-router-dom'
+import { useOrg } from '../../hooks/useOrg'
 import { usePermissions } from '../../hooks/usePermissions'
 import { useImportJobs } from '../../hooks/useImportJobs'
 import { useTablePagination } from '../../hooks/useTablePagination'
+import { orgPath } from '../../config/navigation'
+import PageBack from '../../components/shared/PageBack'
 import NavIcon from '../../components/layout/NavIcon'
 import FilterableSelect from '../../components/ui/FilterableSelect'
 import TablePagination from '../../components/shared/TablePagination'
@@ -208,20 +212,39 @@ function ImportStatusPanel({ job, onDownloadFailed, onUploadAgain }) {
 }
 
 export default function ConfigurationImport() {
+  const { org } = useOrg()
   const { loading, canCreate } = usePermissions()
   const { jobs, runImport } = useImportJobs()
   const fileInputRef = useRef(null)
+  const [searchParams] = useSearchParams()
+  const templateFromUrl = searchParams.get('template')
 
   const availableTemplates = useMemo(
-    () => IMPORT_TEMPLATES.filter((t) => canCreate(t.moduleKey)),
+    () => IMPORT_TEMPLATES.filter((t) => t.showWithoutPermission || canCreate(t.moduleKey)),
     [canCreate],
   )
 
-  const [templateId, setTemplateId] = useState(() => availableTemplates[0]?.id || '')
+  const [templateId, setTemplateId] = useState('')
   const template = useMemo(
     () => availableTemplates.find((t) => t.id === templateId) || availableTemplates[0] || null,
     [availableTemplates, templateId],
   )
+
+  useEffect(() => {
+    if (!availableTemplates.length) {
+      setTemplateId('')
+      return
+    }
+    if (templateFromUrl && availableTemplates.some((t) => t.id === templateFromUrl)) {
+      setTemplateId(templateFromUrl)
+      return
+    }
+    setTemplateId((current) => (
+      current && availableTemplates.some((t) => t.id === current)
+        ? current
+        : availableTemplates[0].id
+    ))
+  }, [availableTemplates, templateFromUrl])
 
   const [downloadBusy, setDownloadBusy] = useState(false)
   const [fileReading, setFileReading] = useState(false)
@@ -284,6 +307,13 @@ export default function ConfigurationImport() {
     fileInputRef.current?.click()
   }
 
+  const backLink = useMemo(() => {
+    if (templateFromUrl === 'vendors' && org?.slug) {
+      return { to: orgPath(org.slug, 'masters/vendors'), label: 'Vendors' }
+    }
+    return { to: org?.slug ? orgPath(org.slug, 'dashboard') : '#', label: 'Dashboard' }
+  }, [org?.slug, templateFromUrl])
+
   if (loading) {
     return (
       <div className="company-page import-page">
@@ -296,6 +326,10 @@ export default function ConfigurationImport() {
     return (
       <div className="company-page import-page">
         <header className="company-page__header">
+          <PageBack
+            to={backLink.to}
+            label={backLink.label}
+          />
           <h1 className="company-page__title">Import</h1>
           <p className="company-page__subtitle">Bulk import data from Excel templates</p>
         </header>
@@ -311,6 +345,10 @@ export default function ConfigurationImport() {
   return (
     <div className="company-page import-page">
       <header className="company-page__header">
+        <PageBack
+          to={backLink.to}
+          label={backLink.label}
+        />
         <h1 className="company-page__title">Import</h1>
         <p className="company-page__subtitle">
           Download a template, fill in your data, and upload to import in bulk

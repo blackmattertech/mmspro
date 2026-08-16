@@ -47,6 +47,13 @@ export async function uploadOrgLogo(orgId, file) {
   return path
 }
 
+export async function deleteOrgLogo(path) {
+  if (!supabase || !path) return
+
+  const { error } = await supabase.storage.from(ORG_ASSETS_BUCKET).remove([path])
+  if (error) throw new Error(error.message)
+}
+
 export function employeePhotoStoragePath(orgId, employeeId, mimeType) {
   const ext = EXT_BY_TYPE[mimeType] || 'png'
   return `${orgId}/employees/${employeeId}.${ext}`
@@ -76,7 +83,7 @@ export async function uploadEmployeePhoto(orgId, employeeId, file) {
   return path
 }
 
-export async function deleteOrgLogo(path) {
+export async function deleteEmployeePhoto(path) {
   if (!supabase || !path) return
 
   const { error } = await supabase.storage.from(ORG_ASSETS_BUCKET).remove([path])

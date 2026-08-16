@@ -107,6 +107,13 @@ export function updateWorkOrderAssignment(workOrderId, payload) {
   })
 }
 
+export function updateWorkOrderLifecycle(workOrderId, payload) {
+  return workOrdersFetch(`/manual/${workOrderId}/lifecycle`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  })
+}
+
 export function getWorkOrderCounts() {
   return workOrdersFetch('/counts')
 }

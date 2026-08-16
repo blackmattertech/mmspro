@@ -1,2 +1,4 @@
 /** Info control icon (outline “i”; color via CSS in section headers). */
-export const INFO_BUTTON_ICON_SRC = '/Assets/icons/i%20button.svg'
+import { assetUrl } from './assets'
+
+export const INFO_BUTTON_ICON_SRC = assetUrl('Assets/icons/i button.svg')

@@ -11,11 +11,12 @@ import {
   revokeWorkOrderFilePreviews,
   workOrderFilesValue,
 } from '../../lib/workOrderFileValues'
+import { assetUrl } from '../../lib/assets'
 
 const FILE_ACCEPT = '.pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png'
 const IMAGE_ACCEPT = 'image/jpeg,image/png,image/webp,image/gif'
 const IMAGE_TILE_SIZE = 96
-const FILE_ICON_SRC = '/Assets/icons/file-outline.svg'
+const FILE_ICON_SRC = assetUrl('Assets/icons/file-outline.svg')
 const VIEW_MORE_BTN_WIDTH = 104
 const FILE_CHIP_GAP = 8
 

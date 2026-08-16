@@ -1,5 +1,6 @@
 import { fcm } from './firebase.js'
 import { supabaseAdmin } from './supabase.js'
+import { runInBackground } from '../lib/jobQueue.js'
 
 /**
  * Send a push notification to a single user (all their devices)
@@ -60,5 +61,7 @@ export const notifyOrg = async (orgId, payload) => {
 
   if (!profiles?.length) return
 
-  await Promise.all(profiles.map(p => notifyUser(p.id, payload)))
+  runInBackground(async () => {
+    await Promise.all(profiles.map((p) => notifyUser(p.id, payload)))
+  })
 }

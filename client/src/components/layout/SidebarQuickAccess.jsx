@@ -12,17 +12,20 @@ export default function SidebarQuickAccess({
   collapsed = false,
   scope = null,
   options = [],
+  catalog,
 }) {
-  const { ids, add, remove, pruneTo, canAdd, max } = useQuickAccess(scope)
+  const { ids, add, remove, canAdd, max } = useQuickAccess(scope)
   const [pickerOpen, setPickerOpen] = useState(false)
   const [hoverTitle, setHoverTitle] = useState('')
   const rootRef = useRef(null)
 
+  const resolveOptions = catalog?.length ? catalog : options
+
   const byId = useMemo(() => {
     const map = new Map()
-    for (const option of options) map.set(option.id, option)
+    for (const option of resolveOptions) map.set(option.id, option)
     return map
-  }, [options])
+  }, [resolveOptions])
 
   const pinned = useMemo(
     () => ids.map((id) => byId.get(id)).filter(Boolean),
@@ -51,11 +54,6 @@ export default function SidebarQuickAccess({
       document.removeEventListener('keydown', onKeyDown)
     }
   }, [pickerOpen])
-
-  useEffect(() => {
-    if (!options.length) return
-    pruneTo(options.map((option) => option.id))
-  }, [options, pruneTo])
 
   if (!scope) return null
 

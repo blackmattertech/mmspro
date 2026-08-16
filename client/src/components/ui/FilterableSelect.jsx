@@ -45,6 +45,8 @@ export default function FilterableSelect({
   'aria-label': ariaLabel,
   allowEmpty = true,
   emptyLabel,
+  onCreate,
+  createLabel = 'Create',
 }) {
   const autoId = useId()
   const id = idProp || autoId
@@ -70,9 +72,11 @@ export default function FilterableSelect({
     return normalized.filter((o) => o.label.toLowerCase().includes(q))
   }, [normalized, query])
 
+  const showCreate = Boolean(onCreate) && filtered.length === 0
+
   const listItems = useMemo(() => {
     const items = []
-    if (allowEmpty && !required) {
+    if (allowEmpty && !required && !showCreate) {
       items.push({
         value: '',
         label: emptyLabel ?? placeholder,
@@ -83,7 +87,12 @@ export default function FilterableSelect({
       items.push({ ...opt, isPlaceholder: false })
     }
     return items
-  }, [allowEmpty, required, emptyLabel, placeholder, filtered])
+  }, [allowEmpty, required, emptyLabel, placeholder, filtered, showCreate])
+
+  const handleCreate = () => {
+    onCreate?.(query.trim())
+    close()
+  }
 
   const close = useCallback(() => {
     setOpen(false)
@@ -159,8 +168,12 @@ export default function FilterableSelect({
       return
     }
 
-    if (e.key === 'Enter' && open && listItems.length) {
+    if (e.key === 'Enter' && open) {
       e.preventDefault()
+      if (showCreate) {
+        handleCreate()
+        return
+      }
       const item = listItems[highlightedIndex]
       if (item) pick(item.value)
     }
@@ -221,7 +234,21 @@ export default function FilterableSelect({
           className="filterable-select__menu"
           role="listbox"
         >
-          {listItems.length === 0 ? (
+          {showCreate ? (
+            <li className="filterable-select__empty" role="presentation">
+              <span className="filterable-select__empty-text">
+                {query.trim() ? 'No vendors found' : 'No vendors yet'}
+              </span>
+              <button
+                type="button"
+                className="filterable-select__create company-btn company-btn--secondary company-btn--compact"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={handleCreate}
+              >
+                {createLabel}
+              </button>
+            </li>
+          ) : listItems.length === 0 ? (
             <li className="filterable-select__empty" role="presentation">
               No matches
             </li>

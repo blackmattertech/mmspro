@@ -18,6 +18,7 @@ export const ACCESS_MODULE_GROUPS = [
       { key: 'work_request_create', label: 'Create Work Request', actions: ['create', 'read', 'update', 'delete'] },
       { key: 'work_request_my', label: 'My Requests', actions: ['create', 'read', 'update', 'delete'] },
       { key: 'work_request_incoming', label: 'Incoming Requests', actions: ['create', 'read', 'update', 'delete'] },
+      { key: 'work_request_approve', label: 'Approving Work Request', actions: ['update'] },
       { key: 'work_request_outgoing', label: 'Outgoing Requests', actions: ['create', 'read', 'update', 'delete'] },
       { key: 'work_request_all', label: 'All Requests', actions: ['create', 'read', 'update', 'delete'] },
     ],
@@ -27,6 +28,7 @@ export const ACCESS_MODULE_GROUPS = [
     label: 'Work Orders',
     modules: [
       { key: 'work_orders_received', label: 'Received', actions: ['create', 'read', 'update', 'delete'] },
+      { key: 'work_orders_approve', label: 'Approving Work Order', actions: ['update'] },
       { key: 'work_orders_assigned', label: 'Assigned', actions: ['create', 'read', 'update', 'delete'] },
       { key: 'work_orders_scheduled', label: 'Scheduled', actions: ['create', 'read', 'update', 'delete'] },
       { key: 'work_orders_manual', label: 'Manual', actions: ['create', 'read', 'update', 'delete'] },
@@ -37,6 +39,20 @@ export const ACCESS_MODULE_GROUPS = [
     label: 'Calendar',
     modules: [
       { key: 'calendar', label: 'Calendar', actions: ['create', 'read', 'update', 'delete'] },
+    ],
+  },
+  {
+    id: 'warranty_manager',
+    label: 'Warranty Manager',
+    modules: [
+      { key: 'warranty_manager', label: 'Warranty Manager', actions: ['create', 'read', 'update', 'delete'] },
+    ],
+  },
+  {
+    id: 'tasks_followups',
+    label: 'Tasks & Follow-ups',
+    modules: [
+      { key: 'tasks_followups', label: 'Tasks & Follow-ups', actions: ['create', 'read', 'update', 'delete'] },
     ],
   },
   {

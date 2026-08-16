@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { getEmployees, createEmployee, updateEmployee, deleteEmployee } from '../lib/api-employees'
+import { fetchReferenceData, invalidateReferenceCache } from '../lib/referenceDataCache'
 
 export function useEmployees(filters = {}) {
   const { departmentId, locationId, forAssignment = false } = filters
@@ -8,11 +9,16 @@ export function useEmployees(filters = {}) {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
 
-  const load = useCallback(async ({ silent = false } = {}) => {
+  const load = useCallback(async ({ silent = false, force = false } = {}) => {
     if (!silent) setLoading(true)
     setError(null)
     try {
-      const data = await getEmployees({ departmentId, locationId, forAssignment })
+      const data = await fetchReferenceData(
+        'employees',
+        { departmentId, locationId, forAssignment },
+        () => getEmployees({ departmentId, locationId, forAssignment }),
+        { force },
+      )
       setEmployees(data)
     } catch (err) {
       setError(err.message)
@@ -25,12 +31,17 @@ export function useEmployees(filters = {}) {
     load()
   }, [load])
 
+  const refreshAfterMutation = async () => {
+    invalidateReferenceCache('employees')
+    await load({ silent: true, force: true })
+  }
+
   const create = async (payload) => {
     setSaving(true)
     setError(null)
     try {
       const data = await createEmployee(payload)
-      await load({ silent: true })
+      await refreshAfterMutation()
       return data
     } catch (err) {
       setError(err.message)
@@ -45,7 +56,7 @@ export function useEmployees(filters = {}) {
     setError(null)
     try {
       const data = await updateEmployee(id, payload)
-      await load({ silent: true })
+      await refreshAfterMutation()
       return data
     } catch (err) {
       setError(err.message)
@@ -60,7 +71,7 @@ export function useEmployees(filters = {}) {
     setError(null)
     try {
       await deleteEmployee(id)
-      await load({ silent: true })
+      await refreshAfterMutation()
     } catch (err) {
       setError(err.message)
       throw err
@@ -73,7 +84,7 @@ export function useEmployees(filters = {}) {
     setError(null)
     try {
       await updateEmployee(id, { is_active: isActive })
-      await load({ silent: true })
+      await refreshAfterMutation()
     } catch (err) {
       setError(err.message)
       throw err

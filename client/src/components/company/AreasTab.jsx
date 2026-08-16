@@ -1,4 +1,4 @@
-import { useMemo, useState, useRef, useEffect } from 'react'
+import { useMemo, useState, useRef } from 'react'
 import { usePermissions } from '../../hooks/usePermissions'
 import { useAreas } from '../../hooks/useAreas'
 import { useLocations } from '../../hooks/useLocations'
@@ -9,9 +9,18 @@ import GooToggle from '../ui/GooToggle'
 import TrashIcon from '../ui/TrashIcon'
 import EditIcon from '../ui/EditIcon'
 import AreaModal from './AreaModal'
-import FilterableSelect from '../ui/FilterableSelect'
 import TablePagination from '../shared/TablePagination'
+import TableColumnPicker from '../shared/TableColumnPicker'
+import TableFilterToolbar from '../shared/TableFilterToolbar'
 import { useTablePagination } from '../../hooks/useTablePagination'
+import { useTableColumnPrefs } from '../../hooks/useTableColumnPrefs'
+import { TABLE_SORT_OPTIONS, applyTableFilters } from '../../lib/tableFilters'
+import { stopTableRowClick, tableRowClickProps } from '../../lib/clickableTableRow'
+import RecordDetailModal from '../shared/RecordDetailModal'
+import { AreaDetailContent } from './CompanyRecordDetails'
+import '../shared/TableColumnPicker.css'
+import '../shared/TableFilterToolbar.css'
+import '../workorders/WorkOrdersPage.css'
 import './CompanyShared.css'
 
 function canPickAnyLocation({ isOrgAdmin, accessRole }) {
@@ -33,28 +42,33 @@ function areaSearchHaystack(area) {
   return parts.filter(Boolean).join(' ').toLowerCase()
 }
 
+const AREA_FILTER_FIELDS = [
+  { value: 'name', label: 'Name' },
+  { value: 'code', label: 'Code' },
+  { value: 'location', label: 'Location' },
+  { value: 'department', label: 'Department' },
+  { value: 'status', label: 'Status', placeholder: 'active or inactive' },
+]
+
 export default function AreasTab({ canManage }) {
   const { isOrgAdmin, locationId: myLocationId, accessRole } = usePermissions()
   const canSelectAnyLocation = canPickAnyLocation({ isOrgAdmin, accessRole })
 
   const [search, setSearch] = useState('')
-  const [locationFilter, setLocationFilter] = useState('')
-  const [departmentFilter, setDepartmentFilter] = useState('')
-  const [statusFilter, setStatusFilter] = useState('')
+  const [filterField, setFilterField] = useState('')
+  const [filterValue, setFilterValue] = useState('')
+  const [sortBy, setSortBy] = useState('name_asc')
 
-  useEffect(() => {
-    if (canSelectAnyLocation || !myLocationId) return
-    setLocationFilter((prev) => prev || myLocationId)
-  }, [canSelectAnyLocation, myLocationId])
+  const scopedLocationId = canSelectAnyLocation ? undefined : (myLocationId || undefined)
 
   const { locations } = useLocations()
-  const { departments } = useDepartments(locationFilter || undefined)
+  const { departments } = useDepartments(scopedLocationId)
   const { areas, loading, saving, error, create, update, remove, toggleActive, reload } = useAreas({
-    locationId: locationFilter || undefined,
-    departmentId: departmentFilter || undefined,
+    locationId: scopedLocationId,
   })
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState(null)
+  const [viewing, setViewing] = useState(null)
   const [togglingId, setTogglingId] = useState(null)
   const [bulkBusy, setBulkBusy] = useState(false)
   const [bulkError, setBulkError] = useState(null)
@@ -64,42 +78,52 @@ export default function AreasTab({ canManage }) {
   const activeLocations = locations.filter((l) => l.is_active !== false)
   const activeDepartments = departments.filter((d) => d.is_active !== false)
 
-  useEffect(() => {
-    if (!departmentFilter) return
-    const stillValid = activeDepartments.some((d) => d.id === departmentFilter)
-    if (!stillValid) setDepartmentFilter('')
-  }, [locationFilter, departmentFilter, activeDepartments])
+  const filteredAreas = useMemo(() => applyTableFilters(areas, {
+    search,
+    searchHaystack: areaSearchHaystack,
+    fieldFilter: { field: filterField, value: filterValue },
+    fieldFilterGetters: {
+      name: (area) => area.name,
+      code: (area) => area.code,
+      location: (area) => area.org_locations?.name,
+      department: (area) => area.departments?.name,
+      status: (area) => (area.is_active === false ? 'inactive' : 'active'),
+    },
+    sortBy,
+    getName: (area) => area.name,
+    getCreatedAt: (area) => area.created_at,
+  }), [areas, search, filterField, filterValue, sortBy])
 
-  const filteredAreas = useMemo(() => {
-    const query = search.trim().toLowerCase()
-    const terms = query ? query.split(/\s+/).filter(Boolean) : []
-    return areas.filter((area) => {
-      if (statusFilter === 'active' && area.is_active === false) return false
-      if (statusFilter === 'inactive' && area.is_active !== false) return false
-      if (!terms.length) return true
-      const haystack = areaSearchHaystack(area)
-      return terms.every((term) => haystack.includes(term))
-    })
-  }, [areas, search, statusFilter])
-
-  const activeCount = areas.filter((a) => a.is_active !== false).length
-  const filteredActiveCount = filteredAreas.filter((a) => a.is_active !== false).length
-  const searchActive = Boolean(search.trim()) || Boolean(statusFilter)
-  const filtersActive = Boolean(locationFilter || departmentFilter || searchActive)
-
-  const paginationResetKey = `${search}|${locationFilter}|${departmentFilter}|${statusFilter}`
+  const paginationResetKey = `${search}|${filterField}|${filterValue}|${sortBy}`
   const pagination = useTablePagination(filteredAreas.length, { resetKey: paginationResetKey })
   const pagedAreas = pagination.paginate(filteredAreas)
-
-  const countLabel = (() => {
-    if (!filtersActive) return `${areas.length} area(s)`
-    return `${filteredActiveCount} active · ${filteredAreas.length} of ${areas.length} area(s)`
-  })()
+  const areaColumnDefs = useMemo(() => {
+    const cols = [
+      { id: 'name', label: 'Name' },
+      { id: 'code', label: 'Code' },
+      { id: 'location', label: 'Location' },
+      { id: 'department', label: 'Department' },
+    ]
+    if (canManage) {
+      cols.push({ id: 'active', label: 'Active' })
+      cols.push({ id: 'actions', label: 'Actions', locked: true })
+    }
+    return cols
+  }, [canManage])
+  const {
+    isVisible: isAreaColumnVisible,
+    toggleColumn: toggleAreaColumn,
+    resetColumns: resetAreaColumns,
+    columnDefs: areaPickerColumns,
+    visibleColumnIds: areaVisibleColumnIds,
+  } = useTableColumnPrefs('company-areas', areaColumnDefs)
 
   const openCreate = () => {
     setEditing(null)
     setModalOpen(true)
   }
+
+  const openView = (area) => setViewing(area)
 
   const openEdit = (area) => {
     setEditing(area)
@@ -172,106 +196,72 @@ export default function AreasTab({ canManage }) {
 
   return (
     <div className="company-panel">
-      <div className="company-panel__toolbar">
-        <div className="company-panel__filters">
-          <label className="company-filter">
-            <span>Search</span>
-            <input
-              type="search"
-              className="company-form__input company-form__input--search"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search name, code, location…"
-              aria-label="Search areas"
+      <div className="company-panel__toolbar company-panel__toolbar--filters">
+        <TableFilterToolbar
+          search={{
+            value: search,
+            onChange: setSearch,
+            placeholder: 'Search areas...',
+            ariaLabel: 'Search areas',
+          }}
+          filter={{
+            fields: AREA_FILTER_FIELDS,
+            field: filterField,
+            onFieldChange: setFilterField,
+            value: filterValue,
+            onValueChange: setFilterValue,
+          }}
+          sort={{ value: sortBy, onChange: setSortBy, options: TABLE_SORT_OPTIONS }}
+          actions={canManage && (
+            <>
+              <button
+                type="button"
+                className="company-btn company-btn--secondary equipment-bulk-btn"
+                onClick={handleDownloadTemplate}
+              >
+                <span className="equipment-bulk-btn__icon" aria-hidden="true">
+                  <NavIcon name="download" />
+                </span>
+                Download template
+              </button>
+              <button
+                type="button"
+                className="company-btn company-btn--secondary equipment-bulk-btn"
+                onClick={() => bulkInputRef.current?.click()}
+                disabled={bulkBusy}
+              >
+                <span className="equipment-bulk-btn__icon" aria-hidden="true">
+                  <NavIcon name="upload" />
+                </span>
+                {bulkBusy ? 'Uploading…' : 'Bulk upload'}
+              </button>
+              <input
+                ref={bulkInputRef}
+                type="file"
+                accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                style={{ display: 'none' }}
+                onChange={handleBulkFile}
+              />
+              <button type="button" className="company-btn company-btn--primary" onClick={openCreate}>
+                + Add Area
+              </button>
+            </>
+          )}
+          columnPicker={(
+            <TableColumnPicker
+              columnDefs={areaPickerColumns}
+              visibleColumnIds={areaVisibleColumnIds}
+              onToggle={toggleAreaColumn}
+              onReset={resetAreaColumns}
             />
-          </label>
-          <label className="company-filter">
-            <span>Location</span>
-            <FilterableSelect
-              className="company-form__input--select"
-              value={locationFilter}
-              onChange={setLocationFilter}
-              options={activeLocations}
-              getOptionValue={(loc) => loc.id}
-              getOptionLabel={(loc) => loc.name}
-              disabled={!canSelectAnyLocation && Boolean(myLocationId)}
-              allowEmpty={canSelectAnyLocation}
-              emptyLabel="All locations"
-              placeholder="All locations"
-            />
-          </label>
-          <label className="company-filter">
-            <span>Department</span>
-            <FilterableSelect
-              className="company-form__input--select"
-              value={departmentFilter}
-              onChange={setDepartmentFilter}
-              options={activeDepartments}
-              getOptionValue={(dept) => dept.id}
-              getOptionLabel={(dept) => dept.name}
-              emptyLabel="All departments"
-              placeholder="All departments"
-            />
-          </label>
-          <label className="company-filter">
-            <span>Status</span>
-            <FilterableSelect
-              className="company-form__input--select"
-              value={statusFilter}
-              onChange={setStatusFilter}
-              options={[
-                { value: 'active', label: 'Active' },
-                { value: 'inactive', label: 'Inactive' },
-              ]}
-              getOptionValue={(opt) => opt.value}
-              getOptionLabel={(opt) => opt.label}
-              emptyLabel="All"
-              placeholder="All"
-            />
-          </label>
-          <p className="company-panel__count">{countLabel}</p>
-        </div>
-        {canManage && (
-          <div className="company-panel__toolbar-actions">
-            <button
-              type="button"
-              className="company-btn company-btn--secondary equipment-bulk-btn"
-              onClick={handleDownloadTemplate}
-            >
-              <span className="equipment-bulk-btn__icon" aria-hidden="true">
-                <NavIcon name="download" />
-              </span>
-              Download template
-            </button>
-            <button
-              type="button"
-              className="company-btn company-btn--secondary equipment-bulk-btn"
-              onClick={() => bulkInputRef.current?.click()}
-              disabled={bulkBusy}
-            >
-              <span className="equipment-bulk-btn__icon" aria-hidden="true">
-                <NavIcon name="upload" />
-              </span>
-              {bulkBusy ? 'Uploading…' : 'Bulk upload'}
-            </button>
-            <input
-              ref={bulkInputRef}
-              type="file"
-              accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-              style={{ display: 'none' }}
-              onChange={handleBulkFile}
-            />
-            <button type="button" className="company-btn company-btn--primary" onClick={openCreate}>
-              + Add Area
-            </button>
-          </div>
-        )}
+          )}
+        />
       </div>
 
       {error && <div className="company-alert">{error}</div>}
       {bulkError && <div className="company-error">{bulkError}</div>}
       {bulkResult && (
-        <div className={`company-alert ${bulkResult.failed ? 'company-alert--warning' : ''}`}>
+        <div className={`company-alert ${bulkResult.failed ? 'company-alert--warning' : 'company-alert--success'}`}>
           <strong>{bulkResult.created}</strong> area(s) created
           {bulkResult.failed ? `, ${bulkResult.failed} row(s) failed.` : '.'}
           {bulkResult.errors?.length > 0 && (
@@ -295,26 +285,34 @@ export default function AreasTab({ canManage }) {
         <div className="company-empty">No areas match your filters.</div>
       ) : (
         <div className="company-table-wrap">
+          <div className="company-table-scroll">
           <table className="company-table master-table">
             <thead>
               <tr>
-                <th>Name</th>
-                <th>Code</th>
-                <th>Location</th>
-                <th>Department</th>
-                {canManage && <th>Active</th>}
-                {canManage && <th aria-label="Actions" />}
+                {isAreaColumnVisible('name') && <th>Name</th>}
+                {isAreaColumnVisible('code') && <th>Code</th>}
+                {isAreaColumnVisible('location') && <th>Location</th>}
+                {isAreaColumnVisible('department') && <th>Department</th>}
+                {canManage && isAreaColumnVisible('active') && <th>Active</th>}
+                {canManage && isAreaColumnVisible('actions') && <th aria-label="Actions" />}
               </tr>
             </thead>
             <tbody>
               {pagedAreas.map((area) => (
-                <tr key={area.id} className={area.is_active === false ? 'company-table__row--inactive' : ''}>
-                  <td>{area.name}</td>
-                  <td>{area.code || '—'}</td>
-                  <td>{area.org_locations?.name || '—'}</td>
-                  <td>{area.departments?.name || '—'}</td>
-                  {canManage && (
-                    <td>
+                <tr
+                  key={area.id}
+                  {...tableRowClickProps({
+                    onOpen: () => openView(area),
+                    label: `View ${area.name}`,
+                    className: area.is_active === false ? 'company-table__row--inactive' : undefined,
+                  })}
+                >
+                  {isAreaColumnVisible('name') && <td>{area.name}</td>}
+                  {isAreaColumnVisible('code') && <td>{area.code || '—'}</td>}
+                  {isAreaColumnVisible('location') && <td>{area.org_locations?.name || '—'}</td>}
+                  {isAreaColumnVisible('department') && <td>{area.departments?.name || '—'}</td>}
+                  {canManage && isAreaColumnVisible('active') && (
+                    <td onClick={stopTableRowClick}>
                       <GooToggle
                         checked={area.is_active !== false}
                         disabled={togglingId === area.id}
@@ -323,8 +321,8 @@ export default function AreasTab({ canManage }) {
                       />
                     </td>
                   )}
-                  {canManage && (
-                    <td className="company-table__actions">
+                  {canManage && isAreaColumnVisible('actions') && (
+                    <td className="company-table__actions" onClick={stopTableRowClick}>
                       <button
                         type="button"
                         className="company-btn company-btn--secondary company-btn--compact company-btn--icon"
@@ -360,7 +358,23 @@ export default function AreasTab({ canManage }) {
             onPageChange={pagination.setPage}
             onPageSizeChange={pagination.setPageSize}
           />
+          </div>
         </div>
+      )}
+
+      {viewing && (
+        <RecordDetailModal
+          title={viewing.name}
+          subtitle={viewing.code ? `Code ${viewing.code}` : undefined}
+          onClose={() => setViewing(null)}
+          onEdit={canManage ? () => {
+            const record = viewing
+            setViewing(null)
+            openEdit(record)
+          } : undefined}
+        >
+          <AreaDetailContent area={viewing} />
+        </RecordDetailModal>
       )}
 
       {modalOpen && (

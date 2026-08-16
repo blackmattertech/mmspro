@@ -4,7 +4,10 @@ import { useAuth } from '../../hooks/useAuth'
 import { supabase } from '../../lib/supabase'
 import { readRememberMe, readSavedEmail, writeRememberMe, writeSavedEmail } from '../../lib/authPreferences'
 import { requestPasswordReset } from '../../lib/api'
+import { assetUrl } from '../../lib/assets'
 import './Login.css'
+
+const LOGO_SRC = assetUrl('Assets/images/logo.svg')
 
 const SLOGAN_ICON = (
   <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
@@ -169,7 +172,7 @@ export default function Login() {
         <div className="login-hero__content">
           <div className="login-hero__top">
             <img
-              src="/Assets/images/logo.svg"
+              src={LOGO_SRC}
               alt="MMS PRO"
               className="login-hero__logo"
             />
@@ -219,7 +222,7 @@ export default function Login() {
       <section className="login-panel">
         <div className="login-card">
           <img
-            src="/Assets/images/logo.svg"
+            src={LOGO_SRC}
             alt="MMS PRO"
             className="login-card__logo"
           />

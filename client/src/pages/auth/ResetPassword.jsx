@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
+import { assetUrl } from '../../lib/assets'
 import './Login.css'
 
 function EyeIcon({ open }) {
@@ -88,7 +89,7 @@ export default function ResetPassword() {
       <section className="login-panel login-panel--full">
         <div className="login-card">
           <img
-            src="/Assets/images/logo.svg"
+            src={assetUrl('Assets/images/logo.svg')}
             alt="MMS PRO"
             className="login-card__logo"
           />

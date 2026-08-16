@@ -12,13 +12,13 @@ const RECEIVED_COLUMNS = ['wo_number', 'summary', 'assignees', 'creator', 'recei
 
 export default function ReceivedWorkOrders() {
   const [selectedId, setSelectedId] = useState(null)
-  const { search, locationFilter, advancedRules, locations } = useOutletContext()
+  const { search, locationFilter, sortBy, advancedRules, fieldFilter, locations } = useOutletContext()
   const fetchOrders = useCallback(() => getReceivedWorkOrders(), [])
   const { orders, loading, error } = useWorkOrderList(fetchOrders)
 
   const filtered = useMemo(
-    () => applyWorkOrderFilters(orders, { search, locationFilter, advancedRules, locations }),
-    [orders, search, locationFilter, advancedRules, locations],
+    () => applyWorkOrderFilters(orders, { search, locationFilter, sortBy, advancedRules, fieldFilter, locations }),
+    [orders, search, locationFilter, sortBy, advancedRules, fieldFilter, locations],
   )
 
   if (loading) {
@@ -36,10 +36,11 @@ export default function ReceivedWorkOrders() {
       <WorkOrdersTable
         orders={filtered}
         columns={RECEIVED_COLUMNS}
+        tableId="work-orders-received"
         emptyTitle="No work orders received yet."
         emptyHint="Work orders assigned to you, your location, or your department appear here."
         onView={setSelectedId}
-        paginationResetKey={`${search}|${locationFilter}`}
+        paginationResetKey={`${search}|${locationFilter}|${fieldFilter?.field}|${fieldFilter?.value}|${sortBy}`}
       />
 
       {selectedId && (

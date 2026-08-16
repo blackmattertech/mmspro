@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { getDepartments, createDepartment, updateDepartment, deleteDepartment } from '../lib/api'
+import { fetchReferenceData, invalidateReferenceCache } from '../lib/referenceDataCache'
 
 export function useDepartments(locationFilter = '') {
   const [departments, setDepartments] = useState([])
@@ -7,11 +8,16 @@ export function useDepartments(locationFilter = '') {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
 
-  const load = useCallback(async ({ silent = false } = {}) => {
+  const load = useCallback(async ({ silent = false, force = false } = {}) => {
     if (!silent) setLoading(true)
     setError(null)
     try {
-      const data = await getDepartments(locationFilter || undefined)
+      const data = await fetchReferenceData(
+        'departments',
+        { locationFilter },
+        () => getDepartments(locationFilter || undefined),
+        { force },
+      )
       setDepartments(data)
     } catch (err) {
       setError(err.message)
@@ -24,12 +30,17 @@ export function useDepartments(locationFilter = '') {
     load()
   }, [load])
 
+  const refreshAfterMutation = async () => {
+    invalidateReferenceCache('departments')
+    await load({ silent: true, force: true })
+  }
+
   const create = async (payload) => {
     setSaving(true)
     setError(null)
     try {
       const data = await createDepartment(payload)
-      await load({ silent: true })
+      await refreshAfterMutation()
       return data
     } catch (err) {
       setError(err.message)
@@ -44,7 +55,7 @@ export function useDepartments(locationFilter = '') {
     setError(null)
     try {
       const data = await updateDepartment(id, payload)
-      await load({ silent: true })
+      await refreshAfterMutation()
       return data
     } catch (err) {
       setError(err.message)
@@ -59,7 +70,7 @@ export function useDepartments(locationFilter = '') {
     setError(null)
     try {
       await deleteDepartment(id)
-      await load({ silent: true })
+      await refreshAfterMutation()
     } catch (err) {
       setError(err.message)
       throw err
@@ -72,7 +83,7 @@ export function useDepartments(locationFilter = '') {
     setError(null)
     try {
       await updateDepartment(id, { is_active: isActive })
-      await load({ silent: true })
+      await refreshAfterMutation()
     } catch (err) {
       setError(err.message)
       throw err

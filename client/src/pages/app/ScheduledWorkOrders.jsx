@@ -10,7 +10,7 @@ import '../../components/workorders/WorkOrdersPage.css'
 const SCHEDULED_COLUMNS = ['wo_number', 'summary', 'scheduled_at', 'assignees', 'status']
 
 export default function ScheduledWorkOrders() {
-  const { search, locationFilter, advancedRules, locations } = useOutletContext()
+  const { search, locationFilter, sortBy, advancedRules, fieldFilter, locations } = useOutletContext()
   const fetchOrders = useCallback(() => getScheduledWorkOrders(), [])
   const { orders, loading, error } = useWorkOrderList(fetchOrders)
 
@@ -18,7 +18,7 @@ export default function ScheduledWorkOrders() {
     return <div className="company-loading">Loading...</div>
   }
 
-  const filtered = applyWorkOrderFilters(orders, { search, locationFilter, advancedRules, locations })
+  const filtered = applyWorkOrderFilters(orders, { search, locationFilter, sortBy, advancedRules, fieldFilter, locations })
 
   return (
     <>
@@ -31,9 +31,10 @@ export default function ScheduledWorkOrders() {
       <WorkOrdersTable
         orders={filtered}
         columns={SCHEDULED_COLUMNS}
+        tableId="work-orders-scheduled"
         emptyTitle="No scheduled work orders yet."
         emptyHint="Recurring and preventive work orders will appear here once scheduling is enabled."
-        paginationResetKey={`${search}|${locationFilter}`}
+        paginationResetKey={`${search}|${locationFilter}|${fieldFilter?.field}|${fieldFilter?.value}|${sortBy}`}
       />
     </>
   )

@@ -4,15 +4,29 @@ import { useAdminOrganizations } from '../../hooks/useAdminOrganizations'
 import CreateOrgModal from '../../components/admin/CreateOrgModal'
 import OrgLimitsModal from '../../components/admin/OrgLimitsModal'
 import GooToggle from '../../components/ui/GooToggle'
-import FilterableSelect from '../../components/ui/FilterableSelect'
 import TablePagination from '../../components/shared/TablePagination'
+import TableFilterToolbar from '../../components/shared/TableFilterToolbar'
 import { useTablePagination } from '../../hooks/useTablePagination'
 import { LIMIT_ITEMS, formatUsage, isAtOrOverLimit } from '../../lib/orgLimits'
 import '../../components/company/CompanyShared.css'
+import '../../components/shared/TableFilterToolbar.css'
 import '../../components/admin/OrgLimitsModal.css'
 import './AdminPage.css'
 import './Organizations.css'
 import './AdminOrgAssets.css'
+
+const ORG_FILTER_FIELDS = [
+  { value: 'name', label: 'Name' },
+  { value: 'slug', label: 'Slug' },
+  { value: 'plan', label: 'Plan' },
+  { value: 'status', label: 'Status', placeholder: 'active or inactive' },
+]
+
+const ORG_SORT_OPTIONS = [
+  { value: 'newest', label: 'Newest' },
+  { value: 'oldest', label: 'Oldest' },
+  { value: 'name', label: 'Name A–Z' },
+]
 
 const KPI_CARDS = [
   { key: 'total', label: 'Total Organizations', icon: 'grid', tone: 'purple' },
@@ -165,7 +179,7 @@ function computeStats(organizations) {
   }
 }
 
-function filterAndSort(organizations, { search, statusFilter, sortBy }) {
+function filterAndSort(organizations, { search, filterField, filterValue, sortBy }) {
   let rows = [...organizations]
   const query = search.trim().toLowerCase()
 
@@ -176,10 +190,18 @@ function filterAndSort(organizations, { search, statusFilter, sortBy }) {
     })
   }
 
-  if (statusFilter === 'active') {
-    rows = rows.filter((org) => org.is_active !== false)
-  } else if (statusFilter === 'inactive') {
-    rows = rows.filter((org) => org.is_active === false)
+  const fieldQuery = String(filterValue || '').trim().toLowerCase()
+  if (filterField && fieldQuery) {
+    const getters = {
+      name: (org) => org.name,
+      slug: (org) => org.slug,
+      plan: (org) => org.plan,
+      status: (org) => (org.is_active === false ? 'inactive' : 'active'),
+    }
+    const getter = getters[filterField]
+    if (getter) {
+      rows = rows.filter((org) => String(getter(org) || '').toLowerCase().includes(fieldQuery))
+    }
   }
 
   rows.sort((a, b) => {
@@ -200,7 +222,8 @@ export default function Organizations() {
   const [limitsOrg, setLimitsOrg] = useState(null)
   const [success, setSuccess] = useState(null)
   const [search, setSearch] = useState('')
-  const [statusFilter, setStatusFilter] = useState('all')
+  const [filterField, setFilterField] = useState('')
+  const [filterValue, setFilterValue] = useState('')
   const [sortBy, setSortBy] = useState('newest')
   const [togglingId, setTogglingId] = useState(null)
 
@@ -217,11 +240,11 @@ export default function Organizations() {
   const stats = useMemo(() => computeStats(organizations), [organizations])
 
   const filtered = useMemo(
-    () => filterAndSort(organizations, { search, statusFilter, sortBy }),
-    [organizations, search, statusFilter, sortBy],
+    () => filterAndSort(organizations, { search, filterField, filterValue, sortBy }),
+    [organizations, search, filterField, filterValue, sortBy],
   )
 
-  const paginationResetKey = `${search}|${statusFilter}|${sortBy}`
+  const paginationResetKey = `${search}|${filterField}|${filterValue}|${sortBy}`
   const pagination = useTablePagination(filtered.length, { resetKey: paginationResetKey })
   const pageRows = pagination.paginate(filtered)
 
@@ -285,61 +308,31 @@ export default function Organizations() {
 
         <div className="admin-card admin-org-card">
           <div className="admin-org-toolbar">
-            <div className="admin-org-toolbar__search">
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                <circle cx="7" cy="7" r="4.5" stroke="currentColor" strokeWidth="1.3" />
-                <path d="M10.5 10.5L14 14" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
-              </svg>
-              <input
-                type="search"
-                className="admin-org-toolbar__input"
-                placeholder="Search organizations..."
-                value={search}
-                onChange={(e) => {
-                  setSearch(e.target.value)
+            <TableFilterToolbar
+              search={{
+                value: search,
+                onChange: (value) => {
+                  setSearch(value)
                   pagination.setPage(1)
-                }}
-              />
-            </div>
-
-            <div className="admin-org-toolbar__filters">
-              <label className="admin-org-filter">
-                <span>Status</span>
-                <FilterableSelect
-                  className="company-form__input--select"
-                  value={statusFilter}
-                  onChange={(next) => {
-                    setStatusFilter(next)
-                    pagination.setPage(1)
-                  }}
-                  options={[
-                    { value: 'all', label: 'All' },
-                    { value: 'active', label: 'Active' },
-                    { value: 'inactive', label: 'Disabled' },
-                  ]}
-                  getOptionValue={(opt) => opt.value}
-                  getOptionLabel={(opt) => opt.label}
-                  allowEmpty={false}
-                />
-              </label>
-
-              <label className="admin-org-filter">
-                <span>Sort by</span>
-                <FilterableSelect
-                  className="company-form__input--select"
-                  value={sortBy}
-                  onChange={setSortBy}
-                  options={[
-                    { value: 'newest', label: 'Newest' },
-                    { value: 'oldest', label: 'Oldest' },
-                    { value: 'name', label: 'Name A–Z' },
-                  ]}
-                  getOptionValue={(opt) => opt.value}
-                  getOptionLabel={(opt) => opt.label}
-                  allowEmpty={false}
-                />
-              </label>
-            </div>
+                },
+                placeholder: 'Search organizations...',
+                ariaLabel: 'Search organizations',
+              }}
+              filter={{
+                fields: ORG_FILTER_FIELDS,
+                field: filterField,
+                onFieldChange: (value) => {
+                  setFilterField(value)
+                  pagination.setPage(1)
+                },
+                value: filterValue,
+                onValueChange: (value) => {
+                  setFilterValue(value)
+                  pagination.setPage(1)
+                },
+              }}
+              sort={{ value: sortBy, onChange: setSortBy, options: ORG_SORT_OPTIONS }}
+            />
           </div>
 
           {loading ? (

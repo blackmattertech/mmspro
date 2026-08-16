@@ -28,7 +28,10 @@ const canReadCreate = requireModulePermission('work_request_create', 'read')
 const canCreate = requireModulePermission('work_request_create', 'create')
 const canReadMy = requireModulePermission('work_request_my', 'read')
 const canReadIncoming = requireModulePermission('work_request_incoming', 'read')
-const canUpdateIncoming = requireModulePermission('work_request_incoming', 'update')
+const canApproveWorkRequest = requireAnyModulePermission([
+  ['work_request_approve', 'update'],
+  ['work_request_incoming', 'update'],
+])
 const canReadOutgoing = requireModulePermission('work_request_outgoing', 'read')
 const canReadAll = requireModulePermission('work_request_all', 'read')
 const canReadAny = requireAnyModulePermission([
@@ -141,7 +144,7 @@ router.get('/', async (req, res, next) => {
   }
 })
 
-router.get('/:id/department-employees', canReadIncoming, async (req, res) => {
+router.get('/:id/department-employees', canApproveWorkRequest, async (req, res) => {
   const orgId = req.userProfile.org_id
   try {
     const wr = await getWorkRequestById(orgId, req.params.id)
@@ -173,7 +176,7 @@ router.get('/:id', canReadAny, async (req, res) => {
   }
 })
 
-router.post('/:id/approve', canUpdateIncoming, async (req, res) => {
+router.post('/:id/approve', canApproveWorkRequest, async (req, res) => {
   const orgId = req.userProfile.org_id
   try {
     const result = await approveWorkRequest(
@@ -188,7 +191,7 @@ router.post('/:id/approve', canUpdateIncoming, async (req, res) => {
   }
 })
 
-router.post('/:id/reject', canUpdateIncoming, async (req, res) => {
+router.post('/:id/reject', canApproveWorkRequest, async (req, res) => {
   const orgId = req.userProfile.org_id
   try {
     const result = await rejectWorkRequest(
@@ -203,7 +206,7 @@ router.post('/:id/reject', canUpdateIncoming, async (req, res) => {
   }
 })
 
-router.post('/:id/need-info', canUpdateIncoming, async (req, res) => {
+router.post('/:id/need-info', canApproveWorkRequest, async (req, res) => {
   const orgId = req.userProfile.org_id
   try {
     const result = await requestMoreInfo(

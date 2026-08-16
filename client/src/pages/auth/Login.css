@@ -4,7 +4,10 @@
   min-height: 100vh;
   min-height: 100dvh;
   overflow: hidden;
-  background: url('/Assets/images/logindesktop.png') 58% center / cover no-repeat;
+  background: image-set(
+    var(--asset-login-desktop-webp, url('/Assets/images/logindesktop.webp')) type('image/webp'),
+    var(--asset-login-desktop-png, url('/Assets/images/logindesktop.png')) type('image/png')
+  ) 58% center / cover no-repeat;
 }
 
 .text-primary {
@@ -176,7 +179,10 @@
 .login-panel--full {
   flex: 1 1 100%;
   padding: 32px 24px;
-  background: url('/Assets/images/logindesktop.png') center / cover no-repeat;
+  background: image-set(
+    var(--asset-login-desktop-webp, url('/Assets/images/logindesktop.webp')) type('image/webp'),
+    var(--asset-login-desktop-png, url('/Assets/images/logindesktop.png')) type('image/png')
+  ) center / cover no-repeat;
 }
 
 .login-card {
@@ -456,7 +462,10 @@
     flex-direction: column;
     overflow-x: hidden;
     overflow-y: auto;
-    background: url('/Assets/images/loginmobile.png') center -70px / cover no-repeat;
+    background: image-set(
+      var(--asset-login-mobile-webp, url('/Assets/images/loginmobile.webp')) type('image/webp'),
+      var(--asset-login-mobile-png, url('/Assets/images/loginmobile.png')) type('image/png')
+    ) center -70px / cover no-repeat;
     background-attachment: scroll;
   }
 

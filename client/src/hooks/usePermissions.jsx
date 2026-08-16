@@ -116,6 +116,8 @@ export function PermissionsProvider({ children }) {
         ['work_orders_received', 'work-orders/received'],
         ['work_orders', 'work-orders/manual'],
         ['calendar', 'calendar'],
+        ['warranty_manager', 'warranty-manager'],
+        ['tasks_followups', 'tasks-and-followups'],
         ['reports_daily_logs', 'reports/daily-logs'],
         ['reports', 'reports/daily-logs'],
         ['company', 'masters/company'],

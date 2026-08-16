@@ -642,13 +642,11 @@
 }
 
 .wo-settings-modal {
-  max-width: 560px;
-  width: calc(100% - 32px);
+  width: 100%;
 }
 
 .wo-settings-modal__body {
   padding: 0 24px 8px;
-  max-height: min(60vh, 520px);
   overflow-y: auto;
 }
 
@@ -776,8 +774,8 @@
   box-sizing: border-box;
   padding: 4px;
   background-color: currentColor;
-  mask: url('/Assets/icons/users-outline.svg') center / contain no-repeat;
-  -webkit-mask: url('/Assets/icons/users-outline.svg') center / contain no-repeat;
+  mask: var(--asset-icon-users-outline, url('/Assets/icons/users-outline.svg')) center / contain no-repeat;
+  -webkit-mask: var(--asset-icon-users-outline, url('/Assets/icons/users-outline.svg')) center / contain no-repeat;
   mask-origin: content-box;
   -webkit-mask-origin: content-box;
   mask-clip: content-box;
@@ -1225,13 +1223,11 @@
 }
 
 .wo-received-detail {
-  max-width: 720px;
-  width: calc(100% - 32px);
+  width: 100%;
 }
 
 .wo-received-detail__body {
   padding: 0 24px 16px;
-  max-height: min(65vh, 560px);
   overflow-y: auto;
 }
 

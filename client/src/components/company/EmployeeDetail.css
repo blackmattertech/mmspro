@@ -1,0 +1,253 @@
+.employee-detail {
+  gap: 0;
+}
+
+.employee-detail__tabs {
+  display: flex;
+  gap: 4px;
+  margin: 0 4px 20px;
+  border-bottom: 1px solid var(--color-light-gray-2);
+}
+
+.employee-detail__tab {
+  position: relative;
+  padding: 10px 14px 12px;
+  font-size: 14px;
+  font-weight: 600;
+  font-family: inherit;
+  color: var(--color-gray-blue);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.employee-detail__tab:hover {
+  color: var(--color-dark-navy);
+}
+
+.employee-detail__tab--active {
+  color: var(--color-primary);
+}
+
+.employee-detail__tab--active::after {
+  content: '';
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: -1px;
+  height: 3px;
+  background: var(--color-primary);
+  border-radius: 3px 3px 0 0;
+}
+
+.employee-detail__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.employee-detail__card {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-height: 180px;
+  padding: 20px;
+  background: var(--color-white);
+  border-radius: 16px;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04), 0 8px 24px rgba(16, 24, 40, 0.04);
+}
+
+.employee-detail__card-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--color-dark-navy);
+}
+
+.employee-detail__card-title svg {
+  flex-shrink: 0;
+  color: var(--color-primary);
+}
+
+.employee-detail__rows {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.employee-detail__fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px 20px;
+}
+
+.employee-detail__item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  min-width: 0;
+}
+
+.employee-detail__item--wide {
+  grid-column: 1 / -1;
+}
+
+.employee-detail__icon {
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border-radius: 10px;
+  background: var(--color-light-pink-1);
+  color: var(--color-primary);
+}
+
+.employee-detail__icon--blue {
+  background: #e8f1ff;
+  color: #2563eb;
+}
+
+.employee-detail__icon--sky {
+  background: #e7f6ff;
+  color: #0284c7;
+}
+
+.employee-detail__icon--green {
+  background: #e9f9ee;
+  color: #16a34a;
+}
+
+.employee-detail__copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.employee-detail__label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-gray-blue);
+}
+
+.employee-detail__value {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--color-dark-navy);
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+.employee-detail__country {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-gray-blue);
+}
+
+.employee-detail__empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 24px 16px;
+  text-align: center;
+  border: 1px dashed var(--color-light-gray-2);
+  border-radius: 12px;
+  color: var(--color-gray-blue);
+}
+
+.employee-detail__empty svg {
+  color: var(--color-primary);
+}
+
+.employee-detail__empty p {
+  margin: 0;
+  max-width: 280px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.employee-detail__panel {
+  padding: 28px 20px;
+  background: var(--color-white);
+  border-radius: 16px;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+}
+
+.employee-detail__footer {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 16px;
+  padding: 16px 20px;
+  background: var(--color-white);
+  border-radius: 16px;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+}
+
+.employee-detail__footer-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+  padding-right: 16px;
+}
+
+.employee-detail__footer-item:not(:last-child) {
+  border-right: 1px solid var(--color-light-gray-1);
+}
+
+.employee-detail__footer-icon {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border-radius: 8px;
+  background: var(--color-off-white);
+  color: var(--color-gray-blue);
+}
+
+.employee-detail__roles {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--color-gray-blue);
+}
+
+.employee-detail__roles-dot {
+  color: var(--color-light-gray-3);
+}
+
+@media (max-width: 840px) {
+  .employee-detail__grid,
+  .employee-detail__fields,
+  .employee-detail__footer {
+    grid-template-columns: 1fr;
+  }
+
+  .employee-detail__footer-item {
+    padding-right: 0;
+  }
+
+  .employee-detail__footer-item:not(:last-child) {
+    border-right: none;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--color-light-gray-1);
+  }
+}

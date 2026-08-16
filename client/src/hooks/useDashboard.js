@@ -24,7 +24,7 @@ const EMPTY_STATS = {
 export const useDashboard = () => {
   const navigate = useNavigate()
   const { org } = useOrg()
-  const { locations: orgLocations, loading: locationsLoading } = useLocations()
+  const { locations: orgLocations } = useLocations()
   const { isOrgAdmin, locationId: scopedLocationId, canCreate } = usePermissions()
 
   const canSeeAllLocations = isOrgAdmin
@@ -106,7 +106,7 @@ export const useDashboard = () => {
   }
 
   return {
-    loading: loading || locationsLoading,
+    loading,
     error,
     isDemo: false,
     locations: filterLocations,

@@ -104,10 +104,20 @@ export default function LocationModal({
   }
 
   return (
-    <div className={`company-modal-overlay ${nested ? 'company-modal-overlay--nested' : ''}`} onMouseDown={handleBackdropClick}>
-      <div className="company-modal" onClick={(e) => e.stopPropagation()}>
+    <div
+      className={`company-modal-overlay company-modal-overlay--popup ${nested ? 'company-modal-overlay--nested' : ''}`}
+      onMouseDown={handleBackdropClick}
+      role="presentation"
+    >
+      <div
+        className="company-modal company-modal--popup"
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="location-modal-title"
+      >
         <div className="company-modal__header">
-          <h2>{location ? 'Edit Location' : 'Add Location'}</h2>
+          <h2 id="location-modal-title">{location ? 'Edit Location' : 'Add Location'}</h2>
           <button type="button" className="company-modal__close" onClick={onClose} aria-label="Close">×</button>
         </div>
         <form className="company-modal__form" onSubmit={handleSubmit}>

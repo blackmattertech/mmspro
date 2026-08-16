@@ -21,6 +21,16 @@ const ReceivedWorkOrders = lazy(() => import('./pages/app/ReceivedWorkOrders'))
 const AssignedWorkOrders = lazy(() => import('./pages/app/AssignedWorkOrders'))
 const ScheduledWorkOrders = lazy(() => import('./pages/app/ScheduledWorkOrders'))
 const PlaceholderPage = lazy(() => import('./pages/app/PlaceholderPage'))
+const BlankPage = lazy(() => import('./pages/app/BlankPage'))
+const TasksRouteLayout = lazy(() => import('./components/tasks/TasksRouteLayout'))
+const TasksManager = lazy(() => import('./pages/app/TasksManager'))
+const TaskDetailPage = lazy(() => import('./pages/app/TaskDetailPage'))
+const TaskFormPage = lazy(() => import('./pages/app/TaskFormPage'))
+const WarrantyManager = lazy(() => import('./pages/app/WarrantyManager'))
+const WarrantyDetailPage = lazy(() => import('./pages/app/WarrantyDetailPage'))
+const WarrantyFormPage = lazy(() => import('./pages/app/WarrantyFormPage'))
+const Vendors = lazy(() => import('./pages/app/Vendors'))
+const VendorDetailPage = lazy(() => import('./pages/app/VendorDetailPage'))
 const ConfigurationImport = lazy(() => import('./pages/app/ConfigurationImport'))
 const WorkRequestCreate = lazy(() => import('./pages/app/WorkRequestCreate'))
 const WorkRequestListPage = lazy(() => import('./pages/app/WorkRequestListPage'))
@@ -134,9 +144,21 @@ export default function App() {
                 />
               </Route>
               <Route path="calendar" element={withModule('calendar', <Calendar />)} />
+              <Route path="warranty-manager" element={withModule('warranty_manager', <WarrantyManager />)} />
+              <Route path="warranty-manager/create" element={withModule('warranty_manager', <WarrantyFormPage />)} />
+              <Route path="warranty-manager/:warrantyId/edit" element={withModule('warranty_manager', <WarrantyFormPage />)} />
+              <Route path="warranty-manager/:warrantyId" element={withModule('warranty_manager', <WarrantyDetailPage />)} />
+              <Route path="tasks-and-followups" element={withModule('tasks_followups', <TasksRouteLayout />)}>
+                <Route index element={withModule('tasks_followups', <TasksManager />)} />
+                <Route path="create" element={withModule('tasks_followups', <TaskFormPage />)} />
+                <Route path=":taskId/edit" element={withModule('tasks_followups', <TaskFormPage />)} />
+                <Route path=":taskId" element={withModule('tasks_followups', <TaskDetailPage />)} />
+              </Route>
               <Route path="masters/company" element={withModule(companyPageModules, <Company />)} />
               <Route path="masters/assets" element={withModule('assets', <Assets />)} />
               <Route path="masters/equipment" element={withModule(['equipment', 'areas'], <Equipment />)} />
+              <Route path="masters/vendors" element={withSuspense(<Vendors />)} />
+              <Route path="masters/vendors/:vendorId" element={withSuspense(<VendorDetailPage />)} />
               <Route path="work-orders" element={withModule(workOrderModules, <WorkOrdersRouteLayout />)}>
                 <Route path="received" element={withModule('work_orders_received', <ReceivedWorkOrders />)} />
                 <Route path="assigned" element={withModule('work_orders_assigned', <AssignedWorkOrders />)} />
@@ -169,7 +191,7 @@ export default function App() {
               />
               <Route
                 path="configuration/import"
-                element={withModule('settings', <ConfigurationImport />)}
+                element={withSuspense(<ConfigurationImport />)}
               />
               <Route
                 path="configuration/export"

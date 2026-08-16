@@ -206,9 +206,36 @@
   background: currentColor;
 }
 
-.wo-status--created {
+.wo-status--created,
+.wo-status--assigned {
   color: #027a48;
   background: #ecfdf3;
+}
+
+.wo-status--accepted,
+.wo-status--started,
+.wo-status--in_progress {
+  color: #175cd3;
+  background: #eff8ff;
+}
+
+.wo-status--waiting_material,
+.wo-status--waiting_shutdown,
+.wo-status--on_hold,
+.wo-status--returned_rework {
+  color: #b54708;
+  background: #fffaeb;
+}
+
+.wo-status--completed,
+.wo-status--verified {
+  color: #027a48;
+  background: #ecfdf3;
+}
+
+.wo-status--closed {
+  color: #344054;
+  background: #f2f4f7;
 }
 
 .wo-status--draft {

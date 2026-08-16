@@ -1,0 +1,113 @@
+.time-field {
+  position: relative;
+  width: 100%;
+}
+
+.time-field__input {
+  cursor: pointer;
+  padding-right: 34px;
+  width: 100%;
+}
+
+.time-field__input:disabled {
+  cursor: not-allowed;
+}
+
+.time-field__icon {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--color-gray-blue);
+  pointer-events: none;
+  display: flex;
+}
+
+.time-field__popover {
+  position: fixed;
+  z-index: 1400;
+  width: 220px;
+  background: var(--color-white);
+  border: 1px solid var(--color-light-gray-2);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  padding: 12px;
+}
+
+.time-field__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.time-field__head-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-dark-navy);
+}
+
+.time-field__columns {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.time-field__column-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 180px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.time-field__column-list::-webkit-scrollbar {
+  width: 4px;
+}
+
+.time-field__column-list::-webkit-scrollbar-thumb {
+  background: var(--color-light-gray-2);
+  border-radius: 999px;
+}
+
+.time-field__cell {
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12.5px;
+  color: var(--color-dark-navy);
+  border-radius: var(--radius-sm);
+}
+
+.time-field__cell:hover {
+  background: var(--color-light-pink-2);
+}
+
+.time-field__cell--selected,
+.time-field__cell--selected:hover {
+  background: var(--color-primary);
+  color: var(--color-white);
+  font-weight: 600;
+}
+
+.time-field__footer {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--color-light-gray-1);
+}
+
+.time-field__action {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-primary);
+  padding: 2px 4px;
+  border-radius: var(--radius-sm);
+}
+
+.time-field__action:hover {
+  background: var(--color-light-pink-2);
+}
