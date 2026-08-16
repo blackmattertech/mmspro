@@ -1,9 +1,10 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useDepartments } from '../../hooks/useDepartments'
 import { useLocations } from '../../hooks/useLocations'
 import { useOrgLimits } from '../../hooks/useOrgLimits'
 import { useLimitExceeded } from '../../hooks/useLimitExceeded'
 import { usePermissions } from '../../hooks/usePermissions'
+import { useDebouncedValue } from '../../hooks/useDebouncedValue'
 import { isLimitError } from '../../lib/limitErrors'
 import { getDepartmentsTemplate, bulkUploadDepartments } from '../../lib/api'
 import GooToggle from '../ui/GooToggle'
@@ -50,10 +51,17 @@ export default function DepartmentsTab({ canManage }) {
   const [filterField, setFilterField] = useState('')
   const [filterValue, setFilterValue] = useState('')
   const [sortBy, setSortBy] = useState('name_asc')
+  const debouncedSearch = useDebouncedValue(search.trim())
+  const [listTotal, setListTotal] = useState(0)
+  const locationFilter = canSelectAnyLocation ? '' : (myLocationId || '')
+  const filterResetKey = `${debouncedSearch}|${filterField}|${filterValue}|${sortBy}|${locationFilter}`
+  const pagination = useTablePagination(listTotal, { resetKey: filterResetKey })
   const { locations, create: createLocation, saving: savingLocation } = useLocations()
-  const { departments, loading, saving, error, create, update, remove, toggleActive, reload } = useDepartments(
-    canSelectAnyLocation ? '' : (myLocationId || ''),
+  const { departments, total, loading, saving, error, create, update, remove, toggleActive, reload } = useDepartments(
+    locationFilter,
+    { search: debouncedSearch, limit: pagination.pageSize, offset: pagination.offset },
   )
+  useEffect(() => { setListTotal(total) }, [total])
   const { isResourceAtLimit, reload: reloadLimits } = useOrgLimits()
   const { visible: limitVisible, resource: limitResource, trigger: triggerLimit, tryHandleLimitError, dismiss: dismissLimit } = useLimitExceeded()
   const [modalOpen, setModalOpen] = useState(false)
@@ -80,14 +88,11 @@ export default function DepartmentsTab({ canManage }) {
 
   const activeLocations = locations.filter((l) => l.is_active !== false)
   const activeDepartments = departments.filter((d) => d.is_active !== false)
-  const activeCount = activeDepartments.length
-  const atDepartmentLimit = isResourceAtLimit('departments', 'department_limit', activeCount)
+  const atDepartmentLimit = isResourceAtLimit('departments', 'department_limit')
   const defaultCreateLocationId = canSelectAnyLocation ? '' : (myLocationId || '')
   const lockCreateLocation = Boolean(defaultCreateLocationId)
 
   const filteredDepartments = useMemo(() => applyTableFilters(departments, {
-    search,
-    searchHaystack: (dept) => [dept.code, dept.name, dept.description, formatDepartmentLocation(dept)].filter(Boolean).join(' '),
     fieldFilter: { field: filterField, value: filterValue },
     fieldFilterGetters: {
       name: (dept) => dept.name,
@@ -98,11 +103,9 @@ export default function DepartmentsTab({ canManage }) {
     sortBy,
     getName: (dept) => dept.name,
     getCreatedAt: (dept) => dept.created_at,
-  }), [departments, search, filterField, filterValue, sortBy])
+  }), [departments, filterField, filterValue, sortBy])
 
-  const filterResetKey = `${search}|${filterField}|${filterValue}|${sortBy}`
-  const pagination = useTablePagination(filteredDepartments.length, { resetKey: filterResetKey })
-  const pagedDepartments = pagination.paginate(filteredDepartments)
+  const pagedDepartments = filteredDepartments
   const departmentColumnDefs = useMemo(() => {
     const cols = [
       { id: 'code', label: 'Code' },
@@ -316,17 +319,7 @@ export default function DepartmentsTab({ canManage }) {
               })}
             </tbody>
           </table>
-          <TablePagination
-            page={pagination.page}
-            totalPages={pagination.totalPages}
-            pageSize={pagination.pageSize}
-            pageSizeOptions={pagination.pageSizeOptions}
-            totalCount={departments.length}
-            rangeStart={pagination.rangeStart}
-            rangeEnd={pagination.rangeEnd}
-            onPageChange={pagination.setPage}
-            onPageSizeChange={pagination.setPageSize}
-          />
+          <TablePagination {...pagination} />
           </div>
         </div>
       )}

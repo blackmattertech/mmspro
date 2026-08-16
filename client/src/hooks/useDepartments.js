@@ -2,8 +2,9 @@ import { useState, useEffect, useCallback } from 'react'
 import { getDepartments, createDepartment, updateDepartment, deleteDepartment } from '../lib/api'
 import { fetchReferenceData, invalidateReferenceCache } from '../lib/referenceDataCache'
 
-export function useDepartments(locationFilter = '') {
+export function useDepartments(locationFilter = '', { search, limit = 200, offset = 0 } = {}) {
   const [departments, setDepartments] = useState([])
+  const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
@@ -14,17 +15,18 @@ export function useDepartments(locationFilter = '') {
     try {
       const data = await fetchReferenceData(
         'departments',
-        { locationFilter },
-        () => getDepartments(locationFilter || undefined),
+        { locationFilter, search, limit, offset },
+        () => getDepartments(locationFilter || undefined, { search, limit, offset }),
         { force },
       )
       setDepartments(data)
+      setTotal(data.total ?? data.length)
     } catch (err) {
       setError(err.message)
     } finally {
       if (!silent) setLoading(false)
     }
-  }, [locationFilter])
+  }, [locationFilter, search, limit, offset])
 
   useEffect(() => {
     load()
@@ -90,5 +92,5 @@ export function useDepartments(locationFilter = '') {
     }
   }
 
-  return { departments, loading, saving, error, create, update, remove, toggleActive, reload: load }
+  return { departments, total, loading, saving, error, create, update, remove, toggleActive, reload: load }
 }

@@ -1,6 +1,7 @@
 import { supabaseAdmin } from '../services/supabase.js'
 import { loadOrgFields } from './equipmentFieldService.js'
 import { getSignedUrl } from './signedUrlCache.js'
+import { applyIlikeSearch, listEnvelope } from './listQuery.js'
 import {
   uploadEquipmentImageFile,
   deleteEquipmentImageFile,
@@ -134,10 +135,11 @@ export async function listEquipment(orgId, {
   search,
   limit = 50,
   offset = 0,
+  includeImages = false,
 } = {}) {
   let query = supabaseAdmin
     .from('equipment')
-    .select(EQUIPMENT_SELECT)
+    .select(EQUIPMENT_SELECT, { count: 'exact' })
     .eq('org_id', orgId)
     .order('name')
     .range(offset, offset + limit - 1)
@@ -145,14 +147,14 @@ export async function listEquipment(orgId, {
   if (locationId) query = query.eq('location_id', locationId)
   if (departmentId) query = query.eq('department_id', departmentId)
   if (areaId) query = query.eq('area_id', areaId)
-  if (search?.trim()) {
-    const q = search.trim().replace(/%/g, '')
-    query = query.or(`name.ilike.%${q}%,code.ilike.%${q}%,qr_code.ilike.%${q}%`)
-  }
+  query = applyIlikeSearch(query, search, ['name', 'code', 'qr_code'])
 
-  const { data, error } = await query
+  const { data, error, count } = await query
   if (error) throw error
-  return Promise.all((data || []).map((row) => attachImageUrl(row)))
+  const rows = includeImages
+    ? await Promise.all((data || []).map((row) => attachImageUrl(row)))
+    : (data || [])
+  return listEnvelope(rows, { total: count || 0, limit, offset })
 }
 
 export async function getEquipmentById(orgId, id) {
@@ -279,12 +281,12 @@ async function syncEquipmentValues(orgId, equipmentId, valuesInput) {
   }
 }
 
-export async function createEquipment(orgId, body) {
+export async function createEquipment(orgId, body, { fields: preloadedFields = null, skipDetail = false } = {}) {
   if (!body.location_id) throw new Error('Location is required')
   if (!body.department_id) throw new Error('Department is required')
   if (!body.area_id) throw new Error('Area is required')
 
-  const fields = await loadOrgFields(orgId)
+  const fields = preloadedFields || await loadOrgFields(orgId)
   const identity = deriveEquipmentIdentity(fields, body.values)
   if (identity.codeField && !identity.code) {
     throw new Error(`${identity.codeField.name} is required`)
@@ -333,6 +335,7 @@ export async function createEquipment(orgId, body) {
       .eq('org_id', orgId)
   }
 
+  if (skipDetail) return { id: data.id }
   return getEquipmentDetail(orgId, data.id)
 }
 

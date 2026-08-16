@@ -3,6 +3,7 @@ import { loadOrgFields } from './equipmentFieldService.js'
 import { listEquipment, getEquipmentDetail, deriveEquipmentIdentity, orderedParentFields } from './equipmentService.js'
 import { notifyOrg } from '../services/notifications.js'
 import { buildManualWorkOrderFormSchema } from './manualWorkOrderForm.js'
+import { applyIlikeSearch, listEnvelope } from './listQuery.js'
 import {
   generateWorkOrderNumber,
   addWorkOrderTimelineEvent,
@@ -237,15 +238,17 @@ function enrichEquipmentCatalogValues(fields, equipmentRow, valuesByFieldId) {
   return values
 }
 
-export async function listEquipmentCatalogForDepartment(orgId, departmentId) {
-  const equipment = await listEquipment(orgId, {
+export async function listEquipmentCatalogForDepartment(orgId, departmentId, { search = null, limit = 100, offset = 0 } = {}) {
+  const page = await listEquipment(orgId, {
     departmentId,
-    limit: 500,
-    offset: 0,
+    search,
+    limit,
+    offset,
   })
+  const equipment = page.items || []
 
   if (!equipment.length) {
-    return { equipment: [], has_assets: false }
+    return { equipment: [], has_assets: false, total: page.total || 0 }
   }
 
   const fields = await loadOrgFields(orgId)
@@ -282,6 +285,7 @@ export async function listEquipmentCatalogForDepartment(orgId, departmentId) {
         values,
       }
     }),
+    total: page.total || equipment.length,
   }
 }
 
@@ -348,13 +352,13 @@ export async function getWorkRequestFormContext(orgId, profileId, email, { isOrg
 }
 
 export async function listEquipmentForDepartment(orgId, departmentId, { search = null } = {}) {
-  const rows = await listEquipment(orgId, {
+  const page = await listEquipment(orgId, {
     departmentId,
     search,
-    limit: 200,
+    limit: 100,
     offset: 0,
   })
-  return rows
+  return page.items || []
 }
 
 function resolveInitialStatus(requestType, interApprovalRequired) {
@@ -934,6 +938,16 @@ export async function requestMoreInfo(orgId, profileId, workRequestId, message) 
   return enrichWorkRequest(updated)
 }
 
+const WR_LIST_SELECT = `
+  id, org_id, request_number, status, request_type, request_date, created_at, updated_at,
+  order_from_department_id, order_to_department_id, equipment_id, requested_by,
+  priority, problem_description, execution_status, manual_work_order_id,
+  order_from:departments!work_requests_order_from_department_id_fkey(id, name, code),
+  order_to:departments!work_requests_order_to_department_id_fkey(id, name, code),
+  equipment(id, name, code),
+  requester:profiles!work_requests_requested_by_fkey(id, full_name, email)
+`
+
 const WR_SELECT = `
   *,
   order_from:departments!work_requests_order_from_department_id_fkey(id, name, code),
@@ -949,7 +963,7 @@ export async function enrichWorkRequest(row) {
   return enriched ?? null
 }
 
-async function enrichWorkRequests(rows) {
+async function enrichWorkRequests(rows, { lean = false } = {}) {
   if (!rows?.length) return []
 
   const workRequestIds = rows.map((row) => row.id)
@@ -958,11 +972,13 @@ async function enrichWorkRequests(rows) {
   )]
 
   const [timelineResult, assigneeResult, woResult] = await Promise.all([
-    supabaseAdmin
-      .from('work_request_timeline')
-      .select('id, work_request_id, event_type, message, actor_id, metadata, created_at')
-      .in('work_request_id', workRequestIds)
-      .order('created_at', { ascending: true }),
+    lean
+      ? Promise.resolve({ data: [], error: null })
+      : supabaseAdmin
+        .from('work_request_timeline')
+        .select('id, work_request_id, event_type, message, actor_id, metadata, created_at')
+        .in('work_request_id', workRequestIds)
+        .order('created_at', { ascending: true }),
     manualWorkOrderIds.length
       ? supabaseAdmin
         .from('manual_work_order_assignees')
@@ -1023,12 +1039,19 @@ async function enrichWorkRequests(rows) {
   })
 }
 
-export async function listWorkRequests(orgId, filter, { profileId, departmentId } = {}) {
+export async function listWorkRequests(orgId, filter, {
+  profileId,
+  departmentId,
+  search = null,
+  limit = 50,
+  offset = 0,
+} = {}) {
   let query = supabaseAdmin
     .from('work_requests')
-    .select(WR_SELECT)
+    .select(WR_LIST_SELECT, { count: 'exact' })
     .eq('org_id', orgId)
     .order('request_date', { ascending: false })
+    .range(offset, offset + limit - 1)
 
   if (filter === 'my' && profileId) {
     query = query.eq('requested_by', profileId)
@@ -1037,12 +1060,13 @@ export async function listWorkRequests(orgId, filter, { profileId, departmentId 
   } else if (filter === 'incoming' && departmentId) {
     query = query.eq('order_to_department_id', departmentId)
   }
+  query = applyIlikeSearch(query, search, ['request_number', 'problem_description', 'status'])
 
-  const { data, error } = await query.limit(200)
+  const { data, error, count } = await query
   if (error) throw error
 
-  const rows = await enrichWorkRequests(data || [])
-  return rows
+  const rows = await enrichWorkRequests(data || [], { lean: true })
+  return listEnvelope(rows, { total: count || 0, limit, offset })
 }
 
 export async function getWorkRequestById(orgId, id) {

@@ -217,7 +217,7 @@ export async function bulkImportEquipment(orgId, buffer) {
         }
       }
 
-      await createEquipment(orgId, { ...placement, values })
+      await createEquipment(orgId, { ...placement, values }, { fields, skipDetail: true })
       results.created += 1
       if (results.preview.length < MAX_PREVIEW) {
         let label = ''

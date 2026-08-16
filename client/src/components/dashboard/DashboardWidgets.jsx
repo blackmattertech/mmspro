@@ -3,19 +3,32 @@ import { STATUS_COLORS, STATUS_LABELS, PRIORITY_COLORS } from '../../data/dashbo
 import { useOrg } from '../../hooks/useOrg'
 import { orgPath } from '../../config/navigation'
 
+function finiteNumber(value, fallback = 0) {
+  const n = Number(value)
+  return Number.isFinite(n) ? n : fallback
+}
+
+function statusLegendLabel(seg) {
+  if (STATUS_LABELS[seg.status]) return STATUS_LABELS[seg.status]
+  if (seg.priority) return seg.priority.charAt(0).toUpperCase() + seg.priority.slice(1)
+  if (seg.status) return String(seg.status).replace(/_/g, ' ')
+  return 'Unknown'
+}
+
 export function KpiCards({ stats }) {
-  const total = stats.total || 0
+  const total = finiteNumber(stats.total)
   const share = (n) => (total ? `${((n / total) * 100).toFixed(1)}% of total` : '0% of total')
-  const trendLabel = stats.trendPercent === 0
+  const trendPercent = finiteNumber(stats.trendPercent)
+  const trendLabel = trendPercent === 0
     ? 'No change vs prior 30 days'
-    : `${stats.trendPercent > 0 ? '+' : ''}${stats.trendPercent}% vs prior 30 days`
+    : `${trendPercent > 0 ? '+' : ''}${trendPercent}% vs prior 30 days`
 
   const cards = [
     {
       label: 'Total Work Orders',
       value: total.toLocaleString(),
       sub: trendLabel,
-      subClass: stats.trendPercent > 0 ? 'kpi-card__sub--green' : '',
+      subClass: trendPercent > 0 ? 'kpi-card__sub--green' : '',
       iconBg: 'kpi-card__icon--red',
       icon: (
         <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
@@ -94,9 +107,16 @@ export function DonutChart({ title, total, segments, filterLabel }) {
   const radius = 70
   const circumference = 2 * Math.PI * radius
   let offset = 0
+  const safeTotal = finiteNumber(total)
+  const legend = (segments || []).map((seg) => ({
+    ...seg,
+    count: finiteNumber(seg.count),
+    percent: finiteNumber(seg.percent),
+    label: statusLegendLabel(seg),
+  }))
 
-  const arcs = segments.filter((s) => s.count > 0).map((seg) => {
-    const pct = seg.count / (total || 1)
+  const arcs = legend.filter((s) => s.count > 0).map((seg) => {
+    const pct = seg.count / (safeTotal || 1)
     const dash = pct * circumference
     const arc = { ...seg, dash, offset, color: seg.color || STATUS_COLORS[seg.status] || PRIORITY_COLORS[seg.priority] }
     offset += dash
@@ -129,20 +149,18 @@ export function DonutChart({ title, total, segments, filterLabel }) {
             ))}
           </svg>
           <div className="donut-chart__center">
-            <span className="donut-chart__total">{(total || 0).toLocaleString()}</span>
+            <span className="donut-chart__total">{safeTotal.toLocaleString()}</span>
             <span className="donut-chart__label">Total</span>
           </div>
         </div>
         <div className="donut-chart__legend">
-          {(segments || []).map((seg) => (
+          {legend.map((seg) => (
             <div key={seg.status || seg.priority} className="donut-chart__legend-item">
               <span
                 className="donut-chart__dot"
                 style={{ background: seg.color || STATUS_COLORS[seg.status] || PRIORITY_COLORS[seg.priority] }}
               />
-              <span className="donut-chart__legend-label">
-                {STATUS_LABELS[seg.status] || seg.priority?.charAt(0).toUpperCase() + seg.priority?.slice(1)}
-              </span>
+              <span className="donut-chart__legend-label">{seg.label}</span>
               <span className="donut-chart__legend-value">{seg.count}</span>
               <span className="donut-chart__legend-pct">{seg.percent}%</span>
             </div>
@@ -207,7 +225,11 @@ export function TrendChart({ data, filterLabel }) {
 }
 
 export function LocationsBarChart({ data, filterLabel }) {
-  const max = Math.max(...(data || []).map((d) => d.count), 1)
+  const rows = (data || []).map((item) => ({
+    ...item,
+    count: Number.isFinite(Number(item.count)) ? Number(item.count) : 0,
+  }))
+  const max = Math.max(...rows.map((d) => d.count), 1)
 
   return (
     <div className="dash-card">
@@ -215,11 +237,11 @@ export function LocationsBarChart({ data, filterLabel }) {
         <h3 className="dash-card__title">Top 5 Locations by Work Orders</h3>
         <span className="dash-card__filter">{filterLabel}</span>
       </div>
-      {!data?.length ? (
+      {!rows.length ? (
         <p className="dash-empty">No location breakdown for the current filters.</p>
       ) : (
         <div className="bar-chart">
-          {data.map((item) => (
+          {rows.map((item) => (
             <div key={item.name} className="bar-chart__row">
               <span className="bar-chart__label">{item.name}</span>
               <div className="bar-chart__track">
@@ -342,46 +364,6 @@ export function CalendarWidget() {
           ))}
         </div>
       </div>
-    </div>
-  )
-}
-
-export function UpcomingTasks({ tasks }) {
-  const { org } = useOrg()
-  const viewAllPath = org ? orgPath(org.slug, 'work-orders/scheduled') : '#'
-
-  return (
-    <div className="dash-card">
-      <div className="dash-card__header">
-        <h3 className="dash-card__title">Upcoming Scheduled Tasks</h3>
-        <Link to={viewAllPath} className="dash-card__link">View All</Link>
-      </div>
-      {!tasks?.length ? (
-        <p className="dash-empty">No scheduled tasks yet.</p>
-      ) : (
-        <div className="upcoming-list">
-          {tasks.map((task) => (
-            <div key={task.id} className="upcoming-list__item">
-              <div className="upcoming-list__icon">
-                <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-                  <rect x="3" y="4" width="12" height="11" rx="1.5" stroke="currentColor" strokeWidth="1.5"/>
-                  <path d="M3 7.5H15M6 2.5V5M12 2.5V5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                </svg>
-              </div>
-              <div className="upcoming-list__content">
-                <span className="upcoming-list__title">{task.title}</span>
-                <span className="upcoming-list__location">{task.location}</span>
-                <span className="upcoming-list__time">{task.scheduled_at}</span>
-              </div>
-              {task.priority && (
-                <span className={`priority-badge priority-badge--${task.priority}`}>
-                  {task.priority.charAt(0).toUpperCase() + task.priority.slice(1)}
-                </span>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
     </div>
   )
 }

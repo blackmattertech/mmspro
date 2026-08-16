@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, useEffect, useCallback, useMemo, createElement, useRef } from 'react'
 import { useAuth } from './useAuth'
 import { getOrgCache, setOrgCache, clearOrgCache } from '../lib/orgCache'
-import { apiFetch } from '../lib/api'
+import { fetchSession, peekSession } from '../lib/session'
 
 const OrgContext = createContext(null)
 
@@ -10,12 +10,14 @@ const OrgContext = createContext(null)
  * instead of N× useOrg fetches + separate permissions call.
  */
 export function OrgProvider({ children }) {
-  const { user } = useAuth()
+  const { user, setAccountRole, bootstrapEpoch } = useAuth()
   const userId = user?.id ?? null
   const [org, setOrg] = useState(null)
   const [orgRole, setOrgRole] = useState(null)
   const [permissionSession, setPermissionSession] = useState(null)
-  const [loading, setLoading] = useState(true)
+  const [me, setMe] = useState(null)
+  const [fetching, setFetching] = useState(false)
+  const [bootstrappedUserId, setBootstrappedUserId] = useState(null)
   const [error, setError] = useState(null)
   const bootstrappedUserIdRef = useRef(null)
 
@@ -26,79 +28,101 @@ export function OrgProvider({ children }) {
     setOrg(nextOrg)
     setOrgRole(nextRole)
     setPermissionSession(nextPerms)
+    setMe({
+      profile: payload?.profile || null,
+      employee: payload?.employee || null,
+      avatarUrl: payload?.avatar_url || null,
+    })
+    setAccountRole?.(nextRole)
+    setBootstrappedUserId(uid || null)
+    bootstrappedUserIdRef.current = uid || null
     if (uid && nextOrg) {
       setOrgCache(uid, { org: nextOrg, orgRole: nextRole })
     }
-  }, [])
+  }, [setAccountRole])
 
   const load = useCallback(async ({ silent = false } = {}) => {
     if (!userId) {
       bootstrappedUserIdRef.current = null
+      setBootstrappedUserId(null)
       setOrg(null)
       setOrgRole(null)
       setPermissionSession(null)
-      setLoading(false)
+      setMe(null)
+      setAccountRole?.(null)
+      setFetching(false)
       setError(null)
       return
     }
 
-    const alreadyReady = bootstrappedUserIdRef.current === userId
-    const cached = getOrgCache(userId)
-    if (cached?.org) {
-      setOrg((prev) => prev ?? cached.org)
-      setOrgRole((prev) => prev ?? cached.orgRole)
+    const peeked = peekSession()
+    if (peeked?.org) {
+      applyBootstrap(userId, peeked)
+    } else {
+      const cached = getOrgCache(userId)
+      if (cached?.org) {
+        setOrg((prev) => prev ?? cached.org)
+        setOrgRole((prev) => prev ?? cached.orgRole)
+      }
     }
 
-    // Only gate the UI on the first bootstrap for this user.
-    // Silent/same-user refreshes must not unmount open forms/modals.
-    if (!silent && !alreadyReady) {
-      setLoading(true)
-    }
+    if (!silent) setFetching(true)
 
     setError(null)
     try {
-      const data = await apiFetch('/api/session')
+      const data = await fetchSession()
       applyBootstrap(userId, data)
-      bootstrappedUserIdRef.current = userId
     } catch (err) {
       console.error('[OrgProvider] session bootstrap failed:', err.message)
       setError(err.message)
-      // Keep cached org if API fails so routing still works
       const fallback = getOrgCache(userId)
       if (fallback?.org) {
         setOrg(fallback.org)
         setOrgRole(fallback.orgRole)
+        setBootstrappedUserId(userId)
         bootstrappedUserIdRef.current = userId
       } else {
         setOrg(null)
         setOrgRole(null)
-        bootstrappedUserIdRef.current = null
+        setBootstrappedUserId(userId)
+        bootstrappedUserIdRef.current = userId
       }
       setPermissionSession(null)
     } finally {
-      setLoading(false)
+      setFetching(false)
     }
-  }, [userId, applyBootstrap])
+  }, [userId, applyBootstrap, bootstrapEpoch])
+
+  useEffect(() => {
+    if (bootstrapEpoch === 0) return
+    bootstrappedUserIdRef.current = null
+    setBootstrappedUserId(null)
+  }, [bootstrapEpoch])
 
   useEffect(() => {
     load()
   }, [load])
 
+  const loading = Boolean(userId) && (fetching || bootstrappedUserId !== userId)
+
   const value = useMemo(() => ({
     org,
     orgRole,
     permissionSession,
+    me,
     loading,
     error,
     reload: (opts) => load({ silent: true, ...opts }),
     clear: () => {
       bootstrappedUserIdRef.current = null
+      setBootstrappedUserId(null)
       clearOrgCache()
       setOrg(null)
       setOrgRole(null)
       setPermissionSession(null)
+      setMe(null)
     },
-  }), [org, orgRole, permissionSession, loading, error, load])
+  }), [org, orgRole, permissionSession, me, loading, error, load])
 
   return createElement(OrgContext.Provider, { value }, children)
 }

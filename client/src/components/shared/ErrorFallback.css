@@ -31,6 +31,27 @@
   gap: 10px;
 }
 
+.error-fallback__actions button {
+  height: 40px;
+  padding: 0 20px;
+  font-size: 14px;
+  font-weight: 600;
+  font-family: inherit;
+  border: none;
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+}
+
+.error-fallback__actions .company-btn--primary {
+  color: var(--color-white);
+  background: var(--color-primary);
+}
+
+.error-fallback__actions .company-btn--secondary {
+  color: var(--color-dark-navy);
+  background: var(--color-light-gray-1);
+}
+
 .error-fallback__details {
   margin-top: 16px;
   font-size: 12px;

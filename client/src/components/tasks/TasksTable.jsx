@@ -40,6 +40,9 @@ function visibilityLabel(value) {
 
 export default function TasksTable({
   tasks,
+  totalCount,
+  pagination: paginationProp,
+  serverPaged = false,
   canManage,
   onDelete,
   deleting,
@@ -55,8 +58,9 @@ export default function TasksTable({
     columnDefs,
   } = useTableColumnPrefs('tasks-manager', TASK_COLUMNS)
 
-  const pagination = useTablePagination(tasks.length, { resetKey: paginationResetKey })
-  const pagedTasks = pagination.paginate(tasks)
+  const localPagination = useTablePagination(totalCount ?? tasks.length, { resetKey: paginationResetKey })
+  const pagination = paginationProp || localPagination
+  const pagedTasks = serverPaged || paginationProp ? tasks : pagination.paginate(tasks)
 
   const openView = (task) => {
     if (!org?.slug || !task?.id) return

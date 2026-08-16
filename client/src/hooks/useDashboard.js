@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useOrg } from './useOrg'
-import { useLocations } from './useLocations'
 import { usePermissions } from './usePermissions'
 import { getDashboardWorkOrders } from '../lib/api-work-orders'
 import { orgPath } from '../config/navigation'
@@ -24,13 +23,13 @@ const EMPTY_STATS = {
 export const useDashboard = () => {
   const navigate = useNavigate()
   const { org } = useOrg()
-  const { locations: orgLocations } = useLocations()
-  const { isOrgAdmin, locationId: scopedLocationId, canCreate } = usePermissions()
+  const { isOrgAdmin, locationId: scopedLocationId, canCreate, loading: permLoading } = usePermissions()
 
   const canSeeAllLocations = isOrgAdmin
   const userLocationId = scopedLocationId || null
 
   const [workOrders, setWorkOrders] = useState([])
+  const [locations, setLocations] = useState([])
   const [stats, setStats] = useState(EMPTY_STATS)
   const [statusBreakdown, setStatusBreakdown] = useState([])
   const [locationBreakdown, setLocationBreakdown] = useState([])
@@ -41,45 +40,52 @@ export const useDashboard = () => {
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
 
-  const locations = useMemo(
-    () => (orgLocations || []).filter((loc) => loc.is_active !== false),
-    [orgLocations],
-  )
-
   const filterLocations = useMemo(() => {
     if (canSeeAllLocations) return locations
     if (!userLocationId) return []
     return locations.filter((loc) => loc.id === userLocationId)
   }, [canSeeAllLocations, locations, userLocationId])
 
+  const fetchLocationId = canSeeAllLocations ? locationFilter : (userLocationId || locationFilter)
+
   useEffect(() => {
     if (!canSeeAllLocations) {
-      if (userLocationId) setLocationFilter(userLocationId)
+      if (userLocationId && locationFilter !== userLocationId) setLocationFilter(userLocationId)
       return
     }
-    if (locationFilter !== 'all' && !locations.some((loc) => loc.id === locationFilter)) {
+    if (locationFilter !== 'all' && locations.length && !locations.some((loc) => loc.id === locationFilter)) {
       setLocationFilter('all')
     }
   }, [canSeeAllLocations, userLocationId, locations, locationFilter])
 
   const fetchData = useCallback(async () => {
+    if (permLoading) return
     setLoading(true)
     setError(null)
     try {
-      const locationId = canSeeAllLocations ? locationFilter : (userLocationId || locationFilter)
       const data = await getDashboardWorkOrders({
-        locationId,
+        locationId: fetchLocationId,
         dateFrom: dateFrom || undefined,
         dateTo: dateTo || undefined,
       })
       const recent = Array.isArray(data?.recent_orders)
         ? data.recent_orders
         : (Array.isArray(data?.work_orders) ? data.work_orders : [])
+      const nextStats = {
+        ...EMPTY_STATS,
+        ...(data?.stats && typeof data.stats === 'object' ? data.stats : {}),
+      }
+      for (const key of Object.keys(EMPTY_STATS)) {
+        if (EMPTY_STATS[key] === null) continue
+        const n = Number(nextStats[key])
+        nextStats[key] = Number.isFinite(n) ? n : 0
+      }
       setWorkOrders(recent)
-      setStats(data?.stats && typeof data.stats === 'object' ? { ...EMPTY_STATS, ...data.stats } : EMPTY_STATS)
+      setStats(nextStats)
       setStatusBreakdown(Array.isArray(data?.status_breakdown) ? data.status_breakdown : [])
       setLocationBreakdown(Array.isArray(data?.location_breakdown) ? data.location_breakdown : [])
       setTrendData(Array.isArray(data?.trend_data) ? data.trend_data : [])
+      if (Array.isArray(data?.locations)) setLocations(data.locations)
     } catch (err) {
       setWorkOrders([])
       setStats(EMPTY_STATS)
@@ -90,11 +96,12 @@ export const useDashboard = () => {
     } finally {
       setLoading(false)
     }
-  }, [canSeeAllLocations, locationFilter, userLocationId, dateFrom, dateTo])
+  }, [permLoading, fetchLocationId, dateFrom, dateTo])
 
   useEffect(() => {
+    if (permLoading) return
     fetchData()
-  }, [fetchData])
+  }, [permLoading, fetchData])
 
   const createWorkOrder = async () => {
     if (!org?.slug) return { data: null, error: { message: 'No organization found' } }
@@ -113,7 +120,6 @@ export const useDashboard = () => {
     canSeeAllLocations,
     workOrders,
     recentOrders: workOrders.slice(0, 5),
-    upcomingTasks: [],
     trendData,
     locationBreakdown,
     plantBreakdown: locationBreakdown,

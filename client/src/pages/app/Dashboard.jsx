@@ -7,7 +7,6 @@ import {
   LocationsBarChart,
   RecentWorkOrders,
   CalendarWidget,
-  UpcomingTasks,
 } from '../../components/dashboard/DashboardWidgets'
 import './Dashboard.css'
 
@@ -18,7 +17,6 @@ export default function Dashboard() {
     locations,
     canSeeAllLocations,
     recentOrders,
-    upcomingTasks,
     trendData,
     locationBreakdown,
     statusBreakdown,
@@ -31,14 +29,6 @@ export default function Dashboard() {
     setDateTo,
     createWorkOrder,
   } = useDashboard()
-
-  if (loading) {
-    return (
-      <div className="dashboard dashboard--loading">
-        <p>Loading dashboard...</p>
-      </div>
-    )
-  }
 
   const locationFilterLabel = canSeeAllLocations && locationFilter === 'all'
     ? 'All Locations'
@@ -58,31 +48,33 @@ export default function Dashboard() {
         onCreateWorkOrder={createWorkOrder}
       />
 
-      <div className="dashboard__content">
-        {error && <div className="company-alert" role="alert">{error}</div>}
-
-        <KpiCards stats={stats} />
-
-        <div className="dashboard__row dashboard__row--2">
-          <DonutChart
-            title="Work Orders by Status"
-            total={stats.total}
-            segments={statusBreakdown}
-            filterLabel={locationFilterLabel}
-          />
-          <TrendChart data={trendData} filterLabel="Last 7 Days" />
+      {loading ? (
+        <div className="dashboard--loading">
+          <p>Loading dashboard...</p>
         </div>
+      ) : (
+        <div className="dashboard__content">
+          {error && <div className="company-alert" role="alert">{error}</div>}
 
-        <div className="dashboard__row dashboard__row--3">
-          <LocationsBarChart data={locationBreakdown} filterLabel="Current filters" />
-          <RecentWorkOrders orders={recentOrders} />
-          <CalendarWidget />
-        </div>
+          <KpiCards stats={stats} />
 
-        <div className="dashboard__row dashboard__row--2">
-          <UpcomingTasks tasks={upcomingTasks} />
+          <div className="dashboard__row dashboard__row--2">
+            <DonutChart
+              title="Work Orders by Status"
+              total={stats.total}
+              segments={statusBreakdown}
+              filterLabel={locationFilterLabel}
+            />
+            <TrendChart data={trendData} filterLabel="Last 7 Days" />
+          </div>
+
+          <div className="dashboard__row dashboard__row--3">
+            <LocationsBarChart data={locationBreakdown} filterLabel="Current filters" />
+            <RecentWorkOrders orders={recentOrders} />
+            <CalendarWidget />
+          </div>
         </div>
-      </div>
+      )}
     </div>
   )
 }

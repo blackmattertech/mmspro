@@ -1,7 +1,6 @@
 import { useNavigate } from 'react-router-dom'
 import { useOrg } from '../../hooks/useOrg'
 import { orgPath } from '../../config/navigation'
-import '../../components/company/CompanyShared.css'
 import './ErrorFallback.css'
 
 export default function ErrorFallback({ error, onRetry, variant = 'app' }) {

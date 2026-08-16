@@ -1,4 +1,5 @@
 import { apiFetch } from './api'
+import { asListArray } from './listResponse'
 
 export function workRequestsFetch(path, options = {}) {
   return apiFetch(`/api/work-requests${path}`, options)
@@ -8,8 +9,10 @@ export function getWorkRequestFormContext() {
   return workRequestsFetch('/form')
 }
 
-export function getWorkRequestEquipmentCatalog(departmentId) {
+export function getWorkRequestEquipmentCatalog(departmentId, { search, limit } = {}) {
   const qs = new URLSearchParams({ department_id: departmentId })
+  if (search) qs.set('search', search)
+  if (limit) qs.set('limit', String(limit))
   return workRequestsFetch(`/equipment-catalog?${qs}`)
 }
 
@@ -26,9 +29,13 @@ export function createWorkRequest(body) {
   })
 }
 
-export function listWorkRequests(filter) {
+export async function listWorkRequests(filter, { search, limit = 50, offset = 0 } = {}) {
   const qs = new URLSearchParams({ filter })
-  return workRequestsFetch(`/?${qs}`)
+  if (search) qs.set('search', search)
+  qs.set('limit', String(limit))
+  qs.set('offset', String(offset))
+  const data = await workRequestsFetch(`/?${qs}`)
+  return asListArray(data)
 }
 
 export function getWorkRequest(id) {

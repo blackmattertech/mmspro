@@ -1,8 +1,9 @@
-import { useMemo, useState, useRef } from 'react'
+import { useEffect, useMemo, useState, useRef } from 'react'
 import { usePermissions } from '../../hooks/usePermissions'
 import { useAreas } from '../../hooks/useAreas'
 import { useLocations } from '../../hooks/useLocations'
 import { useDepartments } from '../../hooks/useDepartments'
+import { useDebouncedValue } from '../../hooks/useDebouncedValue'
 import { getAreasTemplate, bulkUploadAreas } from '../../lib/api'
 import NavIcon from '../layout/NavIcon'
 import GooToggle from '../ui/GooToggle'
@@ -58,14 +59,22 @@ export default function AreasTab({ canManage }) {
   const [filterField, setFilterField] = useState('')
   const [filterValue, setFilterValue] = useState('')
   const [sortBy, setSortBy] = useState('name_asc')
+  const debouncedSearch = useDebouncedValue(search.trim())
 
   const scopedLocationId = canSelectAnyLocation ? undefined : (myLocationId || undefined)
 
   const { locations } = useLocations()
   const { departments } = useDepartments(scopedLocationId)
-  const { areas, loading, saving, error, create, update, remove, toggleActive, reload } = useAreas({
+  const [listTotal, setListTotal] = useState(0)
+  const paginationResetKey = `${debouncedSearch}|${filterField}|${filterValue}|${sortBy}|${scopedLocationId || ''}`
+  const pagination = useTablePagination(listTotal, { resetKey: paginationResetKey })
+  const { areas, total, loading, saving, error, create, update, remove, toggleActive, reload } = useAreas({
     locationId: scopedLocationId,
+    search: debouncedSearch,
+    limit: pagination.pageSize,
+    offset: pagination.offset,
   })
+  useEffect(() => { setListTotal(total) }, [total])
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState(null)
   const [viewing, setViewing] = useState(null)
@@ -79,8 +88,6 @@ export default function AreasTab({ canManage }) {
   const activeDepartments = departments.filter((d) => d.is_active !== false)
 
   const filteredAreas = useMemo(() => applyTableFilters(areas, {
-    search,
-    searchHaystack: areaSearchHaystack,
     fieldFilter: { field: filterField, value: filterValue },
     fieldFilterGetters: {
       name: (area) => area.name,
@@ -92,11 +99,9 @@ export default function AreasTab({ canManage }) {
     sortBy,
     getName: (area) => area.name,
     getCreatedAt: (area) => area.created_at,
-  }), [areas, search, filterField, filterValue, sortBy])
+  }), [areas, filterField, filterValue, sortBy])
 
-  const paginationResetKey = `${search}|${filterField}|${filterValue}|${sortBy}`
-  const pagination = useTablePagination(filteredAreas.length, { resetKey: paginationResetKey })
-  const pagedAreas = pagination.paginate(filteredAreas)
+  const pagedAreas = filteredAreas
   const areaColumnDefs = useMemo(() => {
     const cols = [
       { id: 'name', label: 'Name' },
@@ -347,16 +352,7 @@ export default function AreasTab({ canManage }) {
               ))}
             </tbody>
           </table>
-          <TablePagination
-            page={pagination.page}
-            totalPages={pagination.totalPages}
-            pageSize={pagination.pageSize}
-            pageSizeOptions={pagination.pageSizeOptions}
-            totalCount={filteredAreas.length}
-            rangeStart={pagination.rangeStart}
-            rangeEnd={pagination.rangeEnd}
-            onPageChange={pagination.setPage}
-            onPageSizeChange={pagination.setPageSize}
+          <TablePagination {...pagination} />
           />
           </div>
         </div>

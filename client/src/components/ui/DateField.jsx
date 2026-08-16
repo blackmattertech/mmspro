@@ -1,7 +1,8 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import TimeField from './TimeField'
 import './DateField.css'
+
+const TimeField = lazy(() => import('./TimeField'))
 
 const WEEKDAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
 const MONTH_LABELS = [
@@ -228,15 +229,17 @@ export default function DateField({
         {withTime && (
           <div className="date-field__time">
             <span className="date-field__time-label">Time</span>
-            <TimeField
-              value={parsed?.time || ''}
-              onChange={(time) => {
-                const base = parsed || {
-                  y: now.getFullYear(), m: now.getMonth(), d: now.getDate(),
-                }
-                emit(base.y, base.m, base.d, time)
-              }}
-            />
+            <Suspense fallback={null}>
+              <TimeField
+                value={parsed?.time || ''}
+                onChange={(time) => {
+                  const base = parsed || {
+                    y: now.getFullYear(), m: now.getMonth(), d: now.getDate(),
+                  }
+                  emit(base.y, base.m, base.d, time)
+                }}
+              />
+            </Suspense>
           </div>
         )}
 

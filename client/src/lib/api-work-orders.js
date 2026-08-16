@@ -1,4 +1,5 @@
 import { apiFetch } from './api'
+import { asListArray, listQueryParams } from './listResponse'
 
 export function workOrdersFetch(path, options = {}) {
   return apiFetch(`/api/work-orders${path}`, options)
@@ -72,16 +73,18 @@ export function deleteManualWorkOrder(workOrderId) {
   return workOrdersFetch(`/manual/${workOrderId}`, { method: 'DELETE' })
 }
 
-export function getReceivedWorkOrders() {
-  return workOrdersFetch('/received')
+export async function getReceivedWorkOrders({ search, limit = 50, offset = 0 } = {}) {
+  const data = await workOrdersFetch(`/received${listQueryParams({ search, limit, offset })}`)
+  return asListArray(data)
 }
 
 export function getReceivedWorkOrder(id) {
   return workOrdersFetch(`/received/${id}`)
 }
 
-export function getAssignedWorkOrders() {
-  return workOrdersFetch('/assigned')
+export async function getAssignedWorkOrders({ search, limit = 50, offset = 0 } = {}) {
+  const data = await workOrdersFetch(`/assigned${listQueryParams({ search, limit, offset })}`)
+  return asListArray(data)
 }
 
 export function getAssignedWorkOrder(id) {
@@ -92,8 +95,9 @@ export function getScheduledWorkOrders() {
   return workOrdersFetch('/scheduled')
 }
 
-export function getManualWorkOrders() {
-  return workOrdersFetch('/manual/orders')
+export async function getManualWorkOrders({ search, limit = 50, offset = 0 } = {}) {
+  const data = await workOrdersFetch(`/manual/orders${listQueryParams({ search, limit, offset })}`)
+  return asListArray(data)
 }
 
 export function getManualWorkOrder(id) {
@@ -118,11 +122,20 @@ export function getWorkOrderCounts() {
   return workOrdersFetch('/counts')
 }
 
+const dashboardInflight = new Map()
+
 export function getDashboardWorkOrders({ locationId, dateFrom, dateTo } = {}) {
   const params = new URLSearchParams()
   if (locationId && locationId !== 'all') params.set('location_id', locationId)
   if (dateFrom) params.set('date_from', dateFrom)
   if (dateTo) params.set('date_to', dateTo)
   const qs = params.toString()
-  return workOrdersFetch(`/dashboard${qs ? `?${qs}` : ''}`)
+  const key = qs || 'all'
+  const existing = dashboardInflight.get(key)
+  if (existing) return existing
+  const request = workOrdersFetch(`/dashboard${qs ? `?${qs}` : ''}`).finally(() => {
+    dashboardInflight.delete(key)
+  })
+  dashboardInflight.set(key, request)
+  return request
 }

@@ -1,105 +1,76 @@
-import { useState, useEffect, useCallback, createContext, useContext, useRef, useMemo } from 'react'
+import { useState, useEffect, useCallback, createContext, useContext, useMemo } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   requestNotificationPermission,
   onForegroundMessage,
   isFirebaseConfigured,
+  isVapidConfigured,
 } from '../lib/firebase'
-import { supabase, isSupabaseConfigured } from '../lib/supabase'
 import { useAuth } from './useAuth'
-
-const STORAGE_KEY = 'mmspro-notifications'
+import {
+  listNotifications,
+  markAllNotificationsRead,
+  markNotificationRead,
+  savePushToken,
+} from '../lib/api-notifications'
 
 const NotificationContext = createContext(null)
 
-function loadStoredNotifications() {
-  try {
-    const raw = sessionStorage.getItem(STORAGE_KEY)
-    if (!raw) return []
-    return JSON.parse(raw).map((n) => ({ ...n, time: new Date(n.time) }))
-  } catch {
-    return []
-  }
-}
-
-function saveNotifications(items) {
-  try {
-    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(items))
-  } catch {
-    // ignore
-  }
+function mapItems(items) {
+  return (items || []).map((item) => ({
+    ...item,
+    time: item.time ? new Date(item.time) : new Date(),
+    read: Boolean(item.read),
+  }))
 }
 
 export function NotificationsProvider({ children }) {
   const { user } = useAuth()
+  const navigate = useNavigate()
   const [permission, setPermission] = useState(
     typeof Notification !== 'undefined' ? Notification.permission : 'default'
   )
   const [token, setToken] = useState(null)
   const [error, setError] = useState(null)
-  const [notifications, setNotifications] = useState(loadStoredNotifications)
-  const idRef = useRef(0)
+  const [notifications, setNotifications] = useState([])
+  const [pushConfigured, setPushConfigured] = useState(false)
+  const [inboxReady, setInboxReady] = useState(true)
 
-  const addNotification = useCallback((payload) => {
-    const title = payload.notification?.title || payload.data?.title || 'MMS PRO'
-    const body = payload.notification?.body || payload.data?.body || ''
-    const url = payload.fcmOptions?.link || payload.data?.url || null
-
-    const item = {
-      id: `n-${Date.now()}-${idRef.current++}`,
-      title,
-      body,
-      url,
-      time: new Date(),
-      read: false,
+  const loadFeed = useCallback(async () => {
+    if (!user) {
+      setNotifications([])
+      return
     }
-
-    setNotifications((prev) => {
-      const next = [item, ...prev].slice(0, 50)
-      saveNotifications(next)
-      return next
-    })
-
-    return item
-  }, [])
-
-  const unreadCount = notifications.filter((n) => !n.read).length
-
-  const markAllRead = useCallback(() => {
-    setNotifications((prev) => {
-      const next = prev.map((n) => ({ ...n, read: true }))
-      saveNotifications(next)
-      return next
-    })
-  }, [])
-
-  const markRead = useCallback((id) => {
-    setNotifications((prev) => {
-      const next = prev.map((n) => (n.id === id ? { ...n, read: true } : n))
-      saveNotifications(next)
-      return next
-    })
-  }, [])
+    try {
+      const data = await listNotifications()
+      setNotifications(mapItems(data?.items))
+      setPushConfigured(Boolean(data?.push_configured))
+      setInboxReady(data?.inbox_ready !== false)
+    } catch (err) {
+      console.warn('Failed to load notifications:', err.message)
+    }
+  }, [user])
 
   const registerToken = useCallback(async () => {
-    if (!isFirebaseConfigured || !isSupabaseConfigured || !supabase || !user) return null
+    if (!user) return null
+    if (!isFirebaseConfigured) {
+      setError('Push notifications are not configured in this environment.')
+      return null
+    }
 
     try {
       setError(null)
       const fcmToken = await requestNotificationPermission()
+      setPermission(typeof Notification !== 'undefined' ? Notification.permission : 'default')
       if (!fcmToken) {
-        setPermission(typeof Notification !== 'undefined' ? Notification.permission : 'default')
+        if (typeof Notification !== 'undefined' && Notification.permission === 'denied') {
+          setError('Notifications are blocked in this browser. Enable them in site settings.')
+        }
         return null
       }
 
-      setPermission('granted')
       setToken(fcmToken)
-
-      const { error: saveError } = await supabase.from('fcm_tokens').upsert(
-        { user_id: user.id, token: fcmToken },
-        { onConflict: 'token' }
-      )
-
-      if (saveError) throw saveError
+      await savePushToken(fcmToken)
       return fcmToken
     } catch (err) {
       setError(err.message || 'Failed to register for notifications')
@@ -108,28 +79,74 @@ export function NotificationsProvider({ children }) {
   }, [user])
 
   useEffect(() => {
-    if (!user || !isFirebaseConfigured) return
-
-    const unsub = onForegroundMessage((payload) => {
-      const item = addNotification(payload)
-      const title = item.title
-      const body = item.body
-
-      if (Notification.permission === 'granted') {
-        new Notification(title, {
-          body,
-          icon: '/favicon.svg',
-        })
-      }
-    })
-
-    return () => unsub()
-  }, [user, addNotification])
+    loadFeed()
+  }, [loadFeed])
 
   useEffect(() => {
-    if (!user || !isFirebaseConfigured) return
+    if (!user) return undefined
+    const timer = setInterval(() => { loadFeed() }, 45000)
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') loadFeed()
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      clearInterval(timer)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
+  }, [user, loadFeed])
+
+  useEffect(() => {
+    if (!user || !isFirebaseConfigured) return undefined
+    if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return undefined
     registerToken()
+    return undefined
   }, [user, registerToken])
+
+  useEffect(() => {
+    if (!user || !isFirebaseConfigured) return undefined
+    const unsub = onForegroundMessage(() => {
+      loadFeed()
+    })
+    return () => unsub()
+  }, [user, loadFeed])
+
+  useEffect(() => {
+    if (!user || typeof navigator === 'undefined' || !navigator.serviceWorker) return undefined
+    const onMessage = (event) => {
+      if (event.data?.type === 'mmspro-notification') loadFeed()
+      if (event.data?.type === 'mmspro-notification-click') {
+        const url = event.data.url
+        if (!url || url === '/') return
+        if (url.startsWith('http')) window.location.href = url
+        else navigate(url)
+      }
+    }
+    navigator.serviceWorker.addEventListener('message', onMessage)
+    return () => navigator.serviceWorker.removeEventListener('message', onMessage)
+  }, [user, loadFeed, navigate])
+
+  const unreadCount = notifications.filter((item) => !item.read).length
+
+  const markAllRead = useCallback(async () => {
+    setNotifications((prev) => prev.map((item) => ({ ...item, read: true })))
+    try {
+      await markAllNotificationsRead()
+    } catch (err) {
+      console.warn('Failed to mark notifications read:', err.message)
+      loadFeed()
+    }
+  }, [loadFeed])
+
+  const markRead = useCallback(async (id) => {
+    setNotifications((prev) => prev.map((item) => (
+      item.id === id ? { ...item, read: true } : item
+    )))
+    try {
+      await markNotificationRead(id)
+    } catch (err) {
+      console.warn('Failed to mark notification read:', err.message)
+    }
+  }, [])
 
   const value = useMemo(() => ({
     permission,
@@ -138,20 +155,25 @@ export function NotificationsProvider({ children }) {
     notifications,
     unreadCount,
     isConfigured: isFirebaseConfigured,
+    vapidConfigured: isVapidConfigured,
+    pushConfigured,
+    inboxReady,
     registerToken,
     markAllRead,
     markRead,
-    addNotification,
+    reload: loadFeed,
   }), [
     permission,
     token,
     error,
     notifications,
     unreadCount,
+    pushConfigured,
+    inboxReady,
     registerToken,
     markAllRead,
     markRead,
-    addNotification,
+    loadFeed,
   ])
 
   return (

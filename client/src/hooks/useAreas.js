@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback } from 'react'
 import { getAreas, createArea, updateArea, deleteArea } from '../lib/api'
 
-export function useAreas({ locationId, departmentId } = {}) {
+export function useAreas({ locationId, departmentId, search, limit = 200, offset = 0 } = {}) {
   const [areas, setAreas] = useState([])
+  const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
@@ -11,14 +12,15 @@ export function useAreas({ locationId, departmentId } = {}) {
     if (!silent) setLoading(true)
     setError(null)
     try {
-      const data = await getAreas({ locationId, departmentId })
+      const data = await getAreas({ locationId, departmentId, search, limit, offset })
       setAreas(data)
+      setTotal(data.total ?? data.length)
     } catch (err) {
       setError(err.message)
     } finally {
       if (!silent) setLoading(false)
     }
-  }, [locationId, departmentId])
+  }, [locationId, departmentId, search, limit, offset])
 
   useEffect(() => {
     load()
@@ -79,5 +81,5 @@ export function useAreas({ locationId, departmentId } = {}) {
     }
   }
 
-  return { areas, loading, saving, error, create, update, remove, toggleActive, reload: load }
+  return { areas, total, loading, saving, error, create, update, remove, toggleActive, reload: load }
 }

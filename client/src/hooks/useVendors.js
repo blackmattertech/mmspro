@@ -9,6 +9,7 @@ import {
 
 export function useVendors(filters = {}) {
   const [items, setItems] = useState([])
+  const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
@@ -19,12 +20,13 @@ export function useVendors(filters = {}) {
     try {
       const data = await getVendorsList(filters)
       setItems(data)
+      setTotal(data.total ?? data.length)
     } catch (err) {
       setError(err.message)
     } finally {
       if (!silent) setLoading(false)
     }
-  }, [filters.search])
+  }, [filters.search, filters.limit, filters.offset])
 
   useEffect(() => {
     load()
@@ -76,5 +78,5 @@ export function useVendors(filters = {}) {
 
   const loadOne = (id) => getVendor(id)
 
-  return { items, loading, saving, error, create, update, remove, loadOne, reload: load }
+  return { items, total, loading, saving, error, create, update, remove, loadOne, reload: load }
 }

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useOrg } from '../../hooks/useOrg'
 import { useVendors } from '../../hooks/useVendors'
@@ -104,9 +104,17 @@ export default function Vendors() {
   const debouncedSearch = useDebouncedValue(search.trim())
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState(null)
+  const [listTotal, setListTotal] = useState(0)
+  const filterResetKey = `${debouncedSearch}|${filterField}|${filterValue}|${sortBy}`
+  const pagination = useTablePagination(listTotal, { resetKey: filterResetKey })
 
-  const filters = useMemo(() => ({ search: debouncedSearch || undefined }), [debouncedSearch])
-  const { items, loading, saving, error, create, update, remove } = useVendors(filters)
+  const filters = useMemo(() => ({
+    search: debouncedSearch || undefined,
+    limit: pagination.pageSize,
+    offset: pagination.offset,
+  }), [debouncedSearch, pagination.pageSize, pagination.offset])
+  const { items, total, loading, saving, error, create, update, remove } = useVendors(filters)
+  useEffect(() => { setListTotal(total) }, [total])
 
   const filteredItems = useMemo(() => applyTableFilters(items, {
     fieldFilter: { field: filterField, value: filterValue },
@@ -124,9 +132,7 @@ export default function Vendors() {
     getCreatedAt: (row) => row.created_at,
   }), [items, filterField, filterValue, sortBy])
 
-  const filterResetKey = `${debouncedSearch}|${filterField}|${filterValue}|${sortBy}`
-  const pagination = useTablePagination(filteredItems.length, { resetKey: filterResetKey })
-  const pagedItems = pagination.paginate(filteredItems)
+  const pagedItems = filteredItems
   const {
     isVisible: isVendorColumnVisible,
     toggleColumn: toggleVendorColumn,

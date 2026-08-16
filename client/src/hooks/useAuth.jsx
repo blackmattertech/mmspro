@@ -3,6 +3,7 @@ import { clearLocalSupabaseAuthStorage, readRememberMe, writeRememberMe, writeSa
 import { supabase, isSupabaseConfigured } from '../lib/supabase'
 import { syncAccessToken, clearAccessTokenCache, clearCompanyDetailsCache } from '../lib/api'
 import { clearOrgCache } from '../lib/orgCache'
+import { clearSessionCache } from '../lib/session'
 
 const AuthContext = createContext(null)
 
@@ -16,16 +17,11 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null)
   const [role, setRole] = useState(null)
   const [loading, setLoading] = useState(isSupabaseConfigured)
+  const [bootstrapEpoch, setBootstrapEpoch] = useState(0)
   const userIdRef = useRef(null)
 
-  const fetchRole = useCallback(async (userId) => {
-    const { data } = await supabase
-      .from('profiles')
-      .select('role')
-      .eq('id', userId)
-      .maybeSingle()
-    setRole(data?.role ?? 'user')
-    setLoading(false)
+  const setAccountRole = useCallback((nextRole) => {
+    setRole(nextRole ?? null)
   }, [])
 
   const clearSessionState = useCallback(() => {
@@ -33,9 +29,11 @@ export const AuthProvider = ({ children }) => {
     clearAccessTokenCache()
     clearCompanyDetailsCache()
     clearOrgCache()
+    clearSessionCache()
     setUser(null)
     setRole(null)
     setLoading(false)
+    setBootstrapEpoch((value) => value + 1)
   }, [])
 
   useEffect(() => {
@@ -61,7 +59,7 @@ export const AuthProvider = ({ children }) => {
 
       userIdRef.current = nextId
       setUser(nextUser)
-      if (nextUser) fetchRole(nextUser.id)
+      if (nextUser) setLoading(false)
       else clearSessionState()
     }
 
@@ -75,7 +73,7 @@ export const AuthProvider = ({ children }) => {
     })
 
     return () => subscription.unsubscribe()
-  }, [fetchRole, clearSessionState])
+  }, [clearSessionState])
 
   const applySession = useCallback(async (session) => {
     syncAccessToken(session)
@@ -83,15 +81,17 @@ export const AuthProvider = ({ children }) => {
     userIdRef.current = nextUser?.id ?? null
     setUser(nextUser)
     if (nextUser) {
-      setLoading(true)
-      await fetchRole(nextUser.id)
+      setLoading(false)
+      setBootstrapEpoch((value) => value + 1)
     } else {
       clearOrgCache()
       clearCompanyDetailsCache()
+      clearSessionCache()
       setRole(null)
       setLoading(false)
+      setBootstrapEpoch((value) => value + 1)
     }
-  }, [fetchRole])
+  }, [])
 
   const signIn = useCallback(async (email, password, options = {}) => {
     if (!isSupabaseConfigured || !supabase) return AUTH_UNAVAILABLE
@@ -105,6 +105,7 @@ export const AuthProvider = ({ children }) => {
     clearAccessTokenCache()
     clearCompanyDetailsCache()
     clearOrgCache()
+    clearSessionCache()
     const result = await supabase.auth.signInWithPassword({ email, password })
     if (result.data?.session) await applySession(result.data.session)
     return result
@@ -115,6 +116,7 @@ export const AuthProvider = ({ children }) => {
     clearAccessTokenCache()
     clearCompanyDetailsCache()
     clearOrgCache()
+    clearSessionCache()
     const result = await supabase.auth.signUp({ email, password })
     if (result.data?.session) await applySession(result.data.session)
     return result
@@ -124,6 +126,7 @@ export const AuthProvider = ({ children }) => {
     clearAccessTokenCache()
     clearCompanyDetailsCache()
     clearOrgCache()
+    clearSessionCache()
     if (!isSupabaseConfigured || !supabase) {
       userIdRef.current = null
       setUser(null)
@@ -136,8 +139,8 @@ export const AuthProvider = ({ children }) => {
   }, [applySession])
 
   const value = useMemo(
-    () => ({ user, role, loading, isSupabaseConfigured, signIn, signUp, signOut }),
-    [user, role, loading, signIn, signUp, signOut],
+    () => ({ user, role, loading, bootstrapEpoch, isSupabaseConfigured, signIn, signUp, signOut, setAccountRole }),
+    [user, role, loading, bootstrapEpoch, signIn, signUp, signOut, setAccountRole],
   )
 
   return (

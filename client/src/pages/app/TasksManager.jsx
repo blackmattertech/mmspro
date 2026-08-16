@@ -1,4 +1,4 @@
-import { lazy, Suspense, useMemo, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useOrg } from '../../hooks/useOrg'
 import { usePermissions } from '../../hooks/usePermissions'
@@ -6,9 +6,10 @@ import { useDebouncedValue } from '../../hooks/useDebouncedValue'
 import { useTasksPage, useTaskPoll } from '../../hooks/useTasksPage'
 import { orgPath } from '../../config/navigation'
 import { TASK_TABS, VISIBILITY_OPTIONS } from '../../config/tasks'
+import { TABLE_SORT_OPTIONS, applyTableFilters } from '../../lib/tableFilters'
 import { deleteTask } from '../../lib/api-tasks'
 import { invalidateTasksBootstrapCache } from '../../lib/tasksBootstrapCache'
-import { TABLE_SORT_OPTIONS, applyTableFilters } from '../../lib/tableFilters'
+import { useTablePagination } from '../../hooks/useTablePagination'
 import TableFilterToolbar from '../../components/shared/TableFilterToolbar'
 import TaskKanban from '../../components/tasks/TaskKanban'
 import TaskKanbanSkeleton from '../../components/tasks/TaskKanbanSkeleton'
@@ -71,15 +72,23 @@ export default function TasksManager() {
 
   const debouncedSearch = useDebouncedValue(search.trim())
 
+  const [listTotal, setListTotal] = useState(0)
+  const filterResetKey = `${tab}|${debouncedSearch}|${filterField}|${filterValue}|${sortBy}|${overdueOnly}|${dueTodayOnly}`
+  const pagination = useTablePagination(listTotal, { resetKey: filterResetKey })
+
   const filters = useMemo(() => ({
     tab,
     search: debouncedSearch || undefined,
     overdue: overdueOnly ? 'true' : undefined,
     due_today: dueTodayOnly ? 'true' : undefined,
-  }), [tab, debouncedSearch, overdueOnly, dueTodayOnly])
+    ...(viewMode === 'table'
+      ? { limit: pagination.pageSize, offset: pagination.offset }
+      : {}),
+  }), [tab, debouncedSearch, overdueOnly, dueTodayOnly, viewMode, pagination.pageSize, pagination.offset])
 
   const {
     items,
+    total,
     board,
     loading,
     error,
@@ -87,8 +96,10 @@ export default function TasksManager() {
   } = useTasksPage(filters, {
     mode: viewMode === 'kanban' ? 'kanban' : 'list',
   })
+  useEffect(() => { setListTotal(total) }, [total])
 
-  useTaskPoll(() => reload({ silent: true }), 30000, true)
+  const pollReload = useCallback(() => reload({ silent: true }), [reload])
+  useTaskPoll(pollReload, 30000, true)
 
   const filteredItems = useMemo(
     () => filterTasks(items, { filterField, filterValue, sortBy }),
@@ -135,7 +146,6 @@ export default function TasksManager() {
     reload({ silent: true })
   }
 
-  const filterResetKey = `${tab}|${debouncedSearch}|${filterField}|${filterValue}|${sortBy}|${overdueOnly}|${dueTodayOnly}`
 
   return (
     <>
@@ -273,6 +283,9 @@ export default function TasksManager() {
           ) : (
             <TasksTable
               tasks={filteredItems}
+              totalCount={total}
+              pagination={pagination}
+              serverPaged
               canManage={canUpdate('tasks_followups') || canDelete('tasks_followups')}
               onDelete={canDelete('tasks_followups') ? handleDelete : undefined}
               deleting={deleting}

@@ -33,6 +33,9 @@ function buildColumnDefs(columnIds) {
 
 export default function WorkOrdersTable({
   orders,
+  totalCount,
+  pagination: paginationProp,
+  serverPaged = false,
   columns,
   tableId,
   emptyTitle,
@@ -51,8 +54,9 @@ export default function WorkOrdersTable({
     resetColumns,
   } = useTableColumnPrefs(tableId, columnDefs)
 
-  const pagination = useTablePagination(orders.length, { resetKey: paginationResetKey })
-  const pagedOrders = pagination.paginate(orders)
+  const localPagination = useTablePagination(totalCount ?? orders.length, { resetKey: paginationResetKey })
+  const pagination = paginationProp || localPagination
+  const pagedOrders = serverPaged || paginationProp ? orders : pagination.paginate(orders)
 
   const renderCell = useCallback((order, column) => {
     switch (column) {
@@ -171,17 +175,7 @@ export default function WorkOrdersTable({
           ))}
         </tbody>
       </table>
-      <TablePagination
-        page={pagination.page}
-        totalPages={pagination.totalPages}
-        pageSize={pagination.pageSize}
-        pageSizeOptions={pagination.pageSizeOptions}
-        totalCount={orders.length}
-        rangeStart={pagination.rangeStart}
-        rangeEnd={pagination.rangeEnd}
-        onPageChange={pagination.setPage}
-        onPageSizeChange={pagination.setPageSize}
-      />
+      <TablePagination {...pagination} />
       </div>
     </div>
   )

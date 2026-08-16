@@ -8,7 +8,7 @@ import {
 } from '../lib/tasksBootstrapCache'
 import { useTaskMetaContext } from '../context/TaskMetaContext'
 
-function applyBootstrapPayload(data, { setStatuses, setPriorities, setCategories, setTags, setBoard, setItems, view }) {
+function applyBootstrapPayload(data, { setStatuses, setPriorities, setCategories, setTags, setBoard, setItems, setTotal, view }) {
   setStatuses(data.statuses || [])
   setPriorities(data.priorities || [])
   setCategories(data.categories || [])
@@ -16,10 +16,13 @@ function applyBootstrapPayload(data, { setStatuses, setPriorities, setCategories
 
   if (view === 'kanban') {
     setBoard(data.board || null)
-    setItems(data.board?.columns?.flatMap((col) => col.tasks) || [])
+    const tasks = data.board?.columns?.flatMap((col) => col.tasks) || []
+    setItems(tasks)
+    setTotal(tasks.length)
   } else {
     setBoard(null)
     setItems(data.tasks || [])
+    setTotal(data.total ?? data.tasks?.length ?? 0)
   }
 }
 
@@ -30,6 +33,7 @@ export function useTasksPage(filters = {}, { mode = 'kanban' } = {}) {
   const [categories, setCategories] = useState([])
   const [tags, setTags] = useState([])
   const [items, setItems] = useState([])
+  const [total, setTotal] = useState(0)
   const [board, setBoard] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -46,6 +50,7 @@ export function useTasksPage(filters = {}, { mode = 'kanban' } = {}) {
       setTags,
       setBoard,
       setItems,
+      setTotal,
       view,
     })
     taskMeta?.hydrate?.({
@@ -103,6 +108,7 @@ export function useTasksPage(filters = {}, { mode = 'kanban' } = {}) {
     activeCategories: categories,
     activeTags: tags,
     items,
+    total,
     board,
     loading,
     error,

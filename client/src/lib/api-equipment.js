@@ -1,13 +1,16 @@
 import { apiFetch } from './api'
+import { listQueryParams, asListArray } from './listResponse'
 
-export function getEquipmentList(params = {}) {
-  const qs = new URLSearchParams()
-  if (params.locationId) qs.set('location_id', params.locationId)
-  if (params.departmentId) qs.set('department_id', params.departmentId)
-  if (params.areaId) qs.set('area_id', params.areaId)
-  if (params.search) qs.set('search', params.search)
-  const suffix = qs.toString() ? `?${qs}` : ''
-  return apiFetch(`/api/equipment${suffix}`)
+export async function getEquipmentList(params = {}) {
+  const data = await apiFetch(`/api/equipment${listQueryParams({
+    location_id: params.locationId,
+    department_id: params.departmentId,
+    area_id: params.areaId,
+    search: params.search,
+    limit: params.limit ?? 50,
+    offset: params.offset ?? 0,
+  })}`)
+  return asListArray(data)
 }
 
 export function getEquipment(id) {

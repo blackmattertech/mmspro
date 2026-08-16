@@ -76,7 +76,10 @@ router.get('/equipment-catalog', canReadCreate, async (req, res) => {
     return res.status(400).json({ error: 'department_id is required' })
   }
   try {
-    const catalog = await listEquipmentCatalogForDepartment(orgId, departmentId)
+    const catalog = await listEquipmentCatalogForDepartment(orgId, departmentId, {
+      search: req.query.search || null,
+      limit: Number(req.query.limit) || 100,
+    })
     res.json(catalog)
   } catch (err) {
     sendError(res, err)
@@ -137,6 +140,9 @@ router.get('/', async (req, res, next) => {
     const rows = await listWorkRequests(orgId, filter, {
       profileId: req.userProfile.id,
       departmentId: employee?.department_id || null,
+      search: req.query.search || null,
+      limit: Math.max(1, Math.min(200, Number(req.query.limit) || 50)),
+      offset: Math.max(0, Number(req.query.offset) || 0),
     })
     res.json(rows)
   } catch (err) {

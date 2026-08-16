@@ -3,29 +3,45 @@ import { getEmployees, createEmployee, updateEmployee, deleteEmployee } from '..
 import { fetchReferenceData, invalidateReferenceCache } from '../lib/referenceDataCache'
 
 export function useEmployees(filters = {}) {
-  const { departmentId, locationId, forAssignment = false } = filters
+  const {
+    departmentId,
+    locationId,
+    forAssignment = false,
+    search,
+    limit = 200,
+    offset = 0,
+    enabled = true,
+  } = filters
   const [employees, setEmployees] = useState([])
+  const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
 
   const load = useCallback(async ({ silent = false, force = false } = {}) => {
+    if (!enabled) {
+      setEmployees([])
+      setTotal(0)
+      setLoading(false)
+      return
+    }
     if (!silent) setLoading(true)
     setError(null)
     try {
       const data = await fetchReferenceData(
         'employees',
-        { departmentId, locationId, forAssignment },
-        () => getEmployees({ departmentId, locationId, forAssignment }),
+        { departmentId, locationId, forAssignment, search, limit, offset },
+        () => getEmployees({ departmentId, locationId, forAssignment, search, limit, offset }),
         { force },
       )
       setEmployees(data)
+      setTotal(data.total ?? data.length)
     } catch (err) {
       setError(err.message)
     } finally {
       if (!silent) setLoading(false)
     }
-  }, [departmentId, locationId, forAssignment])
+  }, [departmentId, locationId, forAssignment, search, limit, offset, enabled])
 
   useEffect(() => {
     load()
@@ -91,5 +107,5 @@ export function useEmployees(filters = {}) {
     }
   }
 
-  return { employees, loading, saving, error, create, update, remove, toggleActive, reload: load }
+  return { employees, total, loading, saving, error, create, update, remove, toggleActive, reload: load }
 }

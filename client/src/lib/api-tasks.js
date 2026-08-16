@@ -1,4 +1,5 @@
 import { apiFetch } from './api'
+import { asListArray } from './listResponse'
 
 function qs(params = {}) {
   const search = new URLSearchParams()
@@ -11,8 +12,9 @@ function qs(params = {}) {
   return suffix ? `?${suffix}` : ''
 }
 
-export function getTasksList(params = {}) {
-  return apiFetch(`/api/tasks${qs(params)}`)
+export async function getTasksList(params = {}) {
+  const data = await apiFetch(`/api/tasks${qs(params)}`)
+  return asListArray(data)
 }
 
 export function getTasksKanban(params = {}) {
