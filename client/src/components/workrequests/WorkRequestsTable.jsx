@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import { listWorkRequests, getWorkRequest } from '../../lib/api-work-requests'
 import { useWorkOrderList } from '../../hooks/useWorkOrderList'
@@ -7,6 +7,7 @@ import { applyWorkRequestFilters, sortWorkRequests } from '../../lib/workRequest
 import WorkRequestDetailModal from './WorkRequestDetailModal'
 import TablePagination from '../shared/TablePagination'
 import { useTablePagination } from '../../hooks/useTablePagination'
+import { useDebouncedValue } from '../../hooks/useDebouncedValue'
 import { WORK_REQUEST_COLUMNS } from './workRequestColumns'
 import './WorkRequests.css'
 import '../company/CompanyShared.css'
@@ -146,8 +147,20 @@ export default function WorkRequestsTable({
     canUpdate('work_request_approve') || canUpdate('work_request_incoming')
   )
 
-  const fetchList = useCallback(() => listWorkRequests(filter), [filter])
-  const { orders: requests, loading, error, reload } = useWorkOrderList(fetchList)
+  const debouncedSearch = useDebouncedValue(search)
+  const [listTotal, setListTotal] = useState(0)
+  const paginationResetKey = `${debouncedSearch}|${fieldFilter?.field}|${fieldFilter?.value}|${sortBy}|${filter}`
+  const pagination = useTablePagination(listTotal, { resetKey: paginationResetKey })
+  const fetchList = useCallback(
+    () => listWorkRequests(filter, {
+      search: debouncedSearch,
+      limit: pagination.pageSize,
+      offset: pagination.offset,
+    }),
+    [filter, debouncedSearch, pagination.pageSize, pagination.offset],
+  )
+  const { orders: requests, total, loading, error, reload } = useWorkOrderList(fetchList)
+  useEffect(() => { setListTotal(total) }, [total])
 
   const success = location.state?.success
 
@@ -158,15 +171,13 @@ export default function WorkRequestsTable({
 
   const filtered = useMemo(
     () => applyWorkRequestFilters(sorted, {
-      search,
+      search: '',
       fieldFilter,
     }),
-    [sorted, search, fieldFilter],
+    [sorted, fieldFilter],
   )
 
-  const paginationResetKey = `${search}|${fieldFilter?.field}|${fieldFilter?.value}|${sortBy}`
-  const pagination = useTablePagination(filtered.length, { resetKey: paginationResetKey })
-  const pagedRows = pagination.paginate(filtered)
+  const pagedRows = filtered
 
   const columns = visibleColumnIds?.length ? visibleColumnIds : DEFAULT_VISIBLE
 
@@ -231,17 +242,7 @@ export default function WorkRequestsTable({
             </tbody>
           </table>
         </div>
-        <TablePagination
-          page={pagination.page}
-          totalPages={pagination.totalPages}
-          pageSize={pagination.pageSize}
-          pageSizeOptions={pagination.pageSizeOptions}
-          totalCount={filtered.length}
-          rangeStart={pagination.rangeStart}
-          rangeEnd={pagination.rangeEnd}
-          onPageChange={pagination.setPage}
-          onPageSizeChange={pagination.setPageSize}
-        />
+        <TablePagination {...pagination} />
         </>
       )}
 

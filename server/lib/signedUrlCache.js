@@ -56,10 +56,43 @@ export async function getSignedUrl(bucket, path, expiresIn = SIGNED_URL_TTL_SEC)
 export async function getSignedUrls(bucket, paths, expiresIn = SIGNED_URL_TTL_SEC) {
   const unique = [...new Set((paths || []).filter(Boolean))]
   const result = new Map()
-  await Promise.all(
-    unique.map(async (path) => {
-      result.set(path, await getSignedUrl(bucket, path, expiresIn))
-    }),
-  )
+  if (!unique.length) return result
+
+  const missing = []
+  for (const path of unique) {
+    const key = cacheKey(bucket, path)
+    const hit = signedUrlCache.get(key)
+    if (hit && hit.expiresAt > Date.now()) {
+      result.set(path, hit.url)
+    } else {
+      missing.push(path)
+    }
+  }
+
+  if (missing.length) {
+    const { data, error } = await supabaseAdmin.storage
+      .from(bucket)
+      .createSignedUrls(missing, expiresIn)
+
+    if (!error && Array.isArray(data) && data.length === missing.length) {
+      data.forEach((item, index) => {
+        const path = missing[index]
+        const url = item?.signedUrl || null
+        result.set(path, url)
+        if (url) {
+          signedUrlCache.set(cacheKey(bucket, path), {
+            url,
+            expiresAt: Date.now() + CACHE_TTL_MS,
+          })
+        }
+      })
+    } else {
+      await Promise.all(missing.map(async (path) => {
+        result.set(path, await getSignedUrl(bucket, path, expiresIn))
+      }))
+    }
+  }
+
+  pruneCache()
   return result
 }

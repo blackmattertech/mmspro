@@ -68,6 +68,9 @@
 --   59-task-spec-compliance.sql              → 59-task-spec-compliance — Task spec fields & masters
 --   60-task-performance.sql                  → 60-task-performance — Task indexes & counts RPC
 --   61-work-order-wr-spec-compliance.sql      → 61-work-order-wr-spec-compliance — WR/WO CMMS lifecycle
+--   62-performance-indexes-3.sql               → 62-performance-indexes-3 — List/query covering indexes
+--   63-dashboard-stats.sql                      → 63-dashboard-stats — Work order dashboard aggregations RPC
+--   64-user-notifications.sql                   → 64-user-notifications — In-app notification inbox
 --
 -- OTHER:
 --   supabase.sql                  → supabase — Full schema (new projects)

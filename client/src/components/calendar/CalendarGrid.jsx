@@ -1,7 +1,6 @@
 import { TASK_TYPE_COLORS, TASK_TYPE_BG } from '../../data/calendarDemo'
 import { buildCalendarGrid } from '../../hooks/useCalendar'
 import FilterableSelect from '../ui/FilterableSelect'
-import '../company/CompanyShared.css'
 
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 

@@ -761,6 +761,40 @@ WorkOrderCounts:
     manual:
       type: integer
 
+NotificationListResponse:
+  type: object
+  properties:
+    items:
+      type: array
+      items:
+        $ref: '#/components/schemas/NotificationItem'
+    unread:
+      type: integer
+    push_configured:
+      type: boolean
+    inbox_ready:
+      type: boolean
+
+NotificationItem:
+  type: object
+  properties:
+    id:
+      type: string
+      format: uuid
+    title:
+      type: string
+    body:
+      type: string
+    url:
+      type: string
+    data:
+      type: object
+    time:
+      type: string
+      format: date-time
+    read:
+      type: boolean
+
 FcmTokenRequest:
   type: object
   required: [token]

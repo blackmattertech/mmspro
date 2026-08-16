@@ -23,6 +23,38 @@ const EMPLOYEE_COLUMNS = [
   'Location', 'Department', 'Login Required', 'Access Role',
 ]
 
+function chunk(items, size) {
+  const groups = []
+  for (let i = 0; i < items.length; i += size) groups.push(items.slice(i, i + size))
+  return groups
+}
+
+async function insertChunked(table, items, results, maxPreview, uniqueMessage) {
+  for (const group of chunk(items, 50)) {
+    const { error } = await supabaseAdmin.from(table).insert(group.map((item) => item.row))
+    if (error) {
+      for (const item of group) {
+        const { error: rowError } = await supabaseAdmin.from(table).insert(item.row)
+        if (rowError) {
+          results.failed += 1
+          results.errors.push({
+            row: item.rowNumber,
+            message: rowError.code === '23505' ? uniqueMessage : rowError.message,
+          })
+        } else {
+          results.created += 1
+          if (results.preview.length < maxPreview) results.preview.push(item.preview)
+        }
+      }
+    } else {
+      results.created += group.length
+      for (const item of group) {
+        if (results.preview.length < maxPreview) results.preview.push(item.preview)
+      }
+    }
+  }
+}
+
 function normalizeName(value) {
   return String(value ?? '').trim().toLowerCase()
 }
@@ -364,6 +396,7 @@ export async function bulkImportEmployees(orgId, buffer) {
   const results = { created: 0, failed: 0, errors: [], preview: [] }
   const MAX_PREVIEW = 250
 
+  const pending = []
   for (const { rowNumber, rowValues } of rows) {
     try {
       const empId = rowValues['Employee ID']?.trim()
@@ -418,9 +451,9 @@ export async function bulkImportEmployees(orgId, buffer) {
         normalizedMobile = normalizePhoneE164(mobileRaw)
       }
 
-      const { error } = await supabaseAdmin
-        .from('org_employees')
-        .insert({
+      pending.push({
+        rowNumber,
+        row: {
           org_id: orgId,
           emp_id: empId,
           name,
@@ -431,28 +464,22 @@ export async function bulkImportEmployees(orgId, buffer) {
           access_role_id: accessRoleId,
           login_required: false,
           is_active: true,
-        })
-
-      if (error) {
-        if (error.code === '23505') throw new Error('Employee ID already exists')
-        throw error
-      }
-
-      results.created += 1
-      if (results.preview.length < MAX_PREVIEW) {
-        results.preview.push({
+        },
+        preview: {
           row: rowNumber,
           name,
           code: empId,
           location: locRaw || '',
           department: deptRaw || '',
-        })
-      }
+        },
+      })
     } catch (err) {
       results.failed += 1
       results.errors.push({ row: rowNumber, message: err.message })
     }
   }
+
+  await insertChunked('org_employees', pending, results, MAX_PREVIEW, 'Employee ID already exists')
 
   return results
 }

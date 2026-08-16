@@ -7,6 +7,7 @@ import { useDepartments } from '../../hooks/useDepartments'
 import { useRoles } from '../../hooks/useRoles'
 import { useOrgLimits } from '../../hooks/useOrgLimits'
 import { useLimitExceeded } from '../../hooks/useLimitExceeded'
+import { useDebouncedValue } from '../../hooks/useDebouncedValue'
 import { isLimitError } from '../../lib/limitErrors'
 import { deleteEmployeePhoto, uploadEmployeePhoto } from '../../lib/orgAssets'
 import GooToggle from '../ui/GooToggle'
@@ -84,14 +85,23 @@ export default function EmployeesTab({ canManage }) {
   const [filterField, setFilterField] = useState('')
   const [filterValue, setFilterValue] = useState('')
   const [sortBy, setSortBy] = useState('name_asc')
+  const debouncedSearch = useDebouncedValue(search.trim())
 
   const scopedLocationId = canSelectAnyLocation ? '' : (myLocationId || '')
 
   const { locations, create: createLocation, reload: reloadLocations, saving: savingLocation } = useLocations()
   const { departments, create: createDepartment, reload: reloadDepartments, saving: savingDepartment } = useDepartments()
   const { roles: accessRoles } = useRoles()
+  const [employeeTotal, setEmployeeTotal] = useState(0)
+  const [modalOpen, setModalOpen] = useState(false)
+  const [editing, setEditing] = useState(null)
+  const [viewing, setViewing] = useState(null)
+  const [togglingId, setTogglingId] = useState(null)
+  const paginationResetKey = `${debouncedSearch}|${filterField}|${filterValue}|${sortBy}|${scopedLocationId}`
+  const pagination = useTablePagination(employeeTotal, { resetKey: paginationResetKey })
   const {
     employees,
+    total,
     loading,
     saving,
     error,
@@ -102,14 +112,22 @@ export default function EmployeesTab({ canManage }) {
     reload,
   } = useEmployees({
     locationId: scopedLocationId,
+    search: debouncedSearch,
+    limit: pagination.pageSize,
+    offset: pagination.offset,
   })
+  const { employees: employeeOptions } = useEmployees({
+    locationId: scopedLocationId,
+    enabled: Boolean(modalOpen || editing || viewing),
+    limit: 200,
+  })
+
+  useEffect(() => {
+    setEmployeeTotal(total)
+  }, [total])
 
   const { isResourceAtLimit, reload: reloadLimits } = useOrgLimits()
   const { visible: limitVisible, resource: limitResource, trigger: triggerLimit, tryHandleLimitError, dismiss: dismissLimit } = useLimitExceeded()
-  const [modalOpen, setModalOpen] = useState(false)
-  const [editing, setEditing] = useState(null)
-  const [viewing, setViewing] = useState(null)
-  const [togglingId, setTogglingId] = useState(null)
 
   const {
     bulkInputRef,
@@ -135,8 +153,6 @@ export default function EmployeesTab({ canManage }) {
   const lockCreateLocation = Boolean(defaultCreateLocationId)
 
   const filteredEmployees = useMemo(() => applyTableFilters(employees, {
-    search,
-    searchHaystack: employeeSearchHaystack,
     fieldFilter: { field: filterField, value: filterValue },
     fieldFilterGetters: {
       name: (employee) => employee.name,
@@ -154,14 +170,11 @@ export default function EmployeesTab({ canManage }) {
     sortBy,
     getName: (employee) => employee.name,
     getCreatedAt: (employee) => employee.created_at,
-  }), [employees, search, filterField, filterValue, sortBy])
+  }), [employees, filterField, filterValue, sortBy])
 
-  const activeCount = employees.filter((e) => e.is_active !== false).length
-  const atEmployeeLimit = isResourceAtLimit('employees', 'employee_limit', activeCount)
+  const atEmployeeLimit = isResourceAtLimit('employees', 'employee_limit')
 
-  const paginationResetKey = `${search}|${filterField}|${filterValue}|${sortBy}`
-  const pagination = useTablePagination(filteredEmployees.length, { resetKey: paginationResetKey })
-  const pagedEmployees = pagination.paginate(filteredEmployees)
+  const pagedEmployees = filteredEmployees
   const employeeColumnDefs = useMemo(() => {
     const cols = [
       { id: 'photo', label: 'Photo' },
@@ -490,17 +503,7 @@ export default function EmployeesTab({ canManage }) {
             </table>
           </div>
         </div>
-        <TablePagination
-          page={pagination.page}
-          totalPages={pagination.totalPages}
-          pageSize={pagination.pageSize}
-          pageSizeOptions={pagination.pageSizeOptions}
-          totalCount={filteredEmployees.length}
-          rangeStart={pagination.rangeStart}
-          rangeEnd={pagination.rangeEnd}
-          onPageChange={pagination.setPage}
-          onPageSizeChange={pagination.setPageSize}
-        />
+        <TablePagination {...pagination} />
         </>
       )}
 
@@ -545,7 +548,7 @@ export default function EmployeesTab({ canManage }) {
             },
           }] : undefined}
         >
-          <EmployeeDetailContent employee={viewing} employees={employees} />
+          <EmployeeDetailContent employee={viewing} employees={employeeOptions} />
         </RecordDetailModal>
       )}
 
@@ -553,7 +556,7 @@ export default function EmployeesTab({ canManage }) {
         <EmployeeModal
           key={editing?.id ?? 'new'}
           employee={editing}
-          employees={employees}
+          employees={employeeOptions}
           locations={locations}
           departments={departments}
           accessRoles={accessRoles}

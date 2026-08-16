@@ -1,9 +1,6 @@
 import { supabaseAdmin } from '../services/supabase.js'
 import { getStateForCity, parseCityName } from './indiaLocations.js'
-import {
-  validateVendorFields,
-  firstVendorValidationError,
-} from './vendorValidation.js'
+import { applyIlikeSearch, listEnvelope } from './listQuery.js'
 
 const VENDOR_SELECT = `
   id, org_id, vendor_code, name, contact_person, mobile, email,
@@ -92,28 +89,18 @@ async function assertUniqueCode(orgId, vendorCode, excludeId = null) {
 export async function listVendors(orgId, { search = null, limit = 100, offset = 0 } = {}) {
   let query = supabaseAdmin
     .from('vendors')
-    .select(VENDOR_SELECT)
+    .select(VENDOR_SELECT, { count: 'exact' })
     .eq('org_id', orgId)
     .order('vendor_code', { ascending: true })
     .range(offset, offset + limit - 1)
 
-  const term = trimOrNull(search)
-  if (term) {
-    const q = term.replace(/%/g, '')
-    query = query.or([
-      `vendor_code.ilike.%${q}%`,
-      `name.ilike.%${q}%`,
-      `contact_person.ilike.%${q}%`,
-      `mobile.ilike.%${q}%`,
-      `email.ilike.%${q}%`,
-      `city.ilike.%${q}%`,
-      `gstin.ilike.%${q}%`,
-    ].join(','))
-  }
+  query = applyIlikeSearch(query, search, [
+    'vendor_code', 'name', 'contact_person', 'mobile', 'email', 'city', 'gstin',
+  ])
 
-  const { data, error } = await query
+  const { data, error, count } = await query
   if (error) throw error
-  return data || []
+  return listEnvelope(data || [], { total: count || 0, limit, offset })
 }
 
 export async function getVendorDetail(orgId, id) {

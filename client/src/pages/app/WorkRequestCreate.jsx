@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useOrg } from '../../hooks/useOrg'
+import { useDebouncedValue } from '../../hooks/useDebouncedValue'
 import { orgPath } from '../../config/navigation'
 import {
   getWorkRequestFormContext,
@@ -91,6 +92,8 @@ export default function WorkRequestCreate() {
   const [orderFromId, setOrderFromId] = useState('')
   const [orderToId, setOrderToId] = useState('')
   const [catalogEquipment, setCatalogEquipment] = useState([])
+  const [equipmentQuery, setEquipmentQuery] = useState('')
+  const debouncedEquipmentQuery = useDebouncedValue(equipmentQuery.trim())
   const [equipmentLoading, setEquipmentLoading] = useState(false)
   const [equipmentEmpty, setEquipmentEmpty] = useState(false)
   const [assetFieldValues, setAssetFieldValues] = useState({})
@@ -173,21 +176,26 @@ export default function WorkRequestCreate() {
   }, [ctx, lockOrderTo, effectiveOrderFromId, requestType])
 
   useEffect(() => {
+    setAssetFieldValues({})
+    setEquipmentId('')
+    setEquipmentQuery('')
     if (!orderToId) {
       setCatalogEquipment([])
-      setAssetFieldValues({})
-      setEquipmentId('')
       setEquipmentEmpty(false)
-      return
     }
+  }, [orderToId])
+
+  useEffect(() => {
+    if (!orderToId) return undefined
 
     let cancelled = false
     ;(async () => {
       setEquipmentLoading(true)
-      setAssetFieldValues({})
-      setEquipmentId('')
       try {
-        const catalog = await getWorkRequestEquipmentCatalog(orderToId)
+        const catalog = await getWorkRequestEquipmentCatalog(orderToId, {
+          search: debouncedEquipmentQuery || undefined,
+          limit: 100,
+        })
         if (cancelled) return
         setCatalogEquipment(catalog.equipment || [])
         setEquipmentEmpty(!catalog.has_assets)
@@ -198,7 +206,7 @@ export default function WorkRequestCreate() {
       }
     })()
     return () => { cancelled = true }
-  }, [orderToId])
+  }, [orderToId, debouncedEquipmentQuery])
 
   const canSubmitAssets = useMemo(() => {
     if (equipmentEmpty) return false
@@ -490,6 +498,7 @@ export default function WorkRequestCreate() {
                       getOptionLabel={formatEquipmentLabel}
                       placeholder="Select asset"
                       className="company-form__input--select"
+                      onQueryChange={setEquipmentQuery}
                     />
                   </label>
                   {equipmentId && (

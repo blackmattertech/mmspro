@@ -1,8 +1,9 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useLocations } from '../../hooks/useLocations'
 import { useEmployees } from '../../hooks/useEmployees'
 import { useOrgLimits } from '../../hooks/useOrgLimits'
 import { useLimitExceeded } from '../../hooks/useLimitExceeded'
+import { useDebouncedValue } from '../../hooks/useDebouncedValue'
 import { isLimitError } from '../../lib/limitErrors'
 import { getLocationsTemplate, bulkUploadLocations } from '../../lib/api'
 import GooToggle from '../ui/GooToggle'
@@ -39,7 +40,20 @@ const LOCATION_FILTER_FIELDS = [
 ]
 
 export default function LocationsTab({ canManage }) {
-  const { locations, loading, saving, error, create, update, remove, toggleActive, reload } = useLocations()
+  const [search, setSearch] = useState('')
+  const [filterField, setFilterField] = useState('')
+  const [filterValue, setFilterValue] = useState('')
+  const [sortBy, setSortBy] = useState('name_asc')
+  const debouncedSearch = useDebouncedValue(search.trim())
+  const [listTotal, setListTotal] = useState(0)
+  const filterResetKey = `${debouncedSearch}|${filterField}|${filterValue}|${sortBy}`
+  const pagination = useTablePagination(listTotal, { resetKey: filterResetKey })
+  const { locations, total, loading, saving, error, create, update, remove, toggleActive, reload } = useLocations({
+    search: debouncedSearch,
+    limit: pagination.pageSize,
+    offset: pagination.offset,
+  })
+  useEffect(() => { setListTotal(total) }, [total])
   const { employees } = useEmployees()
   const { isResourceAtLimit, reload: reloadLimits } = useOrgLimits()
   const { visible: limitVisible, resource: limitResource, trigger: triggerLimit, tryHandleLimitError, dismiss: dismissLimit } = useLimitExceeded()
@@ -47,10 +61,6 @@ export default function LocationsTab({ canManage }) {
   const [editing, setEditing] = useState(null)
   const [viewing, setViewing] = useState(null)
   const [togglingId, setTogglingId] = useState(null)
-  const [search, setSearch] = useState('')
-  const [filterField, setFilterField] = useState('')
-  const [filterValue, setFilterValue] = useState('')
-  const [sortBy, setSortBy] = useState('name_asc')
 
   const {
     bulkInputRef,
@@ -70,8 +80,6 @@ export default function LocationsTab({ canManage }) {
   })
 
   const filteredLocations = useMemo(() => applyTableFilters(locations, {
-    search,
-    searchHaystack: (loc) => [loc.name, loc.code, loc.city, loc.country, loc.address_line1].filter(Boolean).join(' '),
     fieldFilter: { field: filterField, value: filterValue },
     fieldFilterGetters: {
       name: (loc) => loc.name,
@@ -83,13 +91,10 @@ export default function LocationsTab({ canManage }) {
     sortBy,
     getName: (loc) => loc.name,
     getCreatedAt: (loc) => loc.created_at,
-  }), [locations, search, filterField, filterValue, sortBy])
+  }), [locations, filterField, filterValue, sortBy])
 
-  const activeCount = locations.filter((l) => l.is_active !== false).length
-  const atLocationLimit = isResourceAtLimit('locations', 'location_limit', activeCount)
-  const filterResetKey = `${search}|${filterField}|${filterValue}|${sortBy}`
-  const pagination = useTablePagination(filteredLocations.length, { resetKey: filterResetKey })
-  const pagedLocations = pagination.paginate(filteredLocations)
+  const atLocationLimit = isResourceAtLimit('locations', 'location_limit')
+  const pagedLocations = filteredLocations
   const locationColumnDefs = useMemo(() => {
     const cols = [
       { id: 'name', label: 'Name' },
@@ -302,16 +307,7 @@ export default function LocationsTab({ canManage }) {
               })}
             </tbody>
           </table>
-          <TablePagination
-            page={pagination.page}
-            totalPages={pagination.totalPages}
-            pageSize={pagination.pageSize}
-            pageSizeOptions={pagination.pageSizeOptions}
-            totalCount={locations.length}
-            rangeStart={pagination.rangeStart}
-            rangeEnd={pagination.rangeEnd}
-            onPageChange={pagination.setPage}
-            onPageSizeChange={pagination.setPageSize}
+          <TablePagination {...pagination} />
           />
           </div>
         </div>

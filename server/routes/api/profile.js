@@ -90,19 +90,23 @@ function isValidUserAvatarPath(path, userId) {
   return path.startsWith(`${userId}/`) && !path.includes('..')
 }
 
+export async function loadMyProfileBundle(userId) {
+  const profile = await loadUserProfile(userId)
+
+  let employee = null
+  if (profile.org_id) {
+    employee = await findLinkedEmployee(profile.org_id, profile)
+    if (employee) employee = await attachEmployeePhotoUrl(employee)
+  }
+
+  const avatarUrl = await attachUserAvatarUrl(profile) || employee?.photo_signed_url || null
+  return { profile, employee, avatar_url: avatarUrl }
+}
+
 router.get('/me', verifyAuth, async (req, res) => {
   try {
-    const profile = await loadUserProfile(req.user.id)
-
-    let employee = null
-    if (profile.org_id) {
-      employee = await findLinkedEmployee(profile.org_id, profile)
-      if (employee) employee = await attachEmployeePhotoUrl(employee)
-    }
-
-    const avatarUrl = await attachUserAvatarUrl(profile) || employee?.photo_signed_url || null
-
-    res.json({ profile, employee, avatar_url: avatarUrl })
+    const payload = await loadMyProfileBundle(req.user.id)
+    res.json(payload)
   } catch (err) {
     res.status(500).json({ error: err.message })
   }

@@ -129,13 +129,32 @@ export async function deleteSectionIcon(path) {
   if (error) throw new Error(error.message)
 }
 
+const signedUrlCache = new Map()
+
 export async function getOrgAssetSignedUrl(path, expiresIn = 3600) {
   if (!supabase || !path) return null
 
-  const { data, error } = await supabase.storage
+  const cached = signedUrlCache.get(path)
+  if (cached?.url && cached.expiresAt > Date.now() + 10_000) return cached.url
+  if (cached?.inflight) return cached.inflight
+
+  const inflight = supabase.storage
     .from(ORG_ASSETS_BUCKET)
     .createSignedUrl(path, expiresIn)
+    .then(({ data, error }) => {
+      if (error) throw new Error(error.message)
+      const url = data?.signedUrl ?? null
+      signedUrlCache.set(path, {
+        url,
+        expiresAt: Date.now() + Math.max(expiresIn - 120, 60) * 1000,
+      })
+      return url
+    })
+    .catch((err) => {
+      signedUrlCache.delete(path)
+      throw err
+    })
 
-  if (error) throw new Error(error.message)
-  return data?.signedUrl ?? null
+  signedUrlCache.set(path, { ...(cached || {}), inflight })
+  return inflight
 }

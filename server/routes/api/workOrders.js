@@ -9,6 +9,7 @@ import {
 import { supabaseAdmin } from '../../services/supabase.js'
 import { getScopedLocationId, hasModulePermission } from '../../lib/orgPermissions.js'
 import { getSignedUrl, getSignedUrls } from '../../lib/signedUrlCache.js'
+import { applyIlikeSearch, listEnvelope } from '../../lib/listQuery.js'
 import {
   generateWorkOrderNumber,
   displayWorkOrderNumber,
@@ -313,48 +314,24 @@ async function listReceivedWorkOrderIds(orgId, employee) {
   if (!employee) return []
 
   const ids = new Set()
+  const assigneeQuery = supabaseAdmin
+    .from('manual_work_order_assignees')
+    .select('work_order_id')
+    .eq('org_id', orgId)
+    .eq('employee_id', employee.id)
 
-  const [assignmentResult, locResult, deptResult] = await Promise.all([
-    supabaseAdmin
-      .from('manual_work_order_assignees')
-      .select('work_order_id')
-      .eq('org_id', orgId)
-      .eq('employee_id', employee.id),
-    employee.location_id
-      ? supabaseAdmin
-          .from('manual_work_orders')
-          .select('id')
-          .eq('org_id', orgId)
-          .eq('assigned_location_id', employee.location_id)
-          .in('status', WO_OPEN_LIST_STATUSES)
-      : Promise.resolve({ data: [], error: null }),
-    employee.department_id
-      ? supabaseAdmin
-          .from('manual_work_orders')
-          .select('id, assigned_location_id')
-          .eq('org_id', orgId)
-          .eq('assigned_department_id', employee.department_id)
-          .in('status', WO_OPEN_LIST_STATUSES)
-      : Promise.resolve({ data: [], error: null }),
-  ])
-
-  if (assignmentResult.error) throw assignmentResult.error
-  if (locResult.error) throw locResult.error
-  if (deptResult.error) throw deptResult.error
-
-  for (const row of assignmentResult.data || []) ids.add(row.work_order_id)
-  for (const row of locResult.data || []) ids.add(row.id)
-  for (const row of deptResult.data || []) {
-    if (
-      !row.assigned_location_id
-      || !employee.location_id
-      || row.assigned_location_id === employee.location_id
-    ) {
-      ids.add(row.id)
-    }
-  }
-
+  const { data, error } = await assigneeQuery
+  if (error) throw error
+  for (const row of data || []) ids.add(row.work_order_id)
   return [...ids]
+}
+
+function receivedWorkOrderOrFilter(employee, assigneeIds) {
+  const parts = []
+  if (employee.location_id) parts.push(`assigned_location_id.eq.${employee.location_id}`)
+  if (employee.department_id) parts.push(`assigned_department_id.eq.${employee.department_id}`)
+  if (assigneeIds.length) parts.push(`id.in.(${assigneeIds.join(',')})`)
+  return parts.join(',')
 }
 
 async function validateAssignedDepartment(orgId, departmentId, locationId) {
@@ -707,31 +684,11 @@ function isReceivedVisibleStatus(status) {
   return WO_OPEN_LIST_STATUSES.includes(status) || status === 'completed' || status === 'verified'
 }
 
-async function attachSummaries(orgId, workOrders) {
-  if (!workOrders.length) return workOrders
-
-  const ids = workOrders.map((row) => row.id)
-  const { data: values, error } = await supabaseAdmin
-    .from('manual_work_order_values')
-    .select('work_order_id, value_text, created_at')
-    .eq('org_id', orgId)
-    .in('work_order_id', ids)
-    .not('value_text', 'is', null)
-    .order('created_at')
-
-  if (error) throw error
-
-  const summaryByWo = new Map()
-  for (const row of values || []) {
-    if (!summaryByWo.has(row.work_order_id) && row.value_text) {
-      summaryByWo.set(row.work_order_id, row.value_text.slice(0, 120))
-    }
-  }
-
+async function attachSummaries(_orgId, workOrders) {
   return workOrders.map((row) => ({
     ...row,
     wo_number: resolveDisplayWoNumber(row),
-    summary: summaryByWo.get(row.id) || row.problem_description?.slice(0, 120) || 'Work order',
+    summary: row.summary || row.problem_description?.slice(0, 120) || 'Work order',
   }))
 }
 
@@ -762,26 +719,29 @@ async function buildWorkOrderListResponse(orgId, rows, existingAssigneesByWo = n
   }))
 }
 
-async function listReceivedWorkOrders(orgId, profile, { status = 'open', limit = 50, offset = 0 } = {}) {
+async function listReceivedWorkOrders(orgId, profile, { status = 'open', limit = 50, offset = 0, search = null } = {}) {
   const employee = await getEmployeeByProfile(orgId, profile?.id, { email: profile?.email })
-  if (!employee) return []
+  if (!employee) return listEnvelope([], { total: 0, limit, offset })
 
-  const workOrderIds = await listReceivedWorkOrderIds(orgId, employee)
-  if (!workOrderIds.length) return []
+  const assigneeIds = await listReceivedWorkOrderIds(orgId, employee)
+  const orFilter = receivedWorkOrderOrFilter(employee, assigneeIds)
+  if (!orFilter) return listEnvelope([], { total: 0, limit, offset })
 
   let query = supabaseAdmin
     .from('manual_work_orders')
-    .select('id, status, wo_number, source_type, priority, problem_description, created_at, updated_at, created_by, assigned_department_id, assigned_location_id, work_request_id, work_center')
+    .select('id, status, wo_number, source_type, priority, problem_description, created_at, updated_at, created_by, assigned_department_id, assigned_location_id, work_request_id, work_center', { count: 'exact' })
     .eq('org_id', orgId)
-    .in('id', workOrderIds)
+    .or(orFilter)
     .order('created_at', { ascending: false })
     .range(offset, offset + limit - 1)
 
+  query = applyIlikeSearch(query, search, ['wo_number', 'problem_description'])
   query = applyWorkOrderStatusFilter(query, status)
 
-  const { data, error } = await query
+  const { data, error, count } = await query
   if (error) throw error
-  return buildWorkOrderListResponse(orgId, data || [])
+  const rows = await buildWorkOrderListResponse(orgId, data || [])
+  return listEnvelope(rows, { total: count || 0, limit, offset })
 }
 
 function isAssignedByMeRow(wo, assignees, myEmployeeId) {
@@ -796,79 +756,35 @@ function isAssignedByMeRow(wo, assignees, myEmployeeId) {
 /** Lightweight count for badge — no summaries, creators, or signed URLs. */
 async function countAssignedByMe(orgId, profile, { status = 'open' } = {}) {
   const profileId = profile?.id || profile
-  const employee = await getEmployeeByProfile(orgId, profileId, { email: profile?.email })
-  const myEmployeeId = employee?.id
-  const normalized = normalizeStatusFilter(status) || 'open'
-
-  const baseQuery = () => {
-    let q = supabaseAdmin
-      .from('manual_work_orders')
-      .select('id', { count: 'exact', head: true })
-      .eq('org_id', orgId)
-      .eq('created_by', profileId)
-    return applyWorkOrderStatusFilter(q, normalized)
-  }
-
-  const { count: deptLocCount, error: deptLocError } = await baseQuery()
-    .or('assigned_department_id.not.is.null,assigned_location_id.not.is.null')
-  if (deptLocError) throw deptLocError
-
-  let assigneeQuery = supabaseAdmin
+  let query = supabaseAdmin
     .from('manual_work_orders')
-    .select('id, assigned_department_id, assigned_location_id')
+    .select('id', { count: 'exact', head: true })
     .eq('org_id', orgId)
     .eq('created_by', profileId)
-    .is('assigned_department_id', null)
-    .is('assigned_location_id', null)
-  assigneeQuery = applyWorkOrderStatusFilter(assigneeQuery, normalized)
-
-  const { data: assigneeOnlyRows, error: assigneeOnlyError } = await assigneeQuery
-
-  if (assigneeOnlyError) throw assigneeOnlyError
-  if (!assigneeOnlyRows?.length) return deptLocCount || 0
-
-  const assigneesByWo = await loadAssigneesForWorkOrders(
-    orgId,
-    assigneeOnlyRows.map((row) => row.id),
-    { withPhotos: false },
-  )
-
-  const assigneeOnlyCount = assigneeOnlyRows.filter((wo) =>
-    isAssignedByMeRow(wo, assigneesByWo.get(wo.id) || [], myEmployeeId),
-  ).length
-
-  return (deptLocCount || 0) + assigneeOnlyCount
+  query = applyWorkOrderStatusFilter(query, status)
+  const { count, error } = await query
+  if (error) throw error
+  return count || 0
 }
 
-async function listAssignedByMeWorkOrders(orgId, profile, { status = 'open', limit = 50, offset = 0 } = {}) {
+async function listAssignedByMeWorkOrders(orgId, profile, { status = 'open', limit = 50, offset = 0, search = null } = {}) {
   const profileId = profile?.id || profile
-  const employee = await getEmployeeByProfile(orgId, profileId, { email: profile?.email })
-  const myEmployeeId = employee?.id
 
   let query = supabaseAdmin
     .from('manual_work_orders')
-    .select('id, status, wo_number, source_type, priority, problem_description, created_at, updated_at, created_by, assigned_department_id, assigned_location_id, work_request_id, work_center')
+    .select('id, status, wo_number, source_type, priority, problem_description, created_at, updated_at, created_by, assigned_department_id, assigned_location_id, work_request_id, work_center', { count: 'exact' })
     .eq('org_id', orgId)
     .eq('created_by', profileId)
     .order('created_at', { ascending: false })
     .range(offset, offset + limit - 1)
 
+  query = applyIlikeSearch(query, search, ['wo_number', 'problem_description'])
   query = applyWorkOrderStatusFilter(query, status)
 
-  const { data: workOrders, error } = await query
+  const { data: workOrders, error, count } = await query
   if (error) throw error
-  if (!workOrders?.length) return []
-
-  const assigneesByWo = await loadAssigneesForWorkOrders(
-    orgId,
-    workOrders.map((row) => row.id),
-  )
-
-  const filtered = workOrders.filter((wo) =>
-    isAssignedByMeRow(wo, assigneesByWo.get(wo.id) || [], myEmployeeId),
-  )
-
-  return buildWorkOrderListResponse(orgId, filtered, assigneesByWo)
+  const rows = await buildWorkOrderListResponse(orgId, workOrders || [])
+  return listEnvelope(rows, { total: count || 0, limit, offset })
 }
 
 async function loadAssignedByMeDetail(orgId, workOrderId, profile) {
@@ -1519,247 +1435,254 @@ router.delete('/manual/:id', canDeleteWorkOrders, assertOrgOwnership('manual_wor
   }
 })
 
+const DASHBOARD_STATUS_KEYS = ['assigned', 'accepted', 'in_progress', 'completed', 'verified', 'closed', 'draft']
+
+function applyDashboardFilters(query, { orgId, locationId, dateFrom, dateTo }) {
+  query = query.eq('org_id', orgId)
+  if (locationId) query = query.eq('assigned_location_id', locationId)
+  if (dateFrom) query = query.gte('created_at', new Date(dateFrom).toISOString())
+  if (dateTo) {
+    query = query.lte('created_at', new Date(`${dateTo}T23:59:59.999`).toISOString())
+  }
+  return query
+}
+
+function finiteCount(value) {
+  const n = Number(value)
+  return Number.isFinite(n) ? n : 0
+}
+
+function statusPercent(count, total) {
+  if (!total) return 0
+  const pct = Math.round((count / total) * 1000) / 10
+  return Number.isFinite(pct) ? pct : 0
+}
+
+function formatTrendLabel(isoDay) {
+  const day = isoDay instanceof Date ? isoDay : new Date(`${String(isoDay).slice(0, 10)}T00:00:00Z`)
+  if (Number.isNaN(day.getTime())) return ''
+  return day.toLocaleDateString(undefined, { month: 'short', day: 'numeric', timeZone: 'UTC' })
+}
+
+function dashboardDateBounds(dateFrom, dateTo) {
+  return {
+    dateFromIso: dateFrom ? new Date(dateFrom).toISOString() : null,
+    dateToIso: dateTo ? new Date(`${dateTo}T23:59:59.999`).toISOString() : null,
+  }
+}
+
+function assembleDashboardPayload({ byStatus, byLocation, locations, last30, prev30, trend, recentRows }) {
+  const statusMap = new Map()
+  for (const row of byStatus || []) {
+    if (!row?.status) continue
+    statusMap.set(row.status, finiteCount(row.count) + (statusMap.get(row.status) || 0))
+  }
+
+  const total = [...statusMap.values()].reduce((sum, count) => sum + count, 0)
+  const draft = statusMap.get('draft') || 0
+  const assigned = statusMap.get('assigned') || 0
+  const inProgress = statusMap.get('in_progress') || 0
+  const completed = statusMap.get('completed') || 0
+  const open = WO_OPEN_LIST_STATUSES.reduce((sum, status) => sum + (statusMap.get(status) || 0), 0)
+  const last30Count = finiteCount(last30)
+  const prev30Count = finiteCount(prev30)
+  const rawTrendPercent = !prev30Count
+    ? (last30Count > 0 ? 100 : 0)
+    : Math.round(((last30Count - prev30Count) / prev30Count) * 1000) / 10
+  const trendPercent = Number.isFinite(rawTrendPercent) ? rawTrendPercent : 0
+
+  const locationNames = new Map((locations || []).map((loc) => [loc.id, loc.name]))
+  const location_breakdown = (byLocation || [])
+    .map((row) => ({
+      name: row.assigned_location_id
+        ? (locationNames.get(row.assigned_location_id) || 'Unknown location')
+        : 'Unassigned',
+      count: finiteCount(row.count),
+    }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 5)
+
+  const recent_orders = (recentRows || []).map((row) => ({
+    id: row.id,
+    wo_number: resolveDisplayWoNumber(row),
+    title: row.problem_description?.slice(0, 80) || 'Work order',
+    summary: row.problem_description?.slice(0, 120) || 'Work order',
+    status: row.status,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+    created_by: row.created_by,
+    location_id: row.assigned_location_id,
+    location_name: locationNames.get(row.assigned_location_id) || null,
+  }))
+
+  return {
+    stats: {
+      total,
+      created: total,
+      draft,
+      assigned,
+      received: open,
+      open,
+      inProgress,
+      completed,
+      overdue: 0,
+      trendPercent,
+      slaPercent: null,
+      slaTrend: null,
+    },
+    recent_orders,
+    status_breakdown: DASHBOARD_STATUS_KEYS.map((status) => {
+      const count = statusMap.get(status) || 0
+      return { status, count, percent: statusPercent(count, total) }
+    }),
+    location_breakdown,
+    trend_data: (trend || []).map((row) => ({
+      date: row.date || formatTrendLabel(row.day),
+      value: finiteCount(row.value ?? row.count),
+    })),
+    received_count: open,
+  }
+}
+
+let dashboardRpcAvailable = true
+
+async function loadDashboardAggregates(orgId, filters) {
+  if (dashboardRpcAvailable) {
+    try {
+      return await loadDashboardAggregatesRpc(orgId, filters)
+    } catch (err) {
+      const message = String(err?.message || err?.code || '')
+      if (/could not find the function|PGRST202|does not exist/i.test(message)) {
+        dashboardRpcAvailable = false
+      }
+    }
+  }
+  return loadDashboardAggregatesFallback(orgId, filters)
+}
+
+async function loadDashboardAggregatesRpc(orgId, { locationId, dateFrom, dateTo }) {
+  const { dateFromIso, dateToIso } = dashboardDateBounds(dateFrom, dateTo)
+  const { data, error } = await supabaseAdmin.rpc('work_order_dashboard_stats', {
+    p_org_id: orgId,
+    p_location_id: locationId || null,
+    p_date_from: dateFromIso,
+    p_date_to: dateToIso,
+  })
+  if (error) throw error
+  if (data && typeof data === 'string') {
+    try {
+      return JSON.parse(data)
+    } catch {
+      return {}
+    }
+  }
+  return data || {}
+}
+
+async function loadDashboardAggregatesFallback(orgId, filters) {
+  const trendFrom = new Date(Date.now() - 60 * 86400000).toISOString()
+  const [kpiResult, trendResult, recentResult] = await Promise.all([
+    applyDashboardFilters(
+      supabaseAdmin
+        .from('manual_work_orders')
+        .select('status, assigned_location_id')
+        .range(0, 9999),
+      { orgId, ...filters },
+    ),
+    applyDashboardFilters(
+      supabaseAdmin
+        .from('manual_work_orders')
+        .select('created_at')
+        .gte('created_at', trendFrom)
+        .range(0, 9999),
+      { orgId, locationId: filters.locationId },
+    ),
+    applyDashboardFilters(
+      supabaseAdmin
+        .from('manual_work_orders')
+        .select('id, status, wo_number, created_at, updated_at, created_by, assigned_location_id, problem_description')
+        .order('created_at', { ascending: false })
+        .limit(10),
+      { orgId, ...filters },
+    ),
+  ])
+  if (kpiResult.error) throw kpiResult.error
+  if (trendResult.error) throw trendResult.error
+  if (recentResult.error) throw recentResult.error
+
+  const byStatusMap = new Map()
+  const byLocationMap = new Map()
+  for (const row of kpiResult.data || []) {
+    byStatusMap.set(row.status, (byStatusMap.get(row.status) || 0) + 1)
+    const locKey = row.assigned_location_id || ''
+    byLocationMap.set(locKey, (byLocationMap.get(locKey) || 0) + 1)
+  }
+
+  const now = Date.now()
+  const last30From = now - 30 * 86400000
+  const prev30From = now - 60 * 86400000
+  let last30 = 0
+  let prev30 = 0
+  const dayCounts = new Map()
+  const todayUtc = new Date()
+  todayUtc.setUTCHours(0, 0, 0, 0)
+  for (let index = 0; index < 7; index += 1) {
+    const day = new Date(todayUtc)
+    day.setUTCDate(todayUtc.getUTCDate() - (6 - index))
+    dayCounts.set(day.toISOString().slice(0, 10), 0)
+  }
+  for (const row of trendResult.data || []) {
+    const created = new Date(row.created_at).getTime()
+    if (!Number.isFinite(created)) continue
+    if (created >= last30From) last30 += 1
+    else if (created >= prev30From) prev30 += 1
+    const dayKey = new Date(row.created_at).toISOString().slice(0, 10)
+    if (dayCounts.has(dayKey)) dayCounts.set(dayKey, dayCounts.get(dayKey) + 1)
+  }
+
+  return {
+    by_status: [...byStatusMap.entries()].map(([status, count]) => ({ status, count })),
+    by_location: [...byLocationMap.entries()].map(([assigned_location_id, count]) => ({
+      assigned_location_id: assigned_location_id || null,
+      count,
+    })),
+    last30,
+    prev30,
+    trend: [...dayCounts.entries()].map(([day, count]) => ({ day, count })),
+    recent: recentResult.data || [],
+  }
+}
+
 router.get('/dashboard', canReadWorkOrders, async (req, res) => {
   const orgId = req.userProfile.org_id
-  const profileId = req.userProfile.id
   const scopedLocationId = getScopedLocationId(req.orgPermissions)
   const locationFilter = typeof req.query.location_id === 'string' ? req.query.location_id : null
   const dateFrom = typeof req.query.date_from === 'string' ? req.query.date_from : null
   const dateTo = typeof req.query.date_to === 'string' ? req.query.date_to : null
-  const RECENT_LIMIT = 10
+  const locationId = scopedLocationId
+    || (locationFilter && locationFilter !== 'all' ? locationFilter : null)
+  const filters = { locationId, dateFrom, dateTo }
 
   try {
-    const employee = await getEmployeeByProfile(orgId, profileId, { email: req.userProfile.email })
-
-    let query = supabaseAdmin
-      .from('manual_work_orders')
-      .select('id, status, wo_number, created_at, updated_at, created_by, assigned_department_id, assigned_location_id, problem_description')
-      .eq('org_id', orgId)
-      .order('created_at', { ascending: false })
-      .limit(500)
-
-    if (dateFrom) query = query.gte('created_at', new Date(dateFrom).toISOString())
-    if (dateTo) {
-      const end = new Date(`${dateTo}T23:59:59.999`)
-      query = query.lte('created_at', end.toISOString())
-    }
-
-    const { data: rows, error } = await query
-    if (error) return res.status(500).json({ error: error.message })
-
-    const workOrders = rows || []
-    const woIds = workOrders.map((row) => row.id)
-
-    // Lightweight assignee counts + location ids (no photos / full employee joins)
-    const [assigneeRows, deptRows, receivedIds] = await Promise.all([
-      woIds.length
-        ? supabaseAdmin
-            .from('manual_work_order_assignees')
-            .select('work_order_id, employee_id, org_employees(location_id, org_locations!location_id(name))')
-            .eq('org_id', orgId)
-            .in('work_order_id', woIds)
-            .then(({ data, error: e }) => { if (e) throw e; return data || [] })
-        : Promise.resolve([]),
-      (() => {
-        const deptIds = [...new Set(workOrders.map((r) => r.assigned_department_id).filter(Boolean))]
-        const locIds = [...new Set(workOrders.map((r) => r.assigned_location_id).filter(Boolean))]
-        return Promise.all([
-          deptIds.length
-            ? supabaseAdmin.from('departments').select('id, name, location_id').eq('org_id', orgId).in('id', deptIds)
-                .then(({ data, error: e }) => { if (e) throw e; return data || [] })
-            : Promise.resolve([]),
-          locIds.length
-            ? supabaseAdmin.from('org_locations').select('id, name').eq('org_id', orgId).in('id', locIds)
-                .then(({ data, error: e }) => { if (e) throw e; return data || [] })
-            : Promise.resolve([]),
-        ]).then(([depts, locs]) => ({ depts, locs }))
-      })(),
-      employee ? listReceivedWorkOrderIds(orgId, employee) : Promise.resolve([]),
+    const [aggregates, locationRows] = await Promise.all([
+      loadDashboardAggregates(orgId, filters),
+      supabaseAdmin.from('org_locations').select('id, name').eq('org_id', orgId).eq('is_active', true),
     ])
+    if (locationRows.error) throw locationRows.error
 
-    const assigneeCountByWo = new Map()
-    const assigneeLocationByWo = new Map()
-    for (const row of assigneeRows) {
-      assigneeCountByWo.set(row.work_order_id, (assigneeCountByWo.get(row.work_order_id) || 0) + 1)
-      const locId = row.org_employees?.location_id
-      const locName = row.org_employees?.org_locations?.name
-      if (!assigneeLocationByWo.has(row.work_order_id)) {
-        assigneeLocationByWo.set(row.work_order_id, { ids: [], name: null })
-      }
-      const entry = assigneeLocationByWo.get(row.work_order_id)
-      if (locId && !entry.ids.includes(locId)) entry.ids.push(locId)
-      if (!entry.name && locName) entry.name = locName
-    }
-
-    const deptById = new Map((deptRows.depts || []).map((d) => [d.id, d]))
-    const locById = new Map((deptRows.locs || []).map((l) => [l.id, l]))
-    const receivedSet = new Set(receivedIds)
-
-    // Resolve department location names
-    const deptLocIds = [...new Set([...deptById.values()].map((d) => d.location_id).filter(Boolean))]
-    if (deptLocIds.length) {
-      const missing = deptLocIds.filter((id) => !locById.has(id))
-      if (missing.length) {
-        const { data: moreLocs, error: locErr } = await supabaseAdmin
-          .from('org_locations')
-          .select('id, name')
-          .eq('org_id', orgId)
-          .in('id', missing)
-        if (locErr) throw locErr
-        for (const loc of moreLocs || []) locById.set(loc.id, loc)
-      }
-    }
-
-    const effectiveLocationId = scopedLocationId
-      || (locationFilter && locationFilter !== 'all' ? locationFilter : null)
-
-    const orders = workOrders.map((row) => {
-      const assigneeCount = assigneeCountByWo.get(row.id) || 0
-      const assigneeLoc = assigneeLocationByWo.get(row.id)
-      const dept = row.assigned_department_id ? deptById.get(row.assigned_department_id) : null
-      const assignedLoc = row.assigned_location_id ? locById.get(row.assigned_location_id) : null
-      const deptLocName = dept?.location_id ? locById.get(dept.location_id)?.name : null
-
-      const locationIds = [
-        ...new Set([
-          ...(assigneeLoc?.ids || []),
-          row.assigned_location_id,
-          dept?.location_id,
-        ].filter(Boolean)),
-      ]
-
-      const locationName = assignedLoc?.name
-        || deptLocName
-        || assigneeLoc?.name
-        || (assigneeCount || dept || assignedLoc ? 'Unknown location' : 'Unassigned')
-
-      return {
-        id: row.id,
-        wo_number: resolveDisplayWoNumber(row),
-        title: row.problem_description?.slice(0, 80) || 'Work order',
-        summary: row.problem_description?.slice(0, 120) || 'Work order',
-        status: row.status,
-        created_at: row.created_at,
-        updated_at: row.updated_at,
-        created_by: row.created_by,
-        assignee_count: assigneeCount,
-        location_ids: locationIds,
-        location_id: locationIds[0] || null,
-        location_name: locationName,
-        is_received: receivedSet.has(row.id),
-      }
-    }).filter((row) => {
-      if (!effectiveLocationId) return true
-      return row.location_ids.includes(effectiveLocationId)
+    const payload = assembleDashboardPayload({
+      byStatus: aggregates.by_status,
+      byLocation: aggregates.by_location,
+      locations: locationRows.data || [],
+      last30: aggregates.last30,
+      prev30: aggregates.prev30,
+      trend: aggregates.trend,
+      recentRows: aggregates.recent,
     })
 
-    // Server-side aggregates (client no longer needs 1000 enriched rows)
-    const total = orders.length
-    const statusCounts = {}
-    const locationCounts = {}
-    let assigned = 0
-    let received = 0
-    for (const o of orders) {
-      statusCounts[o.status] = (statusCounts[o.status] || 0) + 1
-      if (o.assignee_count > 0) assigned += 1
-      if (o.is_received) received += 1
-      const name = o.location_name || 'Unassigned'
-      locationCounts[name] = (locationCounts[name] || 0) + 1
-    }
-
-    const now = Date.now()
-    const dayMs = 86400000
-    const last30 = orders.filter((o) => now - new Date(o.created_at).getTime() <= 30 * dayMs).length
-    const prev30 = orders.filter((o) => {
-      const age = now - new Date(o.created_at).getTime()
-      return age > 30 * dayMs && age <= 60 * dayMs
-    }).length
-    const trendPercent = !prev30 ? (last30 > 0 ? 100 : 0) : Math.round(((last30 - prev30) / prev30) * 1000) / 10
-
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-    const trend_data = []
-    for (let i = 6; i >= 0; i -= 1) {
-      const day = new Date(today)
-      day.setDate(today.getDate() - i)
-      const next = new Date(day)
-      next.setDate(day.getDate() + 1)
-      const value = orders.filter((o) => {
-        const created = new Date(o.created_at)
-        return created >= day && created < next
-      }).length
-      trend_data.push({
-        date: day.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
-        value,
-      })
-    }
-
-    const status_breakdown = [
-      'assigned',
-      'accepted',
-      'in_progress',
-      'completed',
-      'verified',
-      'closed',
-      'draft',
-    ].map((status) => ({
-      status,
-      count: statusCounts[status] || 0,
-      percent: total ? Math.round(((statusCounts[status] || 0) / total) * 1000) / 10 : 0,
-    }))
-
-    const location_breakdown = Object.entries(locationCounts)
-      .map(([name, count]) => ({ name, count }))
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 5)
-
-    // Enrich only recent rows with summaries for the recent list
-    const recentSlice = orders.slice(0, RECENT_LIMIT)
-    let recent_orders = recentSlice
-    if (recentSlice.length) {
-      const withSummaries = await attachSummaries(orgId, recentSlice.map((o) => ({
-        id: o.id,
-        status: o.status,
-        created_at: o.created_at,
-        updated_at: o.updated_at,
-        created_by: o.created_by,
-      })))
-      const summaryById = new Map(withSummaries.map((r) => [r.id, r]))
-      recent_orders = recentSlice.map((o) => {
-        const s = summaryById.get(o.id)
-        return {
-          ...o,
-          wo_number: s?.wo_number || o.wo_number,
-          title: s?.summary || o.title,
-          summary: s?.summary || o.summary,
-        }
-      })
-    }
-
     res.json({
-      work_orders: recent_orders,
-      recent_orders,
-      stats: {
-        total,
-        created: statusCounts.assigned || 0,
-        draft: statusCounts.draft || 0,
-        assigned,
-        received,
-        open: (statusCounts.assigned || 0)
-          + (statusCounts.accepted || 0)
-          + (statusCounts.started || 0)
-          + (statusCounts.in_progress || 0),
-        inProgress: (statusCounts.in_progress || 0) + (statusCounts.started || 0),
-        completed: (statusCounts.completed || 0) + (statusCounts.verified || 0) + (statusCounts.closed || 0),
-        overdue: received,
-        trendPercent,
-        slaPercent: null,
-        slaTrend: null,
-      },
-      status_breakdown,
-      location_breakdown,
-      trend_data,
-      received_count: received,
+      ...payload,
+      locations: (locationRows.data || []).map((loc) => ({ id: loc.id, name: loc.name })),
       scoped_location_id: scopedLocationId,
     })
   } catch (err) {
@@ -1777,13 +1700,14 @@ router.get('/counts', canReadWorkOrders, async (req, res) => {
     const [receivedResult, assigned, manualResult] = await Promise.all([
       (async () => {
         if (!employee) return 0
-        const workOrderIds = await listReceivedWorkOrderIds(orgId, employee)
-        if (!workOrderIds.length) return 0
+        const assigneeIds = await listReceivedWorkOrderIds(orgId, employee)
+        const orFilter = receivedWorkOrderOrFilter(employee, assigneeIds)
+        if (!orFilter) return 0
         const { count, error } = await supabaseAdmin
           .from('manual_work_orders')
           .select('id', { count: 'exact', head: true })
           .eq('org_id', orgId)
-          .in('id', workOrderIds)
+          .or(orFilter)
           .in('status', WO_OPEN_LIST_STATUSES)
         if (error) throw error
         return count || 0
@@ -1816,15 +1740,20 @@ router.get('/manual/orders', canReadWorkOrders, async (req, res) => {
   const orgId = req.userProfile.org_id
   const { limit, offset } = parsePagination(req.query)
   try {
-    const { data, error } = await supabaseAdmin
+    let query = supabaseAdmin
       .from('manual_work_orders')
-      .select('id, status, wo_number, source_type, priority, problem_description, created_at, updated_at, created_by, assigned_department_id, assigned_location_id, work_request_id')
+      .select('id, status, wo_number, source_type, priority, problem_description, created_at, updated_at, created_by, assigned_department_id, assigned_location_id, work_request_id', { count: 'exact' })
       .eq('org_id', orgId)
       .order('created_at', { ascending: false })
       .range(offset, offset + limit - 1)
 
+    query = applyIlikeSearch(query, req.query.search, ['wo_number', 'problem_description'])
+
+    const { data, error, count } = await query
+
     if (error) return res.status(500).json({ error: error.message })
-    res.json(await buildWorkOrderListResponse(orgId, data || []))
+    const rows = await buildWorkOrderListResponse(orgId, data || [])
+    res.json(listEnvelope(rows, { total: count || 0, limit, offset }))
   } catch (err) {
     res.status(500).json({ error: err.message })
   }
@@ -1845,7 +1774,11 @@ router.get('/assigned', canReadWorkOrders, async (req, res) => {
   const orgId = req.userProfile.org_id
   const { limit, offset } = parsePagination(req.query)
   try {
-    const rows = await listAssignedByMeWorkOrders(orgId, req.userProfile, { limit, offset })
+    const rows = await listAssignedByMeWorkOrders(orgId, req.userProfile, {
+      limit,
+      offset,
+      search: req.query.search,
+    })
     res.json(rows)
   } catch (err) {
     res.status(500).json({ error: err.message })
@@ -1871,7 +1804,11 @@ router.get('/received', canReadWorkOrders, async (req, res) => {
   const orgId = req.userProfile.org_id
   const { limit, offset } = parsePagination(req.query)
   try {
-    const rows = await listReceivedWorkOrders(orgId, req.userProfile, { limit, offset })
+    const rows = await listReceivedWorkOrders(orgId, req.userProfile, {
+      limit,
+      offset,
+      search: req.query.search,
+    })
     res.json(rows)
   } catch (err) {
     res.status(500).json({ error: err.message })

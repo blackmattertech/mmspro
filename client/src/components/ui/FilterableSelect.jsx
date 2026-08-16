@@ -47,6 +47,7 @@ export default function FilterableSelect({
   emptyLabel,
   onCreate,
   createLabel = 'Create',
+  onQueryChange,
 }) {
   const autoId = useId()
   const id = idProp || autoId
@@ -57,6 +58,10 @@ export default function FilterableSelect({
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [highlightedIndex, setHighlightedIndex] = useState(0)
+
+  useEffect(() => {
+    onQueryChange?.(query)
+  }, [query, onQueryChange])
 
   const normalized = useMemo(
     () => normalizeOptions(options, getOptionValue, getOptionLabel),

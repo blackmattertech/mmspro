@@ -2,13 +2,18 @@ import { useState, useEffect, useCallback } from 'react'
 import { getEquipmentFields, updateEquipmentFieldDropdown } from '../lib/api-equipment'
 import { apiFetch } from '../lib/api'
 
-export function useOrgEquipmentFields() {
+export function useOrgEquipmentFields({ enabled = true } = {}) {
   const [fields, setFields] = useState([])
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(Boolean(enabled))
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
 
   const load = useCallback(async ({ silent = false } = {}) => {
+    if (!enabled) {
+      setFields([])
+      setLoading(false)
+      return
+    }
     if (!silent) setLoading(true)
     setError(null)
     try {
@@ -19,7 +24,7 @@ export function useOrgEquipmentFields() {
     } finally {
       if (!silent) setLoading(false)
     }
-  }, [])
+  }, [enabled])
 
   useEffect(() => {
     load()

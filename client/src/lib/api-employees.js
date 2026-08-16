@@ -1,12 +1,16 @@
 import { companyFetch } from './api'
+import { listQueryParams, asListArray } from './listResponse'
 
-export function getEmployees(filters = {}) {
-  const params = new URLSearchParams()
-  if (filters.departmentId) params.set('department_id', filters.departmentId)
-  if (filters.locationId) params.set('location_id', filters.locationId)
-  if (filters.forAssignment) params.set('for_assignment', '1')
-  const qs = params.toString() ? `?${params}` : ''
-  return companyFetch(`/employees${qs}`)
+export async function getEmployees(filters = {}) {
+  const data = await companyFetch(`/employees${listQueryParams({
+    department_id: filters.departmentId,
+    location_id: filters.locationId,
+    for_assignment: filters.forAssignment ? '1' : undefined,
+    search: filters.search,
+    limit: filters.limit ?? 200,
+    offset: filters.offset ?? 0,
+  })}`)
+  return asListArray(data)
 }
 
 export function createEmployee(data) {

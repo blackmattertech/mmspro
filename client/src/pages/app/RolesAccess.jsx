@@ -55,10 +55,6 @@ export default function RolesAccess() {
     remove,
     assignEmployees,
   } = useRoles()
-  const { employees } = useEmployees({
-    locationId: isOrgAdmin ? undefined : (userLocationId || undefined),
-  })
-
   const [selectedId, setSelectedId] = useState(null)
   const [search, setSearch] = useState('')
   const [filterField, setFilterField] = useState('')
@@ -68,6 +64,10 @@ export default function RolesAccess() {
   const [assignOpen, setAssignOpen] = useState(false)
   const [permDraft, setPermDraft] = useState(null)
   const [permSaving, setPermSaving] = useState(false)
+  const { employees } = useEmployees({
+    locationId: isOrgAdmin ? undefined : (userLocationId || undefined),
+    enabled: assignOpen,
+  })
 
   useEffect(() => {
     let cancelled = false

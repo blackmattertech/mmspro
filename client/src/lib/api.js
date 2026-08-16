@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { listQueryParams, asListArray } from './listResponse'
 
 function resolveApiUrl() {
   if (import.meta.env.VITE_API_URL) return import.meta.env.VITE_API_URL
@@ -163,9 +164,14 @@ export async function updateCompanyDetails(data) {
   return companyDetailsCache.data
 }
 
-export function getLocations({ forAssignment = false } = {}) {
-  const qs = forAssignment ? '?for_assignment=1' : ''
-  return companyFetch(`/locations${qs}`)
+export async function getLocations({ forAssignment = false, search, limit = 200, offset = 0 } = {}) {
+  const data = await companyFetch(`/locations${listQueryParams({
+    for_assignment: forAssignment ? '1' : undefined,
+    search,
+    limit,
+    offset,
+  })}`)
+  return asListArray(data)
 }
 
 export function createLocation(data) {
@@ -180,9 +186,14 @@ export function deleteLocation(id) {
   return companyFetch(`/locations/${id}`, { method: 'DELETE' })
 }
 
-export function getDepartments(locationId) {
-  const qs = locationId ? `?location_id=${locationId}` : ''
-  return companyFetch(`/departments${qs}`)
+export async function getDepartments(locationId, { search, limit = 200, offset = 0 } = {}) {
+  const data = await companyFetch(`/departments${listQueryParams({
+    location_id: locationId || undefined,
+    search,
+    limit,
+    offset,
+  })}`)
+  return asListArray(data)
 }
 
 export function createDepartment(data) {
@@ -197,12 +208,15 @@ export function deleteDepartment(id) {
   return companyFetch(`/departments/${id}`, { method: 'DELETE' })
 }
 
-export function getAreas({ locationId, departmentId } = {}) {
-  const params = new URLSearchParams()
-  if (locationId) params.set('location_id', locationId)
-  if (departmentId) params.set('department_id', departmentId)
-  const qs = params.toString() ? `?${params}` : ''
-  return companyFetch(`/areas${qs}`)
+export async function getAreas({ locationId, departmentId, search, limit = 200, offset = 0 } = {}) {
+  const data = await companyFetch(`/areas${listQueryParams({
+    location_id: locationId,
+    department_id: departmentId,
+    search,
+    limit,
+    offset,
+  })}`)
+  return asListArray(data)
 }
 
 export function createArea(data) {

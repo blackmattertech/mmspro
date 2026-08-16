@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { usePermissions } from '../../hooks/usePermissions'
 import { isCompanyAdmin } from '../../lib/accountRoles'
 import { useAuth } from '../../hooks/useAuth'
@@ -74,13 +74,21 @@ export default function Equipment() {
   const [filterValue, setFilterValue] = useState('')
   const [sortBy, setSortBy] = useState('name_asc')
   const debouncedSearch = useDebouncedValue(search.trim())
+  const [listTotal, setListTotal] = useState(0)
+  const filterResetKey = `${debouncedSearch}|${filterField}|${filterValue}|${sortBy}`
+  const equipmentPagination = useTablePagination(listTotal, { resetKey: filterResetKey })
 
   const filters = useMemo(
-    () => ({ search: debouncedSearch || undefined }),
-    [debouncedSearch],
+    () => ({
+      search: debouncedSearch || undefined,
+      limit: equipmentPagination.pageSize,
+      offset: equipmentPagination.offset,
+    }),
+    [debouncedSearch, equipmentPagination.pageSize, equipmentPagination.offset],
   )
-  const { items, loading, saving, error, create, update, remove, reload } = useEquipment(filters)
-  const fieldsState = useOrgEquipmentFields()
+  const { items, total, loading, saving, error, create, update, remove, reload } = useEquipment(filters)
+  useEffect(() => { setListTotal(total) }, [total])
+  const fieldsState = useOrgEquipmentFields({ enabled: view === 'fields' })
 
   const filteredItems = useMemo(() => applyTableFilters(items, {
     fieldFilter: { field: filterField, value: filterValue },
@@ -97,9 +105,7 @@ export default function Equipment() {
     getCreatedAt: (row) => row.created_at,
   }), [items, filterField, filterValue, sortBy])
 
-  const filterResetKey = `${debouncedSearch}|${filterField}|${filterValue}|${sortBy}`
-  const equipmentPagination = useTablePagination(filteredItems.length, { resetKey: filterResetKey })
-  const pagedItems = equipmentPagination.paginate(filteredItems)
+  const pagedItems = filteredItems
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState(null)
   const [viewing, setViewing] = useState(null)
@@ -417,16 +423,7 @@ export default function Equipment() {
                       ))}
                     </tbody>
                   </table>
-                  <TablePagination
-                    page={equipmentPagination.page}
-                    totalPages={equipmentPagination.totalPages}
-                    pageSize={equipmentPagination.pageSize}
-                    pageSizeOptions={equipmentPagination.pageSizeOptions}
-                    totalCount={filteredItems.length}
-                    rangeStart={equipmentPagination.rangeStart}
-                    rangeEnd={equipmentPagination.rangeEnd}
-                    onPageChange={equipmentPagination.setPage}
-                    onPageSizeChange={equipmentPagination.setPageSize}
+                  <TablePagination {...equipmentPagination} />
                   />
                   </div>
                 </div>

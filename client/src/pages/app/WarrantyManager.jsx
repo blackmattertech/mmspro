@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useOrg } from '../../hooks/useOrg'
 import { usePermissions } from '../../hooks/usePermissions'
@@ -197,9 +197,17 @@ export default function WarrantyManager() {
   const [expiringPanelOpen, setExpiringPanelOpen] = useState(false)
   const [sortBy, setSortBy] = useState('newest')
   const debouncedSearch = useDebouncedValue(search.trim())
+  const [listTotal, setListTotal] = useState(0)
+  const filterResetKey = `${debouncedSearch}|${filterField}|${filterValue}|${sortBy}`
+  const pagination = useTablePagination(listTotal, { resetKey: filterResetKey })
 
-  const filters = useMemo(() => ({ search: debouncedSearch || undefined }), [debouncedSearch])
-  const { items, loading, saving, error, remove } = useWarranties(filters)
+  const filters = useMemo(() => ({
+    search: debouncedSearch || undefined,
+    limit: pagination.pageSize,
+    offset: pagination.offset,
+  }), [debouncedSearch, pagination.pageSize, pagination.offset])
+  const { items, total, loading, saving, error, remove } = useWarranties(filters)
+  useEffect(() => { setListTotal(total) }, [total])
 
   const warrantyStatusFilter = useMemo(
     () => resolveWarrantyStatusFilter(filterField, filterValue),
@@ -250,9 +258,7 @@ export default function WarrantyManager() {
     getCreatedAt: (row) => row.purchase_date || row.created_at,
   }), [items, isStatusFieldFilter, filterField, filterValue, warrantyStatusFilter, expiringPanelOpen, expiringFilterApplied, sortBy])
 
-  const filterResetKey = `${debouncedSearch}|${filterField}|${filterValue}|${expiringPanelOpen}|${expiringFilterApplied.mode}|${expiringFilterApplied.minDays}|${expiringFilterApplied.maxDays}|${expiringFilterApplied.dateFrom}|${expiringFilterApplied.dateTo}|${sortBy}`
-  const pagination = useTablePagination(filteredItems.length, { resetKey: filterResetKey })
-  const pagedItems = pagination.paginate(filteredItems)
+  const pagedItems = filteredItems
 
   const columnDefs = useMemo(() => (
     canManage ? WARRANTY_COLUMNS : WARRANTY_COLUMNS.filter((col) => col.id !== 'actions')

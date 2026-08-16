@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useAuth } from './useAuth'
+import { useOrgBootstrap } from './useOrg'
 import { getMyProfile } from '../lib/api-profile'
 
 const PROFILE_CACHE_PREFIX = 'mmspro:profile-cache:'
@@ -60,66 +61,43 @@ export function profileFormPhone(profile, employee) {
 
 export function useProfile() {
   const { user } = useAuth()
-  const [profile, setProfile] = useState(null)
-  const [employee, setEmployee] = useState(null)
-  const [avatarUrl, setAvatarUrl] = useState(null)
-  const [loading, setLoading] = useState(true)
+  const { me, loading: orgLoading } = useOrgBootstrap()
+  const [override, setOverride] = useState(null)
 
-  const loadProfile = useCallback(async ({ silent = false } = {}) => {
-    if (!user) {
-      setProfile(null)
-      setEmployee(null)
-      setAvatarUrl(null)
-      setLoading(false)
-      return
-    }
+  const profile = override?.profile ?? me?.profile ?? null
+  const employee = override?.employee ?? me?.employee ?? null
+  const avatarUrl = override?.avatarUrl ?? me?.avatarUrl ?? null
+  const loading = Boolean(user) && orgLoading && !profile && !employee && !override
 
-    if (!silent) setLoading(true)
-
+  const refresh = useCallback(async () => {
+    if (!user) return
     try {
       const data = await getMyProfile()
-      setProfile(data.profile)
-      setEmployee(data.employee)
-      setAvatarUrl(data.avatar_url || null)
-      writeProfileCache(user.id, {
+      const next = {
         profile: data.profile,
         employee: data.employee,
         avatarUrl: data.avatar_url || null,
-      })
+      }
+      setOverride(next)
+      writeProfileCache(user.id, next)
     } catch (err) {
       console.warn('Failed to load profile:', err.message)
-      if (!silent) {
-        setProfile(null)
-        setEmployee(null)
-        setAvatarUrl(null)
-        clearProfileCache(user.id)
-      }
-    } finally {
-      setLoading(false)
     }
   }, [user])
 
   useEffect(() => {
     if (!user) {
-      setProfile(null)
-      setEmployee(null)
-      setAvatarUrl(null)
-      setLoading(false)
+      setOverride(null)
       return
     }
-
-    const cached = readProfileCache(user.id)
-    if (cached) {
-      setProfile(cached.profile ?? null)
-      setEmployee(cached.employee ?? null)
-      setAvatarUrl(cached.avatarUrl ?? null)
-      setLoading(false)
-      loadProfile({ silent: true })
-      return
+    if (me?.profile || me?.employee) {
+      writeProfileCache(user.id, {
+        profile: me.profile,
+        employee: me.employee,
+        avatarUrl: me.avatarUrl || null,
+      })
     }
-
-    loadProfile({ silent: false })
-  }, [user, loadProfile])
+  }, [user, me])
 
   const profileReady = Boolean(profile || employee)
   const displayName = profileReady
@@ -132,6 +110,6 @@ export function useProfile() {
     avatarUrl,
     displayName,
     loading,
-    refresh: () => loadProfile({ silent: true }),
+    refresh,
   }
 }

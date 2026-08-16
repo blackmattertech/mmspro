@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
-import { supabase } from '../../lib/supabase'
 import { readRememberMe, readSavedEmail, writeRememberMe, writeSavedEmail } from '../../lib/authPreferences'
 import { requestPasswordReset } from '../../lib/api'
+import { fetchSession, orgPathFromSession } from '../../lib/session'
 import { assetUrl } from '../../lib/assets'
 import './Login.css'
 
@@ -105,32 +105,14 @@ export default function Login() {
     setSuccess(null)
   }
 
-  const getPostAuthPath = async (userId) => {
-    if (!supabase) {
-      throw new Error('Authentication is not configured.')
+  const getPostAuthPath = async () => {
+    try {
+      const session = await fetchSession()
+      const path = orgPathFromSession(session)
+      if (path) return path
+    } catch (err) {
+      if (/disabled/i.test(err.message || '')) throw err
     }
-
-    const { data: profile, error: profileError } = await supabase
-      .from('profiles')
-      .select('role, org_id, organizations(slug, is_active)')
-      .eq('id', userId)
-      .maybeSingle()
-
-    if (profileError) {
-      throw new Error(profileError.message || 'Could not load your account profile. Please try again.')
-    }
-
-    if (profile?.role === 'super_admin') {
-      return '/admin/dashboard'
-    }
-
-    if (profile?.organizations?.slug) {
-      if (profile.organizations.is_active === false) {
-        throw new Error('Your organization has been disabled. Contact support.')
-      }
-      return `/${profile.organizations.slug}/dashboard`
-    }
-
     throw new Error('No organization is linked to your account. Contact your administrator.')
   }
 
@@ -151,13 +133,13 @@ export default function Login() {
       return
     }
 
-    const { data, error: signInError } = await signIn(email, password, { rememberMe })
+    const { error: signInError } = await signIn(email, password, { rememberMe })
     if (signInError) {
       setLoading(false)
       return setError(signInError.message)
     }
 
-    const path = await getPostAuthPath(data.user.id).catch((err) => {
+    const path = await getPostAuthPath().catch((err) => {
       setLoading(false)
       setError(err.message)
       return null

@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { lazy, Suspense, useState } from 'react'
 import { useProfile } from '../../hooks/useProfile'
 import { formatAccountRole } from '../../lib/accountRoles'
-import ProfileModal from '../profile/ProfileModal'
 import LogoutButton from '../ui/LogoutButton'
+
+const ProfileModal = lazy(() => import('../profile/ProfileModal'))
 
 export default function SidebarUserFooter({
   collapsed = false,
@@ -68,13 +69,15 @@ export default function SidebarUserFooter({
       </div>
 
       {showProfile && (
-        <ProfileModal
-          profile={profile}
-          employee={employee}
-          avatarUrl={avatarUrl}
-          onClose={() => setShowProfile(false)}
-          onUpdated={refresh}
-        />
+        <Suspense fallback={null}>
+          <ProfileModal
+            profile={profile}
+            employee={employee}
+            avatarUrl={avatarUrl}
+            onClose={() => setShowProfile(false)}
+            onUpdated={refresh}
+          />
+        </Suspense>
       )}
     </>
   )

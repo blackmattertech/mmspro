@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import FilterableSelect from '../ui/FilterableSelect'
-import '../company/CompanyShared.css'
 import './CreateWorkOrderModal.css'
 
 export default function CreateWorkOrderModal({

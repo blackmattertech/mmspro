@@ -1,10 +1,13 @@
 import { apiFetch } from './api'
+import { listQueryParams, asListArray } from './listResponse'
 
-export function getWarrantiesList(params = {}) {
-  const qs = new URLSearchParams()
-  if (params.search) qs.set('search', params.search)
-  const suffix = qs.toString() ? `?${qs}` : ''
-  return apiFetch(`/api/warranties${suffix}`)
+export async function getWarrantiesList(params = {}) {
+  const data = await apiFetch(`/api/warranties${listQueryParams({
+    search: params.search,
+    limit: params.limit ?? 50,
+    offset: params.offset ?? 0,
+  })}`)
+  return asListArray(data)
 }
 
 export function getWarranty(id) {

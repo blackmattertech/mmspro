@@ -39,7 +39,7 @@
     },
     {
       "name": "Notifications",
-      "description": "FCM push notification tokens and sending"
+      "description": "In-app inbox, FCM push tokens, and sending"
     },
     {
       "name": "Admin",
@@ -1646,25 +1646,126 @@
         }
       }
     },
-    "/api/me": {
+    "/api/notifications": {
       "get": {
         "tags": [
-          "User"
+          "Notifications"
         ],
-        "summary": "Get current authenticated user",
+        "summary": "List in-app notifications for the current user",
         "responses": {
           "200": {
-            "description": "Supabase auth user",
+            "description": "Notification inbox",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/MeResponse"
+                  "$ref": "#/components/schemas/NotificationListResponse"
                 }
               }
             }
           },
           "401": {
             "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "No org access",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/notifications/read-all": {
+      "post": {
+        "tags": [
+          "Notifications"
+        ],
+        "summary": "Mark all notifications as read",
+        "responses": {
+          "200": {
+            "description": "Notifications marked read",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "No org access",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/notifications/{id}/read": {
+      "patch": {
+        "tags": [
+          "Notifications"
+        ],
+        "summary": "Mark a notification as read",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Notification marked read",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "No org access",
             "content": {
               "application/json": {
                 "schema": {
@@ -1741,7 +1842,7 @@
         "tags": [
           "Notifications"
         ],
-        "summary": "Send push notification to a user",
+        "summary": "Send an in-app and push notification to a user",
         "parameters": [
           {
             "name": "userId",
@@ -1785,7 +1886,7 @@
             }
           },
           "403": {
-            "description": "No org access",
+            "description": "Forbidden",
             "content": {
               "application/json": {
                 "schema": {
@@ -1802,7 +1903,7 @@
         "tags": [
           "Notifications"
         ],
-        "summary": "Send push notification to entire org",
+        "summary": "Send an in-app and push notification to the entire org",
         "requestBody": {
           "required": true,
           "content": {
@@ -1818,6 +1919,9 @@
                     "type": "string"
                   },
                   "body": {
+                    "type": "string"
+                  },
+                  "url": {
                     "type": "string"
                   }
                 }
@@ -1847,7 +1951,7 @@
             }
           },
           "403": {
-            "description": "No org access",
+            "description": "Forbidden",
             "content": {
               "application/json": {
                 "schema": {
@@ -3652,6 +3756,54 @@
           },
           "manual": {
             "type": "integer"
+          }
+        }
+      },
+      "NotificationListResponse": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NotificationItem"
+            }
+          },
+          "unread": {
+            "type": "integer"
+          },
+          "push_configured": {
+            "type": "boolean"
+          },
+          "inbox_ready": {
+            "type": "boolean"
+          }
+        }
+      },
+      "NotificationItem": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "title": {
+            "type": "string"
+          },
+          "body": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          },
+          "data": {
+            "type": "object"
+          },
+          "time": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "read": {
+            "type": "boolean"
           }
         }
       },

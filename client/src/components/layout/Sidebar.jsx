@@ -10,6 +10,7 @@ import { assetUrl } from '../../lib/assets'
 import NavIcon from './NavIcon'
 import SidebarUserFooter from './SidebarUserFooter'
 import SidebarQuickAccess from './SidebarQuickAccess'
+import NotificationBell from './NotificationBell'
 import './Sidebar.css'
 
 function findActiveParentId(navItems, pathname) {
@@ -167,6 +168,7 @@ export default function Sidebar({ collapsed = false, onToggle }) {
             catalog={shortcutCatalog}
           />
         )}
+        <NotificationBell variant="sidebar" collapsed={collapsed} />
         <SidebarUserFooter
           collapsed={collapsed}
           roleLabel={roleLabel}

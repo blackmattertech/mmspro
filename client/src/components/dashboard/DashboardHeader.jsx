@@ -1,11 +1,8 @@
-import { useState, useRef, useEffect } from 'react'
-import NotificationPanel from './NotificationPanel'
+import { useState, useEffect } from 'react'
 import DateField from '../ui/DateField'
 import FilterableSelect from '../ui/FilterableSelect'
 import { useOrg } from '../../hooks/useOrg'
-import { useNotifications } from '../../hooks/useNotifications'
 import { getOrgAssetSignedUrl } from '../../lib/orgAssets'
-import '../company/CompanyShared.css'
 import './DashboardHeader.css'
 
 export default function DashboardHeader({
@@ -19,10 +16,7 @@ export default function DashboardHeader({
   onDateToChange,
   onCreateWorkOrder,
 }) {
-  const [showNotifications, setShowNotifications] = useState(false)
-  const notifBtnRef = useRef(null)
   const { org } = useOrg()
-  const { unreadCount } = useNotifications()
   const [logoUrl, setLogoUrl] = useState(null)
 
   useEffect(() => {
@@ -116,30 +110,6 @@ export default function DashboardHeader({
             </svg>
             Create Work Order
           </button>
-
-          <div className="dash-header__icon-wrap">
-            <button
-              ref={notifBtnRef}
-              type="button"
-              className="dash-header__icon-btn dash-header__icon-btn--primary"
-              aria-label="Notifications"
-              aria-expanded={showNotifications}
-              onClick={() => setShowNotifications((prev) => !prev)}
-            >
-              <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-                <path d="M10 2.5C7.5 2.5 6 4.5 6 7V10.5L4 13V14H16V13L14 10.5V7C14 4.5 12.5 2.5 10 2.5Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
-                <path d="M8.5 14V14.5C8.5 15.6 9.15 16.5 10 16.5C10.85 16.5 11.5 15.6 11.5 14.5V14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-              </svg>
-              {unreadCount > 0 && (
-                <span className="dash-header__badge">{unreadCount > 9 ? '9+' : unreadCount}</span>
-              )}
-            </button>
-            <NotificationPanel
-              open={showNotifications}
-              onClose={() => setShowNotifications(false)}
-              anchorRef={notifBtnRef}
-            />
-          </div>
         </div>
       </header>
     </>

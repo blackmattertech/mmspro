@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from 'react'
+import { useState, useCallback, useMemo, useEffect } from 'react'
 import { useLocation, useNavigate, useOutletContext } from 'react-router-dom'
 import {
   getManualWorkOrders,
@@ -8,6 +8,8 @@ import {
 import { useWorkOrderList } from '../../hooks/useWorkOrderList'
 import { usePermissions } from '../../hooks/usePermissions'
 import { useOrg } from '../../hooks/useOrg'
+import { useDebouncedValue } from '../../hooks/useDebouncedValue'
+import { useTablePagination } from '../../hooks/useTablePagination'
 import { applyWorkOrderFilters } from '../../lib/workOrderFilters'
 import { orgPath } from '../../config/navigation'
 import ReceivedWorkOrderDetailModal from '../../components/workorders/ReceivedWorkOrderDetailModal'
@@ -27,18 +29,31 @@ export default function ManualWorkOrders() {
   const [selectedId, setSelectedId] = useState(null)
   const [actionError, setActionError] = useState(null)
   const { search, locationFilter, sortBy, advancedRules, fieldFilter, locations } = useOutletContext()
-  const fetchManualOrders = useCallback(() => getManualWorkOrders(), [])
-  const { orders, loading, error, reload } = useWorkOrderList(fetchManualOrders)
+  const debouncedSearch = useDebouncedValue(search)
+  const [listTotal, setListTotal] = useState(0)
+  const pagination = useTablePagination(listTotal, {
+    resetKey: `${debouncedSearch}|${locationFilter}|${fieldFilter?.field}|${fieldFilter?.value}|${sortBy}`,
+  })
+  const fetchManualOrders = useCallback(
+    () => getManualWorkOrders({
+      search: debouncedSearch,
+      limit: pagination.pageSize,
+      offset: pagination.offset,
+    }),
+    [debouncedSearch, pagination.pageSize, pagination.offset],
+  )
+  const { orders, total, loading, error, reload } = useWorkOrderList(fetchManualOrders)
+  useEffect(() => { setListTotal(total) }, [total])
   const successMessage = location.state?.success
 
   const filteredOrders = useMemo(() => applyWorkOrderFilters(orders, {
-    search,
+    search: '',
     locationFilter,
     sortBy,
     advancedRules,
     fieldFilter,
     locations,
-  }), [orders, search, locationFilter, sortBy, advancedRules, fieldFilter, locations])
+  }), [orders, locationFilter, sortBy, advancedRules, fieldFilter, locations])
 
   const handleEdit = useCallback((order) => {
     if (!org?.slug || !order?.id) return
@@ -74,11 +89,14 @@ export default function ManualWorkOrders() {
       )}
 
       <p className="wo-page__result-count">
-        {filteredOrders.length} work order{filteredOrders.length === 1 ? '' : 's'}
+        {total} work order{total === 1 ? '' : 's'}
       </p>
 
       <WorkOrdersTable
         orders={filteredOrders}
+        totalCount={total}
+        pagination={pagination}
+        serverPaged
         columns={MANUAL_COLUMNS}
         tableId="work-orders-manual"
         emptyTitle="No manual work orders yet."

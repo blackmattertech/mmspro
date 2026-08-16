@@ -19,6 +19,7 @@ import {
 import { getScopedLocationId, hasModulePermission } from '../../lib/orgPermissions.js'
 import { canManageOrg } from '../../lib/accountRoles.js'
 import { getSignedUrl, getSignedUrls } from '../../lib/signedUrlCache.js'
+import { applyIlikeSearch, listEnvelope } from '../../lib/listQuery.js'
 import { buildAreasTemplate, bulkImportAreas } from '../../lib/areaBulkService.js'
 import {
   buildLocationsTemplate,
@@ -218,7 +219,8 @@ router.patch('/', canUpdateCompany, async (req, res) => {
 // ── Locations ──
 
 const LOCATION_SELECT = `
-  *,
+  id, org_id, name, code, address_line1, address_line2, city, state, postal_code, country,
+  is_primary, is_active, head_employee_id, created_at, updated_at,
   head_employee:head_employee_id ( id, emp_id, name, photo_url )
 `
 
@@ -309,10 +311,10 @@ async function validateLocationHead(orgId, locationId, headEmployeeId) {
 }
 
 router.get('/locations', canReadLocations, async (req, res) => {
-  const { limit, offset } = parsePagination(req.query)
+  const { limit, offset } = parsePagination(req.query, { defaultLimit: 50, maxLimit: 200 })
   let query = supabaseAdmin
     .from('org_locations')
-    .select(LOCATION_SELECT)
+    .select(LOCATION_SELECT, { count: 'exact' })
     .eq('org_id', req.userProfile.org_id)
     .order('is_primary', { ascending: false })
     .order('name')
@@ -324,12 +326,13 @@ router.get('/locations', canReadLocations, async (req, res) => {
   if (scopedLocationId && !forAssignment) {
     query = query.eq('id', scopedLocationId)
   }
+  query = applyIlikeSearch(query, req.query.search, ['name', 'code', 'city'])
 
-  const { data, error } = await query
+  const { data, error, count } = await query
 
   if (error) return res.status(500).json({ error: error.message })
   const withHeads = await attachLocationHeadsFromRoles(req.userProfile.org_id, data || [])
-  res.json(withHeads)
+  res.json(listEnvelope(withHeads, { total: count || 0, limit, offset }))
 })
 
 router.post('/locations', canCreateLocations, async (req, res) => {
@@ -496,15 +499,15 @@ router.delete('/locations/:id', canDeleteLocations, assertOrgOwnership('org_loca
 // ── Departments ──
 
 const DEPARTMENT_SELECT = `
-  *,
+  id, org_id, name, code, description, location_id, parent_id, all_locations, is_active, created_at, updated_at,
   org_locations!location_id ( id, name, code )
 `
 
 router.get('/departments', canReadDepartments, async (req, res) => {
-  const { limit, offset } = parsePagination(req.query)
+  const { limit, offset } = parsePagination(req.query, { defaultLimit: 50, maxLimit: 200 })
   let query = supabaseAdmin
     .from('departments')
-    .select(DEPARTMENT_SELECT)
+    .select(DEPARTMENT_SELECT, { count: 'exact' })
     .eq('org_id', req.userProfile.org_id)
     .order('name')
     .range(offset, offset + limit - 1)
@@ -514,11 +517,12 @@ router.get('/departments', canReadDepartments, async (req, res) => {
   if (locationFilter) {
     query = query.or(`location_id.eq.${locationFilter},all_locations.eq.true`)
   }
+  query = applyIlikeSearch(query, req.query.search, ['name', 'code'])
 
-  const { data, error } = await query
+  const { data, error, count } = await query
 
   if (error) return res.status(500).json({ error: error.message })
-  res.json(data || [])
+  res.json(listEnvelope(data || [], { total: count || 0, limit, offset }))
 })
 
 router.post('/departments', canCreateDepartments, async (req, res) => {
@@ -698,6 +702,14 @@ const EMPLOYEE_SELECT = `
   org_locations!location_id ( id, name, code ),
   org_employee_emails ( id, email ),
   manager:manager_id ( id, emp_id, name ),
+  access_role:access_role_id ( id, name )
+`
+
+const EMPLOYEE_LIST_SELECT = `
+  id, org_id, emp_id, name, email, mobile, is_active, location_id, department_id,
+  photo_url, access_role_id, login_required, created_at, updated_at,
+  departments!department_id ( id, name, code ),
+  org_locations!location_id ( id, name, code ),
   access_role:access_role_id ( id, name )
 `
 
@@ -1003,10 +1015,10 @@ async function validateEmployeeRefs(orgId, refs, actor = null) {
 }
 
 router.get('/employees', canListEmployees, async (req, res) => {
-  const { limit, offset } = parsePagination(req.query)
+  const { limit, offset } = parsePagination(req.query, { defaultLimit: 50, maxLimit: 200 })
   let query = supabaseAdmin
     .from('org_employees')
-    .select(EMPLOYEE_SELECT)
+    .select(EMPLOYEE_LIST_SELECT, { count: 'exact' })
     .eq('org_id', req.userProfile.org_id)
     .order('name')
     .range(offset, offset + limit - 1)
@@ -1021,13 +1033,12 @@ router.get('/employees', canListEmployees, async (req, res) => {
   } else if (req.query.location_id) {
     query = query.eq('location_id', req.query.location_id)
   }
+  query = applyIlikeSearch(query, req.query.search, ['name', 'emp_id', 'email', 'mobile'])
 
-  const { data, error } = await query
+  const { data, error, count } = await query
 
   if (error) return res.status(500).json({ error: error.message })
-
-  const withPhotos = await decorateEmployees(req.userProfile.org_id, data || [])
-  res.json(withPhotos)
+  res.json(listEnvelope(data || [], { total: count || 0, limit, offset }))
 })
 
 router.post('/employees', canCreateEmployees, async (req, res) => {
@@ -1363,10 +1374,10 @@ const AREA_SELECT = `
 `
 
 router.get('/areas', canReadAreas, async (req, res) => {
-  const { limit, offset } = parsePagination(req.query)
+  const { limit, offset } = parsePagination(req.query, { defaultLimit: 50, maxLimit: 200 })
   let query = supabaseAdmin
     .from('areas')
-    .select(AREA_SELECT)
+    .select(AREA_SELECT, { count: 'exact' })
     .eq('org_id', req.userProfile.org_id)
     .order('name')
     .range(offset, offset + limit - 1)
@@ -1375,10 +1386,11 @@ router.get('/areas', canReadAreas, async (req, res) => {
   const locationFilter = req.query.location_id || scopedLocationId
   if (locationFilter) query = query.eq('location_id', locationFilter)
   if (req.query.department_id) query = query.eq('department_id', req.query.department_id)
+  query = applyIlikeSearch(query, req.query.search, ['name', 'code'])
 
-  const { data, error } = await query
+  const { data, error, count } = await query
   if (error) return res.status(500).json({ error: error.message })
-  res.json(data || [])
+  res.json(listEnvelope(data || [], { total: count || 0, limit, offset }))
 })
 
 router.get('/areas/template', canCreateAreas, async (req, res) => {

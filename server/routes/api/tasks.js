@@ -6,6 +6,7 @@ import {
   requireModulePermission,
   loadOrgPermissions,
 } from '../../middleware/modulePermission.js'
+import { listEnvelope } from '../../lib/listQuery.js'
 import {
   listTasks,
   getTaskDetail,
@@ -373,12 +374,17 @@ router.get('/kanban', canRead, async (req, res) => {
 // Task list
 router.get('/', canRead, async (req, res) => {
   try {
-    const rows = await listTasks(
+    const page = await listTasks(
       req.userProfile.org_id,
       req.userProfile.id,
       listFilters(req.query),
+      { withCount: true },
     )
-    res.json(rows)
+    res.json(listEnvelope(page.items, {
+      total: page.total,
+      limit: page.limit,
+      offset: page.offset,
+    }))
   } catch (err) {
     res.status(500).json({ error: err.message })
   }

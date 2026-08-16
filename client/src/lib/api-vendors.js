@@ -1,10 +1,13 @@
 import { apiFetch } from './api'
+import { listQueryParams, asListArray } from './listResponse'
 
-export function getVendorsList(params = {}) {
-  const qs = new URLSearchParams()
-  if (params.search) qs.set('search', params.search)
-  const suffix = qs.toString() ? `?${qs}` : ''
-  return apiFetch(`/api/vendors${suffix}`)
+export async function getVendorsList(params = {}) {
+  const data = await apiFetch(`/api/vendors${listQueryParams({
+    search: params.search,
+    limit: params.limit ?? 50,
+    offset: params.offset ?? 0,
+  })}`)
+  return asListArray(data)
 }
 
 export function getVendor(id) {

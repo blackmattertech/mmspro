@@ -4,6 +4,7 @@ import {
   getWarrantyDocumentSignedUrl,
   deleteWarrantyDocumentFile,
 } from './warrantyDocumentStorage.js'
+import { listEnvelope } from './listQuery.js'
 
 const WARRANTY_SELECT = `
   id, org_id, serial_number,
@@ -347,7 +348,7 @@ async function replaceItems(orgId, warrantyId, items) {
 export async function listWarranties(orgId, { search = null, limit = 100, offset = 0 } = {}) {
   let query = supabaseAdmin
     .from('warranties')
-    .select(WARRANTY_LIST_SELECT)
+    .select(WARRANTY_LIST_SELECT, { count: 'exact' })
     .eq('org_id', orgId)
     .order('serial_number', { ascending: false })
     .range(offset, offset + limit - 1)
@@ -371,9 +372,9 @@ export async function listWarranties(orgId, { search = null, limit = 100, offset
     query = query.or(filters.join(','))
   }
 
-  const { data, error } = await query
+  const { data, error, count } = await query
   if (error) throw error
-  return (data || []).map(enrichWarrantyRow)
+  return listEnvelope((data || []).map(enrichWarrantyRow), { total: count || 0, limit, offset })
 }
 
 export async function getWarrantyDetail(orgId, id) {

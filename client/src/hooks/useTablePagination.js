@@ -19,6 +19,7 @@ export function useTablePagination(totalCount, { resetKey = '' } = {}) {
 
   const rangeStart = totalCount === 0 ? 0 : (safePage - 1) * pageSize + 1
   const rangeEnd = Math.min(safePage * pageSize, totalCount)
+  const offset = (safePage - 1) * pageSize
 
   const paginate = useCallback(
     (items) => {
@@ -36,11 +37,15 @@ export function useTablePagination(totalCount, { resetKey = '' } = {}) {
       pageSize,
       setPageSize,
       totalPages,
+      totalCount,
       rangeStart,
       rangeEnd,
+      offset,
       paginate,
       pageSizeOptions: TABLE_PAGE_SIZE_OPTIONS,
+      onPageChange: setPage,
+      onPageSizeChange: setPageSize,
     }),
-    [safePage, pageSize, totalPages, rangeStart, rangeEnd, paginate],
+    [safePage, pageSize, totalPages, totalCount, rangeStart, rangeEnd, offset, paginate],
   )
 }

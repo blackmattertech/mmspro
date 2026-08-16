@@ -21,7 +21,7 @@ import {
   deleteTaskAttachmentFile,
 } from './taskAttachmentStorage.js'
 import { getSignedUrl, getSignedUrls } from './signedUrlCache.js'
-import { resolveVisibleTaskIds, resolveAssignedToMeTaskIds } from './taskListQuery.js'
+import { applyTaskVisibilityFilter } from './taskListQuery.js'
 import {
   ensureOrgTaskDefaultsCached,
   getCachedActiveTaskMeta,
@@ -605,7 +605,7 @@ async function loadTaskCounts(taskIds) {
 }
 
 export async function listTasks(orgId, profileId, filters = {}, options = {}) {
-  const { lean = false, skipEnsure = false } = options
+  const { lean = false, skipEnsure = false, withCount = false } = options
 
   if (!skipEnsure) {
     await ensureOrgTaskDefaults(orgId)
@@ -615,25 +615,17 @@ export async function listTasks(orgId, profileId, filters = {}, options = {}) {
   const limit = Math.min(200, Math.max(1, Number(filters.limit) || 50))
   const offset = Math.max(0, Number(filters.offset) || 0)
   const select = lean ? KANBAN_TASK_SELECT : TASK_LIST_SELECT
+  const empty = withCount ? { items: [], total: 0, limit, offset } : []
 
   let query = supabaseAdmin
     .from('tasks')
-    .select(select)
+    .select(select, withCount ? { count: 'exact' } : undefined)
     .eq('org_id', orgId)
     .order('updated_at', { ascending: false })
 
-  if (filters.tab === 'assigned_by_me') {
-    query = query.eq('created_by_profile_id', profileId)
-  } else {
-    let scopedTaskIds
-    if (filters.tab === 'assigned_to_me') {
-      scopedTaskIds = await resolveAssignedToMeTaskIds(orgId, actor)
-    } else {
-      scopedTaskIds = await resolveVisibleTaskIds(orgId, actor)
-    }
-    if (!scopedTaskIds.length) return []
-    query = query.in('id', scopedTaskIds)
-  }
+  const scoped = await applyTaskVisibilityFilter(query, orgId, actor, filters.tab)
+  if (scoped.empty) return empty
+  query = scoped.query
 
   if (filters.status_id) query = query.eq('status_id', filters.status_id)
   if (filters.priority_id) query = query.eq('priority_id', filters.priority_id)
@@ -667,7 +659,7 @@ export async function listTasks(orgId, profileId, filters = {}, options = {}) {
 
     if (tagError) throw tagError
     const tagTaskIds = (taggedTasks || []).map((row) => row.task_id)
-    if (!tagTaskIds.length) return []
+    if (!tagTaskIds.length) return empty
     query = query.in('id', tagTaskIds)
   }
 
@@ -681,36 +673,10 @@ export async function listTasks(orgId, profileId, filters = {}, options = {}) {
 
   query = query.range(offset, offset + limit - 1)
 
-  const { data, error } = await query
+  const { data, error, count } = await query
   if (error) throw error
 
   let rows = data || []
-
-  if (filters.overdue === 'true' || filters.due_today === 'true') {
-    rows = rows.filter((task) => {
-      const status = computeDueStatus(task)
-      if (filters.overdue === 'true') return status === 'overdue'
-      if (filters.due_today === 'true') return status === 'due_today'
-      return true
-    })
-  }
-
-  if (filters.tab === 'assigned_to_me') {
-    if (lean) {
-      rows = rows.filter((task) => taskAssignedToActor(
-        task,
-        actor,
-        assigneeIdsFromRow(task),
-      ))
-    } else {
-      const assigneeMap = await loadAssigneeIdsForTasks(rows.map((r) => r.id))
-      rows = rows.filter((task) => taskAssignedToActor(
-        task,
-        actor,
-        assigneeMap.get(task.id) || [],
-      ))
-    }
-  }
 
   const taskIds = rows.map((r) => r.id)
   const [counts, tagsMap, refsMap] = await Promise.all([
@@ -720,10 +686,12 @@ export async function listTasks(orgId, profileId, filters = {}, options = {}) {
   ])
   const withPhotos = await enrichTasksAssigneePhotos(rows)
   const withAssignees = await enrichTaskAssigneeFallbacks(orgId, withPhotos)
-  return withAssignees.map((row) => enrichTaskRow(row, counts.get(row.id), {
+  const items = withAssignees.map((row) => enrichTaskRow(row, counts.get(row.id), {
     tags: tagsMap.get(row.id) || [],
     references: refsMap.get(row.id) || [],
   }))
+  if (withCount) return { items, total: count || 0, limit, offset }
+  return items
 }
 
 export async function getTaskDetail(orgId, taskId, profileId) {
@@ -1238,7 +1206,7 @@ export async function getKanbanBoard(orgId, profileId, filters = {}, options = {
   const tasks = preloadedTasks ?? await listTasks(
     orgId,
     profileId,
-    { ...filters, limit: 500 },
+    { ...filters, limit: 200 },
     { lean: true, skipEnsure },
   )
 
@@ -1305,16 +1273,16 @@ export async function getTasksBootstrap(orgId, profileId, filters = {}, { view =
   await ensureOrgTaskDefaults(orgId)
 
   if (view === 'list') {
-    const [meta, tasks] = await Promise.all([
+    const [meta, page] = await Promise.all([
       queryActiveTaskMeta(orgId),
-      listTasks(orgId, profileId, filters, { lean: true, skipEnsure: true }),
+      listTasks(orgId, profileId, filters, { lean: true, skipEnsure: true, withCount: true }),
     ])
-    return { ...meta, tasks, board: null }
+    return { ...meta, tasks: page.items, total: page.total, board: null }
   }
 
   const [meta, tasks] = await Promise.all([
     queryActiveTaskMeta(orgId),
-    listTasks(orgId, profileId, { ...filters, limit: 500 }, { lean: true, skipEnsure: true }),
+    listTasks(orgId, profileId, { ...filters, limit: 200 }, { lean: true, skipEnsure: true }),
   ])
 
   const board = await buildKanbanFromTasks(orgId, meta.statuses, tasks)

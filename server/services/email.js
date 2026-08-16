@@ -87,21 +87,6 @@ export const sendEmail = async ({ to, toName, subject, htmlContent, textContent 
 // Ready-to-use email templates
 // ─────────────────────────────────────────
 
-export const sendWelcomeEmail = (to, { name, orgName, orgSlug }) => {
-  const dashboardUrl = `${getPublicAppUrl()}/${orgSlug}/dashboard`
-  return sendEmail({
-    to,
-    toName: name,
-    subject: `Welcome to MMSPro!`,
-    htmlContent: `
-      <h2>Welcome to MMSPro, ${name}!</h2>
-      <p>Your account for <strong>${orgName}</strong> is ready.</p>
-      <p><a href="${dashboardUrl}">Go to Dashboard →</a></p>
-    `,
-    textContent: `Welcome to MMSPro, ${name}! Your account for ${orgName} is ready. Visit: ${dashboardUrl}`,
-  })
-}
-
 export const sendInviteEmail = (to, { inviterName, orgName, inviteToken }) => {
   const inviteUrl = `${getPublicAppUrl()}/invite/${inviteToken}`
   return sendEmail({
@@ -153,17 +138,5 @@ export const sendEmployeePasswordSetupEmail = (to, { resetUrl, orgName, employee
     textContent: employeeName
       ? `Hello ${employeeName},\n\nCreate your MMS PRO password here: ${resetUrl}`
       : `Create your MMS PRO password here: ${resetUrl}`,
-  })
-
-export const sendNotificationEmail = (to, { subject, title, message, ctaText, ctaUrl }) =>
-  sendEmail({
-    to,
-    subject,
-    htmlContent: `
-      <h2>${title}</h2>
-      <p>${message}</p>
-      ${ctaText && ctaUrl ? `<p><a href="${ctaUrl}">${ctaText} →</a></p>` : ''}
-    `,
-    textContent: `${title}\n\n${message}${ctaUrl ? `\n\n${ctaText}: ${ctaUrl}` : ''}`,
   })
 
