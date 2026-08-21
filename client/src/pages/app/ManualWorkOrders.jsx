@@ -10,6 +10,7 @@ import { usePermissions } from '../../hooks/usePermissions'
 import { useOrg } from '../../hooks/useOrg'
 import { useDebouncedValue } from '../../hooks/useDebouncedValue'
 import { useTablePagination } from '../../hooks/useTablePagination'
+import { useOpenQueryId } from '../../hooks/useOpenQueryId'
 import { applyWorkOrderFilters } from '../../lib/workOrderFilters'
 import { orgPath } from '../../config/navigation'
 import ReceivedWorkOrderDetailModal from '../../components/workorders/ReceivedWorkOrderDetailModal'
@@ -26,7 +27,7 @@ export default function ManualWorkOrders() {
   const { canUpdate, canDelete } = usePermissions()
   const canEdit = canUpdate('work_orders_manual') || canUpdate('work_orders')
   const canRemove = canDelete('work_orders_manual') || canDelete('work_orders')
-  const [selectedId, setSelectedId] = useState(null)
+  const [selectedId, setSelectedId, closeSelected] = useOpenQueryId()
   const [actionError, setActionError] = useState(null)
   const { search, locationFilter, sortBy, advancedRules, fieldFilter, locations } = useOutletContext()
   const debouncedSearch = useDebouncedValue(search)
@@ -68,12 +69,12 @@ export default function ManualWorkOrders() {
     setActionError(null)
     try {
       await deleteManualWorkOrder(order.id)
-      if (selectedId === order.id) setSelectedId(null)
+      if (selectedId === order.id) closeSelected()
       await reload({ silent: true })
     } catch (err) {
       setActionError(err.message)
     }
-  }, [reload, selectedId])
+  }, [reload, selectedId, closeSelected])
 
   if (loading) {
     return <div className="company-loading">Loading...</div>
@@ -87,10 +88,6 @@ export default function ManualWorkOrders() {
       {(error || actionError) && (
         <div className="wo-alert wo-alert--error" role="alert">{actionError || error}</div>
       )}
-
-      <p className="wo-page__result-count">
-        {total} work order{total === 1 ? '' : 's'}
-      </p>
 
       <WorkOrdersTable
         orders={filteredOrders}
@@ -113,7 +110,7 @@ export default function ManualWorkOrders() {
         <ReceivedWorkOrderDetailModal
           orderId={selectedId}
           fetchWorkOrder={getManualWorkOrder}
-          onClose={() => setSelectedId(null)}
+          onClose={closeSelected}
           onEdit={canEdit ? handleEdit : undefined}
         />
       )}

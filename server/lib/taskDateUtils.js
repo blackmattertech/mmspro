@@ -22,9 +22,12 @@ const REMINDER_PRESETS = {
 
 export function combineDateTime(date, time) {
   if (!date) return null
-  const timePart = time ? String(time).slice(0, 8) : '00:00:00'
-  const iso = `${String(date).slice(0, 10)}T${timePart}`
-  const dt = new Date(iso)
+  const datePart = String(date).slice(0, 10)
+  const [year, month, day] = datePart.split('-').map(Number)
+  if (!year || !month || !day) return null
+  const rawTime = time ? String(time).slice(0, 8) : '00:00:00'
+  const [hours, minutes, seconds] = rawTime.split(':').map((part) => Number(part) || 0)
+  const dt = new Date(year, month - 1, day, hours, minutes, seconds)
   return Number.isNaN(dt.getTime()) ? null : dt
 }
 

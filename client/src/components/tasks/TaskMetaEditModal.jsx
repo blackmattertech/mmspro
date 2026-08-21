@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useBackdropClose } from '../../hooks/useBackdropClose'
+import PageBack from '../shared/PageBack'
 import TaskPriorityIcon, { PRIORITY_ICON_OPTIONS } from './TaskPriorityIcon'
 import '../company/CompanyShared.css'
 import './TaskMetaSettings.css'
@@ -95,11 +96,14 @@ export default function TaskMetaEditModal({
         aria-labelledby="task-meta-edit-title"
       >
         <div className="company-modal__header">
-          <h2 id="task-meta-edit-title">
-            {isEdit ? 'Edit' : 'New'}
-            {' '}
-            {isStatus ? 'Status' : isPriority ? 'Priority' : kind === 'category' ? 'Category' : 'Tag'}
-          </h2>
+          <div className="modal__header-main">
+            <PageBack onClick={onClose} className="page-back--header" label="Task Masters" />
+            <h2 id="task-meta-edit-title">
+              {isEdit ? 'Edit' : 'New'}
+              {' '}
+              {isStatus ? 'Status' : isPriority ? 'Priority' : kind === 'category' ? 'Category' : 'Tag'}
+            </h2>
+          </div>
           <button type="button" className="company-modal__close" onClick={onClose} aria-label="Close">×</button>
         </div>
 

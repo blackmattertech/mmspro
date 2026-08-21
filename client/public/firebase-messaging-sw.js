@@ -18,6 +18,8 @@ function notifyOpenClients(payload) {
     title: payload.notification?.title || payload.data?.title || 'MMS PRO',
     body: payload.notification?.body || payload.data?.body || '',
     url: payload.data?.url || '/',
+    notificationType: payload.data?.type || '',
+    sound: payload.data?.sound || 'https://ik.imagekit.io/w2lf8dznx/notification',
   }
   return self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
     windowClients.forEach((client) => client.postMessage(message))
@@ -34,6 +36,8 @@ messaging.onBackgroundMessage((payload) => {
       body,
       icon: '/favicon.svg',
       badge: '/favicon.svg',
+      silent: false,
+      sound: payload.data?.sound || 'https://ik.imagekit.io/w2lf8dznx/notification',
       data: { ...(payload.data || {}), url },
     }),
     notifyOpenClients(payload),

@@ -52,9 +52,18 @@ export function sortFieldsForWorkRequestPicker(fields) {
 }
 
 export function fieldsForWorkRequestSection(fields) {
-  return sortFieldsForWorkRequestPicker(fields).filter(
-    (field) => getEquipmentFieldRole(field) !== 'redundant',
-  )
+  const seenRoles = new Set()
+  const seenNames = new Set()
+  return sortFieldsForWorkRequestPicker(fields).filter((field) => {
+    const role = getEquipmentFieldRole(field)
+    if (role === 'redundant') return false
+    const name = String(field.name || '').trim().toLowerCase()
+    if (name && seenNames.has(name)) return false
+    if (role !== 'other' && seenRoles.has(role)) return false
+    if (name) seenNames.add(name)
+    if (role !== 'other') seenRoles.add(role)
+    return true
+  })
 }
 
 export function distinctAreasFromEquipment(equipment) {

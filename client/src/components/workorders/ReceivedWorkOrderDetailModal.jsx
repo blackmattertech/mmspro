@@ -8,9 +8,11 @@ import { getStoredWorkOrderFiles } from '../../lib/workOrderFileValues'
 import PageBack from '../shared/PageBack'
 import WorkOrderAssignmentActions from './WorkOrderAssignmentActions'
 import WorkOrderLifecyclePanel, { formatStatus } from './WorkOrderLifecyclePanel'
+import RecordTimeline from '../shared/RecordTimeline'
 import '../shared/RecordDetailLayout.css'
 import '../dashboard/CreateWorkOrderModal.css'
 import '../company/CompanyShared.css'
+import '../workrequests/WorkRequests.css'
 import './ManualWorkOrder.css'
 
 function formatDate(value) {
@@ -23,6 +25,44 @@ function formatDate(value) {
 
 function creatorLabel(creator) {
   return creator?.display_name || creator?.full_name || creator?.email || '—'
+}
+
+function fieldHasDisplayValue(field) {
+  const type = field.field_type
+
+  if (type === 'checkbox') {
+    if (Array.isArray(field.value_json?.values)) return field.value_json.values.length > 0
+    if (field.value_json?.checked != null) return true
+    return Boolean(String(field.value_text || '').trim())
+  }
+
+  if (type === 'file' || type === 'image') {
+    return getStoredWorkOrderFiles(field.value_json).length > 0
+  }
+
+  return Boolean(String(field.value_text || '').trim())
+}
+
+function visibleDetailSections(sections, hierarchy = []) {
+  const coveredNames = new Set(
+    (hierarchy || [])
+      .map((step) => String(step.field_name || '').trim().toLowerCase())
+      .filter(Boolean),
+  )
+
+  return (sections || [])
+    .map((section) => {
+      const seenNames = new Set()
+      const fields = (section.fields || []).filter((field) => {
+        if (!fieldHasDisplayValue(field)) return false
+        const name = String(field.name || '').trim().toLowerCase()
+        if (!name || coveredNames.has(name) || seenNames.has(name)) return false
+        seenNames.add(name)
+        return true
+      })
+      return { ...section, fields }
+    })
+    .filter((section) => section.fields.length)
 }
 
 function FieldValue({ field }) {
@@ -88,7 +128,7 @@ export default function ReceivedWorkOrderDetailModal({
     || null
   const departmentName = view?.assigned_department?.name || null
   const assigneeNames = (view?.assignees || []).map((a) => a.name).filter(Boolean)
-  const sections = view?.sections || []
+  const sections = visibleDetailSections(view?.sections, view?.asset_hierarchy)
 
   return (
     <div className="modal-overlay" onClick={handleBackdropClick} role="presentation">
@@ -120,12 +160,19 @@ export default function ReceivedWorkOrderDetailModal({
           {error && <p className="wo-alert wo-alert--error">{error}</p>}
 
           {view && (
-            <>
+            <div className="wr-detail-layout">
+              <div className="wr-detail-main">
               <div className="wo-received-detail__meta">
                 <div>
                   <span className="wo-received-detail__label">Received</span>
                   <span>{formatDate(view.created_at)}</span>
                 </div>
+                {view.work_request_number && (
+                  <div>
+                    <span className="wo-received-detail__label">Work request</span>
+                    <span>{view.work_request_number}</span>
+                  </div>
+                )}
                 <div>
                   <span className="wo-received-detail__label">Location</span>
                   <span>{locationName || '—'}</span>
@@ -177,7 +224,13 @@ export default function ReceivedWorkOrderDetailModal({
                   </dl>
                 </section>
               ))}
-            </>
+              </div>
+
+              <aside className="wr-detail-timeline" aria-label="Timeline">
+                <h3 className="wr-detail-timeline__title">Timeline</h3>
+                <RecordTimeline events={view.timeline} />
+              </aside>
+            </div>
           )}
         </div>
 

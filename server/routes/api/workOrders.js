@@ -18,9 +18,18 @@ import {
   updateWorkOrderLifecycle,
   loadWorkOrderTimeline,
   WO_OPEN_LIST_STATUSES,
+  WO_ASSIGNED_LIST_STATUSES,
   PERMIT_TYPES,
   STATUS_TRANSITIONS,
 } from '../../lib/workOrderService.js'
+import {
+  listWorkOrderDailyLogs,
+  startWorkOrderDay,
+  updateWorkOrderDailyLog,
+  endWorkOrderDay,
+  DAILY_LOG_ACTIVE_STATUSES,
+  DAILY_LOG_READONLY_STATUSES,
+} from '../../lib/workOrderDailyLogService.js'
 
 const router = Router()
 
@@ -326,12 +335,66 @@ async function listReceivedWorkOrderIds(orgId, employee) {
   return [...ids]
 }
 
-function receivedWorkOrderOrFilter(employee, assigneeIds) {
+function isOutgoingWorkOrder(row, profileId) {
+  if (!profileId || !row) return false
+  return row.created_by === profileId || row.requester_id === profileId
+}
+
+function assignedOutgoingOrFilter(profileId) {
+  return `created_by.eq.${profileId},requester_id.eq.${profileId}`
+}
+
+function receivedWorkOrderOrFilter(employee, assigneeIds, { isLocationHead } = {}) {
   const parts = []
-  if (employee.location_id) parts.push(`assigned_location_id.eq.${employee.location_id}`)
-  if (employee.department_id) parts.push(`assigned_department_id.eq.${employee.department_id}`)
+  if (employee.department_id) {
+    if (employee.location_id) {
+      parts.push(`and(assigned_department_id.eq.${employee.department_id},assigned_location_id.eq.${employee.location_id})`)
+    } else {
+      parts.push(`assigned_department_id.eq.${employee.department_id}`)
+    }
+  }
+  if (isLocationHead && employee.location_id) {
+    parts.push(`assigned_location_id.eq.${employee.location_id}`)
+  }
   if (assigneeIds.length) parts.push(`id.in.(${assigneeIds.join(',')})`)
   return parts.join(',')
+}
+
+async function listVisibleReceivedWorkOrderIds(orgId, profile, employee, session, { status = 'all' } = {}) {
+  if (!employee) return []
+
+  const profileId = profile?.id || profile
+  const myAssigneeIds = await listReceivedWorkOrderIds(orgId, employee)
+  const isLocationHead = employee.location_id
+    ? await isLocationHeadFor(orgId, employee, employee.location_id, session)
+    : false
+  const orFilter = receivedWorkOrderOrFilter(employee, myAssigneeIds, { isLocationHead })
+  if (!orFilter) return []
+
+  let query = supabaseAdmin
+    .from('manual_work_orders')
+    .select('id, created_by, requester_id')
+    .eq('org_id', orgId)
+    .or(orFilter)
+  query = applyWorkOrderStatusFilter(query, status)
+
+  const { data, error } = await query
+  if (error) throw error
+
+  const candidates = (data || []).filter((row) => !isOutgoingWorkOrder(row, profileId))
+  return candidates.map((row) => row.id)
+}
+
+async function employeeCanViewReceivedWorkOrder(orgId, employee, workOrder, profile, session) {
+  if (!employee || !workOrder) return false
+  if (isOutgoingWorkOrder(workOrder, profile?.id || profile)) return false
+
+  const myAssigneeIds = await listReceivedWorkOrderIds(orgId, employee)
+  if (myAssigneeIds.includes(workOrder.id)) return true
+
+  if (employeeMatchesDepartmentAssignment(employee, workOrder)) return true
+  if (!workOrder.assigned_location_id) return false
+  return isLocationHeadFor(orgId, employee, workOrder.assigned_location_id, session)
 }
 
 async function validateAssignedDepartment(orgId, departmentId, locationId) {
@@ -673,6 +736,7 @@ function applyWorkOrderStatusFilter(query, status) {
   const normalized = normalizeStatusFilter(status)
   if (!normalized) return query
   if (normalized === 'open') return query.in('status', WO_OPEN_LIST_STATUSES)
+  if (normalized === 'inbox') return query.in('status', WO_ASSIGNED_LIST_STATUSES)
   return query.eq('status', normalized)
 }
 
@@ -680,15 +744,11 @@ function isAssignableStatus(status) {
   return status === 'assigned' || status === 'returned_rework'
 }
 
-function isReceivedVisibleStatus(status) {
-  return WO_OPEN_LIST_STATUSES.includes(status) || status === 'completed' || status === 'verified'
-}
-
 async function attachSummaries(_orgId, workOrders) {
   return workOrders.map((row) => ({
     ...row,
     wo_number: resolveDisplayWoNumber(row),
-    summary: row.summary || row.problem_description?.slice(0, 120) || 'Work order',
+    summary: row.summary || row.short_description || row.problem_description?.slice(0, 120) || 'Work order',
   }))
 }
 
@@ -719,24 +779,28 @@ async function buildWorkOrderListResponse(orgId, rows, existingAssigneesByWo = n
   }))
 }
 
-async function listReceivedWorkOrders(orgId, profile, { status = 'open', limit = 50, offset = 0, search = null } = {}) {
+async function listReceivedWorkOrders(orgId, profile, {
+  status = 'all',
+  limit = 50,
+  offset = 0,
+  search = null,
+  session = null,
+} = {}) {
   const employee = await getEmployeeByProfile(orgId, profile?.id, { email: profile?.email })
   if (!employee) return listEnvelope([], { total: 0, limit, offset })
 
-  const assigneeIds = await listReceivedWorkOrderIds(orgId, employee)
-  const orFilter = receivedWorkOrderOrFilter(employee, assigneeIds)
-  if (!orFilter) return listEnvelope([], { total: 0, limit, offset })
+  const ids = await listVisibleReceivedWorkOrderIds(orgId, profile, employee, session, { status })
+  if (!ids.length) return listEnvelope([], { total: 0, limit, offset })
 
   let query = supabaseAdmin
     .from('manual_work_orders')
-    .select('id, status, wo_number, source_type, priority, problem_description, created_at, updated_at, created_by, assigned_department_id, assigned_location_id, work_request_id, work_center', { count: 'exact' })
+    .select('id, status, wo_number, source_type, priority, short_description, problem_description, created_at, updated_at, created_by, assigned_department_id, assigned_location_id, work_request_id, work_center', { count: 'exact' })
     .eq('org_id', orgId)
-    .or(orFilter)
+    .in('id', ids)
     .order('created_at', { ascending: false })
     .range(offset, offset + limit - 1)
 
-  query = applyIlikeSearch(query, search, ['wo_number', 'problem_description'])
-  query = applyWorkOrderStatusFilter(query, status)
+  query = applyIlikeSearch(query, search, ['wo_number', 'short_description', 'problem_description'])
 
   const { data, error, count } = await query
   if (error) throw error
@@ -754,31 +818,31 @@ function isAssignedByMeRow(wo, assignees, myEmployeeId) {
 }
 
 /** Lightweight count for badge — no summaries, creators, or signed URLs. */
-async function countAssignedByMe(orgId, profile, { status = 'open' } = {}) {
+async function countAssignedByMe(orgId, profile, { status = 'all' } = {}) {
   const profileId = profile?.id || profile
   let query = supabaseAdmin
     .from('manual_work_orders')
     .select('id', { count: 'exact', head: true })
     .eq('org_id', orgId)
-    .eq('created_by', profileId)
+    .or(assignedOutgoingOrFilter(profileId))
   query = applyWorkOrderStatusFilter(query, status)
   const { count, error } = await query
   if (error) throw error
   return count || 0
 }
 
-async function listAssignedByMeWorkOrders(orgId, profile, { status = 'open', limit = 50, offset = 0, search = null } = {}) {
+async function listAssignedByMeWorkOrders(orgId, profile, { status = 'all', limit = 50, offset = 0, search = null } = {}) {
   const profileId = profile?.id || profile
 
   let query = supabaseAdmin
     .from('manual_work_orders')
-    .select('id, status, wo_number, source_type, priority, problem_description, created_at, updated_at, created_by, assigned_department_id, assigned_location_id, work_request_id, work_center', { count: 'exact' })
+    .select('id, status, wo_number, source_type, priority, short_description, problem_description, created_at, updated_at, created_by, assigned_department_id, assigned_location_id, work_request_id, work_center', { count: 'exact' })
     .eq('org_id', orgId)
-    .eq('created_by', profileId)
+    .or(assignedOutgoingOrFilter(profileId))
     .order('created_at', { ascending: false })
     .range(offset, offset + limit - 1)
 
-  query = applyIlikeSearch(query, search, ['wo_number', 'problem_description'])
+  query = applyIlikeSearch(query, search, ['wo_number', 'short_description', 'problem_description'])
   query = applyWorkOrderStatusFilter(query, status)
 
   const { data: workOrders, error, count } = await query
@@ -794,8 +858,7 @@ async function loadAssignedByMeDetail(orgId, workOrderId, profile) {
 
   const detail = await loadWorkOrderDetail(orgId, workOrderId)
   if (!detail) return null
-  if (detail.created_by !== profileId) return null
-  if (!isReceivedVisibleStatus(detail.status) && detail.status !== 'draft') return null
+  if (detail.created_by !== profileId && detail.requester_id !== profileId) return null
 
   const assignees = detail.assignees || []
   const hasDepartment = Boolean(detail.assigned_department_id)
@@ -836,12 +899,7 @@ async function enrichWorkOrderRow(orgId, row, assigneesByWo = null) {
   }
 }
 
-async function loadWorkOrderDetail(orgId, workOrderId, { employee = null } = {}) {
-  if (employee) {
-    const receivedIds = await listReceivedWorkOrderIds(orgId, employee)
-    if (!receivedIds.includes(workOrderId)) return null
-  }
-
+async function loadWorkOrderDetail(orgId, workOrderId, { employee = null, profile = null, session = null } = {}) {
   const { data: workOrder, error } = await supabaseAdmin
     .from('manual_work_orders')
     .select('*')
@@ -851,7 +909,16 @@ async function loadWorkOrderDetail(orgId, workOrderId, { employee = null } = {})
 
   if (error) throw error
   if (!workOrder) return null
-  if (employee && !isReceivedVisibleStatus(workOrder.status) && workOrder.status !== 'draft') return null
+  if (employee) {
+    const allowed = await employeeCanViewReceivedWorkOrder(
+      orgId,
+      employee,
+      workOrder,
+      profile,
+      session,
+    )
+    if (!allowed) return null
+  }
 
   const { data: values, error: valuesError } = await supabaseAdmin
     .from('manual_work_order_values')
@@ -861,7 +928,7 @@ async function loadWorkOrderDetail(orgId, workOrderId, { employee = null } = {})
 
   if (valuesError) throw valuesError
 
-  const timeline = await loadWorkOrderTimeline(workOrderId)
+  const timeline = await loadWorkOrderTimeline(orgId, workOrderId)
 
   const [fields, settingsMap] = await Promise.all([
     loadOrgWorkOrderFields(orgId),
@@ -919,13 +986,56 @@ async function loadWorkOrderDetail(orgId, workOrderId, { employee = null } = {})
   }
 
   const enriched = await enrichWorkOrderRow(orgId, workOrder)
+
+  let jobNature = workOrder.job_nature || null
+  let workRequestNumber = null
+  if (workOrder.work_request_id) {
+    const { data: wr } = await supabaseAdmin
+      .from('work_requests')
+      .select('request_number, job_nature, is_breakdown')
+      .eq('org_id', orgId)
+      .eq('id', workOrder.work_request_id)
+      .maybeSingle()
+    workRequestNumber = wr?.request_number || null
+    if (!jobNature) {
+      jobNature = wr?.job_nature || (wr?.is_breakdown ? 'Breakdown' : null)
+    }
+  }
+  if (!jobNature && workOrder.is_breakdown) jobNature = 'Breakdown'
+
+  // Legacy WOs used source_type "breakdown" for job nature Breakdown — treat as work request.
+  const displaySourceType = workOrder.source_type === 'breakdown'
+    ? 'approved_work_request'
+    : workOrder.source_type
+
+  let dailyLogsPayload = { logs: [], open_log: null, material_summary: [] }
+  try {
+    dailyLogsPayload = await listWorkOrderDailyLogs(orgId, workOrderId)
+  } catch {
+    // Table may not exist until patch 71 is applied — keep detail usable.
+  }
+
   return {
     ...enriched,
+    source_type: displaySourceType,
+    source_type_raw: workOrder.source_type,
+    job_nature: jobNature,
+    work_request_id: workOrder.work_request_id || null,
+    work_request_number: workRequestNumber,
     wo_number: resolveDisplayWoNumber(workOrder),
     sections,
     timeline,
     permit_type_options: PERMIT_TYPES,
     allowed_next_statuses: STATUS_TRANSITIONS[workOrder.status] || [],
+    daily_logs: dailyLogsPayload.logs,
+    daily_log_open: dailyLogsPayload.open_log,
+    material_summary: dailyLogsPayload.material_summary,
+    daily_log_can_edit: DAILY_LOG_ACTIVE_STATUSES.has(workOrder.status),
+    daily_log_visible: (
+      DAILY_LOG_ACTIVE_STATUSES.has(workOrder.status)
+      || DAILY_LOG_READONLY_STATUSES.has(workOrder.status)
+      || (dailyLogsPayload.logs || []).length > 0
+    ),
   }
 }
 
@@ -1112,6 +1222,9 @@ router.post('/manual', canCreateWorkOrders, async (req, res) => {
         assigned_location_id: departmentAssignment?.assigned_location_id || null,
         priority: ['high', 'medium', 'low'].includes(req.body?.priority) ? req.body.priority : 'medium',
         problem_description: req.body?.problem_description?.trim() || null,
+        short_description: req.body?.short_description?.trim()?.slice(0, 200)
+          || req.body?.problem_description?.trim()?.slice(0, 200)
+          || null,
         work_center: req.body?.work_center?.trim() || null,
         special_instructions: req.body?.special_instructions?.trim() || null,
         planned_start_at: req.body?.planned_start_at || null,
@@ -1295,6 +1408,66 @@ router.patch('/manual/:id/lifecycle', canUpdateWorkOrders, assertOrgOwnership('m
   try {
     const updated = await updateWorkOrderLifecycle(orgId, profileId, req.params.id, req.body || {})
     const detail = await loadWorkOrderDetail(orgId, updated.id)
+    res.json(detail)
+  } catch (err) {
+    res.status(err.status || 400).json({ error: err.message })
+  }
+})
+
+router.get('/manual/:id/daily-logs', canReadWorkOrders, assertOrgOwnership('manual_work_orders'), async (req, res) => {
+  const orgId = req.userProfile.org_id
+  try {
+    const payload = await listWorkOrderDailyLogs(orgId, req.params.id)
+    res.json(payload)
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message })
+  }
+})
+
+router.post('/manual/:id/daily-logs/start-day', canUpdateWorkOrders, assertOrgOwnership('manual_work_orders'), async (req, res) => {
+  const orgId = req.userProfile.org_id
+  const profileId = req.userProfile.id
+  try {
+    await startWorkOrderDay(orgId, profileId, req.params.id, {
+      timeZone: req.body?.time_zone || req.body?.timeZone,
+    })
+    const detail = await loadWorkOrderDetail(orgId, req.params.id)
+    res.json(detail)
+  } catch (err) {
+    res.status(err.status || 400).json({ error: err.message })
+  }
+})
+
+router.patch('/manual/:id/daily-logs/:logId', canUpdateWorkOrders, assertOrgOwnership('manual_work_orders'), async (req, res) => {
+  const orgId = req.userProfile.org_id
+  const profileId = req.userProfile.id
+  try {
+    await updateWorkOrderDailyLog(
+      orgId,
+      profileId,
+      req.params.id,
+      req.params.logId,
+      req.body || {},
+    )
+    const detail = await loadWorkOrderDetail(orgId, req.params.id)
+    res.json(detail)
+  } catch (err) {
+    res.status(err.status || 400).json({ error: err.message })
+  }
+})
+
+router.post('/manual/:id/daily-logs/:logId/end-day', canUpdateWorkOrders, assertOrgOwnership('manual_work_orders'), async (req, res) => {
+  const orgId = req.userProfile.org_id
+  const profileId = req.userProfile.id
+  try {
+    await endWorkOrderDay(
+      orgId,
+      profileId,
+      req.params.id,
+      req.params.logId,
+      req.body || {},
+    )
+    const detail = await loadWorkOrderDetail(orgId, req.params.id)
     res.json(detail)
   } catch (err) {
     res.status(err.status || 400).json({ error: err.message })
@@ -1505,8 +1678,8 @@ function assembleDashboardPayload({ byStatus, byLocation, locations, last30, pre
   const recent_orders = (recentRows || []).map((row) => ({
     id: row.id,
     wo_number: resolveDisplayWoNumber(row),
-    title: row.problem_description?.slice(0, 80) || 'Work order',
-    summary: row.problem_description?.slice(0, 120) || 'Work order',
+    title: row.short_description || row.problem_description?.slice(0, 80) || 'Work order',
+    summary: row.short_description || row.problem_description?.slice(0, 120) || 'Work order',
     status: row.status,
     created_at: row.created_at,
     updated_at: row.updated_at,
@@ -1600,7 +1773,7 @@ async function loadDashboardAggregatesFallback(orgId, filters) {
     applyDashboardFilters(
       supabaseAdmin
         .from('manual_work_orders')
-        .select('id, status, wo_number, created_at, updated_at, created_by, assigned_location_id, problem_description')
+        .select('id, status, wo_number, created_at, updated_at, created_by, assigned_location_id, short_description, problem_description')
         .order('created_at', { ascending: false })
         .limit(10),
       { orgId, ...filters },
@@ -1697,28 +1870,33 @@ router.get('/counts', canReadWorkOrders, async (req, res) => {
   try {
     const employee = await getEmployeeByProfile(orgId, profileId, { email: req.userProfile.email })
 
-    const [receivedResult, assigned, manualResult] = await Promise.all([
+    const [receivedResult, assigned, scheduledResult, manualResult] = await Promise.all([
       (async () => {
         if (!employee) return 0
-        const assigneeIds = await listReceivedWorkOrderIds(orgId, employee)
-        const orFilter = receivedWorkOrderOrFilter(employee, assigneeIds)
-        if (!orFilter) return 0
-        const { count, error } = await supabaseAdmin
-          .from('manual_work_orders')
-          .select('id', { count: 'exact', head: true })
-          .eq('org_id', orgId)
-          .or(orFilter)
-          .in('status', WO_OPEN_LIST_STATUSES)
-        if (error) throw error
-        return count || 0
+        const ids = await listVisibleReceivedWorkOrderIds(
+          orgId,
+          req.userProfile,
+          employee,
+          req.orgPermissions,
+          { status: 'all' },
+        )
+        return ids.length
       })(),
       countAssignedByMe(orgId, req.userProfile),
       supabaseAdmin
         .from('manual_work_orders')
         .select('id', { count: 'exact', head: true })
         .eq('org_id', orgId)
+        .eq('source_type', 'preventive_maintenance')
+        .then(({ count, error }) => {
+          if (error) throw error
+          return count || 0
+        }),
+      supabaseAdmin
+        .from('manual_work_orders')
+        .select('id', { count: 'exact', head: true })
+        .eq('org_id', orgId)
         .eq('source_type', 'manual')
-        .in('status', WO_OPEN_LIST_STATUSES)
         .then(({ count, error }) => {
           if (error) throw error
           return count || 0
@@ -1728,7 +1906,7 @@ router.get('/counts', canReadWorkOrders, async (req, res) => {
     res.json({
       received: receivedResult,
       assigned,
-      scheduled: 0,
+      scheduled: scheduledResult,
       manual: manualResult,
     })
   } catch (err) {
@@ -1739,15 +1917,18 @@ router.get('/counts', canReadWorkOrders, async (req, res) => {
 router.get('/manual/orders', canReadWorkOrders, async (req, res) => {
   const orgId = req.userProfile.org_id
   const { limit, offset } = parsePagination(req.query)
+  const scopedLocationId = getScopedLocationId(req.orgPermissions)
   try {
     let query = supabaseAdmin
       .from('manual_work_orders')
-      .select('id, status, wo_number, source_type, priority, problem_description, created_at, updated_at, created_by, assigned_department_id, assigned_location_id, work_request_id', { count: 'exact' })
+      .select('id, status, wo_number, source_type, priority, short_description, problem_description, created_at, updated_at, created_by, assigned_department_id, assigned_location_id, work_request_id', { count: 'exact' })
       .eq('org_id', orgId)
       .order('created_at', { ascending: false })
       .range(offset, offset + limit - 1)
 
-    query = applyIlikeSearch(query, req.query.search, ['wo_number', 'problem_description'])
+    if (scopedLocationId) query = query.eq('assigned_location_id', scopedLocationId)
+
+    query = applyIlikeSearch(query, req.query.search, ['wo_number', 'short_description', 'problem_description'])
 
     const { data, error, count } = await query
 
@@ -1761,9 +1942,18 @@ router.get('/manual/orders', canReadWorkOrders, async (req, res) => {
 
 router.get('/manual/orders/:id', canReadWorkOrders, async (req, res) => {
   const orgId = req.userProfile.org_id
+  const scopedLocationId = getScopedLocationId(req.orgPermissions)
   try {
     const detail = await loadWorkOrderDetail(orgId, req.params.id)
     if (!detail) return res.status(404).json({ error: 'Not found' })
+    if (
+      scopedLocationId
+      && detail.assigned_location_id
+      && detail.assigned_location_id !== scopedLocationId
+      && detail.created_by !== req.userProfile.id
+    ) {
+      return res.status(404).json({ error: 'Not found' })
+    }
     res.json(detail)
   } catch (err) {
     res.status(500).json({ error: err.message })
@@ -1796,8 +1986,52 @@ router.get('/assigned/:id', canReadWorkOrders, async (req, res) => {
   }
 })
 
-router.get('/scheduled', canReadWorkOrders, async (_req, res) => {
-  res.json([])
+router.get('/scheduled', canReadWorkOrders, async (req, res) => {
+  const orgId = req.userProfile.org_id
+  const { limit, offset } = parsePagination(req.query)
+  const scopedLocationId = getScopedLocationId(req.orgPermissions)
+  try {
+    let query = supabaseAdmin
+      .from('manual_work_orders')
+      .select('id, status, wo_number, source_type, priority, short_description, problem_description, created_at, updated_at, created_by, assigned_department_id, assigned_location_id, work_request_id, work_center, scheduled_at, pm_plan_id', { count: 'exact' })
+      .eq('org_id', orgId)
+      .eq('source_type', 'preventive_maintenance')
+      .order('scheduled_at', { ascending: false })
+      .order('created_at', { ascending: false })
+      .range(offset, offset + limit - 1)
+
+    if (scopedLocationId) query = query.eq('assigned_location_id', scopedLocationId)
+    query = applyIlikeSearch(query, req.query.search, ['wo_number', 'short_description', 'problem_description'])
+
+    const { data, error, count } = await query
+    if (error) throw error
+    const rows = await buildWorkOrderListResponse(orgId, data || [])
+    res.json(listEnvelope(rows, { total: count || 0, limit, offset }))
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+router.get('/scheduled/:id', canReadWorkOrders, async (req, res) => {
+  const orgId = req.userProfile.org_id
+  const scopedLocationId = getScopedLocationId(req.orgPermissions)
+  try {
+    const detail = await loadWorkOrderDetail(orgId, req.params.id)
+    if (!detail || detail.source_type !== 'preventive_maintenance') {
+      return res.status(404).json({ error: 'Not found' })
+    }
+    if (
+      scopedLocationId
+      && detail.assigned_location_id
+      && detail.assigned_location_id !== scopedLocationId
+      && detail.created_by !== req.userProfile.id
+    ) {
+      return res.status(404).json({ error: 'Not found' })
+    }
+    res.json(detail)
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
 })
 
 router.get('/received', canReadWorkOrders, async (req, res) => {
@@ -1808,6 +2042,7 @@ router.get('/received', canReadWorkOrders, async (req, res) => {
       limit,
       offset,
       search: req.query.search,
+      session: req.orgPermissions,
     })
     res.json(rows)
   } catch (err) {
@@ -1824,8 +2059,21 @@ router.get('/received/:id', canReadWorkOrders, async (req, res) => {
 
     const detail = await loadWorkOrderDetail(orgId, req.params.id, {
       employee,
+      profile: req.userProfile,
+      session: req.orgPermissions,
     })
     if (!detail) return res.status(404).json({ error: 'Not found' })
+
+    const scopedLocationId = getScopedLocationId(req.orgPermissions)
+    const isAssignee = (detail.assignees || []).some((row) => row.id === employee.id)
+    if (
+      scopedLocationId
+      && detail.assigned_location_id
+      && detail.assigned_location_id !== scopedLocationId
+      && !isAssignee
+    ) {
+      return res.status(404).json({ error: 'Not found' })
+    }
 
     const assignment_actions = await buildAssignmentActions(
       orgId,

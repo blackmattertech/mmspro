@@ -1,0 +1,62 @@
+.task-reminder-overlay {
+  z-index: 1400;
+}
+
+.task-reminder-modal {
+  width: min(440px, 100%);
+  max-width: 440px;
+  padding: 24px;
+  gap: 16px;
+}
+
+.task-reminder-modal__header {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.task-reminder-modal__badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-primary);
+  background: #fee2e2;
+  border-radius: var(--radius-pill);
+}
+
+.task-reminder-modal__title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 650;
+  line-height: 1.3;
+  color: var(--color-dark-navy);
+}
+
+.task-reminder-modal__body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.task-reminder-modal__due {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-dark-navy);
+}
+
+.task-reminder-modal__summary {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--color-gray-blue);
+}
+
+.task-reminder-modal__actions {
+  margin-top: 8px;
+}

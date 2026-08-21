@@ -1,11 +1,12 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useLocations } from '../../hooks/useLocations'
 import { useEmployees } from '../../hooks/useEmployees'
 import { useOrgLimits } from '../../hooks/useOrgLimits'
 import { useLimitExceeded } from '../../hooks/useLimitExceeded'
 import { useDebouncedValue } from '../../hooks/useDebouncedValue'
 import { isLimitError } from '../../lib/limitErrors'
-import { getLocationsTemplate, bulkUploadLocations } from '../../lib/api'
+import { getLocationsTemplate, bulkUploadLocations, deleteLocation } from '../../lib/api'
+import { invalidateReferenceCache } from '../../lib/referenceDataCache'
 import GooToggle from '../ui/GooToggle'
 import TrashIcon from '../ui/TrashIcon'
 import EditIcon from '../ui/EditIcon'
@@ -95,6 +96,20 @@ export default function LocationsTab({ canManage }) {
 
   const atLocationLimit = isResourceAtLimit('locations', 'location_limit')
   const pagedLocations = filteredLocations
+  const [selected, setSelected] = useState(() => new Set())
+  const [bulkDeleting, setBulkDeleting] = useState(false)
+  const [deleteError, setDeleteError] = useState(null)
+  const selectAllRef = useRef(null)
+  const visibleIds = useMemo(() => pagedLocations.map((loc) => loc.id), [pagedLocations])
+  const selectedVisibleCount = visibleIds.filter((id) => selected.has(id)).length
+  const allVisibleSelected = visibleIds.length > 0 && selectedVisibleCount === visibleIds.length
+  const someVisibleSelected = selectedVisibleCount > 0 && !allVisibleSelected
+
+  useEffect(() => {
+    if (selectAllRef.current) {
+      selectAllRef.current.indeterminate = someVisibleSelected
+    }
+  }, [someVisibleSelected])
   const locationColumnDefs = useMemo(() => {
     const cols = [
       { id: 'name', label: 'Name' },
@@ -148,9 +163,67 @@ export default function LocationsTab({ canManage }) {
   }
 
   const handleDelete = async (loc) => {
-    if (!window.confirm(`Delete location "${loc.name}"?`)) return
-    await remove(loc.id)
-    await reloadLimits()
+    if (!window.confirm(`Delete location "${loc.name}"? This cannot be undone.`)) return
+    setDeleteError(null)
+    try {
+      await remove(loc.id)
+      setSelected((prev) => {
+        const next = new Set(prev)
+        next.delete(loc.id)
+        return next
+      })
+      await reloadLimits()
+    } catch {
+      // error shown by hook
+    }
+  }
+
+  const toggleSelected = (id) => {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const toggleSelectAllVisible = () => {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (allVisibleSelected) {
+        visibleIds.forEach((id) => next.delete(id))
+      } else {
+        visibleIds.forEach((id) => next.add(id))
+      }
+      return next
+    })
+  }
+
+  const handleBulkDelete = async () => {
+    const ids = [...selected]
+    if (!ids.length) return
+    const label = ids.length === 1 ? 'this location' : `${ids.length} locations`
+    if (!window.confirm(`Delete ${label}? This cannot be undone.`)) return
+    setBulkDeleting(true)
+    setDeleteError(null)
+    try {
+      for (const id of ids) {
+        await deleteLocation(id)
+      }
+      invalidateReferenceCache('locations')
+      await reload({ silent: true, force: true })
+      await reloadLimits()
+      setSelected(new Set())
+      if (viewing && ids.includes(viewing.id)) setViewing(null)
+    } catch (err) {
+      if (!tryHandleLimitError(err, 'Location')) {
+        setDeleteError(err.message || 'Could not delete the selected locations')
+      }
+      invalidateReferenceCache('locations')
+      await reload({ silent: true, force: true })
+    } finally {
+      setBulkDeleting(false)
+    }
   }
 
   const handleToggle = async (loc, isActive) => {
@@ -186,7 +259,19 @@ export default function LocationsTab({ canManage }) {
           }}
           sort={{ value: sortBy, onChange: setSortBy, options: TABLE_SORT_OPTIONS }}
           actions={canManage && (
-            <MasterBulkActions
+            <>
+              {selected.size > 0 && (
+              <button
+                type="button"
+                className="company-btn company-btn--danger"
+                disabled={bulkDeleting || saving}
+                onClick={handleBulkDelete}
+              >
+                <TrashIcon />
+                {bulkDeleting ? 'Deleting...' : `Delete (${selected.size})`}
+              </button>
+              )}
+              <MasterBulkActions
               onDownload={handleDownloadTemplate}
               bulkBusy={bulkBusy}
               bulkInputRef={bulkInputRef}
@@ -198,6 +283,7 @@ export default function LocationsTab({ canManage }) {
               bulkResult={bulkResult}
               noun="location"
             />
+            </>
           )}
           columnPicker={(
             <TableColumnPicker
@@ -211,6 +297,7 @@ export default function LocationsTab({ canManage }) {
       </div>
 
       {showPlainError && <div className="company-alert">{error}</div>}
+      {deleteError && <div className="company-alert">{deleteError}</div>}
       {bulkError && <div className="company-error">{bulkError}</div>}
       <MasterBulkResult result={bulkResult} noun="location" />
 
@@ -221,11 +308,23 @@ export default function LocationsTab({ canManage }) {
       ) : filteredLocations.length === 0 ? (
         <div className="company-empty">No locations match your filters.</div>
       ) : (
+        <>
         <div className="company-table-wrap">
           <div className="company-table-scroll">
           <table className="company-table master-table">
             <thead>
               <tr>
+                {canManage && (
+                  <th className="company-table__cell--check">
+                    <input
+                      ref={selectAllRef}
+                      type="checkbox"
+                      checked={allVisibleSelected}
+                      onChange={toggleSelectAllVisible}
+                      aria-label="Select all locations"
+                    />
+                  </th>
+                )}
                 {isLocationColumnVisible('name') && <th>Name</th>}
                 {isLocationColumnVisible('code') && <th>Code</th>}
                 {isLocationColumnVisible('city') && <th>City</th>}
@@ -248,6 +347,20 @@ export default function LocationsTab({ canManage }) {
                       className: !isActive ? 'company-table__row--inactive' : undefined,
                     })}
                   >
+                    {canManage && (
+                      <td
+                        className="company-table__cell--check"
+                        onClick={stopTableRowClick}
+                        onKeyDown={stopTableRowClick}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selected.has(loc.id)}
+                          onChange={() => toggleSelected(loc.id)}
+                          aria-label={`Select ${loc.name}`}
+                        />
+                      </td>
+                    )}
                     {isLocationColumnVisible('name') && (
                       <td>
                         <span className="company-table__name">{loc.name}</span>
@@ -307,10 +420,10 @@ export default function LocationsTab({ canManage }) {
               })}
             </tbody>
           </table>
-          <TablePagination {...pagination} />
-          />
           </div>
         </div>
+        <TablePagination {...pagination} />
+        </>
       )}
 
       {viewing && (

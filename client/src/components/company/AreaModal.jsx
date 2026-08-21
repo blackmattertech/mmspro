@@ -2,7 +2,9 @@ import { useEffect, useMemo, useState } from 'react'
 import { useBackdropClose } from '../../hooks/useBackdropClose'
 import { useLocations } from '../../hooks/useLocations'
 import { useDepartments } from '../../hooks/useDepartments'
+import { departmentsForEmployeeLocation } from '../../lib/departmentLocation'
 import FilterableSelect from '../ui/FilterableSelect'
+import PageBack from '../shared/PageBack'
 import '../company/CompanyShared.css'
 
 const EMPTY = {
@@ -12,14 +14,21 @@ const EMPTY = {
   department_id: '',
 }
 
-export default function AreaModal({ area, saving, onClose, onSave }) {
+export default function AreaModal({
+  area,
+  saving,
+  onClose,
+  onSave,
+  defaultLocationId = '',
+  lockLocation = false,
+}) {
   const isEdit = Boolean(area?.id)
   const { locations } = useLocations()
   const [form, setForm] = useState(EMPTY)
   const [error, setError] = useState(null)
   const handleBackdropClick = useBackdropClose(onClose)
 
-  const { departments } = useDepartments(form.location_id || undefined)
+  const { departments } = useDepartments()
 
   useEffect(() => {
     if (area) {
@@ -30,17 +39,20 @@ export default function AreaModal({ area, saving, onClose, onSave }) {
         department_id: area.department_id || '',
       })
     } else {
-      setForm(EMPTY)
+      setForm({
+        ...EMPTY,
+        location_id: defaultLocationId || '',
+      })
     }
-  }, [area])
+  }, [area, defaultLocationId])
 
   const activeLocations = useMemo(
     () => (locations || []).filter((l) => l.is_active !== false),
     [locations],
   )
   const activeDepartments = useMemo(
-    () => (departments || []).filter((d) => d.is_active !== false),
-    [departments],
+    () => departmentsForEmployeeLocation(departments, form.location_id),
+    [departments, form.location_id],
   )
 
   const handleSubmit = async (e) => {
@@ -74,7 +86,10 @@ export default function AreaModal({ area, saving, onClose, onSave }) {
     <div className="company-modal-overlay" onMouseDown={handleBackdropClick} role="presentation">
       <div className="company-modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-labelledby="area-modal-title">
         <div className="company-modal__header">
-          <h2 id="area-modal-title">{isEdit ? 'Edit Area' : 'Add Area'}</h2>
+          <div className="modal__header-main">
+            <PageBack onClick={onClose} className="page-back--header" label="Areas" />
+            <h2 id="area-modal-title">{isEdit ? 'Edit Area' : 'Add Area'}</h2>
+          </div>
           <button type="button" className="company-modal__close" onClick={onClose} aria-label="Close">×</button>
         </div>
         <form className="company-modal__form" onSubmit={handleSubmit}>
@@ -112,8 +127,14 @@ export default function AreaModal({ area, saving, onClose, onSave }) {
               placeholder="Select location…"
               required
               allowEmpty={false}
+              disabled={lockLocation}
             />
           </label>
+          {lockLocation && (
+            <span className="company-modal__hint">
+              Location is limited to your assigned location.
+            </span>
+          )}
           <label className="company-form__field">
             <span className="company-form__label">Department *</span>
             <FilterableSelect

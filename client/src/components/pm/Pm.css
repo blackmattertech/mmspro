@@ -1,0 +1,218 @@
+/* Keep PM dialogs in the main pane so they do not cover the sidebar. */
+.app-shell .company-modal-overlay.pm-modal-overlay {
+  left: var(--sidebar-width, 260px) !important;
+  right: 0;
+  z-index: 1100;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 24px !important;
+}
+
+.app-shell--sidebar-collapsed .company-modal-overlay.pm-modal-overlay {
+  left: var(--sidebar-collapsed-width, 72px) !important;
+}
+
+@media (max-width: 1024px) {
+  .app-shell .company-modal-overlay.pm-modal-overlay,
+  .app-shell--sidebar-collapsed .company-modal-overlay.pm-modal-overlay {
+    left: 0 !important;
+  }
+}
+
+.company-modal.company-modal--popup.pm-modal,
+.company-modal.company-modal--popup.pm-modal--wide {
+  width: min(800px, 100%);
+  max-width: min(800px, 100%);
+}
+
+.pm-section {
+  display: grid;
+  gap: 12px;
+  padding: 16px 0;
+  border-top: 1px solid var(--color-light-gray-1);
+}
+
+.pm-section:first-of-type {
+  border-top: none;
+  padding-top: 0;
+}
+
+.pm-section__title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-dark-navy);
+}
+
+.pm-section__hint {
+  margin: 0;
+  font-size: 13px;
+  color: var(--color-gray-blue);
+}
+
+.pm-radio-row {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  min-height: 40px;
+}
+
+.pm-radio {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  color: var(--color-dark-navy);
+}
+
+.pm-subtabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.pm-subtabs__btn {
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+  color: var(--color-gray-blue);
+  background: var(--color-light-gray-1);
+  border: none;
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+}
+
+.pm-subtabs__btn--active {
+  color: var(--color-white);
+  background: var(--color-primary);
+}
+
+.pm-tech-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+  max-height: 340px;
+  overflow: auto;
+  padding: 2px;
+}
+
+.pm-tech-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  min-height: 76px;
+  text-align: left;
+  background: var(--color-white);
+  border: 1px solid var(--color-light-gray-1);
+  border-radius: 12px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.pm-tech-card--selected {
+  border-color: var(--color-primary);
+  background: #fff5f5;
+}
+
+.pm-tech-card__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.pm-tech-card__name {
+  display: block;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--color-dark-navy);
+}
+
+.pm-tech-card__meta {
+  display: block;
+  font-size: 13px;
+  color: var(--color-gray-blue);
+}
+
+.pm-field-list {
+  display: grid;
+  gap: 8px;
+}
+
+.pm-field-row {
+  display: grid;
+  grid-template-columns: 18px 1fr auto auto;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 12px;
+  background: var(--color-off-white);
+  border-radius: 10px;
+}
+
+.pm-field-row__name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-dark-navy);
+}
+
+.pm-field-row__meta {
+  font-size: 12px;
+  color: var(--color-gray-blue);
+}
+
+.pm-drag {
+  cursor: grab;
+  color: var(--color-gray-blue);
+  user-select: none;
+}
+
+.pm-status {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: capitalize;
+}
+
+.pm-status--active {
+  background: #e8f7ee;
+  color: #1b7a3d;
+}
+
+.pm-status--inactive {
+  background: var(--color-light-gray-1);
+  color: var(--color-gray-blue);
+}
+
+.pm-table-actions {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.pm-modal .company-alert {
+  position: sticky;
+  bottom: 52px;
+  z-index: 2;
+  margin: 0;
+}
+
+.pm-modal .company-modal__actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  margin: 0;
+  padding: 12px 0 0;
+  background: var(--color-white);
+}
+
+.pm-checklist-exec {
+  display: grid;
+  gap: 12px;
+}

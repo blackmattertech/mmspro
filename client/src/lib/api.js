@@ -208,6 +208,28 @@ export function deleteDepartment(id) {
   return companyFetch(`/departments/${id}`, { method: 'DELETE' })
 }
 
+export async function getWorkCenters({ locationId, search, limit = 200, offset = 0 } = {}) {
+  const data = await companyFetch(`/work-centers${listQueryParams({
+    location_id: locationId || undefined,
+    search,
+    limit,
+    offset,
+  })}`)
+  return asListArray(data)
+}
+
+export function createWorkCenter(data) {
+  return companyFetch('/work-centers', { method: 'POST', body: JSON.stringify(data) })
+}
+
+export function updateWorkCenter(id, data) {
+  return companyFetch(`/work-centers/${id}`, { method: 'PATCH', body: JSON.stringify(data) })
+}
+
+export function deleteWorkCenter(id) {
+  return companyFetch(`/work-centers/${id}`, { method: 'DELETE' })
+}
+
 export async function getAreas({ locationId, departmentId, search, limit = 200, offset = 0 } = {}) {
   const data = await companyFetch(`/areas${listQueryParams({
     location_id: locationId,

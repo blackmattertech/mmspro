@@ -7,7 +7,7 @@ export const WR_ADVANCED_FILTER_FIELDS = [
   { id: 'order_from', label: 'Order from' },
   { id: 'order_to', label: 'Order to' },
   { id: 'wr_number', label: 'WR #' },
-  { id: 'problem', label: 'Problem' },
+  { id: 'problem', label: 'Short description' },
   { id: 'requester', label: 'Requested by' },
 ]
 
@@ -123,11 +123,15 @@ function matchesRule(row, rule, departments = []) {
     case 'wr_number':
       return compareText((row.request_number || '').toLowerCase(), lowerValue, rule.operator)
     case 'problem':
-      return compareText((row.problem_description || '').toLowerCase(), lowerValue, rule.operator)
+      return compareText((row.short_description || '').toLowerCase(), lowerValue, rule.operator)
     case 'requester': {
       const who = [
+        row.requester?.name,
         row.requester?.full_name,
         row.requester?.email,
+        row.requester?.department_name,
+        row.requester?.department?.name,
+        row.requester?.role,
       ].filter(Boolean).join(' ').toLowerCase()
       return compareText(who, lowerValue, rule.operator)
     }
@@ -171,15 +175,18 @@ export function applyWorkRequestFilters(rows, {
     result = result.filter((row) => {
       const haystack = [
         row.request_number,
-        row.problem_description,
+        row.short_description,
         row.remarks,
         row.status,
         row.priority,
         row.request_type,
         row.order_from?.name,
         row.order_to?.name,
+        row.requester?.name,
         row.requester?.full_name,
         row.requester?.email,
+        row.requester?.department_name,
+        row.requester?.role,
       ].filter(Boolean).join(' ').toLowerCase()
       return haystack.includes(query)
     })
@@ -205,11 +212,18 @@ export function applyWorkRequestFilters(rows, {
       status: (row) => `${row.status || ''} ${(row.status || '').replace(/_/g, ' ')}`,
       priority: (row) => row.priority,
       request_number: (row) => row.request_number,
-      description: (row) => row.problem_description,
+      description: (row) => row.short_description,
       type: (row) => `${row.request_type || ''} ${typeLabels[row.request_type] || ''}`,
       from: (row) => row.order_from?.name,
       to: (row) => row.order_to?.name,
-      requester: (row) => row.requester?.full_name || row.requester?.email,
+      requester: (row) => [
+        row.requester?.name,
+        row.requester?.full_name,
+        row.requester?.email,
+        row.requester?.department_name,
+        row.requester?.department?.name,
+        row.requester?.role,
+      ].filter(Boolean).join(' '),
     }
     const getter = getters[fieldFilter.field]
     if (getter) {

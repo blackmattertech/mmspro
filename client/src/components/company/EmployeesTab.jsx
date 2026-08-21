@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useOrg } from '../../hooks/useOrg'
 import { usePermissions } from '../../hooks/usePermissions'
 import { useEmployees } from '../../hooks/useEmployees'
@@ -10,6 +10,8 @@ import { useLimitExceeded } from '../../hooks/useLimitExceeded'
 import { useDebouncedValue } from '../../hooks/useDebouncedValue'
 import { isLimitError } from '../../lib/limitErrors'
 import { deleteEmployeePhoto, uploadEmployeePhoto } from '../../lib/orgAssets'
+import { deleteEmployee } from '../../lib/api-employees'
+import { invalidateReferenceCache } from '../../lib/referenceDataCache'
 import GooToggle from '../ui/GooToggle'
 import TrashIcon from '../ui/TrashIcon'
 import EditIcon from '../ui/EditIcon'
@@ -41,8 +43,9 @@ import './CompanyShared.css'
 const EMPLOYEE_FILTER_FIELDS = [
   { value: 'name', label: 'Name' },
   { value: 'emp_id', label: 'Emp ID' },
-  { value: 'department', label: 'Department' },
+  { value: 'role', label: 'Role' },
   { value: 'location', label: 'Location' },
+  { value: 'department', label: 'Department' },
   { value: 'email', label: 'Email' },
   { value: 'mobile', label: 'Mobile' },
   { value: 'manager', label: 'Manager' },
@@ -97,6 +100,7 @@ export default function EmployeesTab({ canManage }) {
   const [editing, setEditing] = useState(null)
   const [viewing, setViewing] = useState(null)
   const [togglingId, setTogglingId] = useState(null)
+  const [deleteError, setDeleteError] = useState(null)
   const paginationResetKey = `${debouncedSearch}|${filterField}|${filterValue}|${sortBy}|${scopedLocationId}`
   const pagination = useTablePagination(employeeTotal, { resetKey: paginationResetKey })
   const {
@@ -157,6 +161,7 @@ export default function EmployeesTab({ canManage }) {
     fieldFilterGetters: {
       name: (employee) => employee.name,
       emp_id: (employee) => employee.emp_id,
+      role: (employee) => employee.access_role?.name,
       department: (employee) => employee.departments?.name,
       location: (employee) => employee.org_locations?.name,
       email: (employee) => [
@@ -175,15 +180,29 @@ export default function EmployeesTab({ canManage }) {
   const atEmployeeLimit = isResourceAtLimit('employees', 'employee_limit')
 
   const pagedEmployees = filteredEmployees
+  const [selected, setSelected] = useState(() => new Set())
+  const [bulkDeleting, setBulkDeleting] = useState(false)
+  const selectAllRef = useRef(null)
+  const visibleIds = useMemo(() => pagedEmployees.map((employee) => employee.id), [pagedEmployees])
+  const selectedVisibleCount = visibleIds.filter((id) => selected.has(id)).length
+  const allVisibleSelected = visibleIds.length > 0 && selectedVisibleCount === visibleIds.length
+  const someVisibleSelected = selectedVisibleCount > 0 && !allVisibleSelected
+
+  useEffect(() => {
+    if (selectAllRef.current) {
+      selectAllRef.current.indeterminate = someVisibleSelected
+    }
+  }, [someVisibleSelected])
   const employeeColumnDefs = useMemo(() => {
     const cols = [
       { id: 'photo', label: 'Photo' },
       { id: 'emp_id', label: 'Emp ID' },
       { id: 'name', label: 'Employee Name' },
+      { id: 'role', label: 'Role' },
+      { id: 'location', label: 'Location' },
       { id: 'mobile', label: 'Mobile' },
       { id: 'email', label: 'Email(s)' },
       { id: 'department', label: 'Department' },
-      { id: 'location', label: 'Location' },
       { id: 'manager', label: 'Manager' },
     ]
     if (canManage) {
@@ -291,10 +310,64 @@ export default function EmployeesTab({ canManage }) {
   }
 
   const handleDelete = async (employee) => {
-    if (!window.confirm(`Delete employee "${employee.name}"?`)) return false
+    if (!window.confirm(`Delete employee "${employee.name}"? This cannot be undone.`)) return false
+    setDeleteError(null)
     await remove(employee.id)
+    setSelected((prev) => {
+      const next = new Set(prev)
+      next.delete(employee.id)
+      return next
+    })
     await reloadLimits()
     return true
+  }
+
+  const toggleSelected = (id) => {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const toggleSelectAllVisible = () => {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (allVisibleSelected) {
+        visibleIds.forEach((id) => next.delete(id))
+      } else {
+        visibleIds.forEach((id) => next.add(id))
+      }
+      return next
+    })
+  }
+
+  const handleBulkDelete = async () => {
+    const ids = [...selected]
+    if (!ids.length) return
+    const label = ids.length === 1 ? 'this employee' : `${ids.length} employees`
+    if (!window.confirm(`Delete ${label}? This cannot be undone.`)) return
+    setBulkDeleting(true)
+    setDeleteError(null)
+    try {
+      for (const id of ids) {
+        await deleteEmployee(id)
+      }
+      invalidateReferenceCache('employees')
+      await reload({ silent: true, force: true })
+      await reloadLimits()
+      setSelected(new Set())
+      if (viewing && ids.includes(viewing.id)) setViewing(null)
+    } catch (err) {
+      if (!tryHandleLimitError(err, 'Employee')) {
+        setDeleteError(err.message || 'Could not delete the selected employees')
+      }
+      invalidateReferenceCache('employees')
+      await reload({ silent: true, force: true })
+    } finally {
+      setBulkDeleting(false)
+    }
   }
 
   const handleToggle = async (employee, isActive) => {
@@ -330,7 +403,19 @@ export default function EmployeesTab({ canManage }) {
           }}
           sort={{ value: sortBy, onChange: setSortBy, options: TABLE_SORT_OPTIONS }}
           actions={canManage && (
-            <MasterBulkActions
+            <>
+              {selected.size > 0 && (
+              <button
+                type="button"
+                className="company-btn company-btn--danger"
+                disabled={bulkDeleting || saving}
+                onClick={handleBulkDelete}
+              >
+                <TrashIcon />
+                {bulkDeleting ? 'Deleting...' : `Delete (${selected.size})`}
+              </button>
+              )}
+              <MasterBulkActions
               onDownload={handleDownloadTemplate}
               bulkBusy={bulkBusy}
               bulkInputRef={bulkInputRef}
@@ -342,6 +427,7 @@ export default function EmployeesTab({ canManage }) {
               bulkResult={bulkResult}
               noun="employee"
             />
+            </>
           )}
           columnPicker={(
             <TableColumnPicker
@@ -355,6 +441,7 @@ export default function EmployeesTab({ canManage }) {
       </div>
 
       {showPlainError && <div className="company-alert">{error}</div>}
+      {deleteError && <div className="company-alert">{deleteError}</div>}
       {bulkError && <div className="company-error">{bulkError}</div>}
       <MasterBulkResult result={bulkResult} noun="employee" />
 
@@ -371,13 +458,25 @@ export default function EmployeesTab({ canManage }) {
             <table className="company-table master-table">
               <thead>
                 <tr>
+                  {canManage && (
+                    <th className="company-table__cell--check">
+                      <input
+                        ref={selectAllRef}
+                        type="checkbox"
+                        checked={allVisibleSelected}
+                        onChange={toggleSelectAllVisible}
+                        aria-label="Select all employees"
+                      />
+                    </th>
+                  )}
                   {isEmployeeColumnVisible('photo') && <th className="company-table__cell--photo">Photo</th>}
                   {isEmployeeColumnVisible('emp_id') && <th>Emp ID</th>}
                   {isEmployeeColumnVisible('name') && <th>Employee Name</th>}
+                  {isEmployeeColumnVisible('role') && <th>Role</th>}
+                  {isEmployeeColumnVisible('location') && <th>Location</th>}
                   {isEmployeeColumnVisible('mobile') && <th>Mobile</th>}
                   {isEmployeeColumnVisible('email') && <th>Email(s)</th>}
                   {isEmployeeColumnVisible('department') && <th>Department</th>}
-                  {isEmployeeColumnVisible('location') && <th>Location</th>}
                   {isEmployeeColumnVisible('manager') && <th className="company-table__cell--manager">Manager</th>}
                   {canManage && isEmployeeColumnVisible('active') && <th>Active</th>}
                   {canManage && isEmployeeColumnVisible('actions') && <th>Actions</th>}
@@ -386,7 +485,8 @@ export default function EmployeesTab({ canManage }) {
               <tbody>
                 {pagedEmployees.map((employee) => {
                   const isActive = employee.is_active !== false
-                  const showLocationHead = isLocationHeadEmployee(employee)
+                  const manager = employee.manager
+                    || employees.find((row) => row.id === employee.manager_id)
                   return (
                     <tr
                       key={employee.id}
@@ -396,17 +496,24 @@ export default function EmployeesTab({ canManage }) {
                         className: !isActive ? 'company-table__row--inactive' : undefined,
                       })}
                     >
+                      {canManage && (
+                        <td
+                          className="company-table__cell--check"
+                          onClick={stopTableRowClick}
+                          onKeyDown={stopTableRowClick}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selected.has(employee.id)}
+                            onChange={() => toggleSelected(employee.id)}
+                            aria-label={`Select ${employee.name}`}
+                          />
+                        </td>
+                      )}
                       {isEmployeeColumnVisible('photo') && (
                         <td className="company-table__cell--photo">
                           <div className="company-employee-photo-cell">
                             <EmployeeAvatar employee={employee} />
-                            {showLocationHead && (
-                              <div className="company-employee-photo__pills" aria-label="Employee roles">
-                                <span className="company-badge company-badge--location-head">
-                                  Location Head
-                                </span>
-                              </div>
-                            )}
                           </div>
                         </td>
                       )}
@@ -415,6 +522,20 @@ export default function EmployeesTab({ canManage }) {
                       )}
                       {isEmployeeColumnVisible('name') && (
                         <td><span className="company-table__name">{employee.name}</span></td>
+                      )}
+                      {isEmployeeColumnVisible('role') && (
+                        <td>
+                          {employee.access_role?.name ? (
+                            <span className="company-badge company-badge--primary">
+                              {employee.access_role.name}
+                            </span>
+                          ) : '—'}
+                        </td>
+                      )}
+                      {isEmployeeColumnVisible('location') && (
+                        <td className="company-table__cell--truncate">
+                          {employee.org_locations?.name || '—'}
+                        </td>
                       )}
                       {isEmployeeColumnVisible('mobile') && (
                         <td className="company-table__cell--nowrap">
@@ -438,24 +559,25 @@ export default function EmployeesTab({ canManage }) {
                         </td>
                       )}
                       {isEmployeeColumnVisible('department') && (
-                        <td>{employee.departments?.name || '—'}</td>
-                      )}
-                      {isEmployeeColumnVisible('location') && (
-                        <td className="company-table__cell--truncate">
-                          {employee.org_locations?.name || '—'}
+                        <td>
+                          {employee.departments?.name ? (
+                            <span className="company-badge company-badge--solid">
+                              {employee.departments.name}
+                            </span>
+                          ) : '—'}
                         </td>
                       )}
                       {isEmployeeColumnVisible('manager') && (
                         <td className="company-table__cell--manager">
-                          {employee.manager ? (
+                          {manager ? (
                             <span className="company-employee-ref">
                               <EmployeeAvatar
                                 size="sm"
                                 employee={
-                                  employees.find((e) => e.id === employee.manager.id) || employee.manager
+                                  employees.find((e) => e.id === manager.id) || manager
                                 }
                               />
-                              <span className="company-employee-ref__name">{employee.manager.name}</span>
+                              <span className="company-employee-ref__name">{manager.name}</span>
                             </span>
                           ) : (
                             '—'

@@ -77,13 +77,12 @@
   color: var(--color-danger, #c62828);
 }
 
-.tasks-page .company-page__content {
+.tasks-page > .company-page__content {
   padding: 0;
 }
 
-.tasks-page .company-page__header {
+.tasks-page > .company-page__header {
   padding-left: 24px;
-  padding-right: 24px;
 }
 
 .tasks-page .company-panel {
@@ -594,9 +593,8 @@
 }
 
 @media (max-width: 768px) {
-  .tasks-page .company-page__header {
+  .tasks-page > .company-page__header {
     padding-left: 16px;
-    padding-right: 16px;
   }
 
   .tasks-page .company-panel--kanban > .tasks-kanban {
@@ -734,8 +732,12 @@
   color: #6D28D9;
 }
 
+.task-detail-page .company-page__header {
+  padding: 24px 28px 16px;
+}
+
 .task-detail-page .company-page__content {
-  padding-top: 0;
+  padding: 8px 28px 32px;
 }
 
 .task-detail-page .company-panel {

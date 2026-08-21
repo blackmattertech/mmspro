@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import FilterableSelect from '../ui/FilterableSelect'
+import PageBack from '../shared/PageBack'
 import './CreateWorkOrderModal.css'
 
 export default function CreateWorkOrderModal({
@@ -28,7 +29,10 @@ export default function CreateWorkOrderModal({
     <div className="modal-overlay" onClick={onClose} role="presentation">
       <div className="modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-labelledby="modal-title">
         <div className="modal__header">
-          <h2 id="modal-title" className="modal__title">Create Work Order</h2>
+          <div className="modal__header-main">
+            <PageBack onClick={onClose} className="page-back--header" />
+            <h2 id="modal-title" className="modal__title">Create Work Order</h2>
+          </div>
           <button type="button" className="modal__close" onClick={onClose} aria-label="Close">×</button>
         </div>
 

@@ -31,6 +31,8 @@ function buildColumnDefs(columnIds) {
   }))
 }
 
+const APPROVABLE_STATUSES = new Set(['assigned', 'returned_rework'])
+
 export default function WorkOrdersTable({
   orders,
   totalCount,
@@ -41,10 +43,13 @@ export default function WorkOrdersTable({
   emptyTitle,
   emptyHint,
   onView,
+  onApprove,
   onEdit,
   onDelete,
+  canApproveOrder,
   canEdit = false,
   canDelete = false,
+  approvingId = null,
   paginationResetKey = '',
 }) {
   const columnDefs = useMemo(() => buildColumnDefs(columns), [columns])
@@ -138,6 +143,19 @@ export default function WorkOrdersTable({
               ))}
               <td onClick={stopTableRowClick}>
                 <div className="company-table__actions">
+                  {onApprove && (canApproveOrder
+                    ? canApproveOrder(order)
+                    : APPROVABLE_STATUSES.has(order.status)
+                  ) && (
+                    <button
+                      type="button"
+                      className="wo-table__approve"
+                      onClick={() => onApprove(order)}
+                      disabled={approvingId === order.id}
+                    >
+                      {approvingId === order.id ? 'Approving…' : 'Approve'}
+                    </button>
+                  )}
                   {onView && (
                     <button
                       type="button"

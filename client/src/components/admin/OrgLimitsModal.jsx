@@ -7,6 +7,7 @@ import {
   limitInputValue,
 } from '../../lib/orgLimits'
 import FilterableSelect from '../ui/FilterableSelect'
+import PageBack from '../shared/PageBack'
 import '../../components/company/CompanyShared.css'
 import './CreateOrgModal.css'
 import './OrgLimitsModal.css'
@@ -102,9 +103,12 @@ export default function OrgLimitsModal({ org, onClose, onSubmit, saving }) {
     <div className="admin-modal-overlay" onClick={onClose}>
       <div className="admin-modal admin-modal--wide" onClick={(e) => e.stopPropagation()}>
         <div className="admin-modal__header">
-          <div>
-            <h2 className="admin-modal__title">Organization Limits</h2>
-            <p className="org-limits-modal__subtitle">{org.name}</p>
+          <div className="modal__header-main">
+            <PageBack onClick={onClose} className="page-back--header" label="Organizations" />
+            <div>
+              <h2 className="admin-modal__title">Organization Limits</h2>
+              <p className="org-limits-modal__subtitle">{org.name}</p>
+            </div>
           </div>
           <button type="button" className="admin-modal__close" onClick={onClose} aria-label="Close">
             <svg width="20" height="20" viewBox="0 0 20 20" fill="none">

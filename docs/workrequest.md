@@ -50,8 +50,9 @@ Apply after `60-task-performance.sql`.
 
 ## Still future / partial
 
-- PM scheduler / preventive generation (scheduled tab still placeholder)
+- Runtime / meter / shutdown PM schedules (stored; generate manually until meters exist)
 - Mobile push notifications
 - Named CMMS role templates (Requester / Supervisor / Technician / Planner) beyond module permissions
 - Inventory integration for material consumed
 - Draft edit / resubmit after need_info (status exists; full edit flow may still be limited)
+- PM reports (compliance, overdue register, technician performance) beyond the Scheduled tab lists

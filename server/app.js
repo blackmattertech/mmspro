@@ -14,6 +14,7 @@ import assetsRoutes from './routes/api/assets.js'
 import equipmentRoutes from './routes/api/equipment.js'
 import equipmentFieldsRoutes from './routes/api/equipmentFields.js'
 import workOrdersRoutes from './routes/api/workOrders.js'
+import pmRoutes from './routes/api/pm.js'
 import workRequestsRoutes from './routes/api/workRequests.js'
 import warrantiesRoutes from './routes/api/warranties.js'
 import vendorsRoutes from './routes/api/vendors.js'
@@ -87,6 +88,7 @@ app.use('/api/assets', assetsRoutes)
 app.use('/api/equipment', equipmentRoutes)
 app.use('/api/equipment-fields', equipmentFieldsRoutes)
 app.use('/api/work-orders', workOrdersRoutes)
+app.use('/api/pm', pmRoutes)
 app.use('/api/work-requests', workRequestsRoutes)
 app.use('/api/warranties', warrantiesRoutes)
 app.use('/api/vendors', vendorsRoutes)

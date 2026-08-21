@@ -1,5 +1,6 @@
 import { supabaseAdmin } from '../services/supabase.js'
-import { notifyOrg } from '../services/notifications.js'
+import { notifyWorkOrderParties } from '../services/notifications.js'
+import { loadTimelineActors } from './timelineActors.js'
 
 export const WO_STATUSES = [
   'draft',
@@ -28,6 +29,8 @@ export const WO_OPEN_LIST_STATUSES = [
   'on_hold',
   'returned_rework',
 ]
+
+export const WO_ASSIGNED_LIST_STATUSES = WO_STATUSES.filter((status) => status !== 'draft')
 
 export const PERMIT_TYPES = [
   'hot_work',
@@ -71,8 +74,6 @@ const COMPLETION_REQUIRED_FIELDS = [
   ['root_cause', 'Root cause analysis'],
   ['action_taken', 'Action taken'],
   ['material_consumed', 'Material consumed'],
-  ['safety_precautions', 'Safety precautions'],
-  ['lessons_learned', 'Lessons learned'],
 ]
 
 function formatSeqDate(date = new Date()) {
@@ -218,11 +219,38 @@ export function assertValidTransition(fromStatus, toStatus) {
 export function isPermitComplete(workOrder) {
   if (!workOrder?.permit_required) return true
   const types = Array.isArray(workOrder.permit_types) ? workOrder.permit_types : []
+  if (!types.length) return false
+
+  const details = Array.isArray(workOrder.permit_details) ? workOrder.permit_details : []
+  if (details.length) {
+    return types.every((type) => {
+      const row = details.find((item) => item?.type === type)
+      return Boolean(row && String(row.number || '').trim() && row.issue_at)
+    })
+  }
+
+  // Legacy single permit fields
   return Boolean(
-    types.length
-    && String(workOrder.permit_number || '').trim()
+    String(workOrder.permit_number || '').trim()
     && workOrder.permit_issue_at,
   )
+}
+
+function sanitizePermitDetails(raw, allowedTypes = PERMIT_TYPES) {
+  const allowed = new Set(allowedTypes)
+  const list = Array.isArray(raw) ? raw : []
+  const byType = new Map()
+  for (const row of list) {
+    const type = String(row?.type || '').trim()
+    if (!allowed.has(type) || byType.has(type)) continue
+    byType.set(type, {
+      type,
+      number: String(row?.number || '').trim(),
+      issue_at: row?.issue_at || null,
+      expiry_at: row?.expiry_at || null,
+    })
+  }
+  return [...byType.values()]
 }
 
 export function validatePermitForStart(workOrder) {
@@ -268,6 +296,24 @@ function hoursBetween(startAt, endAt) {
   return Math.round(((end - start) / 3600000) * 100) / 100
 }
 
+function sanitizeAttachmentList(raw) {
+  if (!Array.isArray(raw)) return []
+  return raw.map((item) => {
+    if (!item || typeof item !== 'object') return null
+    const path = String(item.path || '').trim()
+    if (!path) return null
+    const size = Number(item.size)
+    return {
+      path,
+      name: String(item.name || item.file_name || 'file'),
+      mime_type: item.mime_type || item.type || null,
+      size: Number.isFinite(size) ? size : null,
+      bucket: item.bucket || 'work-order-assets',
+      source: item.source === 'execution' ? 'execution' : (item.source || null),
+    }
+  }).filter(Boolean)
+}
+
 export function computeDurations(patch, existing = {}) {
   const next = { ...patch }
   const start = next.work_start_at ?? existing.work_start_at
@@ -291,14 +337,13 @@ export function computeDurations(patch, existing = {}) {
   return next
 }
 
-export function mapRequestTypeToSource(requestType, isBreakdown) {
-  if (isBreakdown) return 'breakdown'
+export function mapRequestTypeToSource(requestType) {
   if (requestType === 'user_self') return 'user_self_request'
   if (requestType === 'manual') return 'manual'
   return 'approved_work_request'
 }
 
-export async function loadWorkOrderTimeline(workOrderId) {
+export async function loadWorkOrderTimeline(orgId, workOrderId) {
   const { data, error } = await supabaseAdmin
     .from('work_order_timeline')
     .select('id, event_type, message, actor_id, previous_status, new_status, remarks, metadata, created_at')
@@ -306,7 +351,13 @@ export async function loadWorkOrderTimeline(workOrderId) {
     .order('created_at', { ascending: true })
 
   if (error) throw error
-  return data || []
+  const rows = data || []
+  const actorIds = [...new Set(rows.map((event) => event.actor_id).filter(Boolean))]
+  const actorById = await loadTimelineActors(orgId, actorIds)
+  return rows.map((event) => ({
+    ...event,
+    actor: event.actor_id ? (actorById.get(event.actor_id) || null) : null,
+  }))
 }
 
 export async function updateWorkOrderLifecycle(orgId, profileId, workOrderId, body = {}) {
@@ -365,18 +416,53 @@ export async function updateWorkOrderLifecycle(orgId, profileId, workOrderId, bo
     if (body[key] !== undefined) patch[key] = body[key]
   }
 
-  if (body.permit_types !== undefined) {
-    const types = Array.isArray(body.permit_types)
-      ? body.permit_types.filter((t) => PERMIT_TYPES.includes(t))
-      : []
-    patch.permit_types = types
+  if (body.permit_types !== undefined || body.permit_details !== undefined) {
+    const existingTypes = Array.isArray(existing.permit_types) ? existing.permit_types : []
+    const nextTypes = body.permit_types !== undefined
+      ? (Array.isArray(body.permit_types)
+        ? body.permit_types.filter((t) => PERMIT_TYPES.includes(t))
+        : [])
+      : existingTypes
+    const nextDetails = sanitizePermitDetails(
+      body.permit_details !== undefined ? body.permit_details : existing.permit_details,
+      nextTypes,
+    ).filter((row) => nextTypes.includes(row.type))
+
+    // Keep a detail shell for every selected type
+    const detailByType = new Map(nextDetails.map((row) => [row.type, row]))
+    const syncedDetails = nextTypes.map((type) => detailByType.get(type) || {
+      type,
+      number: '',
+      issue_at: null,
+      expiry_at: null,
+    })
+
+    patch.permit_types = nextTypes
+    patch.permit_details = syncedDetails
+
+    const primary = syncedDetails[0]
+    patch.permit_number = primary?.number || null
+    patch.permit_issue_at = primary?.issue_at || null
+    patch.permit_expiry_at = primary?.expiry_at || null
   }
 
   if (body.permit_attachments !== undefined && Array.isArray(body.permit_attachments)) {
-    patch.permit_attachments = body.permit_attachments
+    patch.permit_attachments = sanitizeAttachmentList(body.permit_attachments)
+  }
+
+  if (body.execution_attachments !== undefined && Array.isArray(body.execution_attachments)) {
+    const requestFiles = sanitizeAttachmentList(existing.attachments)
+      .filter((file) => file.source !== 'execution')
+    const executionFiles = sanitizeAttachmentList(body.execution_attachments)
+      .map((file) => ({ ...file, source: 'execution' }))
+    patch.attachments = [...requestFiles, ...executionFiles]
   }
 
   if (body.vendor_id !== undefined) patch.vendor_id = body.vendor_id || null
+
+  if (body.checklist_values !== undefined && body.checklist_values && typeof body.checklist_values === 'object') {
+    patch.checklist_values = body.checklist_values
+  }
 
   patch = computeDurations(patch, existing)
 
@@ -447,14 +533,29 @@ export async function updateWorkOrderLifecycle(orgId, profileId, workOrderId, bo
     )
 
     try {
-      await notifyOrg(orgId, {
+      await notifyWorkOrderParties(orgId, updated, {
         title: 'Work order update',
         body: `${updated.wo_number || 'Work order'}: ${label}`,
-        data: { work_order_id: updated.id, type: 'work_order_status', status: nextStatus },
+        data: {
+          work_order_id: updated.id,
+          type: 'work_order_status',
+          status: nextStatus,
+          actor_id: profileId,
+          message: body.remarks || null,
+        },
         url: '/',
-      })
+      }, { actorId: profileId })
     } catch {
       // non-blocking
+    }
+
+    if (nextStatus === 'closed' && updated.source_type === 'preventive_maintenance' && updated.pm_plan_id) {
+      try {
+        const { advancePlanAfterWorkOrderClose } = await import('./pmService.js')
+        await advancePlanAfterWorkOrderClose(orgId, updated)
+      } catch (err) {
+        console.error('Failed to advance PM next due date:', err.message)
+      }
     }
   } else if (Object.keys(patch).length > 1) {
     await addWorkOrderTimelineEvent(

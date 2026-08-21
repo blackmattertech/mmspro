@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import { useBackdropClose } from '../../hooks/useBackdropClose'
+import PageBack from '../shared/PageBack'
 import { profileDisplayName, profileFormName, profileFormPhone } from '../../hooks/useProfile'
 import PhoneInput from '../shared/PhoneInput'
 import ImageCropModal from '../shared/ImageCropModal'
@@ -228,7 +229,10 @@ export default function ProfileModal({ profile, employee, avatarUrl, onClose, on
     <div className="company-modal-overlay" onMouseDown={handleBackdropClick}>
       <div className="company-modal profile-modal" onClick={(e) => e.stopPropagation()}>
         <div className="company-modal__header">
-          <h2>My Profile</h2>
+          <div className="modal__header-main">
+            <PageBack onClick={onClose} className="page-back--header" />
+            <h2>My Profile</h2>
+          </div>
           <button type="button" className="company-modal__close" onClick={onClose} aria-label="Close">
             ×
           </button>

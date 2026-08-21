@@ -13,7 +13,12 @@ const FILE_TYPES = new Set([
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   'application/vnd.ms-excel',
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/zip',
+  'application/x-zip',
+  'application/x-zip-compressed',
 ])
+
+const FILE_NAME_RE = /\.(jpe?g|png|gif|webp|pdf|docx?|xlsx?|zip)$/i
 
 function sanitizeFileName(name) {
   return String(name || 'file')
@@ -26,11 +31,17 @@ export function validateWorkOrderFile(file, fieldType) {
   if (!file) return 'No file selected'
 
   const allowed = fieldType === 'image' ? IMAGE_TYPES : FILE_TYPES
-  if (!allowed.has(file.type)) {
+  const name = String(file.name || '')
+  const typeOk = allowed.has(file.type) || (
+    fieldType === 'image'
+      ? /\.(jpe?g|png|gif|webp)$/i.test(name)
+      : FILE_NAME_RE.test(name)
+  )
+  if (!typeOk) {
     if (fieldType === 'image') {
       return 'Image must be JPEG, PNG, WebP, or GIF'
     }
-    return 'File type not supported. Use PDF, DOC, DOCX, XLS, XLSX, JPG, or PNG'
+    return 'File type not supported. Use PDF, DOC, DOCX, XLS, XLSX, ZIP, JPG, or PNG'
   }
 
   if (file.size > MAX_BYTES) {

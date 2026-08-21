@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useOrg } from '../../hooks/useOrg'
 import { useDebouncedValue } from '../../hooks/useDebouncedValue'
@@ -12,13 +12,17 @@ import { flattenAssetSections } from '../../lib/workRequestAssetPicker'
 import WorkRequestAssetFields from '../../components/workrequests/WorkRequestAssetFields'
 import WorkRequestSectionHead from '../../components/workrequests/WorkRequestSectionHead'
 import WorkRequestBreakdownFields from '../../components/workrequests/WorkRequestBreakdownFields'
+import WorkRequestAttachmentsField from '../../components/workrequests/WorkRequestAttachmentsField'
 import FilterableSelect from '../../components/ui/FilterableSelect'
+import EmployeeAvatar from '../../components/company/EmployeeAvatar'
 import PageBack from '../../components/shared/PageBack'
 import {
   clearBreakdownFieldValues,
   missingRequiredBreakdownFields,
 } from '../../lib/workRequestBreakdownFields'
+import { departmentsForEmployeeLocation } from '../../lib/departmentLocation'
 import { uploadWorkOrderFile } from '../../lib/workOrderAssets'
+import { revokeWorkOrderFilePreviews } from '../../lib/workOrderFileValues'
 import { createId } from '../../lib/id'
 import '../../components/company/CompanyShared.css'
 import '../../components/assets/AssetsFields.css'
@@ -31,8 +35,30 @@ function formatEquipmentLabel(row) {
   return parts.join(' · ') || row.id
 }
 
+function departmentSearchLabel(department) {
+  return [
+    department?.name,
+    department?.code,
+    department?.head?.name,
+    department?.location_name,
+  ].filter(Boolean).join(' ')
+}
+
+function DepartmentOption({ department }) {
+  const head = department?.head
+  const meta = [head?.name, department?.location_name].filter(Boolean).join(' · ')
+  return (
+    <span className="wr-dept-option">
+      <EmployeeAvatar employee={head || { name: department?.name }} size="sm" />
+      <span className="wr-dept-option__copy">
+        <span className="wr-dept-option__name">{department?.name}</span>
+        {meta ? <span className="wr-dept-option__meta">{meta}</span> : null}
+      </span>
+    </span>
+  )
+}
+
 function WorkRequestFormActions({
-  inForm = false,
   saving,
   saveMode,
   canSaveDraft,
@@ -41,12 +67,8 @@ function WorkRequestFormActions({
   onSaveDraft,
   formId = 'wr-create-form',
 }) {
-  const rootClass = inForm
-    ? 'wr-page__bar wr-form__actions wr-form__actions--in-form'
-    : 'wo-page__bar wr-page__bar wr-form__actions'
-
   return (
-    <div className={rootClass}>
+    <div className="wr-page__header-actions">
       <div className="wr-page__bar-actions">
         <button
           type="button"
@@ -68,7 +90,7 @@ function WorkRequestFormActions({
       <div className="wr-page__bar-actions">
         <button
           type="submit"
-          {...(inForm ? {} : { form: formId })}
+          form={formId}
           className="company-btn company-btn--primary"
           disabled={saving || !canSubmitAssets}
         >
@@ -98,21 +120,28 @@ export default function WorkRequestCreate() {
   const [equipmentEmpty, setEquipmentEmpty] = useState(false)
   const [assetFieldValues, setAssetFieldValues] = useState({})
   const [equipmentId, setEquipmentId] = useState('')
+  const [shortDescription, setShortDescription] = useState('')
   const [problem, setProblem] = useState('')
-  const [isBreakdown, setIsBreakdown] = useState(false)
+  const [jobNature, setJobNature] = useState('')
   const [maintenanceFieldValues, setMaintenanceFieldValues] = useState({})
   const [priority, setPriority] = useState('medium')
   const [remarks, setRemarks] = useState('')
   const [attachmentFiles, setAttachmentFiles] = useState([])
+  const attachmentFilesRef = useRef(attachmentFiles)
+  attachmentFilesRef.current = attachmentFiles
 
   const assetSections = ctx?.asset_sections || []
   const maintenanceSchema = ctx?.maintenance_form_schema || { sections: [] }
+  const jobNatureOptions = ctx?.job_natures || []
   const hasAssetFields = assetSections.some((s) => (s.fields || []).length > 0)
+  const isBreakdown = String(jobNature || '').trim().toLowerCase() === 'breakdown'
 
   useEffect(() => {
     if (isBreakdown) return
     setMaintenanceFieldValues((prev) => clearBreakdownFieldValues(maintenanceSchema, prev))
   }, [isBreakdown, maintenanceSchema])
+
+  useEffect(() => () => revokeWorkOrderFilePreviews(attachmentFilesRef.current), [])
 
   const goBack = useCallback(() => {
     if (org?.slug) {
@@ -148,25 +177,36 @@ export default function WorkRequestCreate() {
     return () => { cancelled = true }
   }, [])
 
-  const departmentOptions = useMemo(
-    () => ctx?.departments || [],
-    [ctx?.departments],
-  )
-
+  const allDepartments = ctx?.departments || []
+  const scopeLocationId = ctx?.employee?.location_id || null
   const orderFromSelectable = Boolean(ctx?.order_from_selectable)
   const orderFrom = ctx?.order_from_department
+
+  const orderFromOptions = useMemo(() => {
+    if (orderFromSelectable || !scopeLocationId) return allDepartments
+    return departmentsForEmployeeLocation(allDepartments, scopeLocationId)
+  }, [allDepartments, orderFromSelectable, scopeLocationId])
+
   const effectiveOrderFromId = orderFromSelectable ? orderFromId : orderFrom?.id
+  const orderToLocationId = useMemo(() => {
+    const fromDept = orderFromOptions.find((department) => department.id === effectiveOrderFromId)
+      || allDepartments.find((department) => department.id === effectiveOrderFromId)
+    if (fromDept?.all_locations) return scopeLocationId
+    return fromDept?.location_id || scopeLocationId
+  }, [allDepartments, effectiveOrderFromId, orderFromOptions, scopeLocationId])
+
+  const departmentOptions = useMemo(() => {
+    if (!orderToLocationId) return allDepartments
+    return departmentsForEmployeeLocation(allDepartments, orderToLocationId)
+  }, [allDepartments, orderToLocationId])
+
   const effectiveOrderFromName = useMemo(() => {
     if (orderFromSelectable) {
-      return departmentOptions.find((d) => d.id === orderFromId)?.name || '—'
+      return orderFromOptions.find((d) => d.id === orderFromId)?.name || '—'
     }
     return orderFrom?.name || '—'
-  }, [departmentOptions, orderFrom?.name, orderFromId, orderFromSelectable])
+  }, [orderFrom?.name, orderFromId, orderFromOptions, orderFromSelectable])
   const lockOrderTo = requestType === 'intra_department' || requestType === 'user_self'
-  const requestDateLabel = useMemo(
-    () => new Date().toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'medium' }),
-    [],
-  )
 
   useEffect(() => {
     if (!ctx || !effectiveOrderFromId) return
@@ -174,6 +214,13 @@ export default function WorkRequestCreate() {
       setOrderToId(effectiveOrderFromId)
     }
   }, [ctx, lockOrderTo, effectiveOrderFromId, requestType])
+
+  useEffect(() => {
+    if (lockOrderTo || !orderToId || !departmentOptions.length) return
+    if (!departmentOptions.some((department) => department.id === orderToId)) {
+      setOrderToId('')
+    }
+  }, [departmentOptions, lockOrderTo, orderToId])
 
   useEffect(() => {
     setAssetFieldValues({})
@@ -223,8 +270,10 @@ export default function WorkRequestCreate() {
       ...(orderFromSelectable ? { order_from_department_id: effectiveOrderFromId || null } : {}),
       order_to_department_id: orderToId,
       equipment_id: equipmentId || null,
+      short_description: shortDescription,
       problem_description: problem,
-      is_breakdown: isBreakdown,
+      job_nature: jobNature || null,
+      is_breakdown: String(jobNature || '').trim().toLowerCase() === 'breakdown',
       priority,
       remarks,
       attachments,
@@ -233,13 +282,14 @@ export default function WorkRequestCreate() {
     [
       effectiveOrderFromId,
       equipmentId,
-      isBreakdown,
+      jobNature,
       maintenanceFieldValues,
       orderFromSelectable,
       orderToId,
       priority,
       problem,
       remarks,
+      shortDescription,
       requestType,
     ],
   )
@@ -247,8 +297,16 @@ export default function WorkRequestCreate() {
   const persist = useCallback(
     async (saveAs) => {
       if (saveAs === 'submit') {
+        if (!shortDescription.trim()) {
+          setError('Short description is required.')
+          return
+        }
         if (!problem.trim()) {
           setError('Problem description is required.')
+          return
+        }
+        if (jobNatureOptions.length && !jobNature) {
+          setError('Job nature is required.')
           return
         }
         if (!equipmentId) {
@@ -283,7 +341,8 @@ export default function WorkRequestCreate() {
       try {
         const draftKey = createId()
         const uploaded = []
-        for (const file of attachmentFiles) {
+        for (const item of attachmentFiles) {
+          const file = item?.file instanceof File ? item.file : item
           const meta = await uploadWorkOrderFile(
             org.id,
             `work-requests/${draftKey}`,
@@ -319,6 +378,7 @@ export default function WorkRequestCreate() {
       org?.id,
       org?.slug,
       problem,
+      shortDescription,
       maintenanceSchema,
       maintenanceFieldValues,
       requestType,
@@ -361,25 +421,26 @@ export default function WorkRequestCreate() {
 
   return (
     <div className="company-page wo-page">
-      <header className="wo-page__top">
-        <PageBack
-          to={org?.slug ? orgPath(org.slug, 'work-request/my') : '#'}
-          label="Work Requests"
+      <header className="wo-page__top wo-page__top--with-actions">
+        <div className="wo-page__top-copy">
+          <PageBack
+            to={org?.slug ? orgPath(org.slug, 'work-request/my') : '#'}
+            label="Work Requests"
+          />
+          <h1 className="wo-page__title">Create Work Request</h1>
+          <p className="wo-page__subtitle">
+            Submit a maintenance request for your department or another executing department.
+          </p>
+        </div>
+        <WorkRequestFormActions
+          saving={saving}
+          saveMode={saveMode}
+          canSaveDraft={canSaveDraft}
+          canSubmitAssets={canSubmitAssets}
+          onCancel={goBack}
+          onSaveDraft={handleSaveDraft}
         />
-        <h1 className="wo-page__title">Create Work Request</h1>
-        <p className="wo-page__subtitle">
-          Submit a maintenance request for your department or another executing department.
-        </p>
       </header>
-
-      <WorkRequestFormActions
-        saving={saving}
-        saveMode={saveMode}
-        canSaveDraft={canSaveDraft}
-        canSubmitAssets={canSubmitAssets}
-        onCancel={goBack}
-        onSaveDraft={handleSaveDraft}
-      />
 
       <div className="wo-page__content">
         {error && <div className="wo-alert wo-alert--error" role="alert">{error}</div>}
@@ -389,7 +450,7 @@ export default function WorkRequestCreate() {
             <WorkRequestSectionHead
               id="wr-section-request"
               title="Request information"
-              description="Type, date, and department routing"
+              description="Type and department routing"
             />
             <div className="wo-section__body">
               <div className="company-form__grid">
@@ -407,10 +468,6 @@ export default function WorkRequestCreate() {
                     className="company-form__input--select"
                   />
                 </label>
-                <div className="company-form__field">
-                  <span className="company-form__label">Request date</span>
-                  <div className="wr-form__input-readonly">{requestDateLabel}</div>
-                </div>
                 {orderFromSelectable ? (
                   <label className="company-form__field">
                     <span className="company-form__label">Order from</span>
@@ -419,10 +476,13 @@ export default function WorkRequestCreate() {
                       onChange={(id) => {
                         setOrderFromId(id)
                         if (lockOrderTo) setOrderToId(id)
+                        else setOrderToId('')
                       }}
-                      options={departmentOptions}
+                      options={orderFromOptions}
                       getOptionValue={(d) => d.id}
                       getOptionLabel={(d) => d.name}
+                      getOptionSearchLabel={departmentSearchLabel}
+                      renderOption={(d) => <DepartmentOption department={d} />}
                       placeholder="Select department"
                       required
                       className="company-form__input--select"
@@ -445,8 +505,11 @@ export default function WorkRequestCreate() {
                       options={departmentOptions}
                       getOptionValue={(d) => d.id}
                       getOptionLabel={(d) => d.name}
+                      getOptionSearchLabel={departmentSearchLabel}
+                      renderOption={(d) => <DepartmentOption department={d} />}
                       placeholder="Select department"
                       required
+                      disabled={orderFromSelectable && !effectiveOrderFromId}
                       className="company-form__input--select"
                     />
                   )}
@@ -521,10 +584,20 @@ export default function WorkRequestCreate() {
             <WorkRequestSectionHead
               id="wr-section-maintenance"
               title="Maintenance information"
-              description="Problem details, priority, and notes"
+              description="Short summary, problem details, priority, and notes"
             />
             <div className="wo-section__body">
               <div className="company-form__grid">
+                <label className="company-form__field company-form__field--full">
+                  <span className="company-form__label">Short description</span>
+                  <input
+                    className="company-form__input"
+                    value={shortDescription}
+                    onChange={(e) => setShortDescription(e.target.value)}
+                    placeholder="Brief summary shown in lists and tables"
+                    maxLength={200}
+                  />
+                </label>
                 <label className="company-form__field company-form__field--full">
                   <span className="company-form__label">Problem description</span>
                   <textarea
@@ -535,28 +608,40 @@ export default function WorkRequestCreate() {
                     placeholder="Describe the issue or maintenance need"
                   />
                 </label>
-                <div className="company-form__field">
-                  <span className="company-form__label">Breakdown</span>
-                  <div className="wr-radio-options" role="radiogroup" aria-label="Breakdown">
-                    <label className="asset-field-dependency__option">
-                      <input
-                        type="radio"
-                        name="breakdown"
-                        checked={isBreakdown === true}
-                        onChange={() => setIsBreakdown(true)}
-                      />
-                      <span>Yes</span>
-                    </label>
-                    <label className="asset-field-dependency__option">
-                      <input
-                        type="radio"
-                        name="breakdown"
-                        checked={isBreakdown === false}
-                        onChange={() => setIsBreakdown(false)}
-                      />
-                      <span>No</span>
-                    </label>
-                  </div>
+                <div className="wr-form__meta-row">
+                  <label className="company-form__field">
+                    <span className="company-form__label">Job nature</span>
+                    <FilterableSelect
+                      value={jobNature}
+                      onChange={setJobNature}
+                      options={jobNatureOptions}
+                      getOptionValue={(option) => option.value}
+                      getOptionLabel={(option) => option.label}
+                      placeholder={jobNatureOptions.length ? 'Select job nature' : 'No job natures configured'}
+                      emptyLabel="Select job nature…"
+                      allowEmpty
+                      disabled={saving || !jobNatureOptions.length}
+                      className="company-form__input--select"
+                    />
+                  </label>
+                  <label className="company-form__field">
+                    <span className="company-form__label">Priority</span>
+                    <FilterableSelect
+                      value={priority}
+                      onChange={setPriority}
+                      options={ctx.priorities || []}
+                      getOptionValue={(p) => p.value}
+                      getOptionLabel={(p) => p.label}
+                      placeholder="Select priority"
+                      allowEmpty={false}
+                      className="company-form__input--select"
+                    />
+                  </label>
+                  <WorkRequestAttachmentsField
+                    files={attachmentFiles}
+                    onChange={setAttachmentFiles}
+                    disabled={saving}
+                  />
                 </div>
                 <WorkRequestBreakdownFields
                   schema={maintenanceSchema}
@@ -565,37 +650,6 @@ export default function WorkRequestCreate() {
                   onChange={setMaintenanceFieldValues}
                   disabled={saving}
                 />
-                <label className="company-form__field">
-                  <span className="company-form__label">Priority</span>
-                  <FilterableSelect
-                    value={priority}
-                    onChange={setPriority}
-                    options={ctx.priorities || []}
-                    getOptionValue={(p) => p.value}
-                    getOptionLabel={(p) => p.label}
-                    placeholder="Select priority"
-                    allowEmpty={false}
-                    className="company-form__input--select"
-                  />
-                </label>
-                <label className="company-form__field company-form__field--full">
-                  <span className="company-form__label">Attachment</span>
-                  <input
-                    type="file"
-                    className="company-form__input"
-                    multiple
-                    disabled={saving}
-                    onChange={(e) => {
-                      const files = Array.from(e.target.files || [])
-                      setAttachmentFiles(files)
-                    }}
-                  />
-                  {attachmentFiles.length > 0 && (
-                    <p className="wo-manual__note" style={{ marginTop: 8, marginBottom: 0 }}>
-                      {attachmentFiles.length} file(s) selected
-                    </p>
-                  )}
-                </label>
                 <label className="company-form__field company-form__field--full">
                   <span className="company-form__label">Remarks</span>
                   <textarea
@@ -609,16 +663,6 @@ export default function WorkRequestCreate() {
               </div>
             </div>
           </section>
-
-          <WorkRequestFormActions
-            inForm
-            saving={saving}
-            saveMode={saveMode}
-            canSaveDraft={canSaveDraft}
-            canSubmitAssets={canSubmitAssets}
-            onCancel={goBack}
-            onSaveDraft={handleSaveDraft}
-          />
         </form>
       </div>
     </div>

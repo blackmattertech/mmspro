@@ -2,16 +2,19 @@ import ExcelJS from 'exceljs'
 import { supabaseAdmin } from '../services/supabase.js'
 import { loadOrgFields } from './equipmentFieldService.js'
 import { createEquipment, orderedParentFields } from './equipmentService.js'
+import {
+  normalizeMasterName,
+  primaryMasterToken,
+  findDepartmentForLocation,
+  scopePlacementOptions,
+  departmentValidLabels,
+} from './bulkMasterMatch.js'
 
 const TEMPLATE_SHEET = 'Template'
 const VALID_VALUES_SHEET = 'Valid values'
 const PLACEMENT_COLUMNS = ['Location', 'Department', 'Area']
 const OPTION_FIELD_TYPES = new Set(['dropdown', 'radio', 'checkbox'])
 const MULTI_OPTION_FIELD_TYPES = new Set(['checkbox'])
-
-function normalizeName(value) {
-  return String(value ?? '').trim().toLowerCase()
-}
 
 async function loadPlacementOptions(orgId) {
   const [locations, departments, areas] = await Promise.all([
@@ -44,10 +47,13 @@ async function loadPlacementOptions(orgId) {
 }
 
 /** Build a workbook: sheet 1 the import template, sheet 2 the valid values. */
-export async function buildEquipmentTemplate(orgId) {
+export async function buildEquipmentTemplate(orgId, { locationId } = {}) {
   const fields = await loadOrgFields(orgId)
   const parents = orderedParentFields(fields)
-  const { locations, departments, areas } = await loadPlacementOptions(orgId)
+  const { locations, departments, areas } = scopePlacementOptions(
+    await loadPlacementOptions(orgId),
+    locationId,
+  )
 
   const workbook = new ExcelJS.Workbook()
   workbook.creator = 'MMS Pro'
@@ -79,12 +85,7 @@ export async function buildEquipmentTemplate(orgId) {
   })
   validColumns.push({
     header: 'Department',
-    values: departments.map((d) => {
-      const loc = d.all_locations
-        ? 'All locations'
-        : locations.find((l) => l.id === d.location_id)?.name
-      return loc ? `${d.name} — ${loc}` : d.name
-    }),
+    values: departments.flatMap((d) => departmentValidLabels(d, locations)),
   })
   validColumns.push({
     header: 'Area',
@@ -132,20 +133,16 @@ function formatDateValue(value, withTime) {
 }
 
 function resolvePlacement(rowValues, options) {
-  const locName = normalizeName(rowValues.Location)
-  const location = options.locations.find((l) => normalizeName(l.name) === locName)
+  const locName = normalizeMasterName(rowValues.Location)
+  const location = options.locations.find((l) => normalizeMasterName(l.name) === locName)
   if (!location) throw new Error(`Unknown location "${rowValues.Location || ''}"`)
 
-  const deptName = normalizeName(rowValues.Department)
-  const department = options.departments.find((d) => (
-    normalizeName(d.name) === deptName
-    && (d.all_locations || d.location_id === location.id)
-  ))
+  const department = findDepartmentForLocation(options.departments, rowValues.Department, location)
   if (!department) throw new Error(`Unknown department "${rowValues.Department || ''}" for the location`)
 
-  const areaName = normalizeName(rowValues.Area)
+  const areaToken = normalizeMasterName(primaryMasterToken(rowValues.Area))
   const area = options.areas.find((a) => (
-    normalizeName(a.name) === areaName
+    (normalizeMasterName(a.name) === areaToken || normalizeMasterName(a.code) === areaToken)
     && a.location_id === location.id
     && a.department_id === department.id
   ))
@@ -155,11 +152,11 @@ function resolvePlacement(rowValues, options) {
 }
 
 /** Parse an uploaded workbook and create equipment rows. */
-export async function bulkImportEquipment(orgId, buffer) {
+export async function bulkImportEquipment(orgId, buffer, { locationId } = {}) {
   const fields = await loadOrgFields(orgId)
   const parents = orderedParentFields(fields)
-  const parentByName = new Map(parents.map((p) => [normalizeName(p.name), p]))
-  const options = await loadPlacementOptions(orgId)
+  const parentByName = new Map(parents.map((p) => [normalizeMasterName(p.name), p]))
+  const options = scopePlacementOptions(await loadPlacementOptions(orgId), locationId)
 
   const workbook = new ExcelJS.Workbook()
   await workbook.xlsx.load(buffer)
@@ -195,7 +192,7 @@ export async function bulkImportEquipment(orgId, buffer) {
       const values = []
       for (const { header } of columns) {
         if (PLACEMENT_COLUMNS.includes(header)) continue
-        const field = parentByName.get(normalizeName(header))
+        const field = parentByName.get(normalizeMasterName(header))
         if (!field) continue
         const rawText = rowValues[header]
         if (!rawText) continue

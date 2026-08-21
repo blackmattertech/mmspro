@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useDepartments } from '../../hooks/useDepartments'
 import { useLocations } from '../../hooks/useLocations'
 import { useOrgLimits } from '../../hooks/useOrgLimits'
@@ -6,7 +6,8 @@ import { useLimitExceeded } from '../../hooks/useLimitExceeded'
 import { usePermissions } from '../../hooks/usePermissions'
 import { useDebouncedValue } from '../../hooks/useDebouncedValue'
 import { isLimitError } from '../../lib/limitErrors'
-import { getDepartmentsTemplate, bulkUploadDepartments } from '../../lib/api'
+import { getDepartmentsTemplate, bulkUploadDepartments, deleteDepartment } from '../../lib/api'
+import { invalidateReferenceCache } from '../../lib/referenceDataCache'
 import GooToggle from '../ui/GooToggle'
 import TrashIcon from '../ui/TrashIcon'
 import EditIcon from '../ui/EditIcon'
@@ -106,6 +107,20 @@ export default function DepartmentsTab({ canManage }) {
   }), [departments, filterField, filterValue, sortBy])
 
   const pagedDepartments = filteredDepartments
+  const [selected, setSelected] = useState(() => new Set())
+  const [bulkDeleting, setBulkDeleting] = useState(false)
+  const [deleteError, setDeleteError] = useState(null)
+  const selectAllRef = useRef(null)
+  const visibleIds = useMemo(() => pagedDepartments.map((dept) => dept.id), [pagedDepartments])
+  const selectedVisibleCount = visibleIds.filter((id) => selected.has(id)).length
+  const allVisibleSelected = visibleIds.length > 0 && selectedVisibleCount === visibleIds.length
+  const someVisibleSelected = selectedVisibleCount > 0 && !allVisibleSelected
+
+  useEffect(() => {
+    if (selectAllRef.current) {
+      selectAllRef.current.indeterminate = someVisibleSelected
+    }
+  }, [someVisibleSelected])
   const departmentColumnDefs = useMemo(() => {
     const cols = [
       { id: 'code', label: 'Code' },
@@ -170,9 +185,67 @@ export default function DepartmentsTab({ canManage }) {
   }
 
   const handleDelete = async (dept) => {
-    if (!window.confirm(`Delete department "${dept.name}"?`)) return
-    await remove(dept.id)
-    await reloadLimits()
+    if (!window.confirm(`Delete department "${dept.name}"? This cannot be undone.`)) return
+    setDeleteError(null)
+    try {
+      await remove(dept.id)
+      setSelected((prev) => {
+        const next = new Set(prev)
+        next.delete(dept.id)
+        return next
+      })
+      await reloadLimits()
+    } catch {
+      // error shown by hook
+    }
+  }
+
+  const toggleSelected = (id) => {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const toggleSelectAllVisible = () => {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (allVisibleSelected) {
+        visibleIds.forEach((id) => next.delete(id))
+      } else {
+        visibleIds.forEach((id) => next.add(id))
+      }
+      return next
+    })
+  }
+
+  const handleBulkDelete = async () => {
+    const ids = [...selected]
+    if (!ids.length) return
+    const label = ids.length === 1 ? 'this department' : `${ids.length} departments`
+    if (!window.confirm(`Delete ${label}? This cannot be undone.`)) return
+    setBulkDeleting(true)
+    setDeleteError(null)
+    try {
+      for (const id of ids) {
+        await deleteDepartment(id)
+      }
+      invalidateReferenceCache('departments')
+      await reload({ silent: true, force: true })
+      await reloadLimits()
+      setSelected(new Set())
+      if (viewing && ids.includes(viewing.id)) setViewing(null)
+    } catch (err) {
+      if (!tryHandleLimitError(err, 'Department')) {
+        setDeleteError(err.message || 'Could not delete the selected departments')
+      }
+      invalidateReferenceCache('departments')
+      await reload({ silent: true, force: true })
+    } finally {
+      setBulkDeleting(false)
+    }
   }
 
   const handleToggle = async (dept, isActive) => {
@@ -208,7 +281,19 @@ export default function DepartmentsTab({ canManage }) {
           }}
           sort={{ value: sortBy, onChange: setSortBy, options: TABLE_SORT_OPTIONS }}
           actions={canManage && (
-            <MasterBulkActions
+            <>
+              {selected.size > 0 && (
+              <button
+                type="button"
+                className="company-btn company-btn--danger"
+                disabled={bulkDeleting || saving}
+                onClick={handleBulkDelete}
+              >
+                <TrashIcon />
+                {bulkDeleting ? 'Deleting...' : `Delete (${selected.size})`}
+              </button>
+              )}
+              <MasterBulkActions
               onDownload={handleDownloadTemplate}
               bulkBusy={bulkBusy}
               bulkInputRef={bulkInputRef}
@@ -220,6 +305,7 @@ export default function DepartmentsTab({ canManage }) {
               bulkResult={bulkResult}
               noun="department"
             />
+            </>
           )}
           columnPicker={(
             <TableColumnPicker
@@ -233,6 +319,7 @@ export default function DepartmentsTab({ canManage }) {
       </div>
 
       {showPlainError && <div className="company-alert">{error}</div>}
+      {deleteError && <div className="company-alert">{deleteError}</div>}
       {bulkError && <div className="company-error">{bulkError}</div>}
       <MasterBulkResult result={bulkResult} noun="department" />
 
@@ -248,6 +335,17 @@ export default function DepartmentsTab({ canManage }) {
           <table className="company-table master-table">
             <thead>
               <tr>
+                {canManage && (
+                  <th className="company-table__cell--check">
+                    <input
+                      ref={selectAllRef}
+                      type="checkbox"
+                      checked={allVisibleSelected}
+                      onChange={toggleSelectAllVisible}
+                      aria-label="Select all departments"
+                    />
+                  </th>
+                )}
                 {isDepartmentColumnVisible('code') && <th>Code</th>}
                 {isDepartmentColumnVisible('name') && <th>Name</th>}
                 {isDepartmentColumnVisible('location') && <th>Location</th>}
@@ -268,6 +366,20 @@ export default function DepartmentsTab({ canManage }) {
                       className: !isActive ? 'company-table__row--inactive' : undefined,
                     })}
                   >
+                    {canManage && (
+                      <td
+                        className="company-table__cell--check"
+                        onClick={stopTableRowClick}
+                        onKeyDown={stopTableRowClick}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selected.has(dept.id)}
+                          onChange={() => toggleSelected(dept.id)}
+                          aria-label={`Select ${dept.name}`}
+                        />
+                      </td>
+                    )}
                     {isDepartmentColumnVisible('code') && (
                       <td><code className="company-code">{dept.code || '—'}</code></td>
                     )}

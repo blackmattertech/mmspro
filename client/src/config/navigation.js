@@ -83,7 +83,7 @@ const APP_SEGMENTS = [
         segment: 'masters/company',
         moduleKey: 'company',
         icon: 'buildings',
-        altModuleKeys: ['locations', 'departments', 'employees'],
+        altModuleKeys: ['locations', 'departments', 'work_centers', 'employees'],
       },
       { label: 'Assets', segment: 'masters/assets', moduleKey: 'assets', icon: 'asset' },
       { label: 'Equipment', segment: 'masters/equipment', moduleKey: 'equipment', icon: 'washer', altModuleKeys: ['areas'] },

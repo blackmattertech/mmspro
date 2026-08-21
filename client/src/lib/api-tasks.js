@@ -29,6 +29,10 @@ export function getTask(id) {
   return apiFetch(`/api/tasks/${id}`)
 }
 
+export function getUpcomingTaskReminders() {
+  return apiFetch('/api/tasks/reminders/upcoming')
+}
+
 export function createTask(data) {
   return apiFetch('/api/tasks', { method: 'POST', body: JSON.stringify(data) })
 }

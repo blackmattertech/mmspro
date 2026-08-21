@@ -55,6 +55,7 @@ import {
   resetTaskTagsToDefault,
 } from '../../lib/taskTagService.js'
 import { searchTaskReferenceEntities } from '../../lib/taskReferenceService.js'
+import { listUpcomingRemindersForUser } from '../../lib/taskReminderJob.js'
 
 const router = Router()
 
@@ -366,6 +367,18 @@ router.get('/kanban', canRead, async (req, res) => {
       listFilters(req.query),
     )
     res.json(board)
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+router.get('/reminders/upcoming', canRead, async (req, res) => {
+  try {
+    const items = await listUpcomingRemindersForUser(
+      req.userProfile.org_id,
+      req.userProfile.id,
+    )
+    res.json({ items })
   } catch (err) {
     res.status(500).json({ error: err.message })
   }

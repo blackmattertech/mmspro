@@ -6,6 +6,11 @@ import {
   loadOrgPermissions,
 } from '../../middleware/modulePermission.js'
 import {
+  resolveLocationFilter,
+  assertLocationAccess,
+  coerceScopedLocationId,
+} from '../../lib/orgPermissions.js'
+import {
   listEquipment,
   getEquipmentDetail,
   createEquipment,
@@ -38,8 +43,9 @@ function parsePagination(query) {
 router.get('/', canRead, async (req, res) => {
   try {
     const { limit, offset } = parsePagination(req.query)
+    const locationId = resolveLocationFilter(req.orgPermissions, req.query.location_id)
     const rows = await listEquipment(req.userProfile.org_id, {
-      locationId: req.query.location_id || null,
+      locationId,
       departmentId: req.query.department_id || null,
       areaId: req.query.area_id || null,
       search: req.query.search || null,
@@ -54,7 +60,9 @@ router.get('/', canRead, async (req, res) => {
 
 router.get('/template', canCreate, async (req, res) => {
   try {
-    const buffer = await buildEquipmentTemplate(req.userProfile.org_id)
+    const buffer = await buildEquipmentTemplate(req.userProfile.org_id, {
+      locationId: resolveLocationFilter(req.orgPermissions, null),
+    })
     res.json({
       filename: 'equipment-template.xlsx',
       contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -76,7 +84,8 @@ router.post('/bulk', canCreate, async (req, res) => {
     if (!buffer.length) {
       return res.status(400).json({ error: 'File data is invalid' })
     }
-    const result = await bulkImportEquipment(req.userProfile.org_id, buffer)
+    const locationId = resolveLocationFilter(req.orgPermissions, null)
+    const result = await bulkImportEquipment(req.userProfile.org_id, buffer, { locationId })
     const payload = await attachFailedFileToResult(result, buffer, 'equipment-import-failed-rows.xlsx')
     res.json(payload)
   } catch (err) {
@@ -88,15 +97,17 @@ router.get('/:id', canRead, assertOrgOwnership('equipment'), async (req, res) =>
   try {
     const row = await getEquipmentDetail(req.userProfile.org_id, req.params.id)
     if (!row) return res.status(404).json({ error: 'Equipment not found' })
+    assertLocationAccess(req.orgPermissions, row.location_id)
     res.json(row)
   } catch (err) {
-    res.status(500).json({ error: err.message })
+    res.status(err.status || 500).json({ error: err.message })
   }
 })
 
 router.post('/', canCreate, async (req, res) => {
   try {
-    const row = await createEquipment(req.userProfile.org_id, req.body)
+    const location_id = coerceScopedLocationId(req.orgPermissions, req.body?.location_id)
+    const row = await createEquipment(req.userProfile.org_id, { ...req.body, location_id })
     res.status(201).json(row)
   } catch (err) {
     res.status(err.status || 400).json({ error: err.message })
@@ -105,7 +116,17 @@ router.post('/', canCreate, async (req, res) => {
 
 router.patch('/:id', canUpdate, assertOrgOwnership('equipment'), async (req, res) => {
   try {
-    const row = await updateEquipment(req.userProfile.org_id, req.params.id, req.body)
+    const existing = await getEquipmentDetail(req.userProfile.org_id, req.params.id)
+    if (!existing) return res.status(404).json({ error: 'Equipment not found' })
+    assertLocationAccess(req.orgPermissions, existing.location_id)
+    const location_id = req.body?.location_id !== undefined
+      ? coerceScopedLocationId(req.orgPermissions, req.body.location_id)
+      : undefined
+    const row = await updateEquipment(
+      req.userProfile.org_id,
+      req.params.id,
+      location_id !== undefined ? { ...req.body, location_id } : req.body,
+    )
     res.json(row)
   } catch (err) {
     res.status(err.status || 400).json({ error: err.message })
@@ -114,6 +135,9 @@ router.patch('/:id', canUpdate, assertOrgOwnership('equipment'), async (req, res
 
 router.delete('/:id', canDelete, assertOrgOwnership('equipment'), async (req, res) => {
   try {
+    const existing = await getEquipmentDetail(req.userProfile.org_id, req.params.id)
+    if (!existing) return res.status(404).json({ error: 'Equipment not found' })
+    assertLocationAccess(req.orgPermissions, existing.location_id)
     const result = await deleteEquipment(req.userProfile.org_id, req.params.id)
     res.json(result)
   } catch (err) {

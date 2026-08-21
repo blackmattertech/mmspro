@@ -11,14 +11,17 @@ import {
   createWorkRequest,
   listWorkRequests,
   getWorkRequestById,
+  assertWorkRequestAccessible,
+  listWorkRequestTechnicians,
   approveWorkRequest,
   rejectWorkRequest,
   requestMoreInfo,
+  replyToWorkRequest,
   listEquipmentForDepartment,
   listEquipmentCatalogForDepartment,
   getEmployeeByProfile,
 } from '../../lib/workRequestService.js'
-import { supabaseAdmin } from '../../services/supabase.js'
+import { getScopedLocationId } from '../../lib/orgPermissions.js'
 
 const router = Router()
 
@@ -45,6 +48,19 @@ const canReadAny = requireAnyModulePermission([
 function sendError(res, err) {
   const status = err.status || 500
   res.status(status).json({ error: err.message })
+}
+
+function scopedLocationId(req) {
+  return getScopedLocationId(req.orgPermissions)
+}
+
+async function loadAccessibleWorkRequest(req) {
+  const row = await getWorkRequestById(req.userProfile.org_id, req.params.id)
+  assertWorkRequestAccessible(row, {
+    profileId: req.userProfile.id,
+    locationId: scopedLocationId(req),
+  })
+  return row
 }
 
 function canCreateWorkRequestWithoutEmployeeDepartment(orgPermissions) {
@@ -140,6 +156,7 @@ router.get('/', async (req, res, next) => {
     const rows = await listWorkRequests(orgId, filter, {
       profileId: req.userProfile.id,
       departmentId: employee?.department_id || null,
+      locationId: scopedLocationId(req),
       search: req.query.search || null,
       limit: Math.max(1, Math.min(200, Number(req.query.limit) || 50)),
       offset: Math.max(0, Number(req.query.offset) || 0),
@@ -153,30 +170,21 @@ router.get('/', async (req, res, next) => {
 router.get('/:id/department-employees', canApproveWorkRequest, async (req, res) => {
   const orgId = req.userProfile.org_id
   try {
-    const wr = await getWorkRequestById(orgId, req.params.id)
-    if (!wr) return res.status(404).json({ error: 'Work request not found' })
-
-    const { data, error } = await supabaseAdmin
-      .from('org_employees')
-      .select('id, name, emp_id, email, department_id, location_id')
-      .eq('org_id', orgId)
-      .eq('department_id', wr.order_to_department_id)
-      .eq('is_active', true)
-      .order('name')
-
-    if (error) throw error
-    res.json(data || [])
+    await loadAccessibleWorkRequest(req)
+    const rows = await listWorkRequestTechnicians(orgId, req.params.id)
+    res.json(rows)
   } catch (err) {
     sendError(res, err)
   }
 })
 
 router.get('/:id', canReadAny, async (req, res) => {
-  const orgId = req.userProfile.org_id
   try {
-    const row = await getWorkRequestById(orgId, req.params.id)
-    if (!row) return res.status(404).json({ error: 'Work request not found' })
-    res.json(row)
+    const row = await loadAccessibleWorkRequest(req)
+    res.json({
+      ...row,
+      can_reply: row.status === 'need_info' && row.requested_by === req.userProfile.id,
+    })
   } catch (err) {
     sendError(res, err)
   }
@@ -185,6 +193,7 @@ router.get('/:id', canReadAny, async (req, res) => {
 router.post('/:id/approve', canApproveWorkRequest, async (req, res) => {
   const orgId = req.userProfile.org_id
   try {
+    await loadAccessibleWorkRequest(req)
     const result = await approveWorkRequest(
       orgId,
       req.userProfile.id,
@@ -200,6 +209,7 @@ router.post('/:id/approve', canApproveWorkRequest, async (req, res) => {
 router.post('/:id/reject', canApproveWorkRequest, async (req, res) => {
   const orgId = req.userProfile.org_id
   try {
+    await loadAccessibleWorkRequest(req)
     const result = await rejectWorkRequest(
       orgId,
       req.userProfile.id,
@@ -215,6 +225,7 @@ router.post('/:id/reject', canApproveWorkRequest, async (req, res) => {
 router.post('/:id/need-info', canApproveWorkRequest, async (req, res) => {
   const orgId = req.userProfile.org_id
   try {
+    await loadAccessibleWorkRequest(req)
     const result = await requestMoreInfo(
       orgId,
       req.userProfile.id,
@@ -222,6 +233,25 @@ router.post('/:id/need-info', canApproveWorkRequest, async (req, res) => {
       req.body?.message,
     )
     res.json(result)
+  } catch (err) {
+    sendError(res, err)
+  }
+})
+
+router.post('/:id/reply', canReadAny, async (req, res) => {
+  const orgId = req.userProfile.org_id
+  try {
+    await loadAccessibleWorkRequest(req)
+    const result = await replyToWorkRequest(
+      orgId,
+      req.userProfile.id,
+      req.params.id,
+      req.body,
+    )
+    res.json({
+      ...result,
+      can_reply: false,
+    })
   } catch (err) {
     sendError(res, err)
   }

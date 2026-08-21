@@ -1,6 +1,28 @@
 import { useEffect, useRef, useState } from 'react'
 import EmployeeAvatar from './EmployeeAvatar'
 
+function employeeSelectMeta(employee) {
+  return [
+    employee?.emp_id,
+    employee?.departments?.name,
+    employee?.access_role?.name,
+    employee?.org_locations?.name,
+  ].filter(Boolean).join(' · ')
+}
+
+function EmployeeSelectPerson({ employee }) {
+  const meta = employeeSelectMeta(employee)
+  return (
+    <span className="company-employee-select__value">
+      <EmployeeAvatar employee={employee} size="sm" />
+      <span className="company-employee-select__copy">
+        <span className="company-employee-select__name">{employee.name}</span>
+        {meta && <span className="company-employee-select__meta">{meta}</span>}
+      </span>
+    </span>
+  )
+}
+
 export default function EmployeeSelect({
   label,
   value,
@@ -44,10 +66,7 @@ export default function EmployeeSelect({
           disabled={disabled}
         >
           {selected ? (
-            <span className="company-employee-select__value">
-              <EmployeeAvatar employee={selected} size="sm" />
-              <span className="company-employee-select__name">{selected.name}</span>
-            </span>
+            <EmployeeSelectPerson employee={selected} />
           ) : (
             <span className="company-employee-select__placeholder">{placeholder}</span>
           )}
@@ -72,8 +91,7 @@ export default function EmployeeSelect({
                   className={`company-employee-select__option${emp.id === value ? ' company-employee-select__option--selected' : ''}`}
                   onClick={() => pick(emp.id)}
                 >
-                  <EmployeeAvatar employee={emp} size="sm" />
-                  <span className="company-employee-select__name">{emp.name}</span>
+                  <EmployeeSelectPerson employee={emp} />
                 </button>
               </li>
             ))}

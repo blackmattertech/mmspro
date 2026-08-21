@@ -275,85 +275,6 @@
   overflow: visible;
 }
 
-.sidebar__notif {
-  position: relative;
-  margin-bottom: 12px;
-}
-
-.sidebar__notif-btn {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  min-height: 40px;
-  padding: 8px 10px;
-  color: var(--color-medium-gray);
-  background: none;
-  border: none;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  text-align: left;
-}
-
-.sidebar__notif-btn:hover {
-  color: var(--color-white);
-  background: rgba(255, 255, 255, 0.06);
-}
-
-.sidebar__notif-label {
-  flex: 1;
-  font-size: 13px;
-  font-weight: 500;
-}
-
-.sidebar__notif-badge {
-  min-width: 18px;
-  height: 18px;
-  padding: 0 5px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 9px;
-  background: var(--color-primary);
-  color: var(--color-white);
-  font-size: 10px;
-  font-weight: 700;
-  line-height: 1;
-}
-
-.sidebar__notif .notif-panel {
-  top: auto;
-  right: auto;
-  bottom: calc(100% + 8px);
-  left: 0;
-}
-
-.sidebar--collapsed .sidebar__notif {
-  display: flex;
-  justify-content: center;
-  margin-bottom: 8px;
-}
-
-.sidebar--collapsed .sidebar__notif-btn {
-  width: 40px;
-  height: 40px;
-  min-height: 40px;
-  justify-content: center;
-  padding: 0;
-}
-
-.sidebar--collapsed .sidebar__notif-badge {
-  position: absolute;
-  top: 4px;
-  right: 4px;
-}
-
-.sidebar--collapsed .sidebar__notif .notif-panel {
-  left: calc(100% + 12px);
-  bottom: 0;
-}
-
 .sidebar-quick {
   position: relative;
   margin-bottom: 14px;
@@ -756,6 +677,9 @@
   font-size: 12px;
   line-height: 18px;
   color: var(--color-medium-gray);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .sidebar__logout-btn {
@@ -794,8 +718,7 @@
 
 .sidebar--collapsed .sidebar__link:hover .sidebar__tooltip,
 .sidebar--collapsed .sidebar__toggle:hover .sidebar__tooltip,
-.sidebar--collapsed .sidebar__user-trigger:hover .sidebar__tooltip,
-.sidebar--collapsed .sidebar__notif-btn:hover .sidebar__tooltip {
+.sidebar--collapsed .sidebar__user-trigger:hover .sidebar__tooltip {
   opacity: 1;
   visibility: visible;
   transform: translateY(-50%) translateX(0);

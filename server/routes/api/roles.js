@@ -7,10 +7,12 @@ import {
   ACCESS_MODULE_GROUPS,
   emptyPermissions,
   normalizePermissionsInput,
+  permissionsHaveApproval,
 } from '../../lib/accessModules.js'
 import {
   resolveSessionPermissions,
   permissionMap,
+  employeeInAssignScope,
 } from '../../lib/orgPermissions.js'
 import { getSignedUrl } from '../../lib/signedUrlCache.js'
 import { invalidatePermissionsCache } from '../../lib/requestCache.js'
@@ -50,7 +52,7 @@ async function getPermissionsForRole(roleId) {
 }
 
 /** Batch-enrich roles: few queries total instead of N+1 per role. */
-async function enrichRoles(orgId, roles) {
+async function enrichRoles(orgId, roles, { locationId } = {}) {
   if (!roles?.length) return []
 
   const roleIds = roles.map((r) => r.id)
@@ -87,7 +89,9 @@ async function enrichRoles(orgId, roles) {
   }
 
   const employeesByRole = new Map()
-  const allEmployees = empResult.data || []
+  const allEmployees = (empResult.data || []).filter((emp) => (
+    !locationId || emp.location_id === locationId
+  ))
   for (const emp of allEmployees) {
     if (!employeesByRole.has(emp.access_role_id)) employeesByRole.set(emp.access_role_id, [])
     employeesByRole.get(emp.access_role_id).push(emp)
@@ -190,15 +194,23 @@ async function getRolesCapability(req) {
     can_delete: false,
   }
   const canManage = row.can_create || row.can_update || row.can_delete
+  const canAssignApproval = Boolean(
+    session.is_org_admin || session.is_location_head || session.is_department_head,
+  )
 
   return {
     is_org_admin: session.is_org_admin,
     location_id: session.location_id,
+    department_id: session.department_id || null,
+    employee_id: session.employee_id || null,
+    is_location_head: Boolean(session.is_location_head),
+    is_department_head: Boolean(session.is_department_head),
     can_create: Boolean(row.can_create),
     can_read: Boolean(row.can_read) || canManage,
     can_update: Boolean(row.can_update),
     can_delete: Boolean(row.can_delete),
     can_assign: Boolean(row.can_update) || Boolean(row.can_create),
+    can_assign_approval: canAssignApproval && (Boolean(row.can_update) || Boolean(row.can_create) || session.is_org_admin),
   }
 }
 
@@ -230,9 +242,15 @@ function requireCapability(action) {
 
 function assertRoleInScope(role, capability, userId) {
   if (capability.is_org_admin) return true
-  // Non-admins may only manage roles they created.
+  // Non-admins may only edit/delete roles they created.
   if (!userId || !role?.created_by || role.created_by !== userId) return false
   return true
+}
+
+function canAssignEmployeesToRole(role, capability, userId) {
+  if (capability.is_org_admin) return true
+  if (userId && role?.created_by === userId) return true
+  return Boolean(capability.can_assign_approval && role?.has_approval)
 }
 
 router.get('/modules', (_req, res) => {
@@ -267,22 +285,30 @@ router.get('/', async (req, res) => {
     const capability = await getRolesCapability(req)
     if (!capability.can_read) return res.json([])
 
-    let query = supabaseAdmin
+    // Org-wide list: location heads (and anyone with roles_access read) see
+    // admin-created roles so they can assign them when creating employees.
+    const query = supabaseAdmin
       .from('org_access_roles')
       .select('id, org_id, location_id, name, description, is_active, created_by, created_at, updated_at')
       .eq('org_id', orgId)
       .order('name')
 
-    // Org admins see every role. Everyone else only sees roles they created.
-    if (!capability.is_org_admin) {
-      query = query.eq('created_by', userId)
-    }
-
     const { data, error } = await query
     if (error) return res.status(500).json({ error: error.message })
 
-    const roles = await enrichRoles(orgId, data || [])
-    res.json(roles)
+    const roles = await enrichRoles(orgId, data || [], {
+      locationId: capability.is_org_admin ? null : (capability.location_id || null),
+    })
+    res.json(roles.map((role) => {
+      const has_approval = permissionsHaveApproval(role.permissions)
+      const can_manage = capability.is_org_admin || Boolean(userId && role.created_by === userId)
+      return {
+        ...role,
+        has_approval,
+        can_manage,
+        can_assign: canAssignEmployeesToRole({ ...role, has_approval }, capability, userId),
+      }
+    }))
   } catch (err) {
     res.status(500).json({ error: err.message })
   }
@@ -449,8 +475,11 @@ router.post('/:id/assign-employees', requireCapability('assign'), assertOrgOwner
     .eq('org_id', orgId)
     .single()
   if (roleError || !role) return res.status(404).json({ error: 'Role not found' })
-  if (!assertRoleInScope(role, capability, userId)) {
-    return res.status(403).json({ error: 'You can only manage roles you created' })
+
+  const permissions = await getPermissionsForRole(roleId)
+  const has_approval = permissionsHaveApproval(permissions)
+  if (!canAssignEmployeesToRole({ ...role, has_approval }, capability, userId)) {
+    return res.status(403).json({ error: 'You can only assign employees to roles you created, or approval roles' })
   }
 
   if (!employeeIds) {
@@ -459,10 +488,11 @@ router.post('/:id/assign-employees', requireCapability('assign'), assertOrgOwner
 
   const uniqueIds = [...new Set(employeeIds.filter(Boolean))]
 
+  let requested = []
   if (uniqueIds.length) {
     const { data: employees, error: employeesError } = await supabaseAdmin
       .from('org_employees')
-      .select('id, location_id')
+      .select('id, location_id, department_id, manager_id')
       .eq('org_id', orgId)
       .in('id', uniqueIds)
 
@@ -470,24 +500,64 @@ router.post('/:id/assign-employees', requireCapability('assign'), assertOrgOwner
     if ((employees || []).length !== uniqueIds.length) {
       return res.status(400).json({ error: 'One or more employees are invalid' })
     }
+    requested = employees || []
+    if (!capability.is_org_admin && requested.some((emp) => !employeeInAssignScope(emp, capability))) {
+      return res.status(403).json({ error: 'You can only assign employees in your team' })
+    }
   }
 
-  const { error: clearError } = await supabaseAdmin
-    .from('org_employees')
-    .update({ access_role_id: null, updated_at: new Date().toISOString() })
-    .eq('org_id', orgId)
-    .eq('access_role_id', roleId)
-
-  if (clearError) return res.status(500).json({ error: clearError.message })
-
-  if (uniqueIds.length) {
-    const { error: assignError } = await supabaseAdmin
+  if (capability.is_org_admin) {
+    const { error: clearError } = await supabaseAdmin
       .from('org_employees')
-      .update({ access_role_id: roleId, updated_at: new Date().toISOString() })
+      .update({ access_role_id: null, updated_at: new Date().toISOString() })
       .eq('org_id', orgId)
-      .in('id', uniqueIds)
+      .eq('access_role_id', roleId)
 
-    if (assignError) return res.status(500).json({ error: assignError.message })
+    if (clearError) return res.status(500).json({ error: clearError.message })
+
+    if (uniqueIds.length) {
+      const { error: assignError } = await supabaseAdmin
+        .from('org_employees')
+        .update({ access_role_id: roleId, updated_at: new Date().toISOString() })
+        .eq('org_id', orgId)
+        .in('id', uniqueIds)
+
+      if (assignError) return res.status(500).json({ error: assignError.message })
+    }
+  } else {
+    const { data: current, error: currentError } = await supabaseAdmin
+      .from('org_employees')
+      .select('id, location_id, department_id, manager_id')
+      .eq('org_id', orgId)
+      .eq('access_role_id', roleId)
+
+    if (currentError) return res.status(500).json({ error: currentError.message })
+
+    const requestedSet = new Set(uniqueIds)
+    const toClear = (current || [])
+      .filter((emp) => employeeInAssignScope(emp, capability) && !requestedSet.has(emp.id))
+      .map((emp) => emp.id)
+
+    if (toClear.length) {
+      const { error: clearError } = await supabaseAdmin
+        .from('org_employees')
+        .update({ access_role_id: null, updated_at: new Date().toISOString() })
+        .eq('org_id', orgId)
+        .eq('access_role_id', roleId)
+        .in('id', toClear)
+
+      if (clearError) return res.status(500).json({ error: clearError.message })
+    }
+
+    if (uniqueIds.length) {
+      const { error: assignError } = await supabaseAdmin
+        .from('org_employees')
+        .update({ access_role_id: roleId, updated_at: new Date().toISOString() })
+        .eq('org_id', orgId)
+        .in('id', uniqueIds)
+
+      if (assignError) return res.status(500).json({ error: assignError.message })
+    }
   }
 
   invalidatePermissionsCache()

@@ -1,9 +1,15 @@
 import { supabaseAdmin } from '../services/supabase.js'
 import { loadOrgFields } from './equipmentFieldService.js'
+import { loadOrgFields as loadAssetOrgFields } from './assetFieldService.js'
 import { listEquipment, getEquipmentDetail, deriveEquipmentIdentity, orderedParentFields } from './equipmentService.js'
-import { notifyOrg } from '../services/notifications.js'
+import { notifyUser, notifyEmployees, notifyByModule } from '../services/notifications.js'
 import { buildManualWorkOrderFormSchema } from './manualWorkOrderForm.js'
 import { applyIlikeSearch, listEnvelope } from './listQuery.js'
+import {
+  departmentFitsLocation,
+  isMaintenanceDepartment,
+} from './bulkMasterMatch.js'
+import { loadTimelineActors } from './timelineActors.js'
 import {
   generateWorkOrderNumber,
   addWorkOrderTimelineEvent,
@@ -52,6 +58,44 @@ async function addTimelineEvent(orgId, workRequestId, eventType, message, actorI
     metadata,
   })
   if (error) throw error
+}
+
+const WR_INBOX_MODULES = [
+  ['work_request_incoming', 'read'],
+  ['work_request_approve', 'update'],
+  ['work_request_all', 'read'],
+]
+
+async function workRequestNotifyScope(orgId, { orderToId, equipmentId } = {}) {
+  let locationId = null
+  if (equipmentId) {
+    const { data } = await supabaseAdmin
+      .from('equipment')
+      .select('location_id')
+      .eq('id', equipmentId)
+      .maybeSingle()
+    locationId = data?.location_id || null
+  }
+  if (!locationId && orderToId) {
+    const { data } = await supabaseAdmin
+      .from('departments')
+      .select('location_id')
+      .eq('id', orderToId)
+      .maybeSingle()
+    locationId = data?.location_id || null
+  }
+  return { departmentId: orderToId || null, locationId }
+}
+
+async function notifyWorkRequestInbox(orgId, wr, payload) {
+  const scope = await workRequestNotifyScope(orgId, {
+    orderToId: wr.order_to_department_id,
+    equipmentId: wr.equipment_id,
+  })
+  await notifyByModule(orgId, WR_INBOX_MODULES, payload, {
+    ...scope,
+    excludeTechnicianRoles: true,
+  })
 }
 
 function formatSeqDate(date = new Date()) {
@@ -138,16 +182,132 @@ export async function buildAssetHierarchy(orgId, equipmentId) {
   return path
 }
 
-async function loadDepartments(orgId) {
-  const { data, error } = await supabaseAdmin
+function departmentHeadRoleScore(employee) {
+  const role = employee?.access_role?.name?.trim().toLowerCase() || ''
+  if (!role) return 0
+  if (role.includes('department head')) return 4
+  if (role.includes('head') && !role.includes('location')) return 3
+  if (role.includes('supervisor')) return 2
+  if (role.includes('manager')) return 1
+  return 0
+}
+
+function pickDepartmentHead(employees) {
+  if (!employees?.length) return null
+  const managedIds = new Set(employees.map((employee) => employee.manager_id).filter(Boolean))
+  const ranked = employees.map((employee) => ({
+    employee,
+    score: departmentHeadRoleScore(employee) * 10 + (managedIds.has(employee.id) ? 1 : 0),
+  }))
+  ranked.sort((a, b) => b.score - a.score || String(a.employee.name || '').localeCompare(String(b.employee.name || '')))
+  const best = ranked[0]
+  if (!best || best.score <= 0) return null
+  const { id, name, photo_url } = best.employee
+  return { id, name, photo_url: photo_url || null }
+}
+
+async function loadDepartmentHeads(orgId, departments, locationId) {
+  const ids = (departments || []).map((department) => department.id).filter(Boolean)
+  if (!ids.length) return new Map()
+
+  const { data: employees, error } = await supabaseAdmin
+    .from('org_employees')
+    .select('id, name, photo_url, department_id, location_id, manager_id, access_role:access_role_id(id, name)')
+    .eq('org_id', orgId)
+    .eq('is_active', true)
+    .in('department_id', ids)
+
+  if (error) throw error
+
+  const byDepartment = new Map()
+  for (const employee of employees || []) {
+    const department = departments.find((row) => row.id === employee.department_id)
+    if (department?.all_locations && locationId && employee.location_id && employee.location_id !== locationId) {
+      continue
+    }
+    const list = byDepartment.get(employee.department_id) || []
+    list.push(employee)
+    byDepartment.set(employee.department_id, list)
+  }
+
+  const heads = new Map()
+  for (const [departmentId, list] of byDepartment) {
+    const head = pickDepartmentHead(list)
+    if (head) heads.set(departmentId, head)
+  }
+  return heads
+}
+
+async function loadDepartments(orgId, { locationId } = {}) {
+  let query = supabaseAdmin
     .from('departments')
-    .select('id, name, code, location_id, all_locations, is_active')
+    .select('id, name, code, location_id, all_locations, is_active, org_locations!location_id(id, name)')
     .eq('org_id', orgId)
     .eq('is_active', true)
     .order('name')
 
+  if (locationId) {
+    query = query.or(`location_id.eq.${locationId},all_locations.eq.true`)
+  }
+
+  const { data, error } = await query
   if (error) throw error
-  return data || []
+
+  const departments = data || []
+  const heads = await loadDepartmentHeads(orgId, departments, locationId)
+  return departments.map((department) => ({
+    id: department.id,
+    name: department.name,
+    code: department.code,
+    location_id: department.location_id,
+    all_locations: Boolean(department.all_locations),
+    location_name: department.all_locations
+      ? 'All locations'
+      : (department.org_locations?.name || null),
+    head: heads.get(department.id) || null,
+  }))
+}
+
+function normalizeFieldName(name) {
+  return String(name || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+}
+
+/** Match Assets field "Job Nature" / "Job Natures" (user-configured dropdown). */
+export function findJobNatureField(fields) {
+  const candidates = (fields || []).filter((field) => {
+    if (field?.kind === 'section') return false
+    if (field?.kind === 'child') return false
+    if (field?.is_active === false) return false
+    const name = normalizeFieldName(field?.name)
+    return name === 'job nature' || name === 'job natures'
+  })
+  const withOptions = candidates.find((field) => Array.isArray(field.dropdown_options) && field.dropdown_options.length)
+  return withOptions || candidates[0] || null
+}
+
+export function jobNatureOptionsFromField(field) {
+  if (!field) return []
+  return (field.dropdown_options || [])
+    .map((option) => String(option || '').trim())
+    .filter(Boolean)
+    .map((value) => ({ value, label: value }))
+}
+
+export function isBreakdownJobNature(value) {
+  return String(value || '').trim().toLowerCase() === 'breakdown'
+}
+
+/** Prefer Assets Job Natures; fall back to Equipment fields with the same name. */
+export async function resolveJobNatureField(orgId) {
+  const assetFields = await loadAssetOrgFields(orgId)
+  const fromAssets = findJobNatureField(assetFields)
+  if (fromAssets) return fromAssets
+  const equipmentFields = await loadOrgFields(orgId)
+  return findJobNatureField(equipmentFields)
 }
 
 function buildAssetFieldSections(fields) {
@@ -300,7 +460,9 @@ export async function getWorkRequestFormContext(orgId, profileId, email, { isOrg
   }
 
   const [departments, fromDeptResult, orgRowResult] = await Promise.all([
-    loadDepartments(orgId),
+    loadDepartments(orgId, {
+      locationId: orderFromSelectable ? null : (employee?.location_id || null),
+    }),
     employee?.department_id
       ? supabaseAdmin
         .from('departments')
@@ -321,6 +483,7 @@ export async function getWorkRequestFormContext(orgId, profileId, email, { isOrg
   const orgFields = await loadOrgFields(orgId)
   const assetSections = buildAssetFieldSections(orgFields)
   const maintenanceFormSchema = await buildManualWorkOrderFormSchema(orgId)
+  const jobNatureField = await resolveJobNatureField(orgId)
 
   return {
     employee: employee
@@ -337,6 +500,14 @@ export async function getWorkRequestFormContext(orgId, profileId, email, { isOrg
     inter_department_approval_required: orgRowResult.data?.work_request_inter_approval_required !== false,
     asset_sections: assetSections,
     maintenance_form_schema: maintenanceFormSchema,
+    job_nature_field: jobNatureField
+      ? {
+        id: jobNatureField.id,
+        name: jobNatureField.name,
+        is_required: Boolean(jobNatureField.is_required),
+      }
+      : null,
+    job_natures: jobNatureOptionsFromField(jobNatureField),
     request_types: [
       { value: 'inter_department', label: 'Inter Department' },
       { value: 'intra_department', label: 'Intra Department' },
@@ -368,6 +539,23 @@ function resolveInitialStatus(requestType, interApprovalRequired) {
   return 'submitted'
 }
 
+const APPROVABLE_STATUSES = ['submitted', 'pending_approval', 'need_info', 'info_provided']
+
+async function getWorkOrderForRequest(orgId, workRequestId) {
+  const { data, error } = await supabaseAdmin
+    .from('manual_work_orders')
+    .select('*')
+    .eq('org_id', orgId)
+    .eq('work_request_id', workRequestId)
+    .maybeSingle()
+  if (error) throw error
+  return data || null
+}
+
+function isUniqueViolation(error) {
+  return error?.code === '23505' || String(error?.message || '').includes('duplicate key')
+}
+
 async function assertEquipmentInDepartment(orgId, equipmentId, departmentId) {
   const { data, error } = await supabaseAdmin
     .from('equipment')
@@ -389,17 +577,22 @@ async function assertEquipmentInDepartment(orgId, equipmentId, departmentId) {
   }
 }
 
-async function assertDepartmentInOrg(orgId, departmentId, label = 'Department') {
+async function assertDepartmentInOrg(orgId, departmentId, label = 'Department', { locationId } = {}) {
   const { data, error } = await supabaseAdmin
     .from('departments')
-    .select('id')
+    .select('id, location_id, all_locations, is_active')
     .eq('org_id', orgId)
     .eq('id', departmentId)
     .maybeSingle()
 
   if (error) throw error
-  if (!data) {
+  if (!data || data.is_active === false) {
     const err = new Error(`${label} is not valid for this organization.`)
+    err.status = 400
+    throw err
+  }
+  if (locationId && data.location_id && !data.all_locations && data.location_id !== locationId) {
+    const err = new Error(`${label} is not available at your location.`)
     err.status = 400
     throw err
   }
@@ -432,7 +625,9 @@ export async function createWorkRequest(orgId, profileId, email, body, { isOrgAd
   }
 
   if (orderFromId) {
-    await assertDepartmentInOrg(orgId, orderFromId, 'Order from department')
+    await assertDepartmentInOrg(orgId, orderFromId, 'Order from department', {
+      locationId: isOrgAdmin ? null : (employee?.location_id || null),
+    })
   }
 
   if (requestType === 'intra_department' || requestType === 'user_self') {
@@ -451,11 +646,14 @@ export async function createWorkRequest(orgId, profileId, email, body, { isOrgAd
     throw err
   }
 
-  await assertDepartmentInOrg(orgId, orderToId, 'Order to department')
+  await assertDepartmentInOrg(orgId, orderToId, 'Order to department', {
+    locationId: isOrgAdmin ? null : (employee?.location_id || null),
+  })
 
   const isDraft = body?.save_as === 'draft'
 
   let problem = String(body?.problem_description || '').trim()
+  let shortDescription = String(body?.short_description || '').trim().slice(0, 200)
   let priority = body?.priority
   const equipmentId = body?.equipment_id || null
 
@@ -467,6 +665,12 @@ export async function createWorkRequest(orgId, profileId, email, body, { isOrgAd
       await assertEquipmentInDepartment(orgId, equipmentId, orderToId)
     }
   } else {
+    if (!shortDescription) {
+      const err = new Error('Short description is required.')
+      err.status = 400
+      throw err
+    }
+
     if (!problem) {
       const err = new Error('Problem description is required.')
       err.status = 400
@@ -510,6 +714,28 @@ export async function createWorkRequest(orgId, profileId, email, body, { isOrgAd
     ? body.form_field_values
     : {}
 
+  const jobNatureField = await resolveJobNatureField(orgId)
+  const jobNatureOptions = jobNatureOptionsFromField(jobNatureField).map((row) => row.value)
+  let jobNature = String(body?.job_nature || '').trim() || null
+  if (jobNature && jobNatureOptions.length && !jobNatureOptions.includes(jobNature)) {
+    const err = new Error('Selected job nature is not valid.')
+    err.status = 400
+    throw err
+  }
+  if (!isDraft && jobNatureField?.is_required && !jobNature) {
+    const err = new Error('Job nature is required.')
+    err.status = 400
+    throw err
+  }
+  if (!isDraft && !jobNature && jobNatureOptions.length) {
+    const err = new Error('Job nature is required.')
+    err.status = 400
+    throw err
+  }
+  const isBreakdown = jobNature
+    ? isBreakdownJobNature(jobNature)
+    : Boolean(body?.is_breakdown)
+
   const { data: row, error } = await supabaseAdmin
     .from('work_requests')
     .insert({
@@ -522,8 +748,10 @@ export async function createWorkRequest(orgId, profileId, email, body, { isOrgAd
       order_to_department_id: orderToId,
       equipment_id: equipmentId,
       asset_hierarchy: assetHierarchy,
+      short_description: shortDescription,
       problem_description: problem,
-      is_breakdown: Boolean(body?.is_breakdown),
+      job_nature: jobNature,
+      is_breakdown: isBreakdown,
       priority,
       remarks: body?.remarks?.trim() || null,
       attachments: Array.isArray(body?.attachments) ? body.attachments : [],
@@ -549,10 +777,10 @@ export async function createWorkRequest(orgId, profileId, email, body, { isOrgAd
 
   if (!isDraft) {
     try {
-      await notifyOrg(orgId, {
+      await notifyWorkRequestInbox(orgId, row, {
         title: 'New work request',
-        body: `${requestNumber}: ${problem.slice(0, 120)}`,
-        data: { work_request_id: row.id, type: 'work_request_created' },
+        body: requestNumber,
+        data: { work_request_id: row.id, type: 'work_request_created', actor_id: profileId, message: shortDescription },
         url: '/',
       })
     } catch {
@@ -570,13 +798,14 @@ export async function createWorkRequest(orgId, profileId, email, body, { isOrgAd
         { autoApproved: true },
       )
       try {
-        await notifyOrg(orgId, {
+        await notifyWorkRequestInbox(orgId, row, {
           title: 'Work order generated',
           body: `${requestNumber} → ${woNumber}`,
           data: {
             work_request_id: row.id,
             work_order_id: workOrder.id,
             type: 'work_order_generated',
+            actor_id: profileId,
           },
           url: '/',
         })
@@ -645,80 +874,99 @@ async function createLinkedWorkOrderFromRequest(orgId, profileId, wr, {
   const assignedDepartmentId = locationId ? departmentId : null
   const assignedLocationId = locationId
 
-  const woNumber = await generateWorkOrderNumber(orgId, departmentId)
-  const sourceType = mapRequestTypeToSource(wr.request_type, wr.is_breakdown)
+  let workOrder = await getWorkOrderForRequest(orgId, wr.id)
+  const sourceType = mapRequestTypeToSource(wr.request_type)
   const resolvedPriority = ['high', 'medium', 'low'].includes(priority) ? priority : wr.priority
   const resolvedWorkCenter = String(workCenter || '').trim() || 'General'
+  let woNumber = workOrder?.wo_number || null
 
-  const { data: workOrder, error: woError } = await supabaseAdmin
-    .from('manual_work_orders')
-    .insert({
-      org_id: orgId,
-      status: 'assigned',
-      wo_number: woNumber,
-      source_type: sourceType,
-      created_by: profileId,
-      supervisor_id: profileId,
-      requester_id: wr.requested_by,
-      assigned_department_id: assignedDepartmentId,
-      assigned_location_id: assignedLocationId,
-      work_request_id: wr.id,
-      equipment_id: wr.equipment_id,
-      asset_hierarchy: wr.asset_hierarchy || [],
-      problem_description: wr.problem_description,
-      is_breakdown: Boolean(wr.is_breakdown),
-      priority: resolvedPriority,
-      attachments: Array.isArray(wr.attachments) ? wr.attachments : [],
-      form_field_values: wr.form_field_values && typeof wr.form_field_values === 'object'
-        ? wr.form_field_values
-        : {},
-      work_center: resolvedWorkCenter,
-      special_instructions: assignmentRemarks?.trim() || null,
-      planned_start_at: plannedStartAt || null,
-      planned_end_at: plannedEndAt || null,
-      planned_duration_hours: plannedDurationHours ?? null,
-    })
-    .select('*')
-    .single()
+  if (!workOrder) {
+    woNumber = await generateWorkOrderNumber(orgId, departmentId)
+    const insert = await supabaseAdmin
+      .from('manual_work_orders')
+      .insert({
+        org_id: orgId,
+        status: 'assigned',
+        wo_number: woNumber,
+        source_type: sourceType,
+        created_by: profileId,
+        supervisor_id: profileId,
+        requester_id: wr.requested_by,
+        assigned_department_id: assignedDepartmentId,
+        assigned_location_id: assignedLocationId,
+        work_request_id: wr.id,
+        equipment_id: wr.equipment_id,
+        asset_hierarchy: wr.asset_hierarchy || [],
+        short_description: wr.short_description || null,
+        problem_description: wr.problem_description,
+        is_breakdown: Boolean(wr.is_breakdown),
+        priority: resolvedPriority,
+        attachments: Array.isArray(wr.attachments) ? wr.attachments : [],
+        form_field_values: wr.form_field_values && typeof wr.form_field_values === 'object'
+          ? wr.form_field_values
+          : {},
+        work_center: resolvedWorkCenter,
+        special_instructions: assignmentRemarks?.trim() || null,
+        planned_start_at: plannedStartAt || null,
+        planned_end_at: plannedEndAt || null,
+        planned_duration_hours: plannedDurationHours ?? null,
+      })
+      .select('*')
+      .single()
 
-  if (woError) throw woError
+    if (insert.error) {
+      if (!isUniqueViolation(insert.error)) throw insert.error
+      workOrder = await getWorkOrderForRequest(orgId, wr.id)
+      if (!workOrder) throw insert.error
+    } else {
+      workOrder = insert.data
+    }
+  }
+
+  const linkedNumber = workOrder.wo_number || woNumber
 
   if (assigneeIds.length) {
     await syncWorkOrderAssignees(orgId, workOrder.id, assigneeIds)
   }
 
-  await addWorkOrderTimelineEvent(
-    orgId,
-    workOrder.id,
-    'work_order_generated',
-    `Work order ${woNumber} generated from ${wr.request_number}.`,
-    profileId,
-    { newStatus: 'assigned', metadata: { work_request_id: wr.id, auto_approved: autoApproved } },
-  )
-
-  if (assigneeIds.length) {
+  if (!wr.manual_work_order_id) {
     await addWorkOrderTimelineEvent(
       orgId,
       workOrder.id,
-      'technician_assigned',
-      'Technician(s) assigned.',
+      'work_order_generated',
+      `Work order ${linkedNumber} generated from ${wr.request_number}.`,
       profileId,
-      { newStatus: 'assigned', metadata: { assignee_ids: assigneeIds } },
+      { newStatus: 'assigned', metadata: { work_request_id: wr.id, auto_approved: autoApproved } },
+    )
+
+    if (assigneeIds.length) {
+      await addWorkOrderTimelineEvent(
+        orgId,
+        workOrder.id,
+        'technician_assigned',
+        'Technician(s) assigned.',
+        profileId,
+        { newStatus: 'assigned', metadata: { assignee_ids: assigneeIds } },
+      )
+    }
+
+    await addWorkOrderAuditEntry(
+      orgId,
+      workOrder.id,
+      profileId,
+      autoApproved ? 'auto_created_from_work_request' : 'created_from_work_request',
+      {
+        newStatus: 'assigned',
+        departmentId,
+        remarks: assignmentRemarks?.trim() || null,
+        metadata: { work_request_id: wr.id, wo_number: linkedNumber },
+      },
     )
   }
 
-  await addWorkOrderAuditEntry(
-    orgId,
-    workOrder.id,
-    profileId,
-    autoApproved ? 'auto_created_from_work_request' : 'created_from_work_request',
-    {
-      newStatus: 'assigned',
-      departmentId,
-      remarks: assignmentRemarks?.trim() || null,
-      metadata: { work_request_id: wr.id, wo_number: woNumber },
-    },
-  )
+  if (wr.status === 'approved' && wr.manual_work_order_id === workOrder.id) {
+    return { workOrder, updated: wr, woNumber: linkedNumber }
+  }
 
   const now = new Date().toISOString()
   const { data: updated, error: updateError } = await supabaseAdmin
@@ -743,18 +991,18 @@ async function createLinkedWorkOrderFromRequest(orgId, profileId, wr, {
     wr.id,
     autoApproved ? 'auto_approved' : 'approved',
     autoApproved
-      ? `Work request auto-converted. Work order ${woNumber} generated.`
-      : `Work request approved. Work order ${woNumber} generated.`,
+      ? `Work request auto-converted. Work order ${linkedNumber} generated.`
+      : `Work request approved. Work order ${linkedNumber} generated.`,
     profileId,
-    { manual_work_order_id: workOrder.id, wo_number: woNumber, assignee_ids: assigneeIds },
+    { manual_work_order_id: workOrder.id, wo_number: linkedNumber, assignee_ids: assigneeIds },
   )
   await addTimelineEvent(
     orgId,
     wr.id,
     'work_order_generated',
-    `Work order ${woNumber} linked.`,
+    `Work order ${linkedNumber} linked.`,
     profileId,
-    { manual_work_order_id: workOrder.id, wo_number: woNumber },
+    { manual_work_order_id: workOrder.id, wo_number: linkedNumber },
   )
 
   if (assigneeIds.length) {
@@ -768,7 +1016,7 @@ async function createLinkedWorkOrderFromRequest(orgId, profileId, wr, {
     )
   }
 
-  return { workOrder, updated, woNumber }
+  return { workOrder, updated, woNumber: linkedNumber }
 }
 
 export async function approveWorkRequest(orgId, profileId, workRequestId, body) {
@@ -786,7 +1034,18 @@ export async function approveWorkRequest(orgId, profileId, workRequestId, body) 
     throw err
   }
 
-  if (!['submitted', 'pending_approval', 'need_info'].includes(wr.status)) {
+  if (wr.status === 'approved' && wr.manual_work_order_id) {
+    const existing = await getWorkOrderForRequest(orgId, wr.id)
+    const enriched = await enrichWorkRequest(wr)
+    return {
+      ...enriched,
+      work_order: existing
+        ? { id: existing.id, wo_number: existing.wo_number, status: existing.status }
+        : { id: wr.manual_work_order_id },
+    }
+  }
+
+  if (!APPROVABLE_STATUSES.includes(wr.status)) {
     const err = new Error('This work request cannot be approved in its current status.')
     err.status = 400
     throw err
@@ -819,13 +1078,29 @@ export async function approveWorkRequest(orgId, profileId, workRequestId, body) 
   )
 
   try {
-    await notifyOrg(orgId, {
-      title: 'Work request approved',
-      body: `${wr.request_number} → ${woNumber}`,
+    if (wr.requested_by) {
+      await notifyUser(wr.requested_by, {
+        title: 'Work request approved',
+        body: `${wr.request_number} → ${woNumber}`,
+        data: {
+          work_request_id: wr.id,
+          work_order_id: workOrder.id,
+          type: 'work_request_approved',
+          actor_id: profileId,
+          message: body?.assignment_remarks || null,
+        },
+        url: '/',
+      })
+    }
+    await notifyEmployees(orgId, assigneeIds, {
+      title: 'Work order assigned',
+      body: `${woNumber} assigned to you`,
       data: {
         work_request_id: wr.id,
         work_order_id: workOrder.id,
-        type: 'work_request_approved',
+        type: 'work_order_assigned',
+        actor_id: profileId,
+        message: body?.assignment_remarks || null,
       },
       url: '/',
     })
@@ -862,7 +1137,7 @@ export async function rejectWorkRequest(orgId, profileId, workRequestId, reason)
     throw err
   }
 
-  if (!['submitted', 'pending_approval', 'need_info'].includes(wr.status)) {
+  if (!APPROVABLE_STATUSES.includes(wr.status)) {
     const err = new Error('This work request cannot be rejected.')
     err.status = 400
     throw err
@@ -885,12 +1160,19 @@ export async function rejectWorkRequest(orgId, profileId, workRequestId, reason)
   await addTimelineEvent(orgId, workRequestId, 'rejected', text, profileId)
 
   try {
-    await notifyOrg(orgId, {
-      title: 'Work request rejected',
-      body: text.slice(0, 160),
-      data: { work_request_id: workRequestId, type: 'work_request_rejected' },
-      url: '/',
-    })
+    if (updated.requested_by) {
+      await notifyUser(updated.requested_by, {
+        title: 'Work request rejected',
+        body: updated.request_number || 'Work request',
+        data: {
+          work_request_id: workRequestId,
+          type: 'work_request_rejected',
+          actor_id: profileId,
+          message: text,
+        },
+        url: '/',
+      })
+    }
   } catch {
     // non-blocking
   }
@@ -925,10 +1207,103 @@ export async function requestMoreInfo(orgId, profileId, workRequestId, message) 
   await addTimelineEvent(orgId, workRequestId, 'need_info', text, profileId)
 
   try {
-    await notifyOrg(orgId, {
-      title: 'Clarification requested',
-      body: text.slice(0, 160),
-      data: { work_request_id: workRequestId, type: 'work_request_need_info' },
+    if (updated.requested_by) {
+      await notifyUser(updated.requested_by, {
+        title: 'Clarification requested',
+        body: updated.request_number || 'Work request',
+        data: {
+          work_request_id: workRequestId,
+          type: 'work_request_need_info',
+          actor_id: profileId,
+          message: text,
+        },
+        url: '/',
+      })
+    }
+  } catch {
+    // non-blocking
+  }
+
+  return enrichWorkRequest(updated)
+}
+
+export async function replyToWorkRequest(orgId, profileId, workRequestId, body) {
+  const text = String(body?.message || '').trim()
+  if (!text) {
+    const err = new Error('Reply message is required.')
+    err.status = 400
+    throw err
+  }
+
+  const { data: wr, error } = await supabaseAdmin
+    .from('work_requests')
+    .select('*')
+    .eq('org_id', orgId)
+    .eq('id', workRequestId)
+    .maybeSingle()
+
+  if (error) throw error
+  if (!wr) {
+    const err = new Error('Work request not found.')
+    err.status = 404
+    throw err
+  }
+
+  if (wr.status !== 'need_info') {
+    const err = new Error('This work request is not waiting for more information.')
+    err.status = 400
+    throw err
+  }
+
+  if (wr.requested_by !== profileId) {
+    const err = new Error('Only the requester can reply to this information request.')
+    err.status = 403
+    throw err
+  }
+
+  const extraAttachments = Array.isArray(body?.attachments) ? body.attachments : []
+  const attachments = [
+    ...(Array.isArray(wr.attachments) ? wr.attachments : []),
+    ...extraAttachments,
+  ]
+
+  const { data: orgRow } = await supabaseAdmin
+    .from('organizations')
+    .select('work_request_inter_approval_required')
+    .eq('id', orgId)
+    .maybeSingle()
+
+  const interApproval = orgRow?.work_request_inter_approval_required !== false
+  const nextStatus = resolveInitialStatus(wr.request_type, interApproval)
+  const now = new Date().toISOString()
+
+  const { data: updated, error: updateError } = await supabaseAdmin
+    .from('work_requests')
+    .update({
+      status: nextStatus,
+      attachments,
+      updated_at: now,
+    })
+    .eq('id', workRequestId)
+    .select('*')
+    .single()
+
+  if (updateError) throw updateError
+
+  await addTimelineEvent(orgId, workRequestId, 'info_provided', text, profileId, {
+    attachments_added: extraAttachments.length,
+  })
+
+  try {
+    await notifyWorkRequestInbox(orgId, wr, {
+      title: 'Work request updated',
+      body: `${wr.request_number || 'Work request'}: information provided`,
+      data: {
+        work_request_id: workRequestId,
+        type: 'work_request_info_provided',
+        actor_id: profileId,
+        message: text,
+      },
       url: '/',
     })
   } catch {
@@ -938,20 +1313,134 @@ export async function requestMoreInfo(orgId, profileId, workRequestId, message) 
   return enrichWorkRequest(updated)
 }
 
+async function resolveWorkRequestLocationId(orgId, wr) {
+  if (wr?.equipment?.location_id) return wr.equipment.location_id
+  if (wr?.order_to?.location_id) return wr.order_to.location_id
+  if (wr?.order_from?.location_id) return wr.order_from.location_id
+  if (wr?.requested_by) {
+    const employee = await getEmployeeByProfile(orgId, wr.requested_by)
+    if (employee?.location_id) return employee.location_id
+  }
+  return null
+}
+
+export function workRequestMatchesLocation(wr, locationId) {
+  if (!locationId) return true
+  if (!wr) return false
+  if (wr.equipment?.location_id === locationId) return true
+  if (wr.order_from?.location_id === locationId) return true
+  if (wr.order_to?.location_id === locationId) return true
+  return false
+}
+
+export function assertWorkRequestAccessible(wr, { profileId, locationId } = {}) {
+  if (!wr) {
+    const err = new Error('Work request not found.')
+    err.status = 404
+    throw err
+  }
+  if (!locationId) return wr
+  if (profileId && wr.requested_by === profileId) return wr
+  if (workRequestMatchesLocation(wr, locationId)) return wr
+  const err = new Error('Work request not found.')
+  err.status = 404
+  throw err
+}
+
+const EMPTY_UUID = '00000000-0000-0000-0000-000000000000'
+
+async function applyWorkRequestLocationScope(query, orgId, locationId) {
+  if (!locationId) return query
+
+  const [{ data: departments, error: deptError }, { data: equipment, error: equipmentError }] = await Promise.all([
+    supabaseAdmin
+      .from('departments')
+      .select('id')
+      .eq('org_id', orgId)
+      .eq('location_id', locationId),
+    supabaseAdmin
+      .from('equipment')
+      .select('id')
+      .eq('org_id', orgId)
+      .eq('location_id', locationId),
+  ])
+
+  if (deptError) throw deptError
+  if (equipmentError) throw equipmentError
+
+  const departmentIds = (departments || []).map((row) => row.id)
+  const equipmentIds = (equipment || []).map((row) => row.id)
+  const parts = []
+  if (departmentIds.length) {
+    const list = departmentIds.join(',')
+    parts.push(`order_from_department_id.in.(${list})`)
+    parts.push(`order_to_department_id.in.(${list})`)
+  }
+  if (equipmentIds.length) {
+    parts.push(`equipment_id.in.(${equipmentIds.join(',')})`)
+  }
+  if (!parts.length) return query.eq('id', EMPTY_UUID)
+  return query.or(parts.join(','))
+}
+
+export async function listWorkRequestTechnicians(orgId, workRequestId) {
+  const wr = await getWorkRequestById(orgId, workRequestId)
+  if (!wr) {
+    const err = new Error('Work request not found')
+    err.status = 404
+    throw err
+  }
+
+  const locationId = await resolveWorkRequestLocationId(orgId, wr)
+  const { data: departments, error: deptError } = await supabaseAdmin
+    .from('departments')
+    .select('id, name, code, location_id, all_locations, is_active')
+    .eq('org_id', orgId)
+    .eq('is_active', true)
+
+  if (deptError) throw deptError
+
+  const maintenanceIds = (departments || [])
+    .filter((department) => (
+      isMaintenanceDepartment(department)
+      && (!locationId || departmentFitsLocation(department, locationId))
+    ))
+    .map((department) => department.id)
+
+  if (!maintenanceIds.length) return []
+
+  let query = supabaseAdmin
+    .from('org_employees')
+    .select(`
+      id, name, emp_id, email, mobile, photo_url, department_id, location_id,
+      departments!department_id ( id, name, code )
+    `)
+    .eq('org_id', orgId)
+    .eq('is_active', true)
+    .in('department_id', maintenanceIds)
+    .order('name')
+
+  if (locationId) query = query.eq('location_id', locationId)
+
+  const { data, error } = await query
+  if (error) throw error
+  return data || []
+}
+
 const WR_LIST_SELECT = `
   id, org_id, request_number, status, request_type, request_date, created_at, updated_at,
   order_from_department_id, order_to_department_id, equipment_id, requested_by,
-  priority, problem_description, execution_status, manual_work_order_id,
-  order_from:departments!work_requests_order_from_department_id_fkey(id, name, code),
-  order_to:departments!work_requests_order_to_department_id_fkey(id, name, code),
+  priority, short_description, job_nature, is_breakdown, execution_status, manual_work_order_id,
+  order_from:departments!work_requests_order_from_department_id_fkey(id, name, code, location_id, all_locations),
+  order_to:departments!work_requests_order_to_department_id_fkey(id, name, code, location_id, all_locations),
   equipment(id, name, code),
   requester:profiles!work_requests_requested_by_fkey(id, full_name, email)
 `
 
 const WR_SELECT = `
   *,
-  order_from:departments!work_requests_order_from_department_id_fkey(id, name, code),
-  order_to:departments!work_requests_order_to_department_id_fkey(id, name, code),
+  order_from:departments!work_requests_order_from_department_id_fkey(id, name, code, location_id, all_locations),
+  order_to:departments!work_requests_order_to_department_id_fkey(id, name, code, location_id, all_locations),
   equipment(id, name, code, location_id, department_id, area_id),
   requester:profiles!work_requests_requested_by_fkey(id, full_name, email),
   approver:profiles!work_requests_approved_by_fkey(id, full_name, email)
@@ -997,12 +1486,25 @@ async function enrichWorkRequests(rows, { lean = false } = {}) {
   if (assigneeResult.error) throw assigneeResult.error
   if (woResult.error) throw woResult.error
 
+  const orgId = rows[0]?.org_id
+  const requesterIds = [...new Set(rows.map((row) => row.requested_by).filter(Boolean))]
+  const actorIds = [...new Set(
+    (timelineResult.data || []).map((event) => event.actor_id).filter(Boolean),
+  )]
+  const peopleIds = [...new Set([...requesterIds, ...actorIds])]
+  const peopleById = peopleIds.length
+    ? await loadTimelineActors(orgId, peopleIds)
+    : new Map()
+
   const timelineByRequest = new Map()
   for (const event of timelineResult.data || []) {
     if (!timelineByRequest.has(event.work_request_id)) {
       timelineByRequest.set(event.work_request_id, [])
     }
-    timelineByRequest.get(event.work_request_id).push(event)
+    timelineByRequest.get(event.work_request_id).push({
+      ...event,
+      actor: event.actor_id ? (peopleById.get(event.actor_id) || null) : null,
+    })
   }
 
   const assigneesByWorkOrder = new Map()
@@ -1019,13 +1521,18 @@ async function enrichWorkRequests(rows, { lean = false } = {}) {
 
   return rows.map((row) => {
     const linkedWo = row.manual_work_order_id ? woById.get(row.manual_work_order_id) : null
+    const requester = row.requested_by
+      ? (peopleById.get(row.requested_by) || row.requester || null)
+      : row.requester || null
     return {
       ...row,
+      requester,
       timeline: timelineByRequest.get(row.id) || [],
       assigned_technicians: row.manual_work_order_id
         ? (assigneesByWorkOrder.get(row.manual_work_order_id) || [])
         : [],
       is_breakdown_label: row.is_breakdown ? 'Yes' : 'No',
+      job_nature_label: row.job_nature || (row.is_breakdown ? 'Breakdown' : null),
       linked_work_order: linkedWo
         ? {
           id: linkedWo.id,
@@ -1042,6 +1549,7 @@ async function enrichWorkRequests(rows, { lean = false } = {}) {
 export async function listWorkRequests(orgId, filter, {
   profileId,
   departmentId,
+  locationId = null,
   search = null,
   limit = 50,
   offset = 0,
@@ -1060,7 +1568,12 @@ export async function listWorkRequests(orgId, filter, {
   } else if (filter === 'incoming' && departmentId) {
     query = query.eq('order_to_department_id', departmentId)
   }
-  query = applyIlikeSearch(query, search, ['request_number', 'problem_description', 'status'])
+
+  if (filter !== 'my') {
+    query = await applyWorkRequestLocationScope(query, orgId, locationId)
+  }
+
+  query = applyIlikeSearch(query, search, ['request_number', 'short_description', 'status'])
 
   const { data, error, count } = await query
   if (error) throw error

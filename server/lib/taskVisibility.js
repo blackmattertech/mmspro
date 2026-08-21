@@ -2,7 +2,17 @@ import { supabaseAdmin } from '../services/supabase.js'
 import { getEmployeeByProfile } from './workRequestService.js'
 
 export async function getTaskActorContext(orgId, profileId) {
-  const employee = await getEmployeeByProfile(orgId, profileId)
+  let employee = await getEmployeeByProfile(orgId, profileId)
+  if (!employee) {
+    const { data: profile } = await supabaseAdmin
+      .from('profiles')
+      .select('email')
+      .eq('id', profileId)
+      .maybeSingle()
+    if (profile?.email) {
+      employee = await getEmployeeByProfile(orgId, profileId, { email: profile.email })
+    }
+  }
   return {
     profileId,
     employeeId: employee?.id || null,

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useBackdropClose } from '../../hooks/useBackdropClose'
+import PageBack from '../shared/PageBack'
 import WorkOrderForm from '../workorders/WorkOrderForm'
 import { buildAssetFormSchema, reorderItemsById } from '../../lib/assetFormSchema'
 import '../company/CompanyShared.css'
@@ -119,7 +120,10 @@ export default function AssetFormLayoutModal({
         aria-labelledby="asset-layout-modal-title"
       >
         <div className="company-modal__header">
-          <h2 id="asset-layout-modal-title">Arrange form layout</h2>
+          <div className="modal__header-main">
+            <PageBack onClick={onClose} className="page-back--header" />
+            <h2 id="asset-layout-modal-title">Arrange form layout</h2>
+          </div>
           <button type="button" className="company-modal__close" onClick={onClose} aria-label="Close">×</button>
         </div>
 

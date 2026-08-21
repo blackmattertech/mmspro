@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { generateOrgSlug } from '../../lib/slug'
 import { LIMIT_ITEMS, PLAN_DEFAULTS, formatLimitValue } from '../../lib/orgLimits'
 import FilterableSelect from '../ui/FilterableSelect'
+import PageBack from '../shared/PageBack'
 import '../../components/company/CompanyShared.css'
 import './CreateOrgModal.css'
 
@@ -57,7 +58,10 @@ export default function CreateOrgModal({ onClose, onSubmit, saving }) {
     <div className="admin-modal-overlay" onClick={onClose}>
       <div className="admin-modal" onClick={(e) => e.stopPropagation()}>
         <div className="admin-modal__header">
-          <h2 className="admin-modal__title">Create Organization</h2>
+          <div className="modal__header-main">
+            <PageBack onClick={onClose} className="page-back--header" label="Organizations" />
+            <h2 className="admin-modal__title">Create Organization</h2>
+          </div>
           <button type="button" className="admin-modal__close" onClick={onClose} aria-label="Close">
             <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
               <path d="M5 5L15 15M15 5L5 15" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>

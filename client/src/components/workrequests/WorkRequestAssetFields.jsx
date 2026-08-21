@@ -526,7 +526,10 @@ export default function WorkRequestAssetFields({
                   />
                 </label>
               )}
-              {orderedFields.map((field) => renderField(field))}
+              {orderedFields.map((field) => {
+                if (showAreaSelect && getEquipmentFieldRole(field) === 'area') return null
+                return renderField(field)
+              })}
             </div>
           </div>
         )

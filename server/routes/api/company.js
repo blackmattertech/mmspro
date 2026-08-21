@@ -16,9 +16,9 @@ import {
   assertLoginSlotAvailable,
   getOrgLimitsSummary,
 } from '../../lib/orgLimits.js'
-import { getScopedLocationId, hasModulePermission } from '../../lib/orgPermissions.js'
-import { canManageOrg } from '../../lib/accountRoles.js'
+import { getScopedLocationId, hasModulePermission, resolveLocationFilter, assertLocationAccess, coerceScopedLocationId } from '../../lib/orgPermissions.js'
 import { getSignedUrl, getSignedUrls } from '../../lib/signedUrlCache.js'
+import { ensureLocationMaintenanceDepartment } from '../../lib/locationDefaults.js'
 import { applyIlikeSearch, listEnvelope } from '../../lib/listQuery.js'
 import { buildAreasTemplate, bulkImportAreas } from '../../lib/areaBulkService.js'
 import {
@@ -37,6 +37,7 @@ const canReadCompany = requireAnyModulePermission([
   ['company', 'read'],
   ['locations', 'read'],
   ['departments', 'read'],
+  ['work_centers', 'read'],
   ['areas', 'read'],
   ['employees', 'read'],
   ['employees', 'create'],
@@ -68,6 +69,17 @@ const canReadDepartments = requireAnyModulePermission([
 const canCreateDepartments = requireModulePermission('departments', 'create')
 const canUpdateDepartments = requireModulePermission('departments', 'update')
 const canDeleteDepartments = requireModulePermission('departments', 'delete')
+
+const canReadWorkCenters = requireAnyModulePermission([
+  ['work_centers', 'read'],
+  ['work_orders', 'read'],
+  ['work_orders', 'create'],
+  ['work_request_approve', 'update'],
+  ['work_request_incoming', 'update'],
+])
+const canCreateWorkCenters = requireModulePermission('work_centers', 'create')
+const canUpdateWorkCenters = requireModulePermission('work_centers', 'update')
+const canDeleteWorkCenters = requireModulePermission('work_centers', 'delete')
 
 const canReadAreas = requireAnyModulePermission([
   ['areas', 'read'],
@@ -383,6 +395,12 @@ router.post('/locations', canCreateLocations, async (req, res) => {
     return res.status(500).json({ error: error.message })
   }
 
+  try {
+    await ensureLocationMaintenanceDepartment(orgId, data)
+  } catch {
+    // Location is already created; default department is best-effort.
+  }
+
   res.status(201).json(data)
 })
 
@@ -484,16 +502,35 @@ router.patch('/locations/:id', canUpdateLocations, assertOrgOwnership('org_locat
 
 router.delete('/locations/:id', canDeleteLocations, assertOrgOwnership('org_locations'), async (req, res) => {
   const orgId = req.userProfile.org_id
-  const { data, error } = await supabaseAdmin
+
+  const { count: equipmentCount, error: equipmentError } = await supabaseAdmin
+    .from('equipment')
+    .select('id', { count: 'exact', head: true })
+    .eq('org_id', orgId)
+    .eq('location_id', req.params.id)
+  if (equipmentError) return res.status(500).json({ error: equipmentError.message })
+  if (equipmentCount) {
+    return res.status(409).json({
+      error: 'This location has equipment. Move or delete that equipment first.',
+    })
+  }
+
+  const { error } = await supabaseAdmin
     .from('org_locations')
-    .update({ is_active: false, updated_at: new Date().toISOString() })
+    .delete()
     .eq('id', req.params.id)
     .eq('org_id', orgId)
-    .select(LOCATION_SELECT)
-    .single()
 
-  if (error) return res.status(500).json({ error: error.message })
-  res.json(await attachLocationHeadsFromRoles(orgId, data))
+  if (error) {
+    if (error.code === '23503') {
+      return res.status(409).json({
+        error: 'This location is linked to other records and cannot be deleted.',
+      })
+    }
+    return res.status(500).json({ error: error.message })
+  }
+
+  res.json({ success: true, id: req.params.id })
 })
 
 // ── Departments ──
@@ -682,16 +719,48 @@ router.patch('/departments/:id', canUpdateDepartments, assertOrgOwnership('depar
 })
 
 router.delete('/departments/:id', canDeleteDepartments, assertOrgOwnership('departments'), async (req, res) => {
-  const { data, error } = await supabaseAdmin
-    .from('departments')
-    .update({ is_active: false, updated_at: new Date().toISOString() })
-    .eq('id', req.params.id)
-    .eq('org_id', req.userProfile.org_id)
-    .select(DEPARTMENT_SELECT)
-    .single()
+  const orgId = req.userProfile.org_id
 
-  if (error) return res.status(500).json({ error: error.message })
-  res.json(data)
+  const { count: equipmentCount, error: equipmentError } = await supabaseAdmin
+    .from('equipment')
+    .select('id', { count: 'exact', head: true })
+    .eq('org_id', orgId)
+    .eq('department_id', req.params.id)
+  if (equipmentError) return res.status(500).json({ error: equipmentError.message })
+  if (equipmentCount) {
+    return res.status(409).json({
+      error: 'This department has equipment. Move or delete that equipment first.',
+    })
+  }
+
+  const { count: requestCount, error: requestError } = await supabaseAdmin
+    .from('work_requests')
+    .select('id', { count: 'exact', head: true })
+    .eq('org_id', orgId)
+    .or(`order_from_department_id.eq.${req.params.id},order_to_department_id.eq.${req.params.id}`)
+  if (requestError) return res.status(500).json({ error: requestError.message })
+  if (requestCount) {
+    return res.status(409).json({
+      error: 'This department is used on work requests and cannot be deleted.',
+    })
+  }
+
+  const { error } = await supabaseAdmin
+    .from('departments')
+    .delete()
+    .eq('id', req.params.id)
+    .eq('org_id', orgId)
+
+  if (error) {
+    if (error.code === '23503') {
+      return res.status(409).json({
+        error: 'This department is linked to other records and cannot be deleted.',
+      })
+    }
+    return res.status(500).json({ error: error.message })
+  }
+
+  res.json({ success: true, id: req.params.id })
 })
 
 // ── Employees ──
@@ -707,9 +776,10 @@ const EMPLOYEE_SELECT = `
 
 const EMPLOYEE_LIST_SELECT = `
   id, org_id, emp_id, name, email, mobile, is_active, location_id, department_id,
-  photo_url, access_role_id, login_required, created_at, updated_at,
+  manager_id, photo_url, access_role_id, login_required, created_at, updated_at,
   departments!department_id ( id, name, code ),
   org_locations!location_id ( id, name, code ),
+  manager:manager_id ( id, emp_id, name, photo_url ),
   access_role:access_role_id ( id, name )
 `
 
@@ -963,7 +1033,7 @@ async function resolveDefaultUserAccessRoleId(orgId, accessRoleId) {
   return data?.id || null
 }
 
-async function validateEmployeeRefs(orgId, refs, actor = null) {
+async function validateEmployeeRefs(orgId, refs) {
   const { department_id, location_id, manager_id, employee_id, access_role_id } = refs
 
   if (manager_id) {
@@ -1002,15 +1072,11 @@ async function validateEmployeeRefs(orgId, refs, actor = null) {
   if (access_role_id) {
     const { data } = await supabaseAdmin
       .from('org_access_roles')
-      .select('id, created_by')
+      .select('id')
       .eq('id', access_role_id)
       .eq('org_id', orgId)
       .maybeSingle()
     if (!data) throw new Error('Invalid access role')
-    // Non-admins may only assign roles they created (admins see/assign all).
-    if (actor && !canManageOrg(actor.role) && data.created_by !== actor.id) {
-      throw new Error('You can only assign access roles you created')
-    }
   }
 }
 
@@ -1071,7 +1137,7 @@ router.post('/employees', canCreateEmployees, async (req, res) => {
   try {
     await validateEmployeeRefs(orgId, {
       department_id, location_id: resolvedLocationId, manager_id, access_role_id,
-    }, req.userProfile)
+    })
   } catch (err) {
     return res.status(400).json({ error: err.message })
   }
@@ -1269,7 +1335,7 @@ router.patch('/employees/:id', canUpdateEmployees, assertOrgOwnership('org_emplo
       manager_id: updates.manager_id,
       access_role_id: updates.access_role_id,
       employee_id: req.params.id,
-    }, req.userProfile)
+    })
   } catch (err) {
     return res.status(400).json({ error: err.message })
   }
@@ -1352,19 +1418,42 @@ router.patch('/employees/:id', canUpdateEmployees, assertOrgOwnership('org_emplo
 })
 
 router.delete('/employees/:id', canDeleteEmployees, assertOrgOwnership('org_employees'), async (req, res) => {
-  const { data, error } = await supabaseAdmin
+  const orgId = req.userProfile.org_id
+  const { data: current, error: lookupError } = await supabaseAdmin
     .from('org_employees')
-    .update({ is_active: false, updated_at: new Date().toISOString() })
+    .select('id, photo_url')
     .eq('id', req.params.id)
-    .eq('org_id', req.userProfile.org_id)
-    .select(EMPLOYEE_SELECT)
-    .single()
+    .eq('org_id', orgId)
+    .maybeSingle()
 
-  if (error) return res.status(500).json({ error: error.message })
+  if (lookupError) return res.status(500).json({ error: lookupError.message })
+  if (!current) return res.status(404).json({ error: 'Employee not found' })
 
-  const withPhoto = await attachEmployeePhotoUrl(data)
-  const decorated = await attachEmployeeHeadMeta(req.userProfile.org_id, withPhoto)
-  res.json(decorated)
+  if (current.photo_url) {
+    const { error: photoError } = await supabaseAdmin.storage
+      .from(ORG_ASSETS_BUCKET)
+      .remove([current.photo_url])
+    if (photoError) {
+      console.warn('Employee photo delete failed:', photoError.message)
+    }
+  }
+
+  const { error } = await supabaseAdmin
+    .from('org_employees')
+    .delete()
+    .eq('id', req.params.id)
+    .eq('org_id', orgId)
+
+  if (error) {
+    if (error.code === '23503') {
+      return res.status(409).json({
+        error: 'This employee is linked to other records and cannot be deleted.',
+      })
+    }
+    return res.status(500).json({ error: error.message })
+  }
+
+  res.json({ success: true, id: req.params.id })
 })
 
 const AREA_SELECT = `
@@ -1382,8 +1471,7 @@ router.get('/areas', canReadAreas, async (req, res) => {
     .order('name')
     .range(offset, offset + limit - 1)
 
-  const scopedLocationId = getScopedLocationId(req.orgPermissions)
-  const locationFilter = req.query.location_id || scopedLocationId
+  const locationFilter = resolveLocationFilter(req.orgPermissions, req.query.location_id)
   if (locationFilter) query = query.eq('location_id', locationFilter)
   if (req.query.department_id) query = query.eq('department_id', req.query.department_id)
   query = applyIlikeSearch(query, req.query.search, ['name', 'code'])
@@ -1395,7 +1483,9 @@ router.get('/areas', canReadAreas, async (req, res) => {
 
 router.get('/areas/template', canCreateAreas, async (req, res) => {
   try {
-    const buffer = await buildAreasTemplate(req.userProfile.org_id)
+    const buffer = await buildAreasTemplate(req.userProfile.org_id, {
+      locationId: resolveLocationFilter(req.orgPermissions, null),
+    })
     res.json({
       filename: 'areas-template.xlsx',
       contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -1417,7 +1507,8 @@ router.post('/areas/bulk', canCreateAreas, async (req, res) => {
     if (!buffer.length) {
       return res.status(400).json({ error: 'File data is invalid' })
     }
-    const result = await bulkImportAreas(req.userProfile.org_id, buffer)
+    const locationId = resolveLocationFilter(req.orgPermissions, null)
+    const result = await bulkImportAreas(req.userProfile.org_id, buffer, { locationId })
     const payload = await attachFailedFileToResult(result, buffer, 'areas-import-failed-rows.xlsx')
     res.json(payload)
   } catch (err) {
@@ -1522,8 +1613,14 @@ router.post('/employees/bulk', canCreateEmployees, async (req, res) => {
 })
 
 router.post('/areas', canCreateAreas, async (req, res) => {
-  const { name, code, location_id, department_id, is_active } = req.body
+  const { name, code, department_id, is_active } = req.body
   if (!name?.trim()) return res.status(400).json({ error: 'Name is required' })
+  let location_id
+  try {
+    location_id = coerceScopedLocationId(req.orgPermissions, req.body.location_id)
+  } catch (err) {
+    return res.status(err.status || 403).json({ error: err.message })
+  }
   if (!location_id) return res.status(400).json({ error: 'Location is required' })
   if (!department_id) return res.status(400).json({ error: 'Department is required' })
 
@@ -1580,6 +1677,11 @@ router.patch('/areas/:id', canUpdateAreas, assertOrgOwnership('areas'), async (r
     .single()
 
   if (currentError) return res.status(500).json({ error: currentError.message })
+  try {
+    assertLocationAccess(req.orgPermissions, current.location_id)
+  } catch (err) {
+    return res.status(err.status || 403).json({ error: err.message })
+  }
 
   const updates = { updated_at: new Date().toISOString() }
   if (req.body.name !== undefined) {
@@ -1591,7 +1693,14 @@ router.patch('/areas/:id', canUpdateAreas, assertOrgOwnership('areas'), async (r
   }
   if (req.body.is_active !== undefined) updates.is_active = Boolean(req.body.is_active)
 
-  const locationId = req.body.location_id ?? current.location_id
+  let locationId = current.location_id
+  if (req.body.location_id !== undefined) {
+    try {
+      locationId = coerceScopedLocationId(req.orgPermissions, req.body.location_id)
+    } catch (err) {
+      return res.status(err.status || 403).json({ error: err.message })
+    }
+  }
   const departmentId = req.body.department_id ?? current.department_id
 
   if (req.body.location_id !== undefined || req.body.department_id !== undefined) {
@@ -1636,6 +1745,21 @@ router.patch('/areas/:id', canUpdateAreas, assertOrgOwnership('areas'), async (r
 router.delete('/areas/:id', canDeleteAreas, assertOrgOwnership('areas'), async (req, res) => {
   const orgId = req.userProfile.org_id
 
+  const { data: current, error: currentError } = await supabaseAdmin
+    .from('areas')
+    .select('id, location_id')
+    .eq('id', req.params.id)
+    .eq('org_id', orgId)
+    .maybeSingle()
+
+  if (currentError) return res.status(500).json({ error: currentError.message })
+  if (!current) return res.status(404).json({ error: 'Area not found' })
+  try {
+    assertLocationAccess(req.orgPermissions, current.location_id)
+  } catch (err) {
+    return res.status(err.status || 403).json({ error: err.message })
+  }
+
   const { count, error: countError } = await supabaseAdmin
     .from('equipment')
     .select('*', { count: 'exact', head: true })
@@ -1653,7 +1777,183 @@ router.delete('/areas/:id', canDeleteAreas, assertOrgOwnership('areas'), async (
     .eq('id', req.params.id)
     .eq('org_id', orgId)
 
+  if (error) {
+    if (error.code === '23503') {
+      return res.status(409).json({
+        error: 'This area is linked to other records and cannot be deleted.',
+      })
+    }
+    return res.status(500).json({ error: error.message })
+  }
+  res.json({ id: req.params.id, deleted: true })
+})
+
+const WORK_CENTER_SELECT = `
+  id, org_id, location_id, name, code, description, is_active, created_at, updated_at,
+  org_locations!location_id ( id, name, code )
+`
+
+router.get('/work-centers', canReadWorkCenters, async (req, res) => {
+  const { limit, offset } = parsePagination(req.query, { defaultLimit: 50, maxLimit: 200 })
+  let query = supabaseAdmin
+    .from('work_centers')
+    .select(WORK_CENTER_SELECT, { count: 'exact' })
+    .eq('org_id', req.userProfile.org_id)
+    .order('name')
+    .range(offset, offset + limit - 1)
+
+  const scopedLocationId = getScopedLocationId(req.orgPermissions)
+  const locationFilter = req.query.location_id || scopedLocationId
+  if (locationFilter) {
+    query = query.or(`location_id.eq.${locationFilter},location_id.is.null`)
+  }
+  query = applyIlikeSearch(query, req.query.search, ['name', 'code', 'description'])
+
+  const { data, error, count } = await query
   if (error) return res.status(500).json({ error: error.message })
+  res.json(listEnvelope(data || [], { total: count || 0, limit, offset }))
+})
+
+router.post('/work-centers', canCreateWorkCenters, async (req, res) => {
+  const { name, code, description, location_id } = req.body
+  if (!name?.trim()) return res.status(400).json({ error: 'Name is required' })
+
+  const orgId = req.userProfile.org_id
+  let resolvedLocationId = location_id || null
+  try {
+    if (resolvedLocationId) {
+      resolvedLocationId = coerceScopedLocationId(req.orgPermissions, resolvedLocationId)
+    } else {
+      const scoped = getScopedLocationId(req.orgPermissions)
+      if (scoped) resolvedLocationId = scoped
+    }
+  } catch (err) {
+    return res.status(err.status || 403).json({ error: err.message })
+  }
+
+  if (resolvedLocationId) {
+    const { data: loc } = await supabaseAdmin
+      .from('org_locations')
+      .select('id')
+      .eq('id', resolvedLocationId)
+      .eq('org_id', orgId)
+      .maybeSingle()
+    if (!loc) return res.status(400).json({ error: 'Invalid location' })
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from('work_centers')
+    .insert({
+      org_id: orgId,
+      name: name.trim(),
+      code: code?.trim() ? code.trim().toUpperCase() : null,
+      description: description?.trim() || null,
+      location_id: resolvedLocationId,
+    })
+    .select(WORK_CENTER_SELECT)
+    .single()
+
+  if (error) {
+    if (error.code === '23505') return res.status(400).json({ error: 'Work center code already exists' })
+    return res.status(500).json({ error: error.message })
+  }
+  res.status(201).json(data)
+})
+
+router.patch('/work-centers/:id', canUpdateWorkCenters, assertOrgOwnership('work_centers'), async (req, res) => {
+  const orgId = req.userProfile.org_id
+  const { data: current, error: currentError } = await supabaseAdmin
+    .from('work_centers')
+    .select('*')
+    .eq('id', req.params.id)
+    .eq('org_id', orgId)
+    .single()
+
+  if (currentError) return res.status(500).json({ error: currentError.message })
+  if (!current) return res.status(404).json({ error: 'Work center not found' })
+  try {
+    if (current.location_id) assertLocationAccess(req.orgPermissions, current.location_id)
+  } catch (err) {
+    return res.status(err.status || 403).json({ error: err.message })
+  }
+
+  const updates = { updated_at: new Date().toISOString() }
+  if (req.body.name !== undefined) {
+    if (!req.body.name?.trim()) return res.status(400).json({ error: 'Name is required' })
+    updates.name = req.body.name.trim()
+  }
+  if (req.body.code !== undefined) {
+    updates.code = req.body.code?.trim() ? String(req.body.code).trim().toUpperCase() : null
+  }
+  if (req.body.description !== undefined) {
+    updates.description = req.body.description?.trim() || null
+  }
+  if (req.body.is_active !== undefined) updates.is_active = Boolean(req.body.is_active)
+  if (req.body.location_id !== undefined) {
+    try {
+      updates.location_id = req.body.location_id
+        ? coerceScopedLocationId(req.orgPermissions, req.body.location_id)
+        : null
+    } catch (err) {
+      return res.status(err.status || 403).json({ error: err.message })
+    }
+    if (updates.location_id) {
+      const { data: loc } = await supabaseAdmin
+        .from('org_locations')
+        .select('id')
+        .eq('id', updates.location_id)
+        .eq('org_id', orgId)
+        .maybeSingle()
+      if (!loc) return res.status(400).json({ error: 'Invalid location' })
+    }
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from('work_centers')
+    .update(updates)
+    .eq('id', req.params.id)
+    .eq('org_id', orgId)
+    .select(WORK_CENTER_SELECT)
+    .single()
+
+  if (error) {
+    if (error.code === '23505') return res.status(400).json({ error: 'Work center code already exists' })
+    return res.status(500).json({ error: error.message })
+  }
+  res.json(data)
+})
+
+router.delete('/work-centers/:id', canDeleteWorkCenters, assertOrgOwnership('work_centers'), async (req, res) => {
+  const orgId = req.userProfile.org_id
+  const { data: current, error: currentError } = await supabaseAdmin
+    .from('work_centers')
+    .select('id, location_id')
+    .eq('id', req.params.id)
+    .eq('org_id', orgId)
+    .maybeSingle()
+
+  if (currentError) return res.status(500).json({ error: currentError.message })
+  if (!current) return res.status(404).json({ error: 'Work center not found' })
+  try {
+    if (current.location_id) assertLocationAccess(req.orgPermissions, current.location_id)
+  } catch (err) {
+    return res.status(err.status || 403).json({ error: err.message })
+  }
+
+  const { error } = await supabaseAdmin
+    .from('work_centers')
+    .delete()
+    .eq('id', req.params.id)
+    .eq('org_id', orgId)
+
+  if (error) {
+    if (error.code === '23503') {
+      return res.status(409).json({
+        error: 'This work center is linked to other records and cannot be deleted.',
+      })
+    }
+    return res.status(500).json({ error: error.message })
+  }
   res.json({ id: req.params.id, deleted: true })
 })
 

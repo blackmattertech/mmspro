@@ -3,38 +3,29 @@ import { useNotifications } from '../../hooks/useNotifications'
 import NotificationPanel from '../dashboard/NotificationPanel'
 import '../dashboard/DashboardHeader.css'
 
-export default function NotificationBell({ variant = 'header', collapsed = false }) {
+export default function NotificationBell() {
   const [open, setOpen] = useState(false)
   const btnRef = useRef(null)
   const { unreadCount } = useNotifications()
-  const wrapClass = variant === 'sidebar'
-    ? `sidebar__notif${collapsed ? ' sidebar__notif--collapsed' : ''}`
-    : 'dash-header__icon-wrap'
 
   return (
-    <div className={wrapClass}>
+    <div className="dash-header__icon-wrap app-shell__notif">
       <button
         ref={btnRef}
         type="button"
-        className={variant === 'sidebar' ? 'sidebar__notif-btn' : 'dash-header__icon-btn dash-header__icon-btn--primary'}
+        className="dash-header__icon-btn dash-header__icon-btn--primary"
         aria-label="Notifications"
         aria-expanded={open}
         onClick={() => setOpen((prev) => !prev)}
       >
-        <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-          <path d="M10 2.5C7.5 2.5 6 4.5 6 7V10.5L4 13V14H16V13L14 10.5V7C14 4.5 12.5 2.5 10 2.5Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
-          <path d="M8.5 14V14.5C8.5 15.6 9.15 16.5 10 16.5C10.85 16.5 11.5 15.6 11.5 14.5V14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+          <path d="M10 2a5.25 5.25 0 0 0-5.25 5.25v2.37l-1.58 2.64A1.15 1.15 0 0 0 4.16 14h11.68a1.15 1.15 0 0 0 1-1.74l-1.59-2.64V7.25A5.25 5.25 0 0 0 10 2Z" />
+          <path d="M8.1 15.35a2.1 2.1 0 0 0 3.8 0H8.1Z" />
         </svg>
-        {variant === 'sidebar' && !collapsed && (
-          <span className="sidebar__notif-label">Notifications</span>
-        )}
         {unreadCount > 0 && (
-          <span className={variant === 'sidebar' ? 'sidebar__notif-badge' : 'dash-header__badge'}>
+          <span className="dash-header__badge">
             {unreadCount > 9 ? '9+' : unreadCount}
           </span>
-        )}
-        {variant === 'sidebar' && collapsed && (
-          <span className="sidebar__tooltip" aria-hidden="true">Notifications</span>
         )}
       </button>
       <NotificationPanel

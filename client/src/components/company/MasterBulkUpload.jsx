@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react'
 import { useBackdropClose } from '../../hooks/useBackdropClose'
 import NavIcon from '../layout/NavIcon'
+import PageBack from '../shared/PageBack'
 
 /**
  * Shared bulk template download + xlsx upload helpers for company masters.
@@ -117,7 +118,10 @@ export function MasterBulkActions({
             aria-labelledby="master-bulk-modal-title"
           >
             <div className="company-modal__header">
-              <h2 id="master-bulk-modal-title">{title}</h2>
+              <div className="modal__header-main">
+                <PageBack onClick={() => setOpen(false)} className="page-back--header" />
+                <h2 id="master-bulk-modal-title">{title}</h2>
+              </div>
               <button
                 type="button"
                 className="company-modal__close"
@@ -179,11 +183,19 @@ export function MasterBulkActions({
 
 export function MasterBulkResult({ result, noun }) {
   if (!result) return null
-  const tone = result.failed ? 'company-alert--warning' : 'company-alert--success'
+  const created = result.created || 0
+  const updated = result.updated || 0
+  const failed = result.failed || 0
+  const tone = failed ? 'company-alert--warning' : 'company-alert--success'
+  const parts = []
+  if (created) parts.push(`${created} ${noun}(s) created`)
+  if (updated) parts.push(`${updated} ${noun}(s) updated`)
+  if (!created && !updated && !failed) parts.push(`0 ${noun}(s) created`)
+  if (failed) parts.push(`${failed} row(s) failed`)
   return (
     <div className={`company-alert ${tone}`}>
-      <strong>{result.created}</strong> {noun}(s) created
-      {result.failed ? `, ${result.failed} row(s) failed.` : '.'}
+      <strong>{parts[0]}</strong>
+      {parts.length > 1 ? `, ${parts.slice(1).join(', ')}.` : '.'}
       {result.errors?.length > 0 && (
         <ul className="equipment-bulk-errors">
           {result.errors.slice(0, 10).map((err) => (

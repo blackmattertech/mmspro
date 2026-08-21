@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useBackdropClose } from '../../hooks/useBackdropClose'
+import PageBack from '../shared/PageBack'
 import { reorderItemsById } from '../../lib/assetFormSchema'
 import { useTaskMeta } from '../../hooks/useTaskMeta'
 import EditIcon from '../ui/EditIcon'
@@ -314,11 +315,14 @@ export default function TaskMetaSettingsModal({ onClose }) {
         aria-labelledby="task-meta-settings-title"
       >
         <div className="company-modal__header">
-          <div>
-            <h2 id="task-meta-settings-title">Task Masters</h2>
-            <p className="company-page__subtitle">
-              Manage statuses, priorities, categories, and tags.
-            </p>
+          <div className="modal__header-main">
+            <PageBack onClick={onClose} className="page-back--header" label="Tasks & Follow-ups" />
+            <div>
+              <h2 id="task-meta-settings-title">Task Masters</h2>
+              <p className="company-page__subtitle">
+                Manage statuses, priorities, categories, and tags.
+              </p>
+            </div>
           </div>
           <button type="button" className="company-modal__close" onClick={onClose} aria-label="Close">×</button>
         </div>

@@ -26,11 +26,16 @@ import './RolesAccess.css'
 const EMPTY_CAPS = {
   is_org_admin: false,
   location_id: null,
+  department_id: null,
+  employee_id: null,
+  is_location_head: false,
+  is_department_head: false,
   can_create: false,
   can_read: false,
   can_update: false,
   can_delete: false,
   can_assign: false,
+  can_assign_approval: false,
 }
 
 const ROLE_FILTER_FIELDS = [
@@ -67,6 +72,7 @@ export default function RolesAccess() {
   const { employees } = useEmployees({
     locationId: isOrgAdmin ? undefined : (userLocationId || undefined),
     enabled: assignOpen,
+    limit: 200,
   })
 
   useEffect(() => {
@@ -138,9 +144,41 @@ export default function RolesAccess() {
   const canDelete = capability.can_delete
   const canAssign = capability.can_assign
   const canManageAny = canCreate || canUpdate || canDelete || canAssign
+  const canManageRole = (role) => Boolean(role?.can_manage)
+  const canAssignRole = (role) => Boolean(role?.can_assign)
   const canOpenCreate = canCreate
   const canShowEditor = (editorMode === 'create' && canCreate)
-    || (editorMode === 'edit' && canUpdate)
+    || (editorMode === 'edit' && canUpdate && canManageRole(selectedRole))
+  const canEditSelected = canUpdate && canManageRole(selectedRole)
+  const canDeleteSelected = canDelete && canManageRole(selectedRole)
+  const canAssignSelected = canAssign && canAssignRole(selectedRole)
+
+  const assignableEmployees = useMemo(() => {
+    if (isOrgAdmin || capability.is_location_head) return employees
+    if (capability.is_department_head) {
+      return employees.filter((employee) => (
+        (capability.department_id && employee.department_id === capability.department_id)
+        || employee.manager_id === capability.employee_id
+        || employee.id === capability.employee_id
+      ))
+    }
+    return employees
+  }, [
+    capability.department_id,
+    capability.employee_id,
+    capability.is_department_head,
+    capability.is_location_head,
+    employees,
+    isOrgAdmin,
+  ])
+
+  const assignScopeHint = isOrgAdmin
+    ? null
+    : capability.is_location_head
+      ? 'Only employees at your location are listed. Assignments outside your location are left unchanged.'
+      : capability.is_department_head
+        ? 'Only employees in your department or reporting to you are listed. Other assignees are left unchanged.'
+        : 'Only employees at your location are listed. Assignments outside your location are left unchanged.'
 
   const openCreate = () => {
     if (!canOpenCreate) return
@@ -150,7 +188,7 @@ export default function RolesAccess() {
   }
 
   const openEdit = (role) => {
-    if (!canUpdate) return
+    if (!canUpdate || !canManageRole(role)) return
     setSelectedId(role.id)
     setEditorMode('edit')
   }
@@ -171,6 +209,7 @@ export default function RolesAccess() {
   }
 
   const handleDelete = async (role) => {
+    if (!canManageRole(role)) return
     if (!window.confirm(`Delete role "${role.name}"? Assigned employees will lose this role.`)) return
     await remove(role.id)
     if (selectedId === role.id) {
@@ -223,7 +262,7 @@ export default function RolesAccess() {
           />
           <h1 className="roles-page__title">Roles & Access</h1>
           <p className="roles-page__subtitle">
-            Create roles, define module permissions, and assign them to employees
+            Create roles, define module permissions, and assign who can approve work requests and work orders
           </p>
         </div>
       </header>
@@ -385,10 +424,11 @@ export default function RolesAccess() {
                                 >
                                   {isSelected ? 'Hide access' : 'View access'}
                                 </button>
-                                {canAssign && (
+                                {canAssign && canAssignRole(role) && (
                                   <button
                                     type="button"
                                     className="company-link"
+                                    title={role.has_approval ? 'Assign who can approve' : 'Assign employees'}
                                     onClick={() => {
                                       setSelectedId(role.id)
                                       setAssignOpen(true)
@@ -397,7 +437,7 @@ export default function RolesAccess() {
                                     Assign
                                   </button>
                                 )}
-                                {canUpdate && (
+                                {canUpdate && canManageRole(role) && (
                                   <button
                                     type="button"
                                     className="company-btn company-btn--secondary company-btn--compact company-btn--icon"
@@ -408,7 +448,7 @@ export default function RolesAccess() {
                                     <EditIcon />
                                   </button>
                                 )}
-                                {canDelete && (
+                                {canDelete && canManageRole(role) && (
                                   <button
                                     type="button"
                                     className="company-btn company-btn--danger company-btn--compact company-btn--icon"
@@ -465,9 +505,9 @@ export default function RolesAccess() {
                   <p className="roles-detail__desc">{selectedRole.description}</p>
                 )}
               </div>
-              {(canAssign || canUpdate || canDelete) && (
+              {(canAssignSelected || canEditSelected || canDeleteSelected) && (
                 <div className="roles-detail__actions">
-                  {canAssign && (
+                  {canAssignSelected && (
                     <button
                       type="button"
                       className="company-btn company-btn--secondary"
@@ -476,7 +516,7 @@ export default function RolesAccess() {
                       Assign to Employees
                     </button>
                   )}
-                  {canUpdate && (
+                  {canEditSelected && (
                     <button
                       type="button"
                       className="company-btn company-btn--secondary company-btn--compact company-btn--icon"
@@ -487,7 +527,7 @@ export default function RolesAccess() {
                       <EditIcon />
                     </button>
                   )}
-                  {canDelete && (
+                  {canDeleteSelected && (
                     <button
                       type="button"
                       className="company-btn company-btn--danger company-btn--compact company-btn--icon"
@@ -504,11 +544,11 @@ export default function RolesAccess() {
 
             <RolePermissionsTable
               permissions={displayPermissions}
-              canEdit={canUpdate}
-              onChange={canUpdate ? setPermDraft : undefined}
+              canEdit={canEditSelected}
+              onChange={canEditSelected ? setPermDraft : undefined}
             />
 
-            {canUpdate && permDraft && (
+            {canEditSelected && permDraft && (
               <div className="roles-detail__perm-footer">
                 <button
                   type="button"
@@ -531,11 +571,12 @@ export default function RolesAccess() {
         )}
       </div>
 
-      {assignOpen && selectedRole && canAssign && (
+      {assignOpen && selectedRole && canAssignSelected && (
         <AssignEmployeesModal
           role={selectedRole}
-          employees={employees}
+          employees={assignableEmployees}
           saving={saving}
+          scopeHint={assignScopeHint}
           onClose={() => setAssignOpen(false)}
           onSave={handleAssign}
         />

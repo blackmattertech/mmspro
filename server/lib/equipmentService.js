@@ -418,7 +418,12 @@ export async function deleteEquipment(orgId, id) {
     .eq('id', id)
     .eq('org_id', orgId)
 
-  if (error) throw error
+  if (error) {
+    if (error.code === '23503') {
+      throw Object.assign(new Error('This equipment is linked to other records and cannot be deleted.'), { status: 409 })
+    }
+    throw error
+  }
   if (existing.image_path) {
     await deleteEquipmentImageFile(existing.image_path).catch(() => {})
   }

@@ -1,5 +1,6 @@
 import { useMemo, useState, useEffect, useRef } from 'react'
 import { useBackdropClose } from '../../hooks/useBackdropClose'
+import PageBack from '../shared/PageBack'
 import { getOrgAssetSignedUrl, validateLogoFile } from '../../lib/orgAssets'
 import CreatableSelect from './CreatableSelect'
 import EmployeeSelect from './EmployeeSelect'
@@ -80,7 +81,9 @@ export default function EmployeeModal({
   const activeDepartments = departments.filter((d) => d.is_active !== false)
   const activeEmployees = employees.filter((e) => e.is_active !== false)
   const managerOptions = activeEmployees.filter((e) =>
-    e.id !== employee?.id && (!form.location_id || e.location_id === form.location_id),
+    e.id !== employee?.id
+    && (!form.location_id || e.location_id === form.location_id)
+    && (!form.department_id || e.department_id === form.department_id),
   )
 
   const departmentsForLocation = useMemo(
@@ -353,7 +356,10 @@ export default function EmployeeModal({
           aria-labelledby="employee-modal-title"
         >
           <div className="company-modal__header">
-            <h2 id="employee-modal-title">{employee ? 'Edit Employee' : 'Add Employee'}</h2>
+            <div className="modal__header-main">
+              <PageBack onClick={onClose} className="page-back--header" label="Employees" />
+              <h2 id="employee-modal-title">{employee ? 'Edit Employee' : 'Add Employee'}</h2>
+            </div>
             <button type="button" className="company-modal__close" onClick={onClose} aria-label="Close">×</button>
           </div>
           <form className="company-modal__form" onSubmit={handleSubmit}>
@@ -529,6 +535,7 @@ export default function EmployeeModal({
               onChange={(department_id) => setForm({
                 ...form,
                 department_id,
+                manager_id: '',
               })}
               options={departmentsForLocation}
               getOptionValue={(dept) => dept.id}
@@ -539,13 +546,14 @@ export default function EmployeeModal({
             />
 
 
+            <div className="company-form__row">
             <EmployeeSelect
               label="Manager"
               value={form.manager_id}
               onChange={(manager_id) => setForm({ ...form, manager_id })}
               options={managerOptions}
-              placeholder="None"
-              disabled={!form.location_id}
+              placeholder={form.department_id ? 'None' : 'Select department first'}
+              disabled={!form.department_id}
             />
 
             <label className="company-form__field">
@@ -578,6 +586,7 @@ export default function EmployeeModal({
                 </span>
               )}
             </label>
+            </div>
 
             {error && <p className="company-alert">{error}</p>}
             <div className="company-modal__actions">

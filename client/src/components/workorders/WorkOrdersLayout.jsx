@@ -9,7 +9,6 @@ import { usePermissions } from '../../hooks/usePermissions'
 import { orgPath } from '../../config/navigation'
 import { WORK_ORDER_TABS, getWorkOrderActiveTab, isWorkOrderTabActive } from '../../config/workOrders'
 import { createFilterRule, countActiveAdvancedRules, WO_SORT_OPTIONS } from '../../lib/workOrderFilters'
-import WorkOrderTypeModal from './WorkOrderTypeModal'
 import WorkOrderAdvancedFilter from './WorkOrderAdvancedFilter'
 import TableFilterToolbar from '../shared/TableFilterToolbar'
 import '../company/CompanyShared.css'
@@ -40,13 +39,14 @@ export default function WorkOrdersLayout() {
   const [filterValue, setFilterValue] = useState('')
   const [sortBy, setSortBy] = useState('newest')
   const [advancedRules, setAdvancedRules] = useState([createFilterRule()])
-  const [showCreateModal, setShowCreateModal] = useState(false)
 
   const canSeeAllLocations = isOrgAdmin
   const canCreateWorkOrders = canCreate('work_orders_manual') || canCreate('work_orders')
   const userLocationId = scopedLocationId || employee?.location_id || null
 
   const isCreatePage = location.pathname.includes('/work-orders/manual/create')
+  const isEditPage = /\/work-orders\/manual\/[^/]+\/edit(?:\/|$)/.test(location.pathname)
+  const isFormPage = isCreatePage || isEditPage
   const visibleTabs = useMemo(
     () => WORK_ORDER_TABS.filter((tab) => canRead(tab.moduleKey) || canRead('work_orders')),
     [canRead],
@@ -65,11 +65,8 @@ export default function WorkOrdersLayout() {
   const totalFilterCount = advancedFilterCount + fieldFilterActive
 
   const handleAddWorkOrder = () => {
-    if (activeTab === 'manual' && org?.slug) {
-      navigate(orgPath(org.slug, 'work-orders/manual/create'))
-      return
-    }
-    setShowCreateModal(true)
+    if (!org?.slug) return
+    navigate(orgPath(org.slug, 'work-orders/manual/create'))
   }
 
   const outletContext = useMemo(() => ({
@@ -111,7 +108,7 @@ export default function WorkOrdersLayout() {
         <div className="wo-page__bar-controls">
           {toolbarLeft}
 
-          {!isCreatePage && (
+          {!isFormPage && (
             <TableFilterToolbar
               search={{
                 value: search,
@@ -136,7 +133,7 @@ export default function WorkOrdersLayout() {
                     activeCount={totalFilterCount}
                   />
                   {toolbarRight}
-                  {canCreateWorkOrders && (
+                  {canCreateWorkOrders && activeTab !== 'scheduled' && (
                     <button
                       type="button"
                       className="company-btn company-btn--primary wo-page__add-btn"
@@ -150,20 +147,7 @@ export default function WorkOrdersLayout() {
             />
           )}
 
-          {isCreatePage && (
-            <>
-              {toolbarRight}
-              {canCreateWorkOrders && (
-                <button
-                  type="button"
-                  className="company-btn company-btn--primary wo-page__add-btn"
-                  onClick={handleAddWorkOrder}
-                >
-                  + Add Work Order
-                </button>
-              )}
-            </>
-          )}
+          {isFormPage && toolbarRight}
         </div>
       </div>
 
@@ -172,10 +156,6 @@ export default function WorkOrdersLayout() {
           <Outlet context={outletContext} />
         </div>
       </div>
-
-      {showCreateModal && (
-        <WorkOrderTypeModal onClose={() => setShowCreateModal(false)} />
-      )}
     </div>
   )
 }

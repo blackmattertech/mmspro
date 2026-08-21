@@ -71,6 +71,13 @@
 --   62-performance-indexes-3.sql               → 62-performance-indexes-3 — List/query covering indexes
 --   63-dashboard-stats.sql                      → 63-dashboard-stats — Work order dashboard aggregations RPC
 --   64-user-notifications.sql                   → 64-user-notifications — In-app notification inbox
+--   65-planned-maintenance.sql                    → 65-planned-maintenance — Planned Maintenance & Scheduled WOs
+--   66-work-request-short-description.sql         → 66-work-request-short-description — WR/WO short description
+--   67-department-head-approval.sql               → 67-department-head-approval — DH approval & role assignment
+--   68-work-centers.sql                           → 68-work-centers — Work center master
+--   69-work-request-job-nature.sql                  → 69-work-request-job-nature — WR job nature
+--   70-work-order-permit-details.sql                → 70-work-order-permit-details — Per-type WO permits
+--   71-work-order-daily-logs.sql                    → 71-work-order-daily-logs — WO daily work logs
 --
 -- OTHER:
 --   supabase.sql                  → supabase — Full schema (new projects)
