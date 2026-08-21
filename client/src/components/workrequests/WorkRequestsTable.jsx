@@ -3,12 +3,14 @@ import { useLocation } from 'react-router-dom'
 import { listWorkRequests, getWorkRequest } from '../../lib/api-work-requests'
 import { useWorkOrderList } from '../../hooks/useWorkOrderList'
 import { usePermissions } from '../../hooks/usePermissions'
+import { useOpenQueryId } from '../../hooks/useOpenQueryId'
 import { applyWorkRequestFilters, sortWorkRequests } from '../../lib/workRequestFilters'
 import WorkRequestDetailModal from './WorkRequestDetailModal'
 import TablePagination from '../shared/TablePagination'
 import { useTablePagination } from '../../hooks/useTablePagination'
 import { useDebouncedValue } from '../../hooks/useDebouncedValue'
 import { WORK_REQUEST_COLUMNS } from './workRequestColumns'
+import EmployeeAvatar from '../company/EmployeeAvatar'
 import './WorkRequests.css'
 import '../company/CompanyShared.css'
 
@@ -51,6 +53,31 @@ function equipmentLabel(row) {
   return '—'
 }
 
+function requesterName(row) {
+  return row.requester?.name || row.requester?.full_name || row.requester?.email || ''
+}
+
+function requesterMeta(row) {
+  return [row.requester?.department_name || row.requester?.department?.name, row.requester?.role]
+    .filter(Boolean)
+    .join(' · ')
+}
+
+function RequesterCell({ row }) {
+  const name = requesterName(row)
+  if (!name) return '—'
+  const meta = requesterMeta(row)
+  return (
+    <span className="wr-requester">
+      <EmployeeAvatar employee={row.requester} size="sm" />
+      <span className="wr-requester__copy">
+        <span className="wr-requester__name">{name}</span>
+        {meta && <span className="wr-requester__meta">{meta}</span>}
+      </span>
+    </span>
+  )
+}
+
 function techniciansLabel(row) {
   const techs = row.assigned_technicians || []
   if (!techs.length) return '—'
@@ -66,6 +93,7 @@ const COLUMN_CELL_CLASS = {
   priority: 'wr-table__cell wr-table__cell--priority',
   status: 'wr-table__cell wr-table__cell--status',
   breakdown: 'wr-table__cell wr-table__cell--short',
+  job_nature: 'wr-table__cell wr-table__cell--short',
   requester: 'wr-table__cell wr-table__cell--person',
   equipment: 'wr-table__cell wr-table__cell--dept',
   remarks: 'wr-table__cell wr-table__cell--text',
@@ -98,7 +126,7 @@ function renderCell(row, columnId) {
     case 'order_to':
       return clampText(row.order_to?.name, 'wr-table__ellipsis')
     case 'problem':
-      return clampText(row.problem_description)
+      return clampText(row.short_description)
     case 'priority':
       return (
         <span style={{ textTransform: 'capitalize' }}>{row.priority}</span>
@@ -111,8 +139,10 @@ function renderCell(row, columnId) {
       )
     case 'breakdown':
       return row.is_breakdown_label || (row.is_breakdown ? 'Yes' : 'No')
+    case 'job_nature':
+      return row.job_nature || row.job_nature_label || '—'
     case 'requester':
-      return clampText(row.requester?.full_name || row.requester?.email, 'wr-table__ellipsis')
+      return <RequesterCell row={row} />
     case 'equipment':
       return clampText(equipmentLabel(row), 'wr-table__ellipsis')
     case 'remarks':
@@ -141,7 +171,7 @@ export default function WorkRequestsTable({
   visibleColumnIds = DEFAULT_VISIBLE,
 }) {
   const location = useLocation()
-  const [selectedId, setSelectedId] = useState(null)
+  const [selectedId, setSelectedId, closeSelected] = useOpenQueryId()
   const { canUpdate } = usePermissions()
   const canApprove = filter === 'incoming' && (
     canUpdate('work_request_approve') || canUpdate('work_request_incoming')
@@ -251,7 +281,7 @@ export default function WorkRequestsTable({
           requestId={selectedId}
           fetchWorkRequest={getWorkRequest}
           canApprove={canApprove}
-          onClose={() => setSelectedId(null)}
+          onClose={closeSelected}
           onUpdated={() => reload({ silent: true })}
         />
       )}

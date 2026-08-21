@@ -3,6 +3,7 @@ import { verifyAuth } from '../../middleware/auth.js'
 import { requireOrgAccess } from '../../middleware/orgAccess.js'
 import { notifyUser, notifyOrg, isFirebaseAdminConfigured } from '../../services/notifications.js'
 import { supabaseAdmin } from '../../services/supabase.js'
+import { enrichNotificationUrls } from '../../lib/notificationInboxUrl.js'
 
 const router = Router()
 router.use(verifyAuth, requireOrgAccess)
@@ -50,7 +51,18 @@ router.get('/', async (req, res) => {
       }
       throw error
     }
-    const items = (data || []).map(mapNotification)
+    let items = (data || []).map(mapNotification)
+    try {
+      const enriched = await enrichNotificationUrls(
+        req.user.id,
+        req.userProfile?.org_id,
+        null,
+        data || [],
+      )
+      items = enriched.map(mapNotification)
+    } catch (err) {
+      console.warn('Failed to rewrite notification URLs:', err.message)
+    }
     res.json({
       items,
       unread: items.filter((item) => !item.read).length,

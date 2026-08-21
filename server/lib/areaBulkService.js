@@ -1,13 +1,15 @@
 import ExcelJS from 'exceljs'
 import { supabaseAdmin } from '../services/supabase.js'
+import {
+  normalizeMasterName,
+  findDepartmentForLocation,
+  scopePlacementOptions,
+  departmentValidLabels,
+} from './bulkMasterMatch.js'
 
 const TEMPLATE_SHEET = 'Template'
 const VALID_VALUES_SHEET = 'Valid values'
 const TEMPLATE_COLUMNS = ['Name', 'Code', 'Location', 'Department']
-
-function normalizeName(value) {
-  return String(value ?? '').trim().toLowerCase()
-}
 
 async function loadPlacementOptions(orgId) {
   const [locations, departments] = await Promise.all([
@@ -18,7 +20,7 @@ async function loadPlacementOptions(orgId) {
       .order('name'),
     supabaseAdmin
       .from('departments')
-      .select('id, name, location_id, all_locations, is_active')
+      .select('id, name, code, location_id, all_locations, is_active')
       .eq('org_id', orgId)
       .order('name'),
   ])
@@ -32,8 +34,9 @@ async function loadPlacementOptions(orgId) {
   }
 }
 
-export async function buildAreasTemplate(orgId) {
-  const { locations, departments } = await loadPlacementOptions(orgId)
+export async function buildAreasTemplate(orgId, { locationId } = {}) {
+  const loaded = await loadPlacementOptions(orgId)
+  const { locations, departments } = scopePlacementOptions(loaded, locationId)
 
   const workbook = new ExcelJS.Workbook()
   workbook.creator = 'MMS Pro'
@@ -55,12 +58,19 @@ export async function buildAreasTemplate(orgId) {
     },
     {
       header: 'Department',
-      values: departments.map((d) => {
-        const loc = d.all_locations
+      values: departments.flatMap((d) => departmentValidLabels(d, locations)),
+    },
+    {
+      header: 'Department code',
+      values: departments.map((d) => d.code).filter(Boolean),
+    },
+    {
+      header: 'Department applies to',
+      values: departments.map((d) => (
+        d.all_locations
           ? 'All locations'
-          : locations.find((l) => l.id === d.location_id)?.name
-        return loc ? `${d.name} — ${loc}` : d.name
-      }),
+          : locations.find((l) => l.id === d.location_id)?.name || ''
+      )),
     },
   ]
 
@@ -92,19 +102,11 @@ function cellToString(value) {
 }
 
 function resolveLocationDepartment(rowValues, options) {
-  const locName = normalizeName(rowValues.Location)
-  const location = options.locations.find((l) => normalizeName(l.name) === locName)
+  const locName = normalizeMasterName(rowValues.Location)
+  const location = options.locations.find((l) => normalizeMasterName(l.name) === locName)
   if (!location) throw new Error(`Unknown location "${rowValues.Location || ''}"`)
 
-  const deptCell = String(rowValues.Department || '').trim()
-  const deptNameOnly = deptCell.includes('—')
-    ? deptCell.split('—')[0].trim()
-    : deptCell
-  const deptName = normalizeName(deptNameOnly)
-  const department = options.departments.find((d) => (
-    normalizeName(d.name) === deptName
-    && (d.all_locations || d.location_id === location.id)
-  ))
+  const department = findDepartmentForLocation(options.departments, rowValues.Department, location)
   if (!department) {
     throw new Error(`Unknown department "${rowValues.Department || ''}" for the location`)
   }
@@ -112,15 +114,59 @@ function resolveLocationDepartment(rowValues, options) {
   return { location_id: location.id, department_id: department.id }
 }
 
-async function createAreaRow(orgId, { name, code, location_id, department_id }) {
+async function upsertAreaRow(orgId, { name, code, location_id, department_id }, { byCode, byKey, locationId }) {
+  const trimmedName = name.trim()
   const normalizedCode = code?.trim() ? code.trim().toUpperCase() : null
+  const key = `${normalizeMasterName(trimmedName)}|${location_id}|${department_id}`
+  const existing = (
+    (normalizedCode && byCode.get(normalizeMasterName(normalizedCode)))
+    || byKey.get(key)
+    || null
+  )
+
+  if (existing) {
+    if (locationId && existing.location_id !== locationId) {
+      throw new Error('Area code already exists at another location')
+    }
+    const nextCode = normalizedCode || existing.code || null
+    const { error } = await supabaseAdmin
+      .from('areas')
+      .update({
+        name: trimmedName,
+        code: nextCode,
+        location_id,
+        department_id,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', existing.id)
+      .eq('org_id', orgId)
+
+    if (error) {
+      if (error.code === '23505') throw new Error('Area code already exists')
+      throw error
+    }
+
+    const next = {
+      ...existing,
+      name: trimmedName,
+      code: nextCode,
+      location_id,
+      department_id,
+    }
+    if (existing.code) byCode.delete(normalizeMasterName(existing.code))
+    byKey.delete(`${normalizeMasterName(existing.name)}|${existing.location_id}|${existing.department_id}`)
+    if (next.code) byCode.set(normalizeMasterName(next.code), next)
+    byKey.set(`${normalizeMasterName(next.name)}|${next.location_id}|${next.department_id}`, next)
+    return { action: 'updated', id: existing.id }
+  }
+
   const { data, error } = await supabaseAdmin
     .from('areas')
     .insert({
       org_id: orgId,
       location_id,
       department_id,
-      name: name.trim(),
+      name: trimmedName,
       code: normalizedCode,
       is_active: true,
     })
@@ -131,11 +177,21 @@ async function createAreaRow(orgId, { name, code, location_id, department_id }) 
     if (error.code === '23505') throw new Error('Area code already exists')
     throw error
   }
-  return data
+
+  const created = {
+    id: data.id,
+    name: trimmedName,
+    code: normalizedCode,
+    location_id,
+    department_id,
+  }
+  if (created.code) byCode.set(normalizeMasterName(created.code), created)
+  byKey.set(key, created)
+  return { action: 'created', id: data.id }
 }
 
-export async function bulkImportAreas(orgId, buffer) {
-  const options = await loadPlacementOptions(orgId)
+export async function bulkImportAreas(orgId, buffer, { locationId } = {}) {
+  const options = scopePlacementOptions(await loadPlacementOptions(orgId), locationId)
 
   const workbook = new ExcelJS.Workbook()
   await workbook.xlsx.load(buffer)
@@ -146,11 +202,11 @@ export async function bulkImportAreas(orgId, buffer) {
   const columnByHeader = new Map()
   headerRow.eachCell((cell, colNumber) => {
     const header = cellToString(cell.value)
-    if (header) columnByHeader.set(normalizeName(header), colNumber)
+    if (header) columnByHeader.set(normalizeMasterName(header), colNumber)
   })
 
   for (const col of TEMPLATE_COLUMNS) {
-    if (!columnByHeader.has(normalizeName(col))) {
+    if (!columnByHeader.has(normalizeMasterName(col))) {
       throw Object.assign(
         new Error(`Missing column "${col}" in template. Download the latest template and try again.`),
         { status: 400 },
@@ -158,14 +214,27 @@ export async function bulkImportAreas(orgId, buffer) {
     }
   }
 
-  const results = { created: 0, failed: 0, errors: [], preview: [] }
+  const results = { created: 0, updated: 0, failed: 0, errors: [], preview: [] }
   const MAX_PREVIEW = 250
+
+  const { data: existingAreas, error: existingError } = await supabaseAdmin
+    .from('areas')
+    .select('id, name, code, location_id, department_id')
+    .eq('org_id', orgId)
+  if (existingError) throw existingError
+
+  const byCode = new Map()
+  const byKey = new Map()
+  for (const area of existingAreas || []) {
+    if (area.code) byCode.set(normalizeMasterName(area.code), area)
+    byKey.set(`${normalizeMasterName(area.name)}|${area.location_id}|${area.department_id}`, area)
+  }
 
   for (let rowNumber = 2; rowNumber <= sheet.rowCount; rowNumber++) {
     const row = sheet.getRow(rowNumber)
     const rowValues = {}
     for (const col of TEMPLATE_COLUMNS) {
-      const colNumber = columnByHeader.get(normalizeName(col))
+      const colNumber = columnByHeader.get(normalizeMasterName(col))
       rowValues[col] = cellToString(row.getCell(colNumber).value)
     }
 
@@ -174,12 +243,13 @@ export async function bulkImportAreas(orgId, buffer) {
     try {
       if (!rowValues.Name?.trim()) throw new Error('Name is required')
       const placement = resolveLocationDepartment(rowValues, options)
-      await createAreaRow(orgId, {
+      const saved = await upsertAreaRow(orgId, {
         name: rowValues.Name,
         code: rowValues.Code,
         ...placement,
-      })
-      results.created += 1
+      }, { byCode, byKey, locationId })
+      if (saved.action === 'updated') results.updated += 1
+      else results.created += 1
       if (results.preview.length < MAX_PREVIEW) {
         results.preview.push({
           row: rowNumber,

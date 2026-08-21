@@ -5,6 +5,7 @@
 }
 
 .app-shell__main {
+  position: relative;
   margin-left: 260px;
   width: calc(100% - 260px);
   max-width: calc(100% - 260px);
@@ -13,6 +14,37 @@
   min-height: 100dvh;
   transition: margin-left 0.2s ease, width 0.2s ease, max-width 0.2s ease;
   box-sizing: border-box;
+}
+
+.app-shell__notif {
+  position: fixed;
+  top: 22px;
+  right: 28px;
+  z-index: 1250;
+}
+
+/* Dashboard header is taller (logo), so keep the bell on the Create Work Order row. */
+.app-shell:has(.dashboard) .app-shell__notif {
+  top: 24px;
+  height: 56px;
+  display: flex;
+  align-items: center;
+}
+
+.app-shell {
+  --app-notif-gutter: 88px;
+}
+
+.app-shell .app-shell__main .dash-header,
+.app-shell .app-shell__main .company-page__header,
+.app-shell .app-shell__main .roles-page__header,
+.app-shell .app-shell__main .wo-page__top,
+.app-shell .app-shell__main .wr-page__toolbar-row--tabs,
+.app-shell .app-shell__main .tasks-page__header,
+.app-shell .wr-detail-sheet__header,
+.app-shell .modal:not(.company-modal--popup) .modal__header,
+.app-shell .company-modal:not(.company-modal--popup) .company-modal__header {
+  padding-right: var(--app-notif-gutter);
 }
 
 .app-shell--sidebar-collapsed .app-shell__main {

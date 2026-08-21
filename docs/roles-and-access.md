@@ -21,11 +21,13 @@ Roles are **org-wide**. Employees are still limited to their own `location_id` f
 | Actor | Roles visible on Roles & Access |
 |-------|----------------------------------|
 | Company admin / super_admin | All roles in the org |
-| Everyone else | Only roles they **created** (`created_by`) |
+| Location Head (and anyone with `roles_access` read) | All roles in the org |
 
-Roles with no `created_by` (e.g. seeded Location Head, or roles created before this tracking) are treated as admin-owned and are hidden from non-admins.
+Location heads can **assign** any of those roles when creating or editing an employee. They can still only **edit / delete** roles they created. Seeded or admin-created roles are view-only for them, except they **can assign people** to roles that include work request or work order **approval**.
 
-Apply patch `33-access-roles-created-by.sql` so new roles store the creator.
+Department Heads (seeded role, and any role named “Department Head”) have approval access by default. On Roles & Access they can assign **their team** (same department or direct reports) to approval roles. Location Heads can do the same for employees at their location.
+
+Apply patch `33-access-roles-created-by.sql` so new roles store the creator. Apply `67-department-head-approval.sql` to seed the Department Head role.
 
 ### Modules (grouped)
 
@@ -33,7 +35,7 @@ Apply patch `33-access-roles-created-by.sql` so new roles store the creator.
 - **Work Orders** — Received, Assigned, Scheduled, Manual
 - **Calendar**
 - **Reports** — Daily Logs, Plant Wise, Open Logs, Completed Logs, Overdue
-- **Company** — Company profile, Locations, Departments, Employees
+- **Company** — Company profile, Locations, Departments, Work Center, Employees
 - **Masters** — Assets, Areas, Equipment
 - **Configuration** — Roles & Access, Settings
 
@@ -69,9 +71,15 @@ The client loads this via `usePermissions()` and uses it for nav, route guards, 
 - [ ] User, `employees.create`: can add employees at own location only; cannot edit company profile without `company.update`
 - [ ] User at Location A: employee list only shows Location A
 - [ ] Roles & Access: update-only user can open Update Role editor
-- [ ] Non-admin: Roles & Access list shows only roles they created; admin-created roles hidden
+- [ ] Non-admin with Roles & Access: list shows all org roles (including admin-created)
 - [ ] Admin: sees all roles including seeded Location Head
-- [ ] Location Head: Create Role button visible; can create roles; cannot see admin-created roles
+- [ ] Location Head: Create Role button visible; can create roles; can view admin-created roles; cannot edit/delete them
+- [ ] Location Head: can assign any org role when creating an employee
 - [ ] Seed patch `31-seed-location-head-role.sql` creates Location Head template when applied
 - [ ] Patch `33-access-roles-created-by.sql` applied before relying on creator filtering
 - [ ] Patch `34-location-head-roles-access.sql` grants Location Head roles_access CRUD
+- [ ] Patch `67-department-head-approval.sql` seeds Department Head with approve + Roles & Access
+- [ ] Department Head: can approve incoming work requests / work orders
+- [ ] Department Head: Roles & Access shows Assign on approval roles; only their team is listed
+- [ ] Location Head: can Assign people at their location to approval roles they did not create
+- [ ] Assigning at one location/department does not remove assignees elsewhere

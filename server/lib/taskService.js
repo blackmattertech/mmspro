@@ -1,5 +1,6 @@
 import { supabaseAdmin } from '../services/supabase.js'
 import { notifyUser } from '../services/notifications.js'
+import { notifyTaskAssigned } from './taskNotifyRecipients.js'
 import { getEmployeeByProfile } from './workRequestService.js'
 import { ensureTaskMetaForOrg, listTaskStatuses, listTaskPriorities } from './taskMetaService.js'
 import { ensureTaskCategoriesForOrg } from './taskCategoryService.js'
@@ -857,25 +858,13 @@ export async function createTask(orgId, profileId, body) {
   })
 
   try {
-    const assigneeIds = assignment.assigneeEmployeeIds || []
-    if (assigneeIds.length) {
-      const { data: employees } = await supabaseAdmin
-        .from('org_employees')
-        .select('id, profile_id')
-        .in('id', assigneeIds)
-
-      const notifyTargets = (employees || []).filter(
-        (emp) => emp.profile_id && emp.profile_id !== profileId,
-      )
-
-      setImmediate(() => {
-        Promise.all(notifyTargets.map((emp) => notifyUser(emp.profile_id, {
-          title: 'Task assigned',
-          body: validated.title,
-          data: { type: 'task_assigned', task_id: taskId },
-        }))).catch(() => {})
-      })
-    }
+    await notifyTaskAssigned(orgId, {
+      title: validated.title,
+      taskId,
+      visibilityType,
+      assignment,
+      excludeProfileId: profileId,
+    })
   } catch {
     // non-blocking
   }
@@ -954,6 +943,17 @@ export async function updateTask(orgId, taskId, profileId, body) {
     await addActivity(orgId, taskId, profileId, 'assignee_changed', {
       newValue: assignment.assigneeEmployeeIds,
     })
+    try {
+      await notifyTaskAssigned(orgId, {
+        title: body.title || existing.title,
+        taskId,
+        visibilityType,
+        assignment,
+        excludeProfileId: profileId,
+      })
+    } catch {
+      // non-blocking
+    }
   }
 
   if (body.reminders !== undefined) {

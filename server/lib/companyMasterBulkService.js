@@ -5,6 +5,7 @@ import {
   normalizePhoneE164,
   validatePhoneE164,
 } from './contactValidation.js'
+import { ensureLocationMaintenanceDepartment } from './locationDefaults.js'
 
 const TEMPLATE_SHEET = 'Template'
 const VALID_VALUES_SHEET = 'Valid values'
@@ -211,7 +212,7 @@ export async function bulkImportLocations(orgId, buffer) {
           .eq('org_id', orgId)
       }
 
-      const { error } = await supabaseAdmin
+      const { data: location, error } = await supabaseAdmin
         .from('org_locations')
         .insert({
           org_id: orgId,
@@ -226,10 +227,18 @@ export async function bulkImportLocations(orgId, buffer) {
           is_primary: isPrimary,
           is_active: true,
         })
+        .select('id, code')
+        .single()
 
       if (error) {
         if (error.code === '23505') throw new Error('Location code already exists')
         throw error
+      }
+
+      try {
+        await ensureLocationMaintenanceDepartment(orgId, location)
+      } catch {
+        // Location row is already created.
       }
 
       results.created += 1

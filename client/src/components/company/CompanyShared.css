@@ -448,21 +448,28 @@
   min-width: 0;
 }
 
-.company-employee-photo-cell .company-employee-photo__pills {
-  max-width: 88px;
+.company-employee-photo-cell .company-employee-avatar {
+  width: 48px;
+  height: 48px;
 }
 
-.company-employee-photo-cell .company-badge {
-  font-size: 10px;
-  padding: 3px 8px;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.company-employee-photo-cell .company-employee-avatar--placeholder {
+  font-size: 16px;
 }
 
 .company-table__cell--manager {
   min-width: 160px;
   max-width: 220px;
+}
+
+.company-table__cell--manager .company-employee-avatar,
+.company-table__cell--manager .company-employee-avatar--sm {
+  width: 48px;
+  height: 48px;
+}
+
+.company-table__cell--manager .company-employee-avatar--placeholder {
+  font-size: 16px;
 }
 
 .company-table__cell--nowrap {
@@ -489,10 +496,28 @@
   margin-top: 2px;
 }
 
-.company-table__actions {
-  display: flex;
+.company-table__cell--check {
+  width: 44px;
+  text-align: center;
+  vertical-align: middle;
+}
+
+.company-table__cell--check input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--color-primary);
+  cursor: pointer;
+}
+
+.table-filter-toolbar__actions .company-btn--danger {
+  display: inline-flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
+}
+
+.master-table thead th.company-table__cell--check {
+  width: 44px;
 }
 
 .company-code {
@@ -500,6 +525,18 @@
   padding: 2px 8px;
   background: var(--color-off-white);
   border-radius: 4px;
+}
+
+.company-table__actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: nowrap;
+  white-space: nowrap;
+}
+
+.company-table__actions .company-link {
+  padding: 0 2px;
 }
 
 .company-table__row--clickable {
@@ -537,6 +574,11 @@
 .company-badge--primary {
   color: var(--color-primary);
   background: var(--color-light-pink-1);
+}
+
+.company-badge--solid {
+  color: var(--color-white);
+  background: var(--color-primary);
 }
 
 .company-badge--success {
@@ -876,8 +918,8 @@
 
 .company-employee-select__trigger {
   width: 100%;
-  height: 40px;
-  padding: 0 12px;
+  min-height: 40px;
+  padding: 6px 12px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -908,9 +950,26 @@
   align-items: center;
   gap: 10px;
   min-width: 0;
+  flex: 1;
+}
+
+.company-employee-select__copy {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 1px;
 }
 
 .company-employee-select__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.company-employee-select__meta {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--color-gray-blue);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -939,7 +998,7 @@
   border: 1px solid var(--color-light-gray-2);
   border-radius: var(--radius-sm);
   box-shadow: var(--shadow-sm);
-  max-height: 240px;
+  max-height: 320px;
   overflow-y: auto;
 }
 
@@ -1073,10 +1132,13 @@
 
 .filterable-select__validator {
   position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
   opacity: 0;
-  width: 0;
-  height: 0;
   pointer-events: none;
+  z-index: -1;
 }
 
 .company-employee-emails {

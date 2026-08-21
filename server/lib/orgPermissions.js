@@ -32,7 +32,7 @@ export async function getLinkedEmployee(orgId, profile) {
 
   const { data: byProfile, error: profileError } = await supabaseAdmin
     .from('org_employees')
-    .select('id, location_id, access_role_id, name, emp_id')
+    .select('id, location_id, department_id, access_role_id, name, emp_id')
     .eq('org_id', orgId)
     .eq('profile_id', profile.id)
     .maybeSingle()
@@ -45,7 +45,7 @@ export async function getLinkedEmployee(orgId, profile) {
 
   const { data: byEmail, error: emailError } = await supabaseAdmin
     .from('org_employees')
-    .select('id, location_id, access_role_id, name, emp_id')
+    .select('id, location_id, department_id, access_role_id, name, emp_id')
     .eq('org_id', orgId)
     .ilike('email', email)
     .maybeSingle()
@@ -77,6 +77,72 @@ async function getAccessRoleMeta(roleId) {
   return data
 }
 
+export function isLocationHeadRoleName(name) {
+  return String(name || '').trim().toLowerCase() === 'location head'
+}
+
+export function isDepartmentHeadRoleName(name) {
+  return String(name || '').trim().toLowerCase().includes('department head')
+}
+
+async function loadHeadFlags(orgId, employee, accessRole) {
+  const roleName = accessRole?.name || ''
+  const is_department_head = isDepartmentHeadRoleName(roleName)
+  let is_location_head = isLocationHeadRoleName(roleName)
+
+  if (!is_location_head && orgId && employee?.id) {
+    const { data, error } = await supabaseAdmin
+      .from('org_locations')
+      .select('id')
+      .eq('org_id', orgId)
+      .eq('head_employee_id', employee.id)
+      .limit(1)
+    if (error) throw error
+    is_location_head = Boolean(data?.length)
+  }
+
+  return { is_location_head, is_department_head }
+}
+
+export function employeeInAssignScope(employee, capability) {
+  if (!employee) return false
+  if (capability?.is_org_admin) return true
+  if (capability?.is_location_head) {
+    return !capability.location_id || employee.location_id === capability.location_id
+  }
+  if (capability?.is_department_head) {
+    if (capability.department_id && employee.department_id === capability.department_id) return true
+    if (capability.employee_id && employee.manager_id === capability.employee_id) return true
+    if (capability.employee_id && employee.id === capability.employee_id) return true
+    return false
+  }
+  if (capability?.location_id) return employee.location_id === capability.location_id
+  return true
+}
+
+const DEPARTMENT_HEAD_DEFAULT_GRANTS = {
+  work_request_incoming: { can_read: true, can_update: true },
+  work_request_approve: { can_update: true },
+  work_orders_received: { can_read: true, can_update: true },
+  work_orders_approve: { can_update: true },
+  employees: { can_read: true },
+  roles_access: { can_create: true, can_read: true, can_update: true, can_delete: true },
+}
+
+function withDepartmentHeadDefaults(permissions) {
+  return (permissions || []).map((row) => {
+    const extra = DEPARTMENT_HEAD_DEFAULT_GRANTS[row.module_key]
+    if (!extra) return row
+    return {
+      ...row,
+      can_create: Boolean(row.can_create || extra.can_create),
+      can_read: Boolean(row.can_read || extra.can_read),
+      can_update: Boolean(row.can_update || extra.can_update),
+      can_delete: Boolean(row.can_delete || extra.can_delete),
+    }
+  })
+}
+
 /**
  * Resolve the current user's full access-role matrix for an org.
  * Org admins (account admin / super_admin) get full permissions.
@@ -94,8 +160,11 @@ export async function resolveSessionPermissions(profile) {
     return {
       is_org_admin: false,
       location_id: null,
+      department_id: null,
       employee_id: null,
       access_role: null,
+      is_location_head: false,
+      is_department_head: false,
       permissions: emptyPermissions(),
     }
   }
@@ -103,27 +172,35 @@ export async function resolveSessionPermissions(profile) {
   const orgAdmin = canManageOrg(profile?.role)
   const employee = await getLinkedEmployee(orgId, profile)
   const locationId = employee?.location_id || null
+  const departmentId = employee?.department_id || null
+  const accessRole = employee?.access_role_id
+    ? await getAccessRoleMeta(employee.access_role_id)
+    : null
+  const headFlags = await loadHeadFlags(orgId, employee, accessRole)
 
   let session
   if (orgAdmin) {
     session = {
       is_org_admin: true,
       location_id: locationId,
+      department_id: departmentId,
       employee_id: employee?.id || null,
-      access_role: employee?.access_role_id
-        ? await getAccessRoleMeta(employee.access_role_id)
-        : null,
+      access_role: accessRole,
+      ...headFlags,
       permissions: allTruePermissions(),
     }
   } else {
-    const permissions = await getPermissionsForRole(employee?.access_role_id)
-    const accessRole = await getAccessRoleMeta(employee?.access_role_id)
     session = {
       is_org_admin: false,
       location_id: locationId,
+      department_id: departmentId,
       employee_id: employee?.id || null,
       access_role: accessRole,
-      permissions,
+      ...headFlags,
+      permissions: await getPermissionsForRole(employee?.access_role_id),
+    }
+    if (headFlags.is_department_head) {
+      session.permissions = withDepartmentHeadDefaults(session.permissions)
     }
   }
 
@@ -181,4 +258,32 @@ export function getScopedLocationId(session) {
   const roleName = session.access_role?.name?.trim().toLowerCase() || ''
   if (roleName === 'admin') return null
   return session.location_id || null
+}
+
+/** Prefer the caller's scoped location over any requested filter. */
+export function resolveLocationFilter(session, requestedLocationId) {
+  const scoped = getScopedLocationId(session)
+  if (scoped) return scoped
+  return requestedLocationId || null
+}
+
+export function assertLocationAccess(session, locationId, message = 'You can only access records at your location') {
+  const scoped = getScopedLocationId(session)
+  if (!scoped) return
+  if (locationId !== scoped) {
+    const err = new Error(message)
+    err.status = 403
+    throw err
+  }
+}
+
+export function coerceScopedLocationId(session, requestedLocationId) {
+  const scoped = getScopedLocationId(session)
+  if (!scoped) return requestedLocationId || null
+  if (requestedLocationId && requestedLocationId !== scoped) {
+    const err = new Error('You can only use your assigned location')
+    err.status = 403
+    throw err
+  }
+  return scoped
 }

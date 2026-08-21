@@ -19,8 +19,11 @@ export default function SidebarUserFooter({
     || employee?.access_role?.name
     || formatAccountRole(profile?.role)
     || 'No role assigned'
+  const locationName = employee?.org_locations?.name || ''
   const avatarLetter = (resolvedName[0] || 'U').toUpperCase()
-  const tooltipLabel = showSkeleton ? 'Loading profile' : `${resolvedName} · ${resolvedRole}`
+  const tooltipLabel = showSkeleton
+    ? 'Loading profile'
+    : [resolvedName, resolvedRole, locationName].filter(Boolean).join(' · ')
 
   const openProfile = () => {
     if (showSkeleton) return
@@ -59,7 +62,9 @@ export default function SidebarUserFooter({
               ) : (
                 <>
                   <span className="sidebar__user-name">{resolvedName}</span>
-                  <span className="sidebar__user-role">{resolvedRole}</span>
+                  <span className="sidebar__user-role">
+                    {locationName ? `${resolvedRole} · ${locationName}` : resolvedRole}
+                  </span>
                 </>
               )}
             </div>

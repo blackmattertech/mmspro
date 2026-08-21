@@ -1,5 +1,19 @@
-.assign-employees-modal {
-  width: 100%;
+.company-modal.assign-employees-modal {
+  width: min(1100px, calc(100vw - 32px));
+  max-width: 1100px;
+  overflow: visible;
+}
+
+.assign-employees-modal__heading {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.assign-employees-modal__heading h2 {
+  margin: 0;
 }
 
 .assign-employees-modal__hint {
@@ -8,49 +22,76 @@
   margin-bottom: 4px;
 }
 
-.assign-employees-modal__list {
-  max-height: 360px;
-  overflow-y: auto;
+.assign-employees-modal__toolbar {
+  position: relative;
+  z-index: 90;
+}
+
+.assign-employees-modal__toolbar.wo-page__bar-controls .wo-page__search {
+  flex: 0 1 260px;
+  width: 260px;
+  max-width: 260px;
+}
+
+.assign-employees-modal__table-wrap {
+  max-height: 460px;
+  overflow: auto;
   border: 1px solid var(--color-light-gray-1);
   border-radius: var(--radius-sm);
 }
 
+.assign-employees-modal__table {
+  min-width: 920px;
+}
+
+.assign-employees-modal__table th,
+.assign-employees-modal__table td {
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.assign-employees-modal__table td.company-table__cell--truncate {
+  max-width: 180px;
+  white-space: nowrap;
+}
+
+.assign-employees-modal__check-col {
+  width: 36px;
+  padding-right: 0;
+}
+
 .assign-employees-modal__row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 14px;
-  border-bottom: 1px solid var(--color-light-gray-1);
   cursor: pointer;
-  font-size: 14px;
 }
 
-.assign-employees-modal__row:last-child {
-  border-bottom: none;
+.assign-employees-modal__row:hover td {
+  background: var(--color-off-white);
 }
 
-.assign-employees-modal__row--selected {
+.assign-employees-modal__row--selected td {
   background: var(--color-light-pink-1);
 }
 
-.assign-employees-modal__row input {
-  flex-shrink: 0;
-}
-
-.assign-employees-modal__name {
-  font-weight: 500;
-  color: var(--color-dark-navy);
-  flex: 1;
+.assign-employees-modal__person {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
   min-width: 0;
 }
 
-.assign-employees-modal__meta {
-  font-size: 12px;
-  color: var(--color-gray-blue);
+.assign-employees-modal__name {
+  font-weight: 600;
+  color: var(--color-dark-navy);
 }
 
-.assign-employees-modal__other-role {
-  font-size: 12px;
-  color: var(--color-primary);
+.assign-employees-modal__role-pill {
+  display: inline-block;
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--color-white);
+  background: var(--color-primary);
+  border-radius: var(--radius-pill);
   white-space: nowrap;
 }

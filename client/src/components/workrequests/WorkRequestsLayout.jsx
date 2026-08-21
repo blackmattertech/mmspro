@@ -24,7 +24,7 @@ const WR_FILTER_FIELDS = [
   { value: 'status', label: 'Status', placeholder: 'e.g. submitted, approved' },
   { value: 'priority', label: 'Priority', placeholder: 'high, medium, or low' },
   { value: 'request_number', label: 'Request #' },
-  { value: 'description', label: 'Description' },
+  { value: 'description', label: 'Short description' },
   { value: 'type', label: 'Type', placeholder: 'inter, intra, self, or manual' },
   { value: 'from', label: 'From' },
   { value: 'to', label: 'To' },

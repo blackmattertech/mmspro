@@ -12,6 +12,7 @@ import {
   workOrderFilesValue,
 } from '../../lib/workOrderFileValues'
 import { assetUrl } from '../../lib/assets'
+import ImageLightbox from '../shared/ImageLightbox'
 
 const FILE_ACCEPT = '.pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png'
 const IMAGE_ACCEPT = 'image/jpeg,image/png,image/webp,image/gif'
@@ -19,36 +20,6 @@ const IMAGE_TILE_SIZE = 96
 const FILE_ICON_SRC = assetUrl('Assets/icons/file-outline.svg')
 const VIEW_MORE_BTN_WIDTH = 104
 const FILE_CHIP_GAP = 8
-
-function ImageLightbox({ src, alt, onClose }) {
-  useEffect(() => {
-    const handleKey = (event) => {
-      if (event.key === 'Escape') onClose()
-    }
-    document.addEventListener('keydown', handleKey)
-    return () => document.removeEventListener('keydown', handleKey)
-  }, [onClose])
-
-  return (
-    <div
-      className="wo-image-lightbox"
-      onClick={onClose}
-      role="dialog"
-      aria-modal="true"
-      aria-label={`View ${alt}`}
-    >
-      <button type="button" className="wo-image-lightbox__close" onClick={onClose} aria-label="Close">
-        ×
-      </button>
-      <img
-        src={src}
-        alt={alt}
-        className="wo-image-lightbox__img"
-        onClick={(event) => event.stopPropagation()}
-      />
-    </div>
-  )
-}
 
 function ImageFieldPreview({ field, value, onChange, disabled }) {
   const inputRef = useRef(null)
@@ -168,6 +139,7 @@ function ImageFieldPreview({ field, value, onChange, disabled }) {
         <ImageLightbox
           src={lightbox.src}
           alt={lightbox.alt}
+          filename={lightbox.alt}
           onClose={() => setLightbox(null)}
         />
       )}
@@ -364,6 +336,7 @@ function FileFieldPreview({ field, value, onChange, disabled }) {
         <ImageLightbox
           src={lightbox.src}
           alt={lightbox.alt}
+          filename={lightbox.alt}
           onClose={() => setLightbox(null)}
         />
       )}

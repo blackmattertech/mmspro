@@ -5,6 +5,7 @@ import { ImportJobsProvider } from '../hooks/useImportJobs'
 import ImportJobsBanner from '../components/shared/ImportJobsBanner'
 import { PermissionsProvider } from '../hooks/usePermissions'
 import Sidebar from '../components/layout/Sidebar'
+import NotificationBell from '../components/layout/NotificationBell'
 import { RouteErrorBoundary } from '../components/shared/ErrorBoundary'
 import ErrorFallback from '../components/shared/ErrorFallback'
 import './AppShell.css'
@@ -35,6 +36,7 @@ export default function AppLayout() {
           <div className={`app-shell ${collapsed ? 'app-shell--sidebar-collapsed' : ''}`}>
             <Sidebar collapsed={collapsed} onToggle={() => setCollapsed((prev) => !prev)} />
             <div className="app-shell__main">
+              <NotificationBell />
               <ImportJobsBanner />
               <RouteErrorBoundary
                 fallback={(error, reset) => (

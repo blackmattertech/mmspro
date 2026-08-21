@@ -13,10 +13,24 @@ export function workOrderFilesValue(files) {
   return list.length ? { files: list } : null
 }
 
+function fileMeta(item) {
+  const file = item?.file instanceof File ? item.file : item
+  const type = String(item?.type || item?.mime_type || file?.type || '').toLowerCase()
+  const name = String(item?.name || item?.file_name || item?.path || file?.name || '').toLowerCase()
+  return { type, name }
+}
+
+export function getAttachmentKind(item) {
+  const { type, name } = fileMeta(item)
+  if (type.startsWith('image/') || /\.(jpe?g|png|gif|webp|bmp|svg)$/i.test(name)) return 'image'
+  if (type.includes('pdf') || name.endsWith('.pdf')) return 'pdf'
+  if (type.includes('zip') || /\.(zip|rar|7z)$/i.test(name)) return 'zip'
+  return 'file'
+}
+
 export function createLocalFileItem(file, fieldType) {
-  const previewUrl = file.type?.startsWith('image/')
-    ? URL.createObjectURL(file)
-    : null
+  const kind = getAttachmentKind(file)
+  const previewUrl = kind === 'image' ? URL.createObjectURL(file) : null
 
   return {
     id: createId(),
@@ -31,9 +45,7 @@ export function createLocalFileItem(file, fieldType) {
 export function isImageFileItem(item) {
   if (!item) return false
   if (item.previewUrl) return true
-  if (item.type?.startsWith('image/')) return true
-  const name = String(item.name || item.path || '').toLowerCase()
-  return /\.(jpe?g|png|gif|webp|bmp|svg)$/i.test(name)
+  return getAttachmentKind(item) === 'image'
 }
 
 export function getFilePreviewSrc(item) {

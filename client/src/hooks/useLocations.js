@@ -40,6 +40,7 @@ export function useLocations({ forAssignment = false, search, limit = 200, offse
 
   const refreshAfterMutation = async () => {
     invalidateReferenceCache('locations')
+    invalidateReferenceCache('departments')
     await load({ silent: true, force: true })
   }
 

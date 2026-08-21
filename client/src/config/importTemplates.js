@@ -125,13 +125,13 @@ export const IMPORT_TEMPLATES = [
   {
     id: 'areas',
     label: 'Areas',
-    description: 'Bulk create areas under your locations and departments.',
+    description: 'Bulk create or update areas under your locations and departments.',
     moduleKey: 'areas',
     instructions: [
       'Download the Excel template for your organization.',
       'On the Template sheet, enter one area per row. Name is required; Code is optional.',
       'Location and Department must match names listed on the Valid values sheet (spelling and casing must match).',
-      'Save the file as .xlsx and upload it here. Successful rows are imported immediately.',
+      'Save the file as .xlsx and upload it here. New rows are created; existing area codes are updated.',
       'If any rows fail, download the failed-rows file, fix the issues in the Import errors column, remove that column, and upload the corrected file again.',
     ],
     downloadTemplate: getAreasTemplate,

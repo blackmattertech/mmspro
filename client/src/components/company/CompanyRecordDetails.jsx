@@ -385,6 +385,24 @@ export function AreaDetailContent({ area }) {
   )
 }
 
+export function WorkCenterDetailContent({ workCenter }) {
+  if (!workCenter) return null
+
+  return (
+    <DetailView>
+      <DetailSection title="Work Center">
+        <DetailGrid>
+          <DetailField label="Name" value={workCenter.name} />
+          <DetailField label="Code" value={workCenter.code} />
+          <DetailField label="Location" value={workCenter.org_locations?.name || 'All locations'} />
+          <DetailField label="Description" value={workCenter.description} fullWidth />
+          <DetailField label="Status" value={workCenter.is_active === false ? 'Inactive' : 'Active'} />
+        </DetailGrid>
+      </DetailSection>
+    </DetailView>
+  )
+}
+
 export function EquipmentDetailContent({ equipment }) {
   if (!equipment) return null
 
@@ -394,7 +412,7 @@ export function EquipmentDetailContent({ equipment }) {
         <DetailGrid>
           <DetailField label="Name" value={equipment.name} />
           <DetailField label="Code" value={equipment.code} />
-          <DetailField label="Location" value={equipment.locations?.name} />
+          <DetailField label="Location" value={equipment.org_locations?.name || equipment.locations?.name} />
           <DetailField label="Department" value={equipment.departments?.name} />
           <DetailField label="Area" value={equipment.areas?.name} />
           <DetailField label="Status" value={equipment.is_active === false ? 'Inactive' : 'Active'} />

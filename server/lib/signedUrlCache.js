@@ -96,3 +96,12 @@ export async function getSignedUrls(bucket, paths, expiresIn = SIGNED_URL_TTL_SE
   pruneCache()
   return result
 }
+
+export async function getSignedUrlForEmail(bucket, path) {
+  if (!path) return null
+  const { data, error } = await supabaseAdmin.storage
+    .from(bucket)
+    .createSignedUrl(path, 7 * 24 * 3600)
+  if (error || !data?.signedUrl) return null
+  return data.signedUrl
+}

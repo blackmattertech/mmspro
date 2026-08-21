@@ -187,6 +187,40 @@
   text-overflow: ellipsis;
 }
 
+.wo-table__approve {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: inherit;
+  line-height: 1.2;
+  color: #027a48;
+  background: #ecfdf3;
+  border: none;
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.wo-table__approve::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.wo-table__approve:hover:not(:disabled) {
+  background: #d1fadf;
+}
+
+.wo-table__approve:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
 .wo-status {
   display: inline-flex;
   align-items: center;

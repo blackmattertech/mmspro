@@ -4,6 +4,7 @@ import { getAssignedWorkOrders, getAssignedWorkOrder } from '../../lib/api-work-
 import { useWorkOrderList } from '../../hooks/useWorkOrderList'
 import { useDebouncedValue } from '../../hooks/useDebouncedValue'
 import { useTablePagination } from '../../hooks/useTablePagination'
+import { useOpenQueryId } from '../../hooks/useOpenQueryId'
 import { applyWorkOrderFilters } from '../../lib/workOrderFilters'
 import ReceivedWorkOrderDetailModal from '../../components/workorders/ReceivedWorkOrderDetailModal'
 import WorkOrdersTable from '../../components/workorders/WorkOrdersTable'
@@ -13,7 +14,7 @@ import '../../components/workorders/WorkOrdersPage.css'
 const ASSIGNED_COLUMNS = ['wo_number', 'summary', 'assignees', 'created_at', 'status']
 
 export default function AssignedWorkOrders() {
-  const [selectedId, setSelectedId] = useState(null)
+  const [selectedId, setSelectedId, closeSelected] = useOpenQueryId()
   const { search, locationFilter, sortBy, advancedRules, fieldFilter, locations } = useOutletContext()
   const debouncedSearch = useDebouncedValue(search)
   const [listTotal, setListTotal] = useState(0)
@@ -41,10 +42,6 @@ export default function AssignedWorkOrders() {
     <>
       {error && <div className="wo-alert wo-alert--error" role="alert">{error}</div>}
 
-      <p className="wo-page__result-count">
-        {total} work order{total === 1 ? '' : 's'}
-      </p>
-
       <WorkOrdersTable
         orders={filtered}
         totalCount={total}
@@ -52,8 +49,8 @@ export default function AssignedWorkOrders() {
         serverPaged
         columns={ASSIGNED_COLUMNS}
         tableId="work-orders-assigned"
-        emptyTitle="No work orders assigned to others yet."
-        emptyHint="When you create a work order and assign it to someone else, it will appear here."
+        emptyTitle="No work orders assigned yet."
+        emptyHint="Work orders you requested or created and assigned to someone else appear here."
         onView={setSelectedId}
         paginationResetKey={`${search}|${locationFilter}|${fieldFilter?.field}|${fieldFilter?.value}|${sortBy}`}
       />
@@ -62,7 +59,7 @@ export default function AssignedWorkOrders() {
         <ReceivedWorkOrderDetailModal
           orderId={selectedId}
           fetchWorkOrder={getAssignedWorkOrder}
-          onClose={() => setSelectedId(null)}
+          onClose={closeSelected}
         />
       )}
     </>

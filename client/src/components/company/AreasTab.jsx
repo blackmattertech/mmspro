@@ -4,8 +4,7 @@ import { useAreas } from '../../hooks/useAreas'
 import { useLocations } from '../../hooks/useLocations'
 import { useDepartments } from '../../hooks/useDepartments'
 import { useDebouncedValue } from '../../hooks/useDebouncedValue'
-import { getAreasTemplate, bulkUploadAreas } from '../../lib/api'
-import NavIcon from '../layout/NavIcon'
+import { getAreasTemplate, bulkUploadAreas, deleteArea } from '../../lib/api'
 import GooToggle from '../ui/GooToggle'
 import TrashIcon from '../ui/TrashIcon'
 import EditIcon from '../ui/EditIcon'
@@ -19,6 +18,11 @@ import { TABLE_SORT_OPTIONS, applyTableFilters } from '../../lib/tableFilters'
 import { stopTableRowClick, tableRowClickProps } from '../../lib/clickableTableRow'
 import RecordDetailModal from '../shared/RecordDetailModal'
 import { AreaDetailContent } from './CompanyRecordDetails'
+import {
+  useMasterBulkUpload,
+  MasterBulkActions,
+  MasterBulkResult,
+} from './MasterBulkUpload'
 import '../shared/TableColumnPicker.css'
 import '../shared/TableFilterToolbar.css'
 import '../workorders/WorkOrdersPage.css'
@@ -79,10 +83,6 @@ export default function AreasTab({ canManage }) {
   const [editing, setEditing] = useState(null)
   const [viewing, setViewing] = useState(null)
   const [togglingId, setTogglingId] = useState(null)
-  const [bulkBusy, setBulkBusy] = useState(false)
-  const [bulkError, setBulkError] = useState(null)
-  const [bulkResult, setBulkResult] = useState(null)
-  const bulkInputRef = useRef(null)
 
   const activeLocations = locations.filter((l) => l.is_active !== false)
   const activeDepartments = departments.filter((d) => d.is_active !== false)
@@ -102,6 +102,36 @@ export default function AreasTab({ canManage }) {
   }), [areas, filterField, filterValue, sortBy])
 
   const pagedAreas = filteredAreas
+  const [selected, setSelected] = useState(() => new Set())
+  const [bulkDeleting, setBulkDeleting] = useState(false)
+  const [deleteError, setDeleteError] = useState(null)
+  const selectAllRef = useRef(null)
+  const visibleIds = useMemo(() => pagedAreas.map((area) => area.id), [pagedAreas])
+  const selectedVisibleCount = visibleIds.filter((id) => selected.has(id)).length
+  const allVisibleSelected = visibleIds.length > 0 && selectedVisibleCount === visibleIds.length
+  const someVisibleSelected = selectedVisibleCount > 0 && !allVisibleSelected
+
+  useEffect(() => {
+    if (selectAllRef.current) {
+      selectAllRef.current.indeterminate = someVisibleSelected
+    }
+  }, [someVisibleSelected])
+
+  const {
+    bulkInputRef,
+    bulkBusy,
+    bulkError,
+    bulkResult,
+    handleDownloadTemplate,
+    handleBulkFile,
+  } = useMasterBulkUpload({
+    downloadTemplate: getAreasTemplate,
+    upload: bulkUploadAreas,
+    onSuccess: async () => {
+      await reload({ silent: true })
+    },
+    defaultFilename: 'areas-template.xlsx',
+  })
   const areaColumnDefs = useMemo(() => {
     const cols = [
       { id: 'name', label: 'Name' },
@@ -142,8 +172,61 @@ export default function AreasTab({ canManage }) {
   }
 
   const handleDelete = async (area) => {
-    if (!window.confirm(`Delete area "${area.name}"?`)) return
-    await remove(area.id)
+    if (!window.confirm(`Delete area "${area.name}"? This cannot be undone.`)) return
+    setDeleteError(null)
+    try {
+      await remove(area.id)
+      setSelected((prev) => {
+        const next = new Set(prev)
+        next.delete(area.id)
+        return next
+      })
+    } catch (err) {
+      setDeleteError(err.message || 'Could not delete this area')
+    }
+  }
+
+  const toggleSelected = (id) => {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const toggleSelectAllVisible = () => {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (allVisibleSelected) {
+        visibleIds.forEach((id) => next.delete(id))
+      } else {
+        visibleIds.forEach((id) => next.add(id))
+      }
+      return next
+    })
+  }
+
+  const handleBulkDelete = async () => {
+    const ids = [...selected]
+    if (!ids.length) return
+    const label = ids.length === 1 ? 'this area' : `${ids.length} areas`
+    if (!window.confirm(`Delete ${label}? This cannot be undone.`)) return
+    setBulkDeleting(true)
+    setDeleteError(null)
+    try {
+      for (const id of ids) {
+        await deleteArea(id)
+      }
+      await reload({ silent: true })
+      setSelected(new Set())
+      if (viewing && ids.includes(viewing.id)) setViewing(null)
+    } catch (err) {
+      setDeleteError(err.message || 'Could not delete the selected areas')
+      await reload({ silent: true })
+    } finally {
+      setBulkDeleting(false)
+    }
   }
 
   const handleToggle = async (area, isActive) => {
@@ -152,50 +235,6 @@ export default function AreasTab({ canManage }) {
       await toggleActive(area.id, isActive)
     } finally {
       setTogglingId(null)
-    }
-  }
-
-  const handleDownloadTemplate = async () => {
-    setBulkError(null)
-    try {
-      const { filename, contentType, data } = await getAreasTemplate()
-      const bytes = Uint8Array.from(atob(data), (c) => c.charCodeAt(0))
-      const blob = new Blob([bytes], { type: contentType })
-      const url = URL.createObjectURL(blob)
-      const link = document.createElement('a')
-      link.href = url
-      link.download = filename || 'areas-template.xlsx'
-      document.body.appendChild(link)
-      link.click()
-      link.remove()
-      URL.revokeObjectURL(url)
-    } catch (err) {
-      setBulkError(err.message)
-    }
-  }
-
-  const handleBulkFile = async (e) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    setBulkBusy(true)
-    setBulkError(null)
-    setBulkResult(null)
-    try {
-      const dataUrl = await new Promise((resolve, reject) => {
-        const reader = new FileReader()
-        reader.onload = () => resolve(reader.result)
-        reader.onerror = () => reject(new Error('Could not read the file'))
-        reader.readAsDataURL(file)
-      })
-      const base64 = String(dataUrl).split(',').pop()
-      const result = await bulkUploadAreas(base64)
-      setBulkResult(result)
-      await reload({ silent: true })
-    } catch (err) {
-      setBulkError(err.message)
-    } finally {
-      setBulkBusy(false)
-      if (bulkInputRef.current) bulkInputRef.current.value = ''
     }
   }
 
@@ -219,37 +258,29 @@ export default function AreasTab({ canManage }) {
           sort={{ value: sortBy, onChange: setSortBy, options: TABLE_SORT_OPTIONS }}
           actions={canManage && (
             <>
+              {selected.size > 0 && (
               <button
                 type="button"
-                className="company-btn company-btn--secondary equipment-bulk-btn"
-                onClick={handleDownloadTemplate}
+                className="company-btn company-btn--danger"
+                disabled={bulkDeleting || saving}
+                onClick={handleBulkDelete}
               >
-                <span className="equipment-bulk-btn__icon" aria-hidden="true">
-                  <NavIcon name="download" />
-                </span>
-                Download template
+                <TrashIcon />
+                {bulkDeleting ? 'Deleting...' : `Delete (${selected.size})`}
               </button>
-              <button
-                type="button"
-                className="company-btn company-btn--secondary equipment-bulk-btn"
-                onClick={() => bulkInputRef.current?.click()}
-                disabled={bulkBusy}
-              >
-                <span className="equipment-bulk-btn__icon" aria-hidden="true">
-                  <NavIcon name="upload" />
-                </span>
-                {bulkBusy ? 'Uploading…' : 'Bulk upload'}
-              </button>
-              <input
-                ref={bulkInputRef}
-                type="file"
-                accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                style={{ display: 'none' }}
-                onChange={handleBulkFile}
+              )}
+              <MasterBulkActions
+                onDownload={handleDownloadTemplate}
+                bulkBusy={bulkBusy}
+                bulkInputRef={bulkInputRef}
+                onFileChange={handleBulkFile}
+                addLabel="+ Add Area"
+                onAdd={openCreate}
+                title="Bulk upload areas"
+                bulkError={bulkError}
+                bulkResult={bulkResult}
+                noun="area"
               />
-              <button type="button" className="company-btn company-btn--primary" onClick={openCreate}>
-                + Add Area
-              </button>
             </>
           )}
           columnPicker={(
@@ -264,23 +295,9 @@ export default function AreasTab({ canManage }) {
       </div>
 
       {error && <div className="company-alert">{error}</div>}
+      {deleteError && <div className="company-alert">{deleteError}</div>}
       {bulkError && <div className="company-error">{bulkError}</div>}
-      {bulkResult && (
-        <div className={`company-alert ${bulkResult.failed ? 'company-alert--warning' : 'company-alert--success'}`}>
-          <strong>{bulkResult.created}</strong> area(s) created
-          {bulkResult.failed ? `, ${bulkResult.failed} row(s) failed.` : '.'}
-          {bulkResult.errors?.length > 0 && (
-            <ul className="equipment-bulk-errors">
-              {bulkResult.errors.slice(0, 10).map((err) => (
-                <li key={err.row}>Row {err.row}: {err.message}</li>
-              ))}
-              {bulkResult.errors.length > 10 && (
-                <li>…and {bulkResult.errors.length - 10} more</li>
-              )}
-            </ul>
-          )}
-        </div>
-      )}
+      <MasterBulkResult result={bulkResult} noun="area" />
 
       {loading ? (
         <div className="company-loading">Loading areas…</div>
@@ -289,73 +306,108 @@ export default function AreasTab({ canManage }) {
       ) : filteredAreas.length === 0 ? (
         <div className="company-empty">No areas match your filters.</div>
       ) : (
+        <>
         <div className="company-table-wrap">
           <div className="company-table-scroll">
           <table className="company-table master-table">
             <thead>
               <tr>
+                {canManage && (
+                  <th className="company-table__cell--check">
+                    <input
+                      ref={selectAllRef}
+                      type="checkbox"
+                      checked={allVisibleSelected}
+                      onChange={toggleSelectAllVisible}
+                      aria-label="Select all areas"
+                    />
+                  </th>
+                )}
                 {isAreaColumnVisible('name') && <th>Name</th>}
                 {isAreaColumnVisible('code') && <th>Code</th>}
                 {isAreaColumnVisible('location') && <th>Location</th>}
                 {isAreaColumnVisible('department') && <th>Department</th>}
                 {canManage && isAreaColumnVisible('active') && <th>Active</th>}
-                {canManage && isAreaColumnVisible('actions') && <th aria-label="Actions" />}
+                {canManage && isAreaColumnVisible('actions') && <th>Actions</th>}
               </tr>
             </thead>
             <tbody>
-              {pagedAreas.map((area) => (
+              {pagedAreas.map((area) => {
+                const isActive = area.is_active !== false
+                return (
                 <tr
                   key={area.id}
                   {...tableRowClickProps({
                     onOpen: () => openView(area),
                     label: `View ${area.name}`,
-                    className: area.is_active === false ? 'company-table__row--inactive' : undefined,
+                    className: !isActive ? 'company-table__row--inactive' : undefined,
                   })}
                 >
-                  {isAreaColumnVisible('name') && <td>{area.name}</td>}
-                  {isAreaColumnVisible('code') && <td>{area.code || '—'}</td>}
+                  {canManage && (
+                    <td
+                      className="company-table__cell--check"
+                      onClick={stopTableRowClick}
+                      onKeyDown={stopTableRowClick}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selected.has(area.id)}
+                        onChange={() => toggleSelected(area.id)}
+                        aria-label={`Select ${area.name}`}
+                      />
+                    </td>
+                  )}
+                  {isAreaColumnVisible('name') && (
+                    <td><span className="company-table__name">{area.name}</span></td>
+                  )}
+                  {isAreaColumnVisible('code') && (
+                    <td><code className="company-code">{area.code || '—'}</code></td>
+                  )}
                   {isAreaColumnVisible('location') && <td>{area.org_locations?.name || '—'}</td>}
                   {isAreaColumnVisible('department') && <td>{area.departments?.name || '—'}</td>}
                   {canManage && isAreaColumnVisible('active') && (
                     <td onClick={stopTableRowClick}>
                       <GooToggle
-                        checked={area.is_active !== false}
+                        checked={isActive}
                         disabled={togglingId === area.id}
                         onChange={(checked) => handleToggle(area, checked)}
-                        ariaLabel={`Toggle ${area.name}`}
+                        ariaLabel={`${isActive ? 'Disable' : 'Enable'} ${area.name}`}
                       />
                     </td>
                   )}
                   {canManage && isAreaColumnVisible('actions') && (
-                    <td className="company-table__actions" onClick={stopTableRowClick}>
-                      <button
-                        type="button"
-                        className="company-btn company-btn--secondary company-btn--compact company-btn--icon"
-                        onClick={() => openEdit(area)}
-                        aria-label={`Edit ${area.name}`}
-                        title="Edit"
-                      >
-                        <EditIcon />
-                      </button>
-                      <button
-                        type="button"
-                        className="company-btn company-btn--danger company-btn--compact company-btn--icon"
-                        onClick={() => handleDelete(area)}
-                        aria-label={`Delete ${area.name}`}
-                        title="Delete"
-                      >
-                        <TrashIcon />
-                      </button>
+                    <td onClick={stopTableRowClick}>
+                      <div className="company-table__actions">
+                        <button
+                          type="button"
+                          className="company-btn company-btn--secondary company-btn--compact company-btn--icon"
+                          onClick={() => openEdit(area)}
+                          aria-label={`Edit ${area.name}`}
+                          title="Edit"
+                        >
+                          <EditIcon />
+                        </button>
+                        <button
+                          type="button"
+                          className="company-btn company-btn--danger company-btn--compact company-btn--icon"
+                          onClick={() => handleDelete(area)}
+                          aria-label={`Delete ${area.name}`}
+                          title="Delete"
+                        >
+                          <TrashIcon />
+                        </button>
+                      </div>
                     </td>
                   )}
                 </tr>
-              ))}
+                )
+              })}
             </tbody>
           </table>
-          <TablePagination {...pagination} />
-          />
           </div>
         </div>
+        <TablePagination {...pagination} />
+        </>
       )}
 
       {viewing && (
@@ -377,6 +429,8 @@ export default function AreasTab({ canManage }) {
         <AreaModal
           area={editing}
           saving={saving}
+          defaultLocationId={scopedLocationId || ''}
+          lockLocation={Boolean(scopedLocationId)}
           onClose={() => setModalOpen(false)}
           onSave={handleSave}
         />

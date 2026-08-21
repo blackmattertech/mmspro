@@ -73,6 +73,7 @@ export const ACCESS_MODULE_GROUPS = [
       { key: 'company', label: 'Company profile', actions: ['read', 'update'] },
       { key: 'locations', label: 'Locations', actions: ['create', 'read', 'update', 'delete'] },
       { key: 'departments', label: 'Departments', actions: ['create', 'read', 'update', 'delete'] },
+      { key: 'work_centers', label: 'Work Center', actions: ['create', 'read', 'update', 'delete'] },
       { key: 'employees', label: 'Employees', actions: ['create', 'read', 'update', 'delete'] },
     ],
   },
@@ -121,7 +122,7 @@ export const MODULE_LEGACY_EXPAND = {
     'reports_overdue',
   ],
   // Older roles used company.update for locations/depts CRUD.
-  company: ['locations', 'departments'],
+  company: ['locations', 'departments', 'work_centers'],
 }
 
 export const WORK_REQUEST_MODULE_KEYS = [
@@ -141,6 +142,17 @@ export const WORK_ORDER_MODULE_KEYS = [
   'work_orders_manual',
 ]
 
+export const APPROVAL_MODULE_KEYS = [
+  'work_request_approve',
+  'work_orders_approve',
+]
+
+export function permissionsHaveApproval(permissions) {
+  return (permissions || []).some((row) => (
+    APPROVAL_MODULE_KEYS.includes(row.module_key) && Boolean(row.can_update)
+  ))
+}
+
 export const REPORT_MODULE_KEYS = [
   'reports',
   'reports_daily_logs',
@@ -154,6 +166,7 @@ export const COMPANY_PAGE_MODULE_KEYS = [
   'company',
   'locations',
   'departments',
+  'work_centers',
   'areas',
   'employees',
 ]

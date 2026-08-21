@@ -8,22 +8,27 @@ import {
 } from 'react'
 import '../company/CompanyShared.css'
 
-function normalizeOptions(options, getOptionValue, getOptionLabel) {
+function normalizeOptions(options, getOptionValue, getOptionLabel, getOptionSearchLabel) {
   return (options || []).map((opt) => {
     if (opt === null || opt === undefined) {
-      return { value: '', label: '' }
+      return { value: '', label: '', searchText: '', option: opt }
     }
     if (typeof opt === 'string' || typeof opt === 'number') {
       const text = String(opt)
-      return { value: text, label: text }
+      return { value: text, label: text, searchText: text, option: opt }
     }
     const value = getOptionValue ? getOptionValue(opt) : opt.value
     const label = getOptionLabel
       ? getOptionLabel(opt)
       : (opt.label ?? opt.name ?? value)
+    const searchLabel = getOptionSearchLabel
+      ? getOptionSearchLabel(opt)
+      : label
     return {
       value: value === null || value === undefined ? '' : String(value),
       label: label === null || label === undefined ? '' : String(label),
+      searchText: String(searchLabel ?? label ?? ''),
+      option: opt,
     }
   })
 }
@@ -35,6 +40,8 @@ export default function FilterableSelect({
   options = [],
   getOptionValue,
   getOptionLabel,
+  getOptionSearchLabel,
+  renderOption,
   placeholder = 'Select…',
   disabled = false,
   required = false,
@@ -64,8 +71,8 @@ export default function FilterableSelect({
   }, [query, onQueryChange])
 
   const normalized = useMemo(
-    () => normalizeOptions(options, getOptionValue, getOptionLabel),
-    [options, getOptionValue, getOptionLabel],
+    () => normalizeOptions(options, getOptionValue, getOptionLabel, getOptionSearchLabel),
+    [options, getOptionValue, getOptionLabel, getOptionSearchLabel],
   )
 
   const selectedValue = value === null || value === undefined ? '' : String(value)
@@ -74,7 +81,7 @@ export default function FilterableSelect({
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
     if (!q) return normalized
-    return normalized.filter((o) => o.label.toLowerCase().includes(q))
+    return normalized.filter((o) => (o.searchText || o.label).toLowerCase().includes(q))
   }, [normalized, query])
 
   const showCreate = Boolean(onCreate) && filtered.length === 0
@@ -274,7 +281,9 @@ export default function FilterableSelect({
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={() => pick(item.value)}
                 >
-                  {item.label}
+                  {renderOption && !item.isPlaceholder && item.option != null
+                    ? renderOption(item.option, item)
+                    : item.label}
                 </button>
               </li>
             ))

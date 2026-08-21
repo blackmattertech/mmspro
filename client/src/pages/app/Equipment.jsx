@@ -4,11 +4,10 @@ import { isCompanyAdmin } from '../../lib/accountRoles'
 import { useAuth } from '../../hooks/useAuth'
 import { useEquipment } from '../../hooks/useEquipment'
 import { useOrgEquipmentFields } from '../../hooks/useOrgEquipmentFields'
-import { getEquipment, getEquipmentTemplate, bulkUploadEquipment } from '../../lib/api-equipment'
+import { getEquipment, getEquipmentTemplate, bulkUploadEquipment, deleteEquipment } from '../../lib/api-equipment'
 import EquipmentModal from '../../components/equipment/EquipmentModal'
 import AssetsFieldsPanel from '../../components/assets/AssetsFieldsPanel'
 import AreasTab from '../../components/company/AreasTab'
-import NavIcon from '../../components/layout/NavIcon'
 import GooToggle from '../../components/ui/GooToggle'
 import TrashIcon from '../../components/ui/TrashIcon'
 import EditIcon from '../../components/ui/EditIcon'
@@ -22,6 +21,11 @@ import { TABLE_SORT_OPTIONS, applyTableFilters } from '../../lib/tableFilters'
 import { stopTableRowClick, tableRowClickProps } from '../../lib/clickableTableRow'
 import RecordDetailModal from '../../components/shared/RecordDetailModal'
 import { EquipmentDetailContent } from '../../components/company/CompanyRecordDetails'
+import {
+  useMasterBulkUpload,
+  MasterBulkActions,
+  MasterBulkResult,
+} from '../../components/company/MasterBulkUpload'
 import '../../components/shared/TableColumnPicker.css'
 import '../../components/shared/TableFilterToolbar.css'
 import '../../components/workorders/WorkOrdersPage.css'
@@ -37,6 +41,16 @@ const EQUIPMENT_FILTER_FIELDS = [
   { value: 'status', label: 'Status', placeholder: 'active or inactive' },
 ]
 
+function canPickAnyLocation({ isOrgAdmin, accessRole }) {
+  if (isOrgAdmin) return true
+  const roleName = accessRole?.name?.trim().toLowerCase() || ''
+  return roleName === 'admin'
+}
+
+function equipmentLocationName(row) {
+  return row?.org_locations?.name || row?.locations?.name || ''
+}
+
 export default function Equipment() {
   const { role } = useAuth()
   const {
@@ -45,6 +59,9 @@ export default function Equipment() {
     canCreate,
     canUpdate,
     canDelete,
+    isOrgAdmin,
+    locationId: myLocationId,
+    accessRole,
   } = usePermissions()
   const canManage = canCreate('equipment') || canUpdate('equipment') || canDelete('equipment')
   const equipmentColumnDefs = useMemo(() => {
@@ -68,6 +85,8 @@ export default function Equipment() {
   } = useTableColumnPrefs('masters-equipment', equipmentColumnDefs)
   const canManageAreas = canCreate('areas') || canUpdate('areas') || canDelete('areas')
   const canManageFieldOptions = isCompanyAdmin(role) || canUpdate('equipment')
+  const canSelectAnyLocation = canPickAnyLocation({ isOrgAdmin, accessRole })
+  const scopedLocationId = canSelectAnyLocation ? undefined : (myLocationId || undefined)
   const [view, setView] = useState(() => (canRead('equipment') ? 'records' : 'areas'))
   const [search, setSearch] = useState('')
   const [filterField, setFilterField] = useState('')
@@ -75,16 +94,17 @@ export default function Equipment() {
   const [sortBy, setSortBy] = useState('name_asc')
   const debouncedSearch = useDebouncedValue(search.trim())
   const [listTotal, setListTotal] = useState(0)
-  const filterResetKey = `${debouncedSearch}|${filterField}|${filterValue}|${sortBy}`
+  const filterResetKey = `${debouncedSearch}|${filterField}|${filterValue}|${sortBy}|${scopedLocationId || ''}`
   const equipmentPagination = useTablePagination(listTotal, { resetKey: filterResetKey })
 
   const filters = useMemo(
     () => ({
       search: debouncedSearch || undefined,
+      locationId: scopedLocationId,
       limit: equipmentPagination.pageSize,
       offset: equipmentPagination.offset,
     }),
-    [debouncedSearch, equipmentPagination.pageSize, equipmentPagination.offset],
+    [debouncedSearch, scopedLocationId, equipmentPagination.pageSize, equipmentPagination.offset],
   )
   const { items, total, loading, saving, error, create, update, remove, reload } = useEquipment(filters)
   useEffect(() => { setListTotal(total) }, [total])
@@ -95,7 +115,7 @@ export default function Equipment() {
     fieldFilterGetters: {
       name: (row) => row.name,
       code: (row) => row.code,
-      location: (row) => row.locations?.name,
+      location: (row) => equipmentLocationName(row),
       department: (row) => row.departments?.name,
       area: (row) => row.areas?.name,
       status: (row) => (row.is_active === false ? 'inactive' : 'active'),
@@ -109,10 +129,36 @@ export default function Equipment() {
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState(null)
   const [viewing, setViewing] = useState(null)
-  const [bulkBusy, setBulkBusy] = useState(false)
-  const [bulkResult, setBulkResult] = useState(null)
-  const [bulkError, setBulkError] = useState(null)
-  const bulkInputRef = useRef(null)
+  const [selected, setSelected] = useState(() => new Set())
+  const [bulkDeleting, setBulkDeleting] = useState(false)
+  const [deleteError, setDeleteError] = useState(null)
+  const selectAllRef = useRef(null)
+  const visibleIds = useMemo(() => pagedItems.map((row) => row.id), [pagedItems])
+  const selectedVisibleCount = visibleIds.filter((id) => selected.has(id)).length
+  const allVisibleSelected = visibleIds.length > 0 && selectedVisibleCount === visibleIds.length
+  const someVisibleSelected = selectedVisibleCount > 0 && !allVisibleSelected
+
+  useEffect(() => {
+    if (selectAllRef.current) {
+      selectAllRef.current.indeterminate = someVisibleSelected
+    }
+  }, [someVisibleSelected])
+
+  const {
+    bulkInputRef,
+    bulkBusy,
+    bulkError,
+    bulkResult,
+    handleDownloadTemplate,
+    handleBulkFile,
+  } = useMasterBulkUpload({
+    downloadTemplate: getEquipmentTemplate,
+    upload: bulkUploadEquipment,
+    onSuccess: async () => {
+      await reload({ silent: true })
+    },
+    defaultFilename: 'equipment-template.xlsx',
+  })
 
   const showRecords = canRead('equipment')
   const showAreas = canRead('areas')
@@ -142,56 +188,65 @@ export default function Equipment() {
   }
 
   const handleDelete = async (row) => {
-    if (!window.confirm(`Delete equipment "${row.name}"?`)) return
-    await remove(row.id)
+    if (!window.confirm(`Delete equipment "${row.name}"? This cannot be undone.`)) return
+    setDeleteError(null)
+    try {
+      await remove(row.id)
+      setSelected((prev) => {
+        const next = new Set(prev)
+        next.delete(row.id)
+        return next
+      })
+    } catch (err) {
+      setDeleteError(err.message || 'Could not delete this equipment')
+    }
+  }
+
+  const toggleSelected = (id) => {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const toggleSelectAllVisible = () => {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (allVisibleSelected) {
+        visibleIds.forEach((id) => next.delete(id))
+      } else {
+        visibleIds.forEach((id) => next.add(id))
+      }
+      return next
+    })
+  }
+
+  const handleBulkDelete = async () => {
+    const ids = [...selected]
+    if (!ids.length) return
+    const label = ids.length === 1 ? 'this equipment' : `${ids.length} equipment records`
+    if (!window.confirm(`Delete ${label}? This cannot be undone.`)) return
+    setBulkDeleting(true)
+    setDeleteError(null)
+    try {
+      for (const id of ids) {
+        await deleteEquipment(id)
+      }
+      await reload({ silent: true })
+      setSelected(new Set())
+      if (viewing && ids.includes(viewing.id)) setViewing(null)
+    } catch (err) {
+      setDeleteError(err.message || 'Could not delete the selected equipment')
+      await reload({ silent: true })
+    } finally {
+      setBulkDeleting(false)
+    }
   }
 
   const handleToggle = async (row, isActive) => {
     await update(row.id, { is_active: isActive })
-  }
-
-  const handleDownloadTemplate = async () => {
-    setBulkError(null)
-    try {
-      const { filename, contentType, data } = await getEquipmentTemplate()
-      const bytes = Uint8Array.from(atob(data), (c) => c.charCodeAt(0))
-      const blob = new Blob([bytes], { type: contentType })
-      const url = URL.createObjectURL(blob)
-      const link = document.createElement('a')
-      link.href = url
-      link.download = filename || 'equipment-template.xlsx'
-      document.body.appendChild(link)
-      link.click()
-      link.remove()
-      URL.revokeObjectURL(url)
-    } catch (err) {
-      setBulkError(err.message)
-    }
-  }
-
-  const handleBulkFile = async (e) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    setBulkBusy(true)
-    setBulkError(null)
-    setBulkResult(null)
-    try {
-      const dataUrl = await new Promise((resolve, reject) => {
-        const reader = new FileReader()
-        reader.onload = () => resolve(reader.result)
-        reader.onerror = () => reject(new Error('Could not read the file'))
-        reader.readAsDataURL(file)
-      })
-      const base64 = String(dataUrl).split(',').pop()
-      const result = await bulkUploadEquipment(base64)
-      setBulkResult(result)
-      await reload({ silent: true })
-    } catch (err) {
-      setBulkError(err.message)
-    } finally {
-      setBulkBusy(false)
-      if (bulkInputRef.current) bulkInputRef.current.value = ''
-    }
   }
 
   if (permLoading) {
@@ -287,37 +342,29 @@ export default function Equipment() {
                   sort={{ value: sortBy, onChange: setSortBy, options: TABLE_SORT_OPTIONS }}
                   actions={canManage && (
                     <>
+                      {selected.size > 0 && (
                       <button
                         type="button"
-                        className="company-btn company-btn--secondary equipment-bulk-btn"
-                        onClick={handleDownloadTemplate}
+                        className="company-btn company-btn--danger"
+                        disabled={bulkDeleting || saving}
+                        onClick={handleBulkDelete}
                       >
-                        <span className="equipment-bulk-btn__icon" aria-hidden="true">
-                          <NavIcon name="download" />
-                        </span>
-                        Download template
+                        <TrashIcon />
+                        {bulkDeleting ? 'Deleting...' : `Delete (${selected.size})`}
                       </button>
-                      <button
-                        type="button"
-                        className="company-btn company-btn--secondary equipment-bulk-btn"
-                        onClick={() => bulkInputRef.current?.click()}
-                        disabled={bulkBusy}
-                      >
-                        <span className="equipment-bulk-btn__icon" aria-hidden="true">
-                          <NavIcon name="upload" />
-                        </span>
-                        {bulkBusy ? 'Uploading…' : 'Bulk upload'}
-                      </button>
-                      <input
-                        ref={bulkInputRef}
-                        type="file"
-                        accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                        style={{ display: 'none' }}
-                        onChange={handleBulkFile}
+                      )}
+                      <MasterBulkActions
+                        onDownload={handleDownloadTemplate}
+                        bulkBusy={bulkBusy}
+                        bulkInputRef={bulkInputRef}
+                        onFileChange={handleBulkFile}
+                        addLabel="+ Add Equipment"
+                        onAdd={openCreate}
+                        title="Bulk upload equipment"
+                        bulkError={bulkError}
+                        bulkResult={bulkResult}
+                        noun="equipment"
                       />
-                      <button type="button" className="company-btn company-btn--primary" onClick={openCreate}>
-                        + Add Equipment
-                      </button>
                     </>
                   )}
                   columnPicker={(
@@ -332,23 +379,9 @@ export default function Equipment() {
               </div>
 
               {error && <div className="company-error">{error}</div>}
+              {deleteError && <div className="company-alert">{deleteError}</div>}
               {bulkError && <div className="company-error">{bulkError}</div>}
-              {bulkResult && (
-                <div className={`company-alert ${bulkResult.failed ? 'company-alert--warning' : 'company-alert--success'}`}>
-                  <strong>{bulkResult.created}</strong> equipment created
-                  {bulkResult.failed ? `, ${bulkResult.failed} row(s) failed.` : '.'}
-                  {bulkResult.errors?.length > 0 && (
-                    <ul className="equipment-bulk-errors">
-                      {bulkResult.errors.slice(0, 10).map((err) => (
-                        <li key={err.row}>Row {err.row}: {err.message}</li>
-                      ))}
-                      {bulkResult.errors.length > 10 && (
-                        <li>…and {bulkResult.errors.length - 10} more</li>
-                      )}
-                    </ul>
-                  )}
-                </div>
-              )}
+              <MasterBulkResult result={bulkResult} noun="equipment" />
 
               {loading ? (
                 <div className="company-loading">Loading equipment…</div>
@@ -359,11 +392,23 @@ export default function Equipment() {
               ) : filteredItems.length === 0 ? (
                 <div className="company-empty">No equipment matches your filters.</div>
               ) : (
+                <>
                 <div className="company-table-wrap">
                   <div className="company-table-scroll">
-                  <table className="company-table">
+                  <table className="company-table master-table">
                     <thead>
                       <tr>
+                        {canManage && (
+                          <th className="company-table__cell--check">
+                            <input
+                              ref={selectAllRef}
+                              type="checkbox"
+                              checked={allVisibleSelected}
+                              onChange={toggleSelectAllVisible}
+                              aria-label="Select all equipment"
+                            />
+                          </th>
+                        )}
                         {isEquipmentColumnVisible('name') && <th>Name</th>}
                         {isEquipmentColumnVisible('code') && <th>Code</th>}
                         {isEquipmentColumnVisible('location') && <th>Location</th>}
@@ -374,59 +419,83 @@ export default function Equipment() {
                       </tr>
                     </thead>
                     <tbody>
-                      {pagedItems.map((row) => (
+                      {pagedItems.map((row) => {
+                        const isActive = row.is_active !== false
+                        return (
                         <tr
                           key={row.id}
                           {...tableRowClickProps({
                             onOpen: () => openView(row),
                             label: `View ${row.name}`,
+                            className: !isActive ? 'company-table__row--inactive' : undefined,
                           })}
                         >
-                          {isEquipmentColumnVisible('name') && <td>{row.name}</td>}
-                          {isEquipmentColumnVisible('code') && <td>{row.code || '—'}</td>}
-                          {isEquipmentColumnVisible('location') && <td>{row.locations?.name || '—'}</td>}
+                          {canManage && (
+                            <td
+                              className="company-table__cell--check"
+                              onClick={stopTableRowClick}
+                              onKeyDown={stopTableRowClick}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={selected.has(row.id)}
+                                onChange={() => toggleSelected(row.id)}
+                                aria-label={`Select ${row.name}`}
+                              />
+                            </td>
+                          )}
+                          {isEquipmentColumnVisible('name') && (
+                            <td><span className="company-table__name">{row.name}</span></td>
+                          )}
+                          {isEquipmentColumnVisible('code') && (
+                            <td><code className="company-code">{row.code || '—'}</code></td>
+                          )}
+                          {isEquipmentColumnVisible('location') && <td>{equipmentLocationName(row) || '—'}</td>}
                           {isEquipmentColumnVisible('department') && <td>{row.departments?.name || '—'}</td>}
                           {isEquipmentColumnVisible('area') && <td>{row.areas?.name || '—'}</td>}
                           {isEquipmentColumnVisible('active') && (
                             <td onClick={stopTableRowClick}>
                               <GooToggle
-                                checked={row.is_active !== false}
+                                checked={isActive}
                                 disabled={!canManage || saving}
                                 onChange={(checked) => handleToggle(row, checked)}
-                                ariaLabel={`Toggle ${row.name}`}
+                                ariaLabel={`${isActive ? 'Disable' : 'Enable'} ${row.name}`}
                               />
                             </td>
                           )}
                           {canManage && isEquipmentColumnVisible('actions') && (
-                            <td className="company-table__actions" onClick={stopTableRowClick}>
-                              <button
-                                type="button"
-                                className="company-btn company-btn--secondary company-btn--compact company-btn--icon"
-                                onClick={() => openEdit(row)}
-                                aria-label={`Edit ${row.name}`}
-                                title="Edit"
-                              >
-                                <EditIcon />
-                              </button>
-                              <button
-                                type="button"
-                                className="company-btn company-btn--danger company-btn--compact company-btn--icon"
-                                onClick={() => handleDelete(row)}
-                                aria-label={`Delete ${row.name}`}
-                                title="Delete"
-                              >
-                                <TrashIcon />
-                              </button>
+                            <td onClick={stopTableRowClick}>
+                              <div className="company-table__actions">
+                                <button
+                                  type="button"
+                                  className="company-btn company-btn--secondary company-btn--compact company-btn--icon"
+                                  onClick={() => openEdit(row)}
+                                  aria-label={`Edit ${row.name}`}
+                                  title="Edit"
+                                >
+                                  <EditIcon />
+                                </button>
+                                <button
+                                  type="button"
+                                  className="company-btn company-btn--danger company-btn--compact company-btn--icon"
+                                  onClick={() => handleDelete(row)}
+                                  aria-label={`Delete ${row.name}`}
+                                  title="Delete"
+                                >
+                                  <TrashIcon />
+                                </button>
+                              </div>
                             </td>
                           )}
                         </tr>
-                      ))}
+                        )
+                      })}
                     </tbody>
                   </table>
-                  <TablePagination {...equipmentPagination} />
-                  />
                   </div>
                 </div>
+                <TablePagination {...equipmentPagination} />
+                </>
               )}
             </div>
 
@@ -449,6 +518,8 @@ export default function Equipment() {
               <EquipmentModal
                 equipment={editing}
                 saving={saving}
+                defaultLocationId={scopedLocationId || ''}
+                lockLocation={Boolean(scopedLocationId)}
                 onClose={() => setModalOpen(false)}
                 onSave={handleSave}
               />

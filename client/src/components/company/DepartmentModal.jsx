@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useBackdropClose } from '../../hooks/useBackdropClose'
+import PageBack from '../shared/PageBack'
 import {
   LOCATION_ALL,
   LOCATION_NONE,
@@ -160,7 +161,10 @@ export default function DepartmentModal({
           aria-labelledby="department-modal-title"
         >
           <div className="company-modal__header">
-            <h2 id="department-modal-title">{department ? 'Edit Department' : 'Add Department'}</h2>
+            <div className="modal__header-main">
+              <PageBack onClick={onClose} className="page-back--header" label="Departments" />
+              <h2 id="department-modal-title">{department ? 'Edit Department' : 'Add Department'}</h2>
+            </div>
             <button type="button" className="company-modal__close" onClick={onClose} aria-label="Close">×</button>
           </div>
           <form className="company-modal__form" onSubmit={handleSubmit}>

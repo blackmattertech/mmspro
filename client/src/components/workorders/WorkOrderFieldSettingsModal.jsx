@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useBackdropClose } from '../../hooks/useBackdropClose'
+import PageBack from '../shared/PageBack'
 import GooToggle from '../ui/GooToggle'
 import { fieldTypeLabel } from '../../lib/assetFieldTypes'
 import { reorderItemsById } from '../../lib/assetFormSchema'
@@ -118,7 +119,10 @@ export default function WorkOrderFieldSettingsModal({
         aria-labelledby="wo-settings-title"
       >
         <div className="modal__header">
-          <h2 id="wo-settings-title" className="modal__title">Form field settings</h2>
+          <div className="modal__header-main">
+            <PageBack onClick={onClose} className="page-back--header" />
+            <h2 id="wo-settings-title" className="modal__title">Form field settings</h2>
+          </div>
           <button type="button" className="modal__close" onClick={onClose} aria-label="Close">×</button>
         </div>
 

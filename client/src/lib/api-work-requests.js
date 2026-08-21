@@ -82,3 +82,10 @@ export function requestWorkRequestInfo(id, message) {
     body: JSON.stringify({ message }),
   })
 }
+
+export function replyToWorkRequest(id, { message, attachments = [] }) {
+  return workRequestsFetch(`/${id}/reply`, {
+    method: 'POST',
+    body: JSON.stringify({ message, attachments }),
+  })
+}

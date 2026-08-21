@@ -26,3 +26,16 @@ export function departmentsForEmployeeLocation(departments, locationId) {
     d.all_locations || d.location_id === locationId || (!d.all_locations && !d.location_id),
   )
 }
+
+const MAINTENANCE_ALIASES = ['maintenance', 'maintainance', 'maintance']
+
+export function isMaintenanceDepartment(department) {
+  const name = String(department?.name || '').trim().toLowerCase()
+  const code = String(department?.code || '').trim().toLowerCase()
+  if (!name && !code) return false
+  if (MAINTENANCE_ALIASES.includes(name) || MAINTENANCE_ALIASES.includes(code)) return true
+  if (name.includes('maintenance') || name.includes('maintainance') || name.includes('maintance')) {
+    return true
+  }
+  return Boolean(code && (code === 'mnt' || code.startsWith('mnt-')))
+}

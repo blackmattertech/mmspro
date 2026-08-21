@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useBackdropClose } from '../../hooks/useBackdropClose'
+import PageBack from '../shared/PageBack'
 import AddressAutocomplete from '../shared/AddressAutocomplete'
 import { validatePostalCode } from '../../lib/validation'
 import { employeesForLocationHead } from '../../lib/departmentLocation'
@@ -117,7 +118,10 @@ export default function LocationModal({
         aria-labelledby="location-modal-title"
       >
         <div className="company-modal__header">
-          <h2 id="location-modal-title">{location ? 'Edit Location' : 'Add Location'}</h2>
+          <div className="modal__header-main">
+            <PageBack onClick={onClose} className="page-back--header" label="Locations" />
+            <h2 id="location-modal-title">{location ? 'Edit Location' : 'Add Location'}</h2>
+          </div>
           <button type="button" className="company-modal__close" onClick={onClose} aria-label="Close">×</button>
         </div>
         <form className="company-modal__form" onSubmit={handleSubmit}>

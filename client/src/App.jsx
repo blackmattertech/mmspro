@@ -50,7 +50,7 @@ const reportRouteModules = {
   overdue: 'reports_overdue',
 }
 const masterRoutes = ['order', 'activity']
-const companyPageModules = ['company', 'locations', 'departments', 'employees']
+const companyPageModules = ['company', 'locations', 'departments', 'work_centers', 'employees']
 const workOrderModules = [
   'work_orders',
   'work_orders_received',

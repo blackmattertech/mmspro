@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useBackdropClose } from '../../hooks/useBackdropClose'
+import PageBack from './PageBack'
 import {
   CROP_VIEWPORT_SIZE,
   cropImageToFile,
@@ -115,7 +116,10 @@ export default function ImageCropModal({
     >
       <div className="company-modal image-crop-modal" onClick={(e) => e.stopPropagation()}>
         <div className="company-modal__header">
-          <h2>Adjust Photo</h2>
+          <div className="modal__header-main">
+            <PageBack onClick={onCancel} className="page-back--header" />
+            <h2>Adjust Photo</h2>
+          </div>
           <button type="button" className="company-modal__close" onClick={onCancel} aria-label="Close">
             ×
           </button>

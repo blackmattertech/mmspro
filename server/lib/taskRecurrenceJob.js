@@ -1,6 +1,7 @@
 import { supabaseAdmin } from '../services/supabase.js'
 import { computeNextOccurrence } from './taskRecurrence.js'
 import { nextTaskNumber } from './taskNumberService.js'
+import { notifyTaskAssigned } from './taskNotifyRecipients.js'
 
 async function loadTemplateTagIds(orgId, templateId) {
   const { data, error } = await supabaseAdmin
@@ -66,6 +67,22 @@ async function cloneTemplateInstance(template, recurrence) {
         assigned_by_profile_id: a.assigned_by_profile_id,
       })),
     )
+  }
+
+  try {
+    await notifyTaskAssigned(orgId, {
+      title: template.title,
+      taskId: instance.id,
+      visibilityType: template.visibility_type,
+      assignment: {
+        assigneeEmployeeIds: (assignees || []).map((row) => row.employee_id),
+        departmentId: template.department_id,
+        locationId: template.location_id,
+      },
+      excludeProfileId: template.created_by_profile_id,
+    })
+  } catch {
+    // non-blocking
   }
 
   const tagIds = await loadTemplateTagIds(orgId, template.id)

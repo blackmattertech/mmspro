@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import RolePermissionsTable from './RolePermissionsTable'
 import { emptyPermissions } from '../../lib/accessModules'
+import PageBack from '../shared/PageBack'
 import '../company/CompanyShared.css'
 import './RoleModal.css'
 
@@ -60,7 +61,10 @@ export default function RoleModal({
   return (
     <div className="company-panel role-editor role-modal">
       <div className="company-modal__header">
-        <h2>{role ? 'Update Role' : 'Create Role'}</h2>
+        <div className="modal__header-main">
+          {onClose && <PageBack onClick={onClose} className="page-back--header" label="Roles & Access" />}
+          <h2>{role ? 'Update Role' : 'Create Role'}</h2>
+        </div>
         {onClose && (
           <button type="button" className="company-modal__close" onClick={onClose} aria-label="Close">×</button>
         )}

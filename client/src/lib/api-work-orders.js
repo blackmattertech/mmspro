@@ -91,8 +91,13 @@ export function getAssignedWorkOrder(id) {
   return workOrdersFetch(`/assigned/${id}`)
 }
 
-export function getScheduledWorkOrders() {
-  return workOrdersFetch('/scheduled')
+export async function getScheduledWorkOrders({ search, limit = 50, offset = 0 } = {}) {
+  const data = await workOrdersFetch(`/scheduled${listQueryParams({ search, limit, offset })}`)
+  return asListArray(data)
+}
+
+export function getScheduledWorkOrder(id) {
+  return workOrdersFetch(`/scheduled/${id}`)
 }
 
 export async function getManualWorkOrders({ search, limit = 50, offset = 0 } = {}) {
@@ -114,6 +119,31 @@ export function updateWorkOrderAssignment(workOrderId, payload) {
 export function updateWorkOrderLifecycle(workOrderId, payload) {
   return workOrdersFetch(`/manual/${workOrderId}/lifecycle`, {
     method: 'PATCH',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function getWorkOrderDailyLogs(workOrderId) {
+  return workOrdersFetch(`/manual/${workOrderId}/daily-logs`)
+}
+
+export function startWorkOrderDay(workOrderId, payload = {}) {
+  return workOrdersFetch(`/manual/${workOrderId}/daily-logs/start-day`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function updateWorkOrderDailyLog(workOrderId, logId, payload) {
+  return workOrdersFetch(`/manual/${workOrderId}/daily-logs/${logId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function endWorkOrderDay(workOrderId, logId, payload = {}) {
+  return workOrdersFetch(`/manual/${workOrderId}/daily-logs/${logId}/end-day`, {
+    method: 'POST',
     body: JSON.stringify(payload),
   })
 }

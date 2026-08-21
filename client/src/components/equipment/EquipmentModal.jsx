@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useBackdropClose } from '../../hooks/useBackdropClose'
+import PageBack from '../shared/PageBack'
 import { useLocations } from '../../hooks/useLocations'
 import { useDepartments } from '../../hooks/useDepartments'
 import { useAreas } from '../../hooks/useAreas'
+import { departmentsForEmployeeLocation } from '../../lib/departmentLocation'
 import { getEquipmentFields } from '../../lib/api-equipment'
 import { seedDateFieldDefaults } from '../../lib/dateInputDefaults'
 import DateField from '../ui/DateField'
@@ -27,7 +29,14 @@ function readFileAsDataUrl(file) {
   })
 }
 
-export default function EquipmentModal({ equipment, saving, onClose, onSave }) {
+export default function EquipmentModal({
+  equipment,
+  saving,
+  onClose,
+  onSave,
+  defaultLocationId = '',
+  lockLocation = false,
+}) {
   const isEdit = Boolean(equipment?.id)
   const { locations } = useLocations()
   const [placement, setPlacement] = useState(EMPTY_PLACEMENT)
@@ -39,7 +48,7 @@ export default function EquipmentModal({ equipment, saving, onClose, onSave }) {
   const fileInputRef = useRef(null)
   const handleBackdropClick = useBackdropClose(onClose)
 
-  const { departments } = useDepartments(placement.location_id || '')
+  const { departments } = useDepartments()
   const { areas } = useAreas({
     locationId: placement.location_id || undefined,
     departmentId: placement.department_id || undefined,
@@ -66,20 +75,23 @@ export default function EquipmentModal({ equipment, saving, onClose, onSave }) {
       }
       setValues(next)
     } else {
-      setPlacement(EMPTY_PLACEMENT)
+      setPlacement({
+        ...EMPTY_PLACEMENT,
+        location_id: defaultLocationId || '',
+      })
       setValues(seedDateFieldDefaults(fieldDefs, {}))
     }
     setImageFile(null)
     setImageRemoved(false)
-  }, [equipment, fieldDefs])
+  }, [equipment, fieldDefs, defaultLocationId])
 
   const activeLocations = useMemo(
     () => (locations || []).filter((l) => l.is_active !== false),
     [locations],
   )
   const activeDepartments = useMemo(
-    () => (departments || []).filter((d) => d.is_active !== false),
-    [departments],
+    () => departmentsForEmployeeLocation(departments, placement.location_id),
+    [departments, placement.location_id],
   )
   const activeAreas = useMemo(
     () => (areas || []).filter((a) => a.is_active !== false),
@@ -275,7 +287,10 @@ export default function EquipmentModal({ equipment, saving, onClose, onSave }) {
     <div className="company-modal-overlay" onMouseDown={handleBackdropClick} role="presentation">
       <div className="company-modal company-modal--wide" onClick={(e) => e.stopPropagation()} role="dialog">
         <div className="company-modal__header">
-          <h2>{isEdit ? 'Edit Equipment' : 'Add Equipment'}</h2>
+          <div className="modal__header-main">
+            <PageBack onClick={onClose} className="page-back--header" label="Equipment" />
+            <h2>{isEdit ? 'Edit Equipment' : 'Add Equipment'}</h2>
+          </div>
           <button type="button" className="company-modal__close" onClick={onClose} aria-label="Close">×</button>
         </div>
         <form className="company-modal__form" onSubmit={handleSubmit}>
@@ -333,9 +348,15 @@ export default function EquipmentModal({ equipment, saving, onClose, onSave }) {
                 getOptionLabel={(loc) => loc.name}
                 placeholder="Select location…"
                 required
+                disabled={lockLocation}
                 className="company-form__input--select"
               />
             </label>
+            {lockLocation && (
+              <span className="company-modal__hint">
+                Location is limited to your assigned location.
+              </span>
+            )}
             <label className="company-form__field">
               <span className="company-form__label">Department *</span>
               <FilterableSelect

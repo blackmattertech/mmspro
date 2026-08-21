@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useBackdropClose } from '../../hooks/useBackdropClose'
 import { useOrg } from '../../hooks/useOrg'
+import PageBack from '../shared/PageBack'
 import GooToggle from '../ui/GooToggle'
 import SectionIconUpload from './SectionIconUpload'
 import CreatableSelect from '../company/CreatableSelect'
@@ -511,9 +512,12 @@ export default function FieldModal({
     <div className="company-modal-overlay" onMouseDown={handleBackdropClick} role="presentation">
       <div className="company-modal company-modal--wide" onClick={(e) => e.stopPropagation()} role="dialog" aria-labelledby="field-modal-title">
         <div className="company-modal__header">
-          <h2 id="field-modal-title">
-            {valuesOnly ? 'Edit option values' : isChild ? 'Add Child' : isEdit ? 'Edit Field' : 'Add Field'}
-          </h2>
+          <div className="modal__header-main">
+            <PageBack onClick={onClose} className="page-back--header" />
+            <h2 id="field-modal-title">
+              {valuesOnly ? 'Edit option values' : isChild ? 'Add Child' : isEdit ? 'Edit Field' : 'Add Field'}
+            </h2>
+          </div>
           <button type="button" className="company-modal__close" onClick={onClose} aria-label="Close">×</button>
         </div>
         <form className="company-modal__form" onSubmit={handleSubmit}>
