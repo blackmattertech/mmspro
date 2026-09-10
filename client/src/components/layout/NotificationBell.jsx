@@ -9,7 +9,7 @@ export default function NotificationBell() {
   const { unreadCount } = useNotifications()
 
   return (
-    <div className="dash-header__icon-wrap app-shell__notif">
+    <div className="app-shell__notif">
       <button
         ref={btnRef}
         type="button"
