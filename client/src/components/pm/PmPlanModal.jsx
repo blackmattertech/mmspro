@@ -4,13 +4,12 @@ import { useDepartments } from '../../hooks/useDepartments'
 import { useLocations } from '../../hooks/useLocations'
 import { useAreas } from '../../hooks/useAreas'
 import { useEmployees } from '../../hooks/useEmployees'
-import { useVendors } from '../../hooks/useVendors'
 import { usePermissions } from '../../hooks/usePermissions'
 import { useProfile } from '../../hooks/useProfile'
 import { getEquipmentList } from '../../lib/api-equipment'
 import { getChecklistTemplates, getPmActivityTypes } from '../../lib/api-pm'
 import { isMaintenanceDepartment } from '../../lib/departmentLocation'
-import { PM_PRIORITIES, PM_SCHEDULE_TYPES, CALENDAR_SCHEDULE_TYPES } from '../../config/pm'
+import { PM_PRIORITIES, PM_SCHEDULE_TYPES, PM_CALENDAR_UNITS, CALENDAR_SCHEDULE_TYPES, normalizeScheduleType, normalizeCalendarUnit } from '../../config/pm'
 import DateField from '../ui/DateField'
 import FilterableSelect from '../ui/FilterableSelect'
 import GooToggle from '../ui/GooToggle'
@@ -29,25 +28,24 @@ const EMPTY = {
   work_center: 'General',
   priority: 'medium',
   status: 'inactive',
-  schedule_type: 'monthly',
+  schedule_type: 'calendar',
+  calendar_unit: 'month',
   every_n: 1,
   start_date: '',
   end_date: '',
   grace_days: '',
   generate_before_days: 1,
-  working_shift: '',
+  last_reading: '',
+  last_service_date: '',
+  reading_interval: '',
+  whichever_comes_first: true,
   checklist_template_id: '',
-  contractor_vendor_id: '',
-  estimated_labour_hours: '',
-  estimated_duration_hours: '',
-  required_tools: '',
-  required_skills: '',
-  allow_multiple_open: false,
   technician_ids: [],
 }
 
 function formFromPlan(plan) {
   if (!plan) return { ...EMPTY }
+  const scheduleType = normalizeScheduleType(plan.schedule_type)
   return {
     name: plan.name || '',
     department_id: plan.department_id || '',
@@ -58,20 +56,18 @@ function formFromPlan(plan) {
     work_center: plan.work_center || 'General',
     priority: plan.priority || 'medium',
     status: plan.status || 'inactive',
-    schedule_type: plan.schedule_type || 'monthly',
+    schedule_type: scheduleType,
+    calendar_unit: normalizeCalendarUnit(plan.calendar_unit, plan.schedule_type),
     every_n: plan.every_n || 1,
     start_date: plan.start_date ? String(plan.start_date).slice(0, 10) : '',
     end_date: plan.end_date ? String(plan.end_date).slice(0, 10) : '',
     grace_days: plan.grace_days ?? '',
     generate_before_days: plan.generate_before_days ?? 1,
-    working_shift: plan.working_shift || '',
+    last_reading: plan.last_reading ?? '',
+    last_service_date: plan.last_service_date ? String(plan.last_service_date).slice(0, 10) : '',
+    reading_interval: plan.reading_interval ?? '',
+    whichever_comes_first: plan.whichever_comes_first !== false,
     checklist_template_id: plan.checklist_template_id || '',
-    contractor_vendor_id: plan.contractor_vendor_id || '',
-    estimated_labour_hours: plan.estimated_labour_hours ?? '',
-    estimated_duration_hours: plan.estimated_duration_hours ?? '',
-    required_tools: plan.required_tools || '',
-    required_skills: plan.required_skills || '',
-    allow_multiple_open: Boolean(plan.allow_multiple_open),
     technician_ids: (plan.technicians || []).map((row) => row.id),
   }
 }
@@ -97,7 +93,6 @@ export default function PmPlanModal({ plan, saving, onClose, onSave }) {
   })
   const { locationId: scopedLocationId } = usePermissions()
   const { employee } = useProfile()
-  const { items: vendors } = useVendors({ limit: 200 })
 
   useEffect(() => {
     setForm(formFromPlan(plan))
@@ -182,7 +177,8 @@ export default function PmPlanModal({ plan, saving, onClose, onSave }) {
     })
   }
 
-  const isCalendar = CALENDAR_SCHEDULE_TYPES.has(form.schedule_type)
+  const usesCalendar = CALENDAR_SCHEDULE_TYPES.has(form.schedule_type)
+  const usesReading = form.schedule_type === 'reading' || form.schedule_type === 'both'
 
   const technicians = useMemo(() => {
     const selected = new Set(form.technician_ids)
@@ -203,8 +199,10 @@ export default function PmPlanModal({ plan, saving, onClose, onSave }) {
       { ok: Boolean(form.activity_type_id), id: 'pm-field-activity', label: 'Maintenance activity type' },
       { ok: Boolean(form.work_center.trim()), id: 'pm-field-work-center', label: 'Work center' },
       { ok: Boolean(form.equipment_id), id: 'pm-field-equipment', label: 'Equipment' },
-      { ok: Boolean(form.start_date), id: 'pm-field-start-date', label: 'Start date' },
-      { ok: !isCalendar || Boolean(form.every_n), id: 'pm-field-every', label: 'Every' },
+      { ok: !usesCalendar || Boolean(form.start_date), id: 'pm-field-start-date', label: 'Start date' },
+      { ok: !usesCalendar || Boolean(form.calendar_unit), id: 'pm-field-calendar-unit', label: 'Interval type' },
+      { ok: !usesCalendar || Boolean(form.every_n), id: 'pm-field-every', label: 'Interval value' },
+      { ok: !usesReading || Boolean(form.reading_interval), id: 'pm-field-reading-interval', label: 'Reading value' },
       { ok: form.generate_before_days !== '' && form.generate_before_days != null, id: 'pm-field-generate-before', label: 'Generate before due' },
     ]
     const missing = requiredChecks.find((row) => !row.ok)
@@ -228,19 +226,23 @@ export default function PmPlanModal({ plan, saving, onClose, onSave }) {
         priority: form.priority,
         status: form.status,
         schedule_type: form.schedule_type,
+        calendar_unit: form.calendar_unit,
         every_n: Number(form.every_n) || 1,
         start_date: form.start_date || null,
         end_date: form.end_date || null,
         grace_days: form.grace_days === '' ? null : Number(form.grace_days),
         generate_before_days: Number(form.generate_before_days) || 0,
-        working_shift: form.working_shift.trim() || null,
+        last_reading: form.last_reading === '' ? null : Number(form.last_reading),
+        last_service_date: form.last_service_date || null,
+        reading_interval: form.reading_interval === '' ? null : Number(form.reading_interval),
+        whichever_comes_first: form.schedule_type === 'both' ? Boolean(form.whichever_comes_first) : true,
         checklist_template_id: form.checklist_template_id || null,
-        contractor_vendor_id: form.contractor_vendor_id || null,
-        estimated_labour_hours: form.estimated_labour_hours === '' ? null : Number(form.estimated_labour_hours),
-        estimated_duration_hours: form.estimated_duration_hours === '' ? null : Number(form.estimated_duration_hours),
-        required_tools: form.required_tools.trim() || null,
-        required_skills: form.required_skills.trim() || null,
-        allow_multiple_open: form.allow_multiple_open,
+        contractor_vendor_id: null,
+        estimated_labour_hours: null,
+        estimated_duration_hours: null,
+        required_tools: null,
+        required_skills: null,
+        allow_multiple_open: false,
         technician_ids: form.technician_ids,
       })
     } catch (err) {
@@ -265,10 +267,6 @@ export default function PmPlanModal({ plan, saving, onClose, onSave }) {
           <section className="pm-section">
             <h3 className="pm-section__title">Section A — General information</h3>
             <div className="company-form__grid company-form__grid--2">
-              <label className="company-form__field">
-                <span className="company-form__label">PM plan number</span>
-                <input className="company-form__input" value={plan?.plan_number || 'Generated after saving'} readOnly disabled />
-              </label>
               <label className="company-form__field" id="pm-field-name">
                 <span className="company-form__label">PM plan name *</span>
                 <input
@@ -392,25 +390,106 @@ export default function PmPlanModal({ plan, saving, onClose, onSave }) {
                   allowEmpty={false}
                 />
               </label>
-              <label className="company-form__field" id="pm-field-every">
-                <span className="company-form__label">Every *</span>
-                <input
-                  className="company-form__input"
-                  type="number"
-                  min="1"
-                  value={form.every_n}
-                  onChange={(e) => setField('every_n', e.target.value)}
-                  disabled={!isCalendar}
-                />
-              </label>
-              <label className="company-form__field" id="pm-field-start-date">
-                <span className="company-form__label">Start date *</span>
-                <DateField value={form.start_date} onChange={(value) => setField('start_date', value)} />
-              </label>
-              <label className="company-form__field">
-                <span className="company-form__label">End date</span>
-                <DateField value={form.end_date} onChange={(value) => setField('end_date', value)} />
-              </label>
+            </div>
+
+            {usesCalendar && (
+              <div className="pm-schedule-block">
+                <h4 className="pm-schedule-block__title">Calendar interval</h4>
+                <div className="company-form__grid company-form__grid--2">
+                  <label className="company-form__field" id="pm-field-calendar-unit">
+                    <span className="company-form__label">Interval type *</span>
+                    <FilterableSelect
+                      value={form.calendar_unit}
+                      onChange={(id) => setField('calendar_unit', id)}
+                      options={PM_CALENDAR_UNITS}
+                      getOptionValue={(row) => row.value}
+                      getOptionLabel={(row) => row.label}
+                      allowEmpty={false}
+                    />
+                  </label>
+                  <label className="company-form__field" id="pm-field-every">
+                    <span className="company-form__label">Interval value *</span>
+                    <input
+                      className="company-form__input"
+                      type="number"
+                      min="1"
+                      value={form.every_n}
+                      onChange={(e) => setField('every_n', e.target.value)}
+                    />
+                  </label>
+                </div>
+              </div>
+            )}
+
+            {usesReading && (
+              <div className="pm-schedule-block">
+                <h4 className="pm-schedule-block__title">Reading interval</h4>
+                <div className="company-form__grid company-form__grid--2">
+                  <label className="company-form__field">
+                    <span className="company-form__label">Last reading</span>
+                    <input
+                      className="company-form__input"
+                      type="number"
+                      min="0"
+                      step="any"
+                      value={form.last_reading}
+                      onChange={(e) => setField('last_reading', e.target.value)}
+                      placeholder="Optional"
+                    />
+                  </label>
+                  <label className="company-form__field">
+                    <span className="company-form__label">Last service date</span>
+                    <DateField
+                      value={form.last_service_date}
+                      onChange={(value) => setField('last_service_date', value)}
+                    />
+                  </label>
+                  <label className="company-form__field" id="pm-field-reading-interval">
+                    <span className="company-form__label">Reading value *</span>
+                    <input
+                      className="company-form__input"
+                      type="number"
+                      min="0"
+                      step="any"
+                      value={form.reading_interval}
+                      onChange={(e) => setField('reading_interval', e.target.value)}
+                      placeholder="Trigger after this reading"
+                    />
+                  </label>
+                </div>
+              </div>
+            )}
+
+            {form.schedule_type === 'both' && (
+              <div className="pm-schedule-block pm-schedule-block--trigger">
+                <div className="company-form__field">
+                  <span className="company-form__label">Whichever comes first</span>
+                  <GooToggle
+                    checked={form.whichever_comes_first}
+                    onChange={(checked) => setField('whichever_comes_first', checked)}
+                    ariaLabel="Whichever comes first"
+                  />
+                  <p className="pm-section__hint">
+                    When enabled, a work order is triggered by the calendar due date or the reading
+                    threshold — whichever is reached first.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            <div className="company-form__grid company-form__grid--2">
+              {usesCalendar && (
+                <>
+                  <label className="company-form__field" id="pm-field-start-date">
+                    <span className="company-form__label">Start date *</span>
+                    <DateField value={form.start_date} onChange={(value) => setField('start_date', value)} />
+                  </label>
+                  <label className="company-form__field">
+                    <span className="company-form__label">End date</span>
+                    <DateField value={form.end_date} onChange={(value) => setField('end_date', value)} />
+                  </label>
+                </>
+              )}
               <label className="company-form__field">
                 <span className="company-form__label">Grace period (days)</span>
                 <input
@@ -431,29 +510,7 @@ export default function PmPlanModal({ plan, saving, onClose, onSave }) {
                   onChange={(e) => setField('generate_before_days', e.target.value)}
                 />
               </label>
-              <label className="company-form__field">
-                <span className="company-form__label">Working shift</span>
-                <input
-                  className="company-form__input"
-                  value={form.working_shift}
-                  onChange={(e) => setField('working_shift', e.target.value)}
-                  placeholder="Optional"
-                />
-              </label>
-              <div className="company-form__field">
-                <span className="company-form__label">Allow multiple open work orders</span>
-                <GooToggle
-                  checked={form.allow_multiple_open}
-                  onChange={(checked) => setField('allow_multiple_open', checked)}
-                />
-              </div>
             </div>
-            {!isCalendar && (
-              <p className="pm-section__hint">
-                Runtime, meter, and shutdown schedules use the start date as the first due date.
-                Set the next due date after each completion, or generate the work order manually.
-              </p>
-            )}
           </section>
 
           <section className="pm-section">
@@ -510,57 +567,6 @@ export default function PmPlanModal({ plan, saving, onClose, onSave }) {
                   })}
                 </div>
               )}
-            </div>
-            <div className="company-form__grid company-form__grid--2">
-              <label className="company-form__field">
-                <span className="company-form__label">Contractor</span>
-                <FilterableSelect
-                  value={form.contractor_vendor_id}
-                  onChange={(id) => setField('contractor_vendor_id', id)}
-                  options={vendors || []}
-                  getOptionValue={(row) => row.id}
-                  getOptionLabel={(row) => row.name}
-                  placeholder="Optional vendor"
-                />
-              </label>
-              <label className="company-form__field">
-                <span className="company-form__label">Estimated labour (hours)</span>
-                <input
-                  className="company-form__input"
-                  type="number"
-                  min="0"
-                  step="0.5"
-                  value={form.estimated_labour_hours}
-                  onChange={(e) => setField('estimated_labour_hours', e.target.value)}
-                />
-              </label>
-              <label className="company-form__field">
-                <span className="company-form__label">Estimated duration (hours)</span>
-                <input
-                  className="company-form__input"
-                  type="number"
-                  min="0"
-                  step="0.5"
-                  value={form.estimated_duration_hours}
-                  onChange={(e) => setField('estimated_duration_hours', e.target.value)}
-                />
-              </label>
-              <label className="company-form__field">
-                <span className="company-form__label">Required tools</span>
-                <input
-                  className="company-form__input"
-                  value={form.required_tools}
-                  onChange={(e) => setField('required_tools', e.target.value)}
-                />
-              </label>
-              <label className="company-form__field company-form__field--full">
-                <span className="company-form__label">Required skills</span>
-                <input
-                  className="company-form__input"
-                  value={form.required_skills}
-                  onChange={(e) => setField('required_skills', e.target.value)}
-                />
-              </label>
             </div>
           </section>
 

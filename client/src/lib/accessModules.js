@@ -30,7 +30,7 @@ export const ACCESS_MODULE_GROUPS = [
       { key: 'work_orders_received', label: 'Received', actions: ['create', 'read', 'update', 'delete'] },
       { key: 'work_orders_approve', label: 'Approving Work Order', actions: ['update'] },
       { key: 'work_orders_assigned', label: 'Assigned', actions: ['create', 'read', 'update', 'delete'] },
-      { key: 'work_orders_scheduled', label: 'Scheduled', actions: ['create', 'read', 'update', 'delete'] },
+      { key: 'work_orders_scheduled', label: 'PM Schedule', actions: ['create', 'read', 'update', 'delete'] },
       { key: 'work_orders_manual', label: 'Manual', actions: ['create', 'read', 'update', 'delete'] },
     ],
   },

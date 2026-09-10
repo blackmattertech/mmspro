@@ -34,10 +34,15 @@ export async function runTaskReminderJob() {
     .lte('remind_at', now)
     .is('sent_at', null)
     .not('remind_at', 'is', null)
-    .limit(200)
+    .order('remind_at', { ascending: true })
+    .limit(100)
 
   if (error) throw error
   if (!dueReminders?.length) return { sent: 0 }
+
+  const assigneeMap = await loadAssigneeIdsForTasks(
+    [...new Set(dueReminders.map((row) => row.task_id).filter(Boolean))],
+  )
 
   let sent = 0
 
@@ -46,14 +51,10 @@ export async function runTaskReminderJob() {
     if (!task) continue
 
     try {
-      const { data: assignees } = await supabaseAdmin
-        .from('task_assignees')
-        .select('employee_id')
-        .eq('task_id', task.id)
-
+      const assigneeEmployeeIds = assigneeMap.get(task.id) || []
       const profileIds = await listTaskNotifyProfileIds(reminder.org_id, {
         visibilityType: task.visibility_type,
-        assigneeEmployeeIds: (assignees || []).map((row) => row.employee_id),
+        assigneeEmployeeIds,
         departmentId: task.department_id,
         locationId: task.location_id,
         extraProfileIds: [task.created_by_profile_id],

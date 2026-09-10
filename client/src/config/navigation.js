@@ -35,9 +35,15 @@ const APP_SEGMENTS = [
     children: [
       { label: 'Received', segment: 'work-orders/received', moduleKey: 'work_orders_received', icon: 'addItem' },
       { label: 'Assigned', segment: 'work-orders/assigned', moduleKey: 'work_orders_assigned', icon: 'userAdd' },
-      { label: 'Scheduled', segment: 'work-orders/scheduled', moduleKey: 'work_orders_scheduled', icon: 'alarmCheck' },
       { label: 'Manual', segment: 'work-orders/manual', moduleKey: 'work_orders_manual', icon: 'bill' },
     ],
+  },
+  {
+    id: 'pm-scheduled',
+    label: 'PM Schedule',
+    segment: 'work-orders/scheduled',
+    icon: 'alarmCheck',
+    moduleKey: 'work_orders_scheduled',
   },
   {
     id: 'calendar',
@@ -88,6 +94,7 @@ const APP_SEGMENTS = [
       { label: 'Assets', segment: 'masters/assets', moduleKey: 'assets', icon: 'asset' },
       { label: 'Equipment', segment: 'masters/equipment', moduleKey: 'equipment', icon: 'washer', altModuleKeys: ['areas'] },
       { label: 'Vendors', segment: 'masters/vendors', icon: 'userCheck', showWithoutPermission: true },
+      { label: 'Others', segment: 'masters/others', icon: 'dots', showWithoutPermission: true },
     ],
   },
   {
@@ -138,6 +145,7 @@ export function moduleKeyForPath(pathname, orgSlug) {
   if (rest.startsWith('masters/company')) return 'company'
   if (rest.startsWith('masters/assets')) return 'assets'
   if (rest.startsWith('masters/equipment')) return 'equipment'
+  if (rest.startsWith('masters/others')) return 'company'
   if (rest.startsWith('configuration/roles')) return 'roles_access'
   if (rest.startsWith('configuration/settings')) return 'settings'
   if (rest.startsWith('configuration/import')) return 'settings'
@@ -219,6 +227,59 @@ export function getShortcutOptions(orgSlug, { canRead } = {}) {
     }
   }
   return options
+}
+
+/** Build breadcrumb trail for the current org-scoped app path. */
+export function getBreadcrumbsForPath(pathname, orgSlug) {
+  if (!pathname || !orgSlug) return []
+  const prefix = `/${orgSlug}/`
+  if (!pathname.startsWith(prefix) && pathname !== `/${orgSlug}`) return []
+  const rest = pathname === `/${orgSlug}` ? 'dashboard' : pathname.slice(prefix.length)
+
+  let match = null
+  for (const item of APP_SEGMENTS) {
+    if (item.children?.length) {
+      for (const child of item.children) {
+        if (rest === child.segment || rest.startsWith(`${child.segment}/`)) {
+          if (!match || child.segment.length > match.leaf.segment.length) {
+            match = { parent: item, leaf: child }
+          }
+        }
+      }
+    } else if (item.segment) {
+      if (rest === item.segment || rest.startsWith(`${item.segment}/`)) {
+        const leafLen = match?.leaf?.segment?.length || 0
+        if (!match || item.segment.length > leafLen) {
+          match = { parent: null, leaf: item }
+        }
+      }
+    }
+  }
+
+  if (!match) return []
+
+  const crumbs = []
+  if (match.parent) {
+    const firstChild = match.parent.children?.[0]
+    crumbs.push({
+      label: match.parent.label,
+      to: firstChild ? orgPath(orgSlug, firstChild.segment) : undefined,
+    })
+  }
+
+  crumbs.push({
+    label: match.leaf.label,
+    to: orgPath(orgSlug, match.leaf.segment),
+  })
+
+  const after = rest.slice(match.leaf.segment.length)
+  if (after === '/create' || after.startsWith('/create/')) {
+    crumbs.push({ label: 'Create' })
+  } else if (/^\/[^/]+\/edit(?:\/|$)/.test(after)) {
+    crumbs.push({ label: 'Edit' })
+  }
+
+  return crumbs
 }
 
 export {

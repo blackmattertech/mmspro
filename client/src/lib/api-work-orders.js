@@ -29,6 +29,11 @@ export function createManualWorkOrder({
   assignedEmployeeIds,
   assignedDepartmentId,
   assignedLocationId,
+  shortDescription,
+  problemDescription,
+  priority,
+  equipmentId,
+  workCenter,
 }) {
   return workOrdersFetch('/manual', {
     method: 'POST',
@@ -38,6 +43,11 @@ export function createManualWorkOrder({
       assigned_employee_ids: assignedEmployeeIds || [],
       assigned_department_id: assignedDepartmentId || null,
       assigned_location_id: assignedLocationId || null,
+      short_description: shortDescription || null,
+      problem_description: problemDescription || null,
+      priority: priority || undefined,
+      equipment_id: equipmentId || null,
+      work_center: workCenter || null,
     }),
   })
 }

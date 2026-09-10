@@ -1330,6 +1330,10 @@
   margin-bottom: 28px;
 }
 
+.wo-received-detail__section:has(.wo-permit) {
+  max-width: none;
+}
+
 .wo-received-detail__section h3 {
   margin: 0 0 8px;
   font-size: 14px;
@@ -1416,48 +1420,84 @@
   color: var(--color-gray-blue);
 }
 
-.wo-permit__fields {
-  gap: 16px 20px;
-}
-
-.wo-permit__types {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.wo-permit__type {
+.wo-permit__entries {
   display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  min-height: 44px;
-  padding: 10px 12px;
-  font-size: 13px;
-  line-height: 1.35;
-  color: var(--color-dark-navy);
+  flex-direction: column;
+  gap: 12px;
+}
+
+.wo-permit__entry {
+  padding: 12px;
   background: var(--color-white);
-  border: 1.5px solid var(--color-light-gray-1);
-  border-radius: 10px;
-  cursor: pointer;
+  border: 1px solid var(--color-light-gray-1);
+  border-radius: var(--radius-sm);
 }
 
-.wo-permit__type input {
-  width: 16px;
-  height: 16px;
-  margin: 2px 0 0;
-  flex-shrink: 0;
-  accent-color: var(--color-primary);
-  cursor: pointer;
+.wo-permit__row {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  flex-wrap: nowrap;
 }
 
-.wo-permit__type span {
+.wo-permit__cell {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
   min-width: 0;
 }
 
-.wo-permit__type--on {
-  border-color: var(--color-primary);
+.wo-permit__cell .company-form__label {
+  margin: 0;
+}
+
+.wo-permit__cell--type {
+  flex: 1.15 1 0;
+  min-width: 0;
+}
+
+.wo-permit__cell--number {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.wo-permit__cell--date {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.wo-permit__cell--actions {
+  flex: 0 0 auto;
+  justify-content: flex-end;
+  padding-bottom: 2px;
+}
+
+.wo-permit__cell .date-field,
+.wo-permit__cell .company-form__input {
+  width: 100%;
+  min-width: 0;
+}
+
+.wo-permit__add {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  align-self: flex-start;
+  height: 40px;
+  padding: 0 14px;
+  font-size: 14px;
+  font-weight: 500;
+  font-family: inherit;
+  color: var(--color-primary);
+  background: var(--color-white);
+  border: 1.5px dashed var(--color-primary);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.wo-permit__add:hover {
   background: #fff8f8;
-  box-shadow: 0 0 0 1px rgba(230, 57, 70, 0.12);
 }
 
 .wo-permit .date-field__icon {
@@ -1952,8 +1992,21 @@
 }
 
 @media (max-width: 768px) {
-  .wo-permit__types {
-    grid-template-columns: 1fr;
+  .wo-permit__row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .wo-permit__cell--type,
+  .wo-permit__cell--number,
+  .wo-permit__cell--date {
+    flex: 1 1 auto;
+    min-width: 0;
+    width: 100%;
+  }
+
+  .wo-permit__cell--actions {
+    align-items: flex-end;
   }
 
   .wo-assignment__filters {

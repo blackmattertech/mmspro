@@ -5,6 +5,7 @@ import { useWorkOrderDetail } from '../../hooks/useWorkOrderList'
 import { getReceivedWorkOrder } from '../../lib/api-work-orders'
 import { getWorkOrderFileSignedUrl } from '../../lib/workOrderAssets'
 import { getStoredWorkOrderFiles } from '../../lib/workOrderFileValues'
+import { useOrgStatusOptions } from '../../hooks/useOrgStatusOptions'
 import PageBack from '../shared/PageBack'
 import WorkOrderAssignmentActions from './WorkOrderAssignmentActions'
 import WorkOrderLifecyclePanel, { formatStatus } from './WorkOrderLifecyclePanel'
@@ -115,6 +116,7 @@ export default function ReceivedWorkOrderDetailModal({
   const { detail, loading, error, reload } = useWorkOrderDetail(orderId, fetchWorkOrder)
   const [localDetail, setLocalDetail] = useState(null)
   const handleBackdropClick = useBackdropClose(onClose)
+  const { labelByKey: statusLabels } = useOrgStatusOptions('work_order', { includeInactive: true })
   const view = localDetail || detail
 
   const handleUpdated = (updated) => {
@@ -196,7 +198,7 @@ export default function ReceivedWorkOrderDetailModal({
                 <div>
                   <span className="wo-received-detail__label">Status</span>
                   <span className={`wo-status wo-status--${view.status}`}>
-                    {formatStatus(view.status)}
+                    {formatStatus(view.status, statusLabels)}
                   </span>
                 </div>
               </div>

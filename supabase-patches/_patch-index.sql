@@ -78,6 +78,10 @@
 --   69-work-request-job-nature.sql                  → 69-work-request-job-nature — WR job nature
 --   70-work-order-permit-details.sql                → 70-work-order-permit-details — Per-type WO permits
 --   71-work-order-daily-logs.sql                    → 71-work-order-daily-logs — WO daily work logs
+--   72-list-visibility-rpcs.sql                     → 72-list-visibility-rpcs — Paginated received-WO visibility RPCs
+--   73-org-statuses.sql                             → 73-org-statuses — Configurable status masters
+--   74-checklist-sections.sql                       → 74-checklist-sections — Checklist template sections
+--   75-pm-schedule-reading.sql                        → 75-pm-schedule-reading — PM calendar units & reading fields
 --
 -- OTHER:
 --   supabase.sql                  → supabase — Full schema (new projects)

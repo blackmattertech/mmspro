@@ -12,6 +12,8 @@ import {
   PM_PRIORITIES,
   PM_PLAN_STATUSES,
   PM_SCHEDULE_TYPES,
+  PM_CALENDAR_UNITS,
+  normalizeCalendarUnit,
   WO_OPEN_FOR_PLAN,
 } from './pmConstants.js'
 import {
@@ -39,6 +41,49 @@ const PLAN_SELECT = `
   checklist_templates(id, name, version),
   contractor:vendors!contractor_vendor_id(id, name)
 `
+
+const SCHEDULE_META_PREFIX = 'pm_schedule_v1:'
+
+function packScheduleMeta({
+  calendar_unit,
+  last_reading,
+  last_service_date,
+  reading_interval,
+  whichever_comes_first,
+}) {
+  return `${SCHEDULE_META_PREFIX}${JSON.stringify({
+    calendar_unit: calendar_unit || 'month',
+    last_reading: last_reading ?? null,
+    last_service_date: last_service_date || null,
+    reading_interval: reading_interval ?? null,
+    whichever_comes_first: whichever_comes_first !== false,
+  })}`
+}
+
+function unpackScheduleMeta(row = {}) {
+  const raw = row.working_shift
+  if (typeof raw === 'string' && raw.startsWith(SCHEDULE_META_PREFIX)) {
+    try {
+      const parsed = JSON.parse(raw.slice(SCHEDULE_META_PREFIX.length))
+      return {
+        calendar_unit: normalizeCalendarUnit(parsed.calendar_unit, row.schedule_type),
+        last_reading: parsed.last_reading ?? null,
+        last_service_date: parsed.last_service_date || null,
+        reading_interval: parsed.reading_interval ?? null,
+        whichever_comes_first: parsed.whichever_comes_first !== false,
+      }
+    } catch {
+      // fall through
+    }
+  }
+  return {
+    calendar_unit: normalizeCalendarUnit(row.calendar_unit, row.schedule_type),
+    last_reading: row.last_reading ?? null,
+    last_service_date: row.last_service_date || null,
+    reading_interval: row.reading_interval ?? null,
+    whichever_comes_first: row.whichever_comes_first !== false,
+  }
+}
 
 function httpError(message, status = 400) {
   const err = new Error(message)
@@ -265,8 +310,11 @@ async function loadTechnicians(orgId, planIds) {
 }
 
 function mapPlanRow(row, technicians = []) {
+  const scheduleMeta = unpackScheduleMeta(row)
   return {
     ...row,
+    ...scheduleMeta,
+    working_shift: null,
     department: row.departments || null,
     location: row.org_locations || null,
     area: row.areas || null,
@@ -334,13 +382,36 @@ function normalizePlanPayload(body, existing = null) {
   const activityTypeId = body.activity_type_id ?? existing?.activity_type_id
   if (!activityTypeId) throw httpError('Maintenance activity type is required.')
 
-  const scheduleType = String(body.schedule_type ?? existing?.schedule_type ?? 'monthly')
+  const scheduleType = String(body.schedule_type ?? existing?.schedule_type ?? 'calendar')
   if (!PM_SCHEDULE_TYPES.includes(scheduleType)) {
     throw httpError('Invalid schedule type.')
   }
 
+  const usesCalendar = scheduleType === 'calendar' || scheduleType === 'both'
+  const usesReading = scheduleType === 'reading' || scheduleType === 'both'
+
+  const calendarUnit = normalizeCalendarUnit(
+    body.calendar_unit !== undefined ? body.calendar_unit : existing?.calendar_unit,
+    scheduleType,
+  )
+  if (usesCalendar && !PM_CALENDAR_UNITS.includes(calendarUnit)) {
+    throw httpError('Invalid calendar interval.')
+  }
+
+  const readingIntervalRaw = body.reading_interval !== undefined
+    ? body.reading_interval
+    : existing?.reading_interval
+  const readingInterval = readingIntervalRaw === '' || readingIntervalRaw == null
+    ? null
+    : Number(readingIntervalRaw)
+  if (usesReading && (readingInterval == null || !Number.isFinite(readingInterval) || readingInterval <= 0)) {
+    throw httpError('Reading value is required.')
+  }
+
   const startDate = formatDateOnly(body.start_date ?? existing?.start_date)
-  if (!startDate) throw httpError('Start date is required.')
+  if (usesCalendar && !startDate) throw httpError('Start date is required.')
+  const resolvedStartDate = startDate || formatDateOnly(new Date())
+  if (!resolvedStartDate) throw httpError('Start date is required.')
 
   const priority = String(body.priority ?? existing?.priority ?? 'medium')
   if (!PM_PRIORITIES.includes(priority)) throw httpError('Invalid priority.')
@@ -351,6 +422,23 @@ function normalizePlanPayload(body, existing = null) {
   const generateBefore = Number(body.generate_before_days ?? existing?.generate_before_days ?? 1)
   if (!Number.isFinite(generateBefore) || generateBefore < 0) {
     throw httpError('Generate before due must be a number of days.')
+  }
+
+  const lastReadingRaw = body.last_reading !== undefined ? body.last_reading : existing?.last_reading
+  const lastReading = lastReadingRaw === '' || lastReadingRaw == null ? null : Number(lastReadingRaw)
+
+  const scheduleMeta = {
+    calendar_unit: calendarUnit,
+    last_reading: usesReading ? lastReading : null,
+    last_service_date: usesReading
+      ? formatDateOnly(body.last_service_date !== undefined ? body.last_service_date : existing?.last_service_date)
+      : null,
+    reading_interval: usesReading ? readingInterval : null,
+    whichever_comes_first: scheduleType === 'both'
+      ? (body.whichever_comes_first !== undefined
+        ? Boolean(body.whichever_comes_first)
+        : (existing?.whichever_comes_first !== false))
+      : true,
   }
 
   return {
@@ -364,14 +452,18 @@ function normalizePlanPayload(body, existing = null) {
     priority,
     status,
     schedule_type: scheduleType,
-    every_n: Math.max(1, Number(body.every_n ?? existing?.every_n ?? 1) || 1),
-    start_date: startDate,
-    end_date: formatDateOnly(body.end_date !== undefined ? body.end_date : existing?.end_date),
+    every_n: usesCalendar
+      ? Math.max(1, Number(body.every_n ?? existing?.every_n ?? 1) || 1)
+      : Math.max(1, Number(existing?.every_n ?? 1) || 1),
+    start_date: resolvedStartDate,
+    end_date: usesCalendar
+      ? formatDateOnly(body.end_date !== undefined ? body.end_date : existing?.end_date)
+      : null,
     grace_days: body.grace_days === '' || body.grace_days == null
       ? (existing?.grace_days ?? null)
       : Number(body.grace_days),
     generate_before_days: generateBefore,
-    working_shift: String(body.working_shift ?? existing?.working_shift ?? '').trim() || null,
+    working_shift: packScheduleMeta(scheduleMeta),
     checklist_template_id: body.checklist_template_id !== undefined
       ? (body.checklist_template_id || null)
       : (existing?.checklist_template_id || null),
@@ -390,9 +482,7 @@ function normalizePlanPayload(body, existing = null) {
     required_skills: body.required_skills !== undefined
       ? (String(body.required_skills || '').trim() || null)
       : (existing?.required_skills || null),
-    allow_multiple_open: body.allow_multiple_open !== undefined
-      ? Boolean(body.allow_multiple_open)
-      : Boolean(existing?.allow_multiple_open),
+    allow_multiple_open: false,
   }
 }
 
@@ -812,9 +902,10 @@ export async function advancePlanAfterWorkOrderClose(orgId, workOrder) {
   if (!plan) return
   if (plan.allow_multiple_open) return
 
+  const planWithMeta = { ...plan, ...unpackScheduleMeta(plan) }
   const fromDate = plan.last_generated_due_at || plan.next_due_at || formatDateOnly(workOrder.scheduled_at)
   const nextDue = isCalendarSchedule(plan.schedule_type)
-    ? computeNextDueDate(plan, fromDate)
+    ? computeNextDueDate(planWithMeta, fromDate)
     : null
 
   await supabaseAdmin
@@ -838,6 +929,7 @@ export async function advancePlanAfterWorkOrderClose(orgId, workOrder) {
 }
 
 export async function runPmSchedulerJob() {
+  const today = formatDateOnly(new Date())
   const { data: plans, error } = await supabaseAdmin
     .from('pm_plans')
     .select('id, org_id, next_due_at, generate_before_days, status, last_due_notice_on, grace_days, name, plan_number')
@@ -853,40 +945,67 @@ export async function runPmSchedulerJob() {
 
   let generated = 0
   let overdueNotices = 0
+  let generationCandidates = 0
+
+  const overduePlans = []
 
   for (const plan of plans || []) {
-    try {
-      const result = await generateScheduledWorkOrder(plan.org_id, plan.id)
-      if (result?.work_order) generated += 1
-    } catch (err) {
-      console.error(`[pmScheduler] generate failed for ${plan.plan_number || plan.id}:`, err.message)
+    const dueForGenerate = generateOnOrBefore(plan)
+    if (dueForGenerate) {
+      generationCandidates += 1
+      try {
+        const result = await generateScheduledWorkOrder(plan.org_id, plan.id)
+        if (result?.work_order) generated += 1
+      } catch (err) {
+        console.error(`[pmScheduler] generate failed for ${plan.plan_number || plan.id}:`, err.message)
+      }
     }
 
-    try {
-      if (isOverdue(plan)) {
-        const today = formatDateOnly(new Date())
-        if (plan.last_due_notice_on !== today) {
-          const techMap = await loadTechnicians(plan.org_id, [plan.id])
-          const ids = (techMap.get(plan.id) || []).map((row) => row.id)
-          if (ids.length) {
-            await notifyEmployees(plan.org_id, ids, {
-              title: 'Overdue planned maintenance',
-              body: `${plan.plan_number || ''} — ${plan.name} is overdue`.trim(),
-              data: { type: 'pm_overdue', pm_plan_id: plan.id },
-              url: '/',
-            })
-          }
-          await supabaseAdmin
-            .from('pm_plans')
-            .update({ last_due_notice_on: today })
-            .eq('id', plan.id)
-          overdueNotices += 1
-        }
-      }
-    } catch (err) {
-      console.error(`[pmScheduler] overdue notice failed for ${plan.plan_number || plan.id}:`, err.message)
+    if (isOverdue(plan) && plan.last_due_notice_on !== today) {
+      overduePlans.push(plan)
     }
   }
 
-  return { generated, overdueNotices, scanned: (plans || []).length }
+  if (overduePlans.length) {
+    const byOrg = new Map()
+    for (const plan of overduePlans) {
+      if (!byOrg.has(plan.org_id)) byOrg.set(plan.org_id, [])
+      byOrg.get(plan.org_id).push(plan)
+    }
+
+    for (const [orgId, orgPlans] of byOrg) {
+      try {
+        const techMap = await loadTechnicians(orgId, orgPlans.map((p) => p.id))
+        for (const plan of orgPlans) {
+          try {
+            const ids = (techMap.get(plan.id) || []).map((row) => row.id)
+            if (ids.length) {
+              await notifyEmployees(orgId, ids, {
+                title: 'Overdue planned maintenance',
+                body: `${plan.plan_number || ''} — ${plan.name} is overdue`.trim(),
+                data: { type: 'pm_overdue', pm_plan_id: plan.id },
+                url: '/',
+              })
+            }
+            await supabaseAdmin
+              .from('pm_plans')
+              .update({ last_due_notice_on: today })
+              .eq('id', plan.id)
+            overdueNotices += 1
+          } catch (err) {
+            console.error(`[pmScheduler] overdue notice failed for ${plan.plan_number || plan.id}:`, err.message)
+          }
+        }
+      } catch (err) {
+        console.error(`[pmScheduler] overdue batch failed for org ${orgId}:`, err.message)
+      }
+    }
+  }
+
+  return {
+    generated,
+    overdueNotices,
+    scanned: (plans || []).length,
+    generationCandidates,
+  }
 }

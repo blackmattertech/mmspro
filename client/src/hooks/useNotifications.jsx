@@ -232,18 +232,45 @@ export function NotificationsProvider({ children }) {
 
   useEffect(() => {
     if (!user) return undefined
-    const notifTimer = setInterval(() => { loadFeed() }, 45000)
-    const reminderTimer = setInterval(() => { loadUpcomingReminders() }, 30000)
+
+    const NOTIF_POLL_MS = 90000
+    const REMINDER_POLL_MS = 60000
+    let notifTimer = null
+    let reminderTimer = null
+
+    const clearPollers = () => {
+      if (notifTimer) clearInterval(notifTimer)
+      if (reminderTimer) clearInterval(reminderTimer)
+      notifTimer = null
+      reminderTimer = null
+    }
+
+    const startPollers = () => {
+      clearPollers()
+      notifTimer = setInterval(() => {
+        if (document.visibilityState === 'hidden') return
+        loadFeed()
+      }, NOTIF_POLL_MS)
+      reminderTimer = setInterval(() => {
+        if (document.visibilityState === 'hidden') return
+        loadUpcomingReminders()
+      }, REMINDER_POLL_MS)
+    }
+
     const onVisible = () => {
       if (document.visibilityState === 'visible') {
         loadFeed()
         loadUpcomingReminders()
+        startPollers()
+      } else {
+        clearPollers()
       }
     }
+
+    if (document.visibilityState === 'visible') startPollers()
     document.addEventListener('visibilitychange', onVisible)
     return () => {
-      clearInterval(notifTimer)
-      clearInterval(reminderTimer)
+      clearPollers()
       document.removeEventListener('visibilitychange', onVisible)
       for (const timer of reminderTimersRef.current.values()) clearTimeout(timer)
       reminderTimersRef.current.clear()

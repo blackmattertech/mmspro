@@ -13,27 +13,58 @@ export const DEFAULT_ACTIVITY_TYPES = [
 ]
 
 export const PM_SCHEDULE_TYPES = [
-  'daily',
-  'weekly',
-  'monthly',
-  'quarterly',
-  'half_yearly',
-  'yearly',
-  'runtime',
-  'meter',
   'calendar',
-  'shutdown',
+  'reading',
+  'both',
 ]
 
+export const PM_CALENDAR_UNITS = [
+  'day',
+  'week',
+  'month',
+  'quarter',
+  'half_yearly',
+  'yearly',
+]
+
+/** Types that advance due dates from the calendar interval. */
 export const CALENDAR_SCHEDULE_TYPES = new Set([
+  'calendar',
+  'both',
+  // Legacy values still present on older plans
   'daily',
   'weekly',
   'monthly',
   'quarterly',
   'half_yearly',
   'yearly',
-  'calendar',
 ])
+
+const READING_LEGACY_TYPES = new Set(['runtime', 'meter', 'shutdown', 'reading'])
+
+const LEGACY_UNIT_BY_SCHEDULE = {
+  daily: 'day',
+  weekly: 'week',
+  monthly: 'month',
+  quarterly: 'quarter',
+  half_yearly: 'half_yearly',
+  yearly: 'yearly',
+  calendar: 'month',
+}
+
+export function normalizeScheduleType(value) {
+  const type = String(value || '').trim()
+  if (type === 'calendar' || type === 'reading' || type === 'both') return type
+  if (READING_LEGACY_TYPES.has(type)) return 'reading'
+  if (CALENDAR_SCHEDULE_TYPES.has(type)) return 'calendar'
+  return 'calendar'
+}
+
+export function normalizeCalendarUnit(value, scheduleType) {
+  const unit = String(value || '').trim()
+  if (PM_CALENDAR_UNITS.includes(unit)) return unit
+  return LEGACY_UNIT_BY_SCHEDULE[String(scheduleType || '').trim()] || 'month'
+}
 
 export const CHECKLIST_FIELD_TYPES = [
   'checkbox',

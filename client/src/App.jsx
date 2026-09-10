@@ -15,6 +15,7 @@ const Company = lazy(() => import('./pages/app/Company'))
 const Assets = lazy(() => import('./pages/app/Assets'))
 const Equipment = lazy(() => import('./pages/app/Equipment'))
 const WorkOrdersRouteLayout = lazy(() => import('./components/workorders/WorkOrdersRouteLayout'))
+const PmScheduledRouteLayout = lazy(() => import('./components/workorders/PmScheduledRouteLayout'))
 const ManualWorkOrders = lazy(() => import('./pages/app/ManualWorkOrders'))
 const ManualWorkOrderCreate = lazy(() => import('./pages/app/ManualWorkOrderCreate'))
 const ReceivedWorkOrders = lazy(() => import('./pages/app/ReceivedWorkOrders'))
@@ -30,6 +31,11 @@ const WarrantyDetailPage = lazy(() => import('./pages/app/WarrantyDetailPage'))
 const WarrantyFormPage = lazy(() => import('./pages/app/WarrantyFormPage'))
 const Vendors = lazy(() => import('./pages/app/Vendors'))
 const VendorDetailPage = lazy(() => import('./pages/app/VendorDetailPage'))
+const Others = lazy(() => import('./pages/app/Others'))
+const OthersStatusTypes = lazy(() => import('./pages/app/OthersStatusTypes'))
+const OthersStatusManage = lazy(() => import('./pages/app/OthersStatusManage'))
+const OthersChecklists = lazy(() => import('./pages/app/OthersChecklists'))
+const OthersChecklistBuilder = lazy(() => import('./pages/app/OthersChecklistBuilder'))
 const ConfigurationImport = lazy(() => import('./pages/app/ConfigurationImport'))
 const WorkRequestCreate = lazy(() => import('./pages/app/WorkRequestCreate'))
 const WorkRequestListPage = lazy(() => import('./pages/app/WorkRequestListPage'))
@@ -55,7 +61,6 @@ const workOrderModules = [
   'work_orders',
   'work_orders_received',
   'work_orders_assigned',
-  'work_orders_scheduled',
   'work_orders_manual',
 ]
 
@@ -158,10 +163,20 @@ export default function App() {
               <Route path="masters/equipment" element={withModule(['equipment', 'areas'], <Equipment />)} />
               <Route path="masters/vendors" element={withSuspense(<Vendors />)} />
               <Route path="masters/vendors/:vendorId" element={withSuspense(<VendorDetailPage />)} />
+              <Route path="masters/others" element={withSuspense(<Others />)} />
+              <Route path="masters/others/status" element={withSuspense(<OthersStatusTypes />)} />
+              <Route path="masters/others/status/:entityType" element={withSuspense(<OthersStatusManage />)} />
+              <Route path="masters/others/checklists" element={withSuspense(<OthersChecklists />)} />
+              <Route path="masters/others/checklists/:checklistId" element={withSuspense(<OthersChecklistBuilder />)} />
+              <Route
+                path="work-orders/scheduled"
+                element={withModule('work_orders_scheduled', <PmScheduledRouteLayout />)}
+              >
+                <Route index element={withSuspense(<ScheduledWorkOrders />)} />
+              </Route>
               <Route path="work-orders" element={withModule(workOrderModules, <WorkOrdersRouteLayout />)}>
                 <Route path="received" element={withModule('work_orders_received', <ReceivedWorkOrders />)} />
                 <Route path="assigned" element={withModule('work_orders_assigned', <AssignedWorkOrders />)} />
-                <Route path="scheduled" element={withModule('work_orders_scheduled', <ScheduledWorkOrders />)} />
                 <Route path="manual" element={withModule('work_orders_manual', <ManualWorkOrders />)} />
                 <Route path="manual/create" element={withModule('work_orders_manual', <ManualWorkOrderCreate />)} />
                 <Route path="manual/:workOrderId/edit" element={withModule('work_orders_manual', <ManualWorkOrderCreate />)} />
