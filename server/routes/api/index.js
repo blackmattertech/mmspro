@@ -26,6 +26,7 @@ router.get('/session', verifyAuth, requireOrgAccess, async (req, res) => {
     ])
 
     if (orgResult.error) {
+      console.error('[session] org lookup failed:', orgResult.error.message)
       return res.status(500).json({ error: orgResult.error.message })
     }
 
@@ -38,6 +39,7 @@ router.get('/session', verifyAuth, requireOrgAccess, async (req, res) => {
       avatar_url: me.avatar_url,
     })
   } catch (err) {
+    console.error('[session] bootstrap failed:', err.message)
     res.status(500).json({ error: err.message })
   }
 })

@@ -19,7 +19,7 @@ export async function loadTimelineActors(orgId, profileIds) {
       .select(`
         id, name, emp_id, email, photo_url, profile_id, department_id,
         access_role:access_role_id(id, name),
-        departments(id, name, code)
+        departments(id, name)
       `)
       .eq('org_id', orgId)
       .in('profile_id', ids)

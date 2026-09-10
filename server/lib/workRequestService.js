@@ -1419,7 +1419,7 @@ export async function listWorkRequestTechnicians(orgId, workRequestId) {
     .from('org_employees')
     .select(`
       id, name, emp_id, email, mobile, photo_url, department_id, location_id,
-      departments!department_id ( id, name, code ),
+      departments!department_id ( id, name ),
       org_locations!location_id ( id, name, code )
     `)
     .eq('org_id', orgId)
@@ -1438,16 +1438,16 @@ const WR_LIST_SELECT = `
   id, org_id, request_number, status, request_type, request_date, created_at, updated_at,
   order_from_department_id, order_to_department_id, equipment_id, requested_by,
   priority, short_description, job_nature, is_breakdown, execution_status, manual_work_order_id,
-  order_from:departments!work_requests_order_from_department_id_fkey(id, name, code, location_id, all_locations),
-  order_to:departments!work_requests_order_to_department_id_fkey(id, name, code, location_id, all_locations),
+  order_from:departments!work_requests_order_from_department_id_fkey(id, name, location_id, all_locations),
+  order_to:departments!work_requests_order_to_department_id_fkey(id, name, location_id, all_locations),
   equipment(id, name, code),
   requester:profiles!work_requests_requested_by_fkey(id, full_name, email)
 `
 
 const WR_SELECT = `
   *,
-  order_from:departments!work_requests_order_from_department_id_fkey(id, name, code, location_id, all_locations),
-  order_to:departments!work_requests_order_to_department_id_fkey(id, name, code, location_id, all_locations),
+  order_from:departments!work_requests_order_from_department_id_fkey(id, name, location_id, all_locations),
+  order_to:departments!work_requests_order_to_department_id_fkey(id, name, location_id, all_locations),
   equipment(id, name, code, location_id, department_id, area_id),
   requester:profiles!work_requests_requested_by_fkey(id, full_name, email),
   approver:profiles!work_requests_approved_by_fkey(id, full_name, email)

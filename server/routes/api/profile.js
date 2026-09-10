@@ -21,7 +21,7 @@ const MY_EMPLOYEE_SELECT = `
   department_id,
   location_id,
   manager_id,
-  departments!department_id ( id, name, code ),
+  departments!department_id ( id, name ),
   org_locations!location_id ( id, name, code ),
   manager:manager_id ( id, emp_id, name ),
   org_employee_emails ( id, email ),
