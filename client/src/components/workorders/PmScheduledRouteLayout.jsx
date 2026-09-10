@@ -1,10 +1,18 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Outlet } from 'react-router-dom'
 import { useLocations } from '../../hooks/useLocations'
 import { usePermissions } from '../../hooks/usePermissions'
 import { useProfile } from '../../hooks/useProfile'
 import { WorkOrderToolbarProvider, useWorkOrderToolbar } from '../../hooks/useWorkOrderToolbar'
-import { createFilterRule, countActiveAdvancedRules, WO_SORT_OPTIONS } from '../../lib/workOrderFilters'
+import { ADVANCED_FILTER_FIELDS, createFilterRule, countActiveAdvancedRules, WO_SORT_OPTIONS } from '../../lib/workOrderFilters'
+import {
+  PM_PLAN_ADVANCED_FILTER_FIELDS,
+  PM_PLAN_FILTER_FIELDS,
+  PM_PLAN_SORT_OPTIONS,
+  PM_PLAN_STATUS_FILTER_OPTIONS,
+  createPmPlanFilterRule,
+  getOperatorsForPmPlanField,
+} from '../../lib/pmPlanFilters'
 import WorkOrderAdvancedFilter from './WorkOrderAdvancedFilter'
 import TableFilterToolbar from '../shared/TableFilterToolbar'
 import PageBreadcrumbs from '../shared/PageBreadcrumbs'
@@ -12,11 +20,12 @@ import '../company/CompanyShared.css'
 import '../shared/TableFilterToolbar.css'
 import './WorkOrdersPage.css'
 import './WorkOrderAdvancedFilter.css'
+import '../pm/Pm.css'
 
-const FILTER_FIELDS = [
+const WO_FILTER_FIELDS = [
   { value: 'location', label: 'Location' },
   { value: 'status', label: 'Status' },
-  { value: 'summary', label: 'Summary' },
+  { value: 'summary', label: 'Short description' },
   { value: 'wo_number', label: 'WO #' },
   { value: 'assignee', label: 'Assignee' },
   { value: 'creator', label: 'Created by' },
@@ -27,11 +36,24 @@ function PmScheduledLayoutInner() {
   const { locations } = useLocations()
   const { toolbarLeft, toolbarRight } = useWorkOrderToolbar()
   const { isOrgAdmin, locationId: scopedLocationId } = usePermissions()
+  const [view, setView] = useState('plans')
   const [search, setSearch] = useState('')
   const [filterField, setFilterField] = useState('')
   const [filterValue, setFilterValue] = useState('')
   const [sortBy, setSortBy] = useState('newest')
-  const [advancedRules, setAdvancedRules] = useState([createFilterRule()])
+  const [advancedRules, setAdvancedRules] = useState([createPmPlanFilterRule()])
+
+  const isPlansView = view === 'plans'
+  const filterFields = isPlansView ? PM_PLAN_FILTER_FIELDS : WO_FILTER_FIELDS
+  const sortOptions = isPlansView ? PM_PLAN_SORT_OPTIONS : WO_SORT_OPTIONS
+  const advancedFields = isPlansView ? PM_PLAN_ADVANCED_FILTER_FIELDS : ADVANCED_FILTER_FIELDS
+
+  useEffect(() => {
+    setFilterField('')
+    setFilterValue('')
+    setSortBy('newest')
+    setAdvancedRules(isPlansView ? [createPmPlanFilterRule()] : [createFilterRule()])
+  }, [view, isPlansView])
 
   const canSeeAllLocations = isOrgAdmin
   const userLocationId = scopedLocationId || employee?.location_id || null
@@ -49,13 +71,15 @@ function PmScheduledLayoutInner() {
   const totalFilterCount = advancedFilterCount + fieldFilterActive
 
   const outletContext = useMemo(() => ({
+    view,
+    setView,
     search,
     locationFilter,
     sortBy,
     advancedRules,
     fieldFilter: { field: filterField, value: filterValue },
     locations: activeLocations,
-  }), [search, locationFilter, sortBy, advancedRules, filterField, filterValue, activeLocations])
+  }), [view, search, locationFilter, sortBy, advancedRules, filterField, filterValue, activeLocations])
 
   return (
     <div className="company-page wo-page">
@@ -76,17 +100,17 @@ function PmScheduledLayoutInner() {
             search={{
               value: search,
               onChange: setSearch,
-              placeholder: 'Search plans & work orders...',
-              ariaLabel: 'Search PM and scheduled work orders',
+              placeholder: isPlansView ? 'Search PM plans...' : 'Search scheduled work orders...',
+              ariaLabel: isPlansView ? 'Search PM plans' : 'Search scheduled work orders',
             }}
             filter={{
-              fields: FILTER_FIELDS,
+              fields: filterFields,
               field: filterField,
               onFieldChange: setFilterField,
               value: filterValue,
               onValueChange: setFilterValue,
             }}
-            sort={{ value: sortBy, onChange: setSortBy, options: WO_SORT_OPTIONS }}
+            sort={{ value: sortBy, onChange: setSortBy, options: sortOptions }}
             actions={(
               <>
                 <WorkOrderAdvancedFilter
@@ -94,6 +118,10 @@ function PmScheduledLayoutInner() {
                   onChange={setAdvancedRules}
                   locations={activeLocations}
                   activeCount={totalFilterCount}
+                  fields={advancedFields}
+                  statusEntityType={isPlansView ? 'pm_plan' : 'work_order'}
+                  fallbackStatusOptions={isPlansView ? PM_PLAN_STATUS_FILTER_OPTIONS : undefined}
+                  getOperators={isPlansView ? getOperatorsForPmPlanField : undefined}
                 />
                 {toolbarRight}
               </>

@@ -85,7 +85,7 @@ export const CHECKLIST_FIELD_TYPES = [
 export const OPTION_CHECKLIST_FIELD_TYPES = new Set(['dropdown', 'radio'])
 
 export const PM_PRIORITIES = ['high', 'medium', 'low']
-export const PM_PLAN_STATUSES = ['active', 'inactive']
+export const PM_PLAN_STATUSES = ['active', 'inactive', 'overdue']
 
 export const WO_OPEN_FOR_PLAN = [
   'assigned',

@@ -23,6 +23,7 @@ import {
   initialDueDate,
   isCalendarSchedule,
   isOverdue,
+  resolveLivePlanStatus,
 } from './pmSchedule.js'
 
 const PLAN_SELECT = `
@@ -309,6 +310,24 @@ async function loadTechnicians(orgId, planIds) {
   return map
 }
 
+async function persistPlanStatuses(rows) {
+  const now = new Date().toISOString()
+  const groups = new Map()
+  for (const row of rows || []) {
+    const nextStatus = resolveLivePlanStatus(row)
+    if (nextStatus === row.status) continue
+    if (!groups.has(nextStatus)) groups.set(nextStatus, [])
+    groups.get(nextStatus).push(row.id)
+    row.status = nextStatus
+  }
+  await Promise.all([...groups.entries()].map(([status, ids]) => (
+    supabaseAdmin
+      .from('pm_plans')
+      .update({ status, updated_at: now })
+      .in('id', ids)
+  )))
+}
+
 function mapPlanRow(row, technicians = []) {
   const scheduleMeta = unpackScheduleMeta(row)
   return {
@@ -549,7 +568,9 @@ export async function listPmPlans(orgId, { status, search, limit = 100, offset =
     .order('created_at', { ascending: false })
     .range(offset, offset + limit - 1)
 
-  if (status === 'active' || status === 'inactive') query = query.eq('status', status)
+  if (status === 'inactive') query = query.eq('status', 'inactive')
+  if (status === 'overdue') query = query.eq('status', 'overdue')
+  if (status === 'active') query = query.in('status', ['active', 'overdue'])
   if (search) {
     const q = String(search).replace(/%/g, '').trim()
     if (q) query = query.or(`name.ilike.%${q}%,plan_number.ilike.%${q}%`)
@@ -559,6 +580,7 @@ export async function listPmPlans(orgId, { status, search, limit = 100, offset =
   if (error) throw error
 
   const rows = data || []
+  await persistPlanStatuses(rows)
   const techniciansByPlan = await loadTechnicians(orgId, rows.map((row) => row.id))
   return {
     items: rows.map((row) => mapPlanRow(row, techniciansByPlan.get(row.id) || [])),
@@ -578,6 +600,8 @@ export async function getPmPlan(orgId, planId) {
 
   if (error) throw error
   if (!data) throw httpError('PM plan not found.', 404)
+
+  await persistPlanStatuses([data])
 
   const techniciansByPlan = await loadTechnicians(orgId, [planId])
   const { data: audit } = await supabaseAdmin
@@ -600,6 +624,7 @@ export async function createPmPlan(orgId, profileId, body = {}) {
   if (!payload.equipment_id) throw httpError('Asset / equipment is required.')
 
   const nextDue = initialDueDate(payload)
+  payload.status = resolveLivePlanStatus({ ...payload, next_due_at: nextDue })
   const planNumber = await generatePmPlanNumber(orgId, payload.department_id)
 
   const { data, error } = await supabaseAdmin
@@ -644,12 +669,13 @@ export async function updatePmPlan(orgId, profileId, planId, body = {}) {
   payload.location_id = await resolveLocationId(orgId, payload)
   if (!payload.equipment_id) throw httpError('Asset / equipment is required.')
 
-  const wasActive = existing.status === 'active'
-  const becomingActive = payload.status === 'active' && !wasActive
+  const wasActive = existing.status === 'active' || existing.status === 'overdue'
+  const becomingActive = payload.status !== 'inactive' && !wasActive
   let nextDue = existing.next_due_at
   if (!nextDue || becomingActive) {
     nextDue = existing.next_due_at || initialDueDate(payload)
   }
+  payload.status = resolveLivePlanStatus({ ...payload, next_due_at: nextDue })
 
   const { data, error } = await supabaseAdmin
     .from('pm_plans')
@@ -753,7 +779,7 @@ export async function generateScheduledWorkOrder(orgId, planId, {
   force = false,
 } = {}) {
   const plan = await getPmPlan(orgId, planId)
-  if (plan.status !== 'active') {
+  if (plan.status !== 'active' && plan.status !== 'overdue') {
     throw httpError('Only active PM plans generate scheduled work orders.')
   }
   if (!plan.next_due_at) {
@@ -913,6 +939,7 @@ export async function advancePlanAfterWorkOrderClose(orgId, workOrder) {
     .update({
       next_due_at: nextDue,
       last_due_notice_on: null,
+      status: resolveLivePlanStatus({ ...planWithMeta, next_due_at: nextDue }),
       updated_at: new Date().toISOString(),
     })
     .eq('id', plan.id)
@@ -933,7 +960,7 @@ export async function runPmSchedulerJob() {
   const { data: plans, error } = await supabaseAdmin
     .from('pm_plans')
     .select('id, org_id, next_due_at, generate_before_days, status, last_due_notice_on, grace_days, name, plan_number')
-    .eq('status', 'active')
+    .in('status', ['active', 'overdue'])
     .not('next_due_at', 'is', null)
 
   if (error) {
@@ -950,6 +977,19 @@ export async function runPmSchedulerJob() {
   const overduePlans = []
 
   for (const plan of plans || []) {
+    const liveStatus = resolveLivePlanStatus(plan)
+    if (liveStatus !== plan.status) {
+      try {
+        await supabaseAdmin
+          .from('pm_plans')
+          .update({ status: liveStatus, updated_at: new Date().toISOString() })
+          .eq('id', plan.id)
+        plan.status = liveStatus
+      } catch (err) {
+        console.error(`[pmScheduler] status update failed for ${plan.plan_number || plan.id}:`, err.message)
+      }
+    }
+
     const dueForGenerate = generateOnOrBefore(plan)
     if (dueForGenerate) {
       generationCandidates += 1
@@ -989,7 +1029,7 @@ export async function runPmSchedulerJob() {
             }
             await supabaseAdmin
               .from('pm_plans')
-              .update({ last_due_notice_on: today })
+              .update({ last_due_notice_on: today, status: 'overdue' })
               .eq('id', plan.id)
             overdueNotices += 1
           } catch (err) {

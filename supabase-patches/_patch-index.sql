@@ -82,6 +82,8 @@
 --   73-org-statuses.sql                             → 73-org-statuses — Configurable status masters
 --   74-checklist-sections.sql                       → 74-checklist-sections — Checklist template sections
 --   75-pm-schedule-reading.sql                        → 75-pm-schedule-reading — PM calendar units & reading fields
+--   76-pm-plan-overdue-status.sql                     → 76-pm-plan-overdue-status — Overdue status for PM plans
+--   77-report-schedules.sql                           → 77-report-schedules — Scheduled report email delivery
 --
 -- OTHER:
 --   supabase.sql                  → supabase — Full schema (new projects)

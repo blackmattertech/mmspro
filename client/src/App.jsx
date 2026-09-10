@@ -22,6 +22,11 @@ const ReceivedWorkOrders = lazy(() => import('./pages/app/ReceivedWorkOrders'))
 const AssignedWorkOrders = lazy(() => import('./pages/app/AssignedWorkOrders'))
 const ScheduledWorkOrders = lazy(() => import('./pages/app/ScheduledWorkOrders'))
 const PlaceholderPage = lazy(() => import('./pages/app/PlaceholderPage'))
+const DailyLogsReport = lazy(() => import('./pages/app/reports/DailyLogsReport'))
+const PlantWiseReport = lazy(() => import('./pages/app/reports/PlantWiseReport'))
+const OpenLogsReport = lazy(() => import('./pages/app/reports/OpenLogsReport'))
+const CompletedLogsReport = lazy(() => import('./pages/app/reports/CompletedLogsReport'))
+const OverdueWorkOrdersReport = lazy(() => import('./pages/app/reports/OverdueWorkOrdersReport'))
 const TasksRouteLayout = lazy(() => import('./components/tasks/TasksRouteLayout'))
 const TasksManager = lazy(() => import('./pages/app/TasksManager'))
 const TaskDetailPage = lazy(() => import('./pages/app/TaskDetailPage'))
@@ -48,13 +53,13 @@ const AdminOrgAssets = lazy(() => import('./pages/admin/AdminOrgAssets'))
 const AdminOrgEquipment = lazy(() => import('./pages/admin/AdminOrgEquipment'))
 const Users = lazy(() => import('./pages/admin/Users'))
 
-const reportRouteModules = {
-  'daily-logs': 'reports_daily_logs',
-  'plant-wise': 'reports_plant_wise',
-  'open-logs': 'reports_open_logs',
-  'completed-logs': 'reports_completed_logs',
-  overdue: 'reports_overdue',
-}
+const reportRoutes = [
+  { slug: 'daily-logs', moduleKey: 'reports_daily_logs', element: <DailyLogsReport /> },
+  { slug: 'plant-wise', moduleKey: 'reports_plant_wise', element: <PlantWiseReport /> },
+  { slug: 'open-logs', moduleKey: 'reports_open_logs', element: <OpenLogsReport /> },
+  { slug: 'completed-logs', moduleKey: 'reports_completed_logs', element: <CompletedLogsReport /> },
+  { slug: 'overdue', moduleKey: 'reports_overdue', element: <OverdueWorkOrdersReport /> },
+]
 const masterRoutes = ['order', 'activity']
 const companyPageModules = ['company', 'locations', 'departments', 'work_centers', 'employees']
 const workOrderModules = [
@@ -181,11 +186,11 @@ export default function App() {
                 <Route path="manual/create" element={withModule('work_orders_manual', <ManualWorkOrderCreate />)} />
                 <Route path="manual/:workOrderId/edit" element={withModule('work_orders_manual', <ManualWorkOrderCreate />)} />
               </Route>
-              {Object.entries(reportRouteModules).map(([slug, moduleKey]) => (
+              {reportRoutes.map((route) => (
                 <Route
-                  key={slug}
-                  path={`reports/${slug}`}
-                  element={withModule([moduleKey, 'reports'], <PlaceholderPage title={slug} />)}
+                  key={route.slug}
+                  path={`reports/${route.slug}`}
+                  element={withModule([route.moduleKey, 'reports'], route.element)}
                 />
               ))}
               {masterRoutes.map((r) => (

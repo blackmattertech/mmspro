@@ -17,7 +17,7 @@ export const ORG_STATUS_ENTITY_TYPES = [
   {
     key: 'pm_plan',
     label: 'Planned Maintenance',
-    description: 'Active / inactive and custom statuses for PM plans.',
+    description: 'Active, inactive, overdue, and custom statuses for PM plans.',
   },
 ]
 
@@ -48,6 +48,7 @@ export const DEFAULT_ORG_STATUSES = {
   pm_plan: [
     { key: 'inactive', name: 'Inactive', color: '#94A3B8', sort_order: 0, is_terminal: false, description: 'Plan is inactive' },
     { key: 'active', name: 'Active', color: '#10B981', sort_order: 1, is_terminal: false, description: 'Plan is active' },
+    { key: 'overdue', name: 'Overdue', color: '#EF4444', sort_order: 2, is_terminal: false, description: 'Next due date has passed' },
   ],
 }
 
