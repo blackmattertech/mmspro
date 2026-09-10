@@ -102,3 +102,9 @@ export function isOverdue(plan, now = new Date()) {
   limit.setDate(limit.getDate() + grace)
   return toDateOnly(now) > limit
 }
+
+/** Inactive stays inactive. Live plans become overdue after due date + grace. */
+export function resolveLivePlanStatus(plan, now = new Date()) {
+  if (String(plan?.status || '') === 'inactive') return 'inactive'
+  return isOverdue(plan, now) ? 'overdue' : 'active'
+}

@@ -1,7 +1,7 @@
 export const PM_SCHEDULE_TYPES = [
   { value: 'calendar', label: 'Calendar Based' },
-  { value: 'reading', label: 'Reading Based' },
-  { value: 'both', label: 'Both' },
+  { value: 'reading', label: 'Meter Based' },
+  { value: 'both', label: 'Calendar + Meter Based' },
 ]
 
 export const PM_CALENDAR_UNITS = [
@@ -118,6 +118,14 @@ export function scheduleTypeLabel(value) {
 
 export function calendarUnitLabel(value) {
   return PM_CALENDAR_UNITS.find((row) => row.value === value)?.label || value || '—'
+}
+
+export function pmPlanStatusLabel(value) {
+  const key = String(value || '').trim()
+  if (key === 'overdue') return 'Overdue'
+  if (key === 'active') return 'Active'
+  if (key === 'inactive') return 'Inactive'
+  return key.replace(/_/g, ' ') || '—'
 }
 
 export function checklistFieldTypeLabel(value) {

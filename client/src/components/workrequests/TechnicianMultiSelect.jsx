@@ -4,6 +4,7 @@ import { useFixedPopover } from '../../hooks/useFixedPopover'
 import EmployeeAvatar from '../company/EmployeeAvatar'
 import { formatPhoneDisplay } from '../shared/PhoneInput'
 import '../company/CompanyShared.css'
+import './WorkRequests.css'
 
 function technicianSearchText(employee) {
   return [

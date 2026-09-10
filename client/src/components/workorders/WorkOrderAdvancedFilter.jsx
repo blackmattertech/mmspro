@@ -79,12 +79,16 @@ export default function WorkOrderAdvancedFilter({
   onChange,
   locations,
   activeCount = 0,
+  fields = ADVANCED_FILTER_FIELDS,
+  statusEntityType = 'work_order',
+  fallbackStatusOptions = FALLBACK_WO_STATUS_OPTIONS,
+  getOperators = getOperatorsForField,
 }) {
   const [open, setOpen] = useState(false)
   const panelRef = useRef(null)
   const triggerRef = useRef(null)
-  const { options: loadedStatusOptions } = useOrgStatusOptions('work_order')
-  const statusOptions = loadedStatusOptions.length ? loadedStatusOptions : FALLBACK_WO_STATUS_OPTIONS
+  const { options: loadedStatusOptions } = useOrgStatusOptions(statusEntityType)
+  const statusOptions = loadedStatusOptions.length ? loadedStatusOptions : fallbackStatusOptions
   const { popoverRef, style, popoverProps } = useFixedPopover({
     open,
     anchorRef: triggerRef,
@@ -159,7 +163,7 @@ export default function WorkOrderAdvancedFilter({
 
           <div className="wo-adv-filter__rules">
             {rules.map((rule, index) => {
-              const operators = getOperatorsForField(rule.field)
+              const operators = getOperators(rule.field)
               return (
                 <div key={rule.id} className="wo-adv-filter__rule">
                   {index > 0 ? (
@@ -180,11 +184,11 @@ export default function WorkOrderAdvancedFilter({
                     value={rule.field}
                     onChange={(field) => updateRule(rule.id, {
                       field,
-                      operator: getOperatorsForField(field)[0]?.id || 'contains',
+                      operator: getOperators(field)[0]?.id || 'contains',
                       value: '',
                     })}
-                    options={ADVANCED_FILTER_FIELDS}
-                    getOptionValue={(field) => field.id}
+                    options={fields}
+                    getOptionValue={(field) => field.id || field.value}
                     getOptionLabel={(field) => field.label}
                     allowEmpty={false}
                   />

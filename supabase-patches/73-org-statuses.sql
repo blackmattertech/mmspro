@@ -63,7 +63,8 @@ cross join (
     ('work_order', 'returned_rework', 'Returned / rework', '#EF4444', 11, false, 'Returned for rework'),
     -- Planned Maintenance
     ('pm_plan', 'inactive', 'Inactive', '#94A3B8', 0, false, 'Plan is inactive'),
-    ('pm_plan', 'active', 'Active', '#10B981', 1, false, 'Plan is active')
+    ('pm_plan', 'active', 'Active', '#10B981', 1, false, 'Plan is active'),
+    ('pm_plan', 'overdue', 'Overdue', '#EF4444', 2, false, 'Next due date has passed')
 ) as v(entity_type, key, name, color, sort_order, is_terminal, description)
 where not exists (
   select 1 from public.org_statuses s

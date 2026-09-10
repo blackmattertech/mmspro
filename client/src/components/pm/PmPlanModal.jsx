@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useBackdropClose } from '../../hooks/useBackdropClose'
 import { useDepartments } from '../../hooks/useDepartments'
 import { useLocations } from '../../hooks/useLocations'
@@ -13,10 +13,16 @@ import { PM_PRIORITIES, PM_SCHEDULE_TYPES, PM_CALENDAR_UNITS, CALENDAR_SCHEDULE_
 import DateField from '../ui/DateField'
 import FilterableSelect from '../ui/FilterableSelect'
 import GooToggle from '../ui/GooToggle'
-import EmployeeAvatar from '../company/EmployeeAvatar'
+import TechnicianMultiSelect from '../workrequests/TechnicianMultiSelect'
 import PageBack from '../shared/PageBack'
 import '../company/CompanyShared.css'
 import './Pm.css'
+
+const STEPS = [
+  { id: 1, label: 'Plan details' },
+  { id: 2, label: 'Technicians' },
+  { id: 3, label: 'Checklist' },
+]
 
 const EMPTY = {
   name: '',
@@ -55,7 +61,7 @@ function formFromPlan(plan) {
     activity_type_id: plan.activity_type_id || '',
     work_center: plan.work_center || 'General',
     priority: plan.priority || 'medium',
-    status: plan.status || 'inactive',
+    status: plan.status === 'inactive' ? 'inactive' : 'active',
     schedule_type: scheduleType,
     calendar_unit: normalizeCalendarUnit(plan.calendar_unit, plan.schedule_type),
     every_n: plan.every_n || 1,
@@ -74,10 +80,12 @@ function formFromPlan(plan) {
 
 export default function PmPlanModal({ plan, saving, onClose, onSave }) {
   const [form, setForm] = useState(() => formFromPlan(plan))
+  const [step, setStep] = useState(1)
   const [error, setError] = useState(null)
   const [activityTypes, setActivityTypes] = useState([])
   const [checklists, setChecklists] = useState([])
   const [equipment, setEquipment] = useState([])
+  const formRef = useRef(null)
   const handleBackdropClick = useBackdropClose(onClose)
   const { departments } = useDepartments()
   const { locations } = useLocations()
@@ -96,6 +104,8 @@ export default function PmPlanModal({ plan, saving, onClose, onSave }) {
 
   useEffect(() => {
     setForm(formFromPlan(plan))
+    setStep(1)
+    setError(null)
   }, [plan])
 
   useEffect(() => {
@@ -189,10 +199,13 @@ export default function PmPlanModal({ plan, saving, onClose, onSave }) {
     })
   }, [employees, form.technician_ids])
 
-  const handleSubmit = async (event) => {
-    event.preventDefault()
+  const goToStep = (nextStep) => {
     setError(null)
+    setStep(nextStep)
+    formRef.current?.scrollTo?.({ top: 0 })
+  }
 
+  const validateDetails = () => {
     const requiredChecks = [
       { ok: Boolean(form.name.trim()), id: 'pm-field-name', label: 'PM plan name' },
       { ok: Boolean(form.department_id), id: 'pm-field-department', label: 'Department' },
@@ -206,13 +219,28 @@ export default function PmPlanModal({ plan, saving, onClose, onSave }) {
       { ok: form.generate_before_days !== '' && form.generate_before_days != null, id: 'pm-field-generate-before', label: 'Generate before due' },
     ]
     const missing = requiredChecks.find((row) => !row.ok)
-    if (missing) {
-      setError(`Please fill in ${missing.label}.`)
+    if (!missing) return true
+    setError(`Please fill in ${missing.label}.`)
+    setStep(1)
+    requestAnimationFrame(() => {
       const el = document.getElementById(missing.id)
       el?.scrollIntoView({ behavior: 'smooth', block: 'center' })
       el?.querySelector('input:not([disabled]), textarea, button')?.focus()
+    })
+    return false
+  }
+
+  const handleSubmit = async (event) => {
+    event.preventDefault()
+    setError(null)
+
+    if (step < 3) {
+      if (step === 1 && !validateDetails()) return
+      goToStep(step + 1)
       return
     }
+
+    if (!validateDetails()) return
 
     try {
       await onSave({
@@ -263,7 +291,34 @@ export default function PmPlanModal({ plan, saving, onClose, onSave }) {
           <button type="button" className="company-modal__close" onClick={onClose} aria-label="Close">×</button>
         </div>
 
-        <form className="company-modal__form" onSubmit={handleSubmit} noValidate>
+        <nav className="pm-steps" aria-label="PM plan steps">
+          {STEPS.flatMap((item, index) => [
+            index > 0 ? (
+              <span key={`div-${item.id}`} className="pm-steps__divider" aria-hidden="true" />
+            ) : null,
+            <button
+              key={item.id}
+              type="button"
+              className={[
+                'pm-steps__item',
+                step === item.id ? 'pm-steps__item--active' : '',
+                step > item.id ? 'pm-steps__item--complete' : '',
+              ].filter(Boolean).join(' ')}
+              aria-current={step === item.id ? 'step' : undefined}
+              onClick={() => {
+                if (item.id > 1 && !validateDetails()) return
+                goToStep(item.id)
+              }}
+            >
+              <span className="pm-steps__num">{item.id}</span>
+              <span className="pm-steps__label">{item.label}</span>
+            </button>,
+          ])}
+        </nav>
+
+        <form className="company-modal__form" ref={formRef} onSubmit={handleSubmit} noValidate>
+          {step === 1 && (
+          <>
           <section className="pm-section">
             <h3 className="pm-section__title">Section A — General information</h3>
             <div className="company-form__grid company-form__grid--2">
@@ -512,9 +567,41 @@ export default function PmPlanModal({ plan, saving, onClose, onSave }) {
               </label>
             </div>
           </section>
+          </>
+          )}
 
+          {step === 2 && (
+          <section className="pm-section">
+            <h3 className="pm-section__title">Default technician(s)</h3>
+            <p className="pm-section__hint">
+              Assign the maintenance team that should receive work orders generated from this plan.
+            </p>
+            {!form.location_id ? (
+              <p className="pm-section__hint">Select a plant / facility in plan details to see the maintenance team for that location.</p>
+            ) : (
+              <div className="company-form__field company-form__field--full">
+                <span className="company-form__label">
+                  Technicians
+                  {form.technician_ids.length > 0 ? ` (${form.technician_ids.length} selected)` : ''}
+                </span>
+                <TechnicianMultiSelect
+                  employees={technicians}
+                  value={form.technician_ids}
+                  onChange={(ids) => setField('technician_ids', ids)}
+                  disabled={saving}
+                  placeholder="Select technicians…"
+                />
+              </div>
+            )}
+          </section>
+          )}
+
+          {step === 3 && (
           <section className="pm-section">
             <h3 className="pm-section__title">Checklist</h3>
+            <p className="pm-section__hint">
+              Attach a checklist template to include inspection items on generated work orders.
+            </p>
             <label className="company-form__field">
               <span className="company-form__label">Checklist template</span>
               <FilterableSelect
@@ -527,54 +614,19 @@ export default function PmPlanModal({ plan, saving, onClose, onSave }) {
               />
             </label>
           </section>
-
-          <section className="pm-section">
-            <h3 className="pm-section__title">Resource assignment</h3>
-            <div className="company-form__field">
-              <span className="company-form__label">Default technician(s)</span>
-              {!form.location_id ? (
-                <p className="pm-section__hint">Select a plant / facility to see the maintenance team for that location.</p>
-              ) : !technicians.length ? (
-                <p className="pm-section__hint">No maintenance team members found at this location.</p>
-              ) : (
-                <div className="pm-tech-grid">
-                  {technicians.map((employee) => {
-                    const checked = form.technician_ids.includes(employee.id)
-                    return (
-                      <button
-                        key={employee.id}
-                        type="button"
-                        className={`pm-tech-card${checked ? ' pm-tech-card--selected' : ''}`}
-                        onClick={() => {
-                          const next = new Set(form.technician_ids)
-                          if (checked) next.delete(employee.id)
-                          else next.add(employee.id)
-                          setField('technician_ids', [...next])
-                        }}
-                      >
-                        <EmployeeAvatar employee={employee} size="lg" />
-                        <span className="pm-tech-card__text">
-                          <span className="pm-tech-card__name">{employee.name}</span>
-                          {employee.departments?.name && (
-                            <span className="pm-tech-card__meta">{employee.departments.name}</span>
-                          )}
-                          {employee.emp_id && (
-                            <span className="pm-tech-card__meta">{employee.emp_id}</span>
-                          )}
-                        </span>
-                      </button>
-                    )
-                  })}
-                </div>
-              )}
-            </div>
-          </section>
+          )}
 
           {error && <p className="company-alert">{error}</p>}
           <div className="company-modal__actions">
-            <button type="button" className="company-btn company-btn--secondary" onClick={onClose}>Cancel</button>
+            {step === 1 ? (
+              <button type="button" className="company-btn company-btn--secondary" onClick={onClose}>Cancel</button>
+            ) : (
+              <button type="button" className="company-btn company-btn--secondary" onClick={() => goToStep(step - 1)}>
+                Back
+              </button>
+            )}
             <button type="submit" className="company-btn company-btn--primary" disabled={saving}>
-              {saving ? 'Saving...' : 'Save PM plan'}
+              {step < 3 ? 'Next' : saving ? 'Saving...' : 'Save PM plan'}
             </button>
           </div>
         </form>

@@ -12,7 +12,7 @@ const FALLBACK_TYPES = [
   { key: 'work_request', label: 'Work Request', description: 'Statuses used on work requests and their filters.' },
   { key: 'work_order', label: 'Work Order', description: 'Statuses for received, assigned, scheduled, and manual work orders.' },
   { key: 'task', label: 'Tasks & Follow-ups', description: 'Statuses available when creating or updating tasks.' },
-  { key: 'pm_plan', label: 'Planned Maintenance', description: 'Active / inactive and custom statuses for PM plans.' },
+  { key: 'pm_plan', label: 'Planned Maintenance', description: 'Active, inactive, overdue, and custom statuses for PM plans.' },
 ]
 
 export default function OthersStatusTypes() {

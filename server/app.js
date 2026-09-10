@@ -23,6 +23,7 @@ import tasksRoutes from './routes/api/tasks.js'
 import profileRoutes from './routes/api/profile.js'
 import rolesRoutes from './routes/api/roles.js'
 import internalRoutes from './routes/api/internal.js'
+import reportsRoutes from './routes/api/reports.js'
 
 const app = express()
 const isDev = process.env.NODE_ENV !== 'production'
@@ -98,6 +99,7 @@ app.use('/api/vendors', vendorsRoutes)
 app.use('/api/org-statuses', orgStatusesRoutes)
 app.use('/api/tasks', tasksRoutes)
 app.use('/api/profile', profileRoutes)
+app.use('/api/reports', reportsRoutes)
 app.use('/api', apiRoutes)
 app.use('/api/notifications', notificationRoutes)
 app.use('/admin-api', adminRoutes)

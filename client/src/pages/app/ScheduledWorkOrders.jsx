@@ -11,7 +11,7 @@ import {
   deletePmPlan,
   generatePmWorkOrder,
 } from '../../lib/api-pm'
-import { formatScheduleSummary } from '../../config/pm'
+import { formatScheduleSummary, pmPlanStatusLabel } from '../../config/pm'
 import { useWorkOrderList } from '../../hooks/useWorkOrderList'
 import { useWorkOrderToolbar } from '../../hooks/useWorkOrderToolbar'
 import { usePermissions } from '../../hooks/usePermissions'
@@ -19,6 +19,7 @@ import { useDebouncedValue } from '../../hooks/useDebouncedValue'
 import { useTablePagination } from '../../hooks/useTablePagination'
 import { useOpenQueryId } from '../../hooks/useOpenQueryId'
 import { applyWorkOrderFilters } from '../../lib/workOrderFilters'
+import { applyPmPlanFilters } from '../../lib/pmPlanFilters'
 import ReceivedWorkOrderDetailModal from '../../components/workorders/ReceivedWorkOrderDetailModal'
 import WorkOrdersTable from '../../components/workorders/WorkOrdersTable'
 import EditIcon from '../../components/ui/EditIcon'
@@ -30,10 +31,6 @@ import '../../components/workorders/WorkOrdersPage.css'
 import '../../components/pm/Pm.css'
 
 const SCHEDULED_COLUMNS = ['wo_number', 'summary', 'scheduled_at', 'assignees', 'status']
-const SUBVIEWS = [
-  { id: 'plans', label: 'PM Plans' },
-  { id: 'orders', label: 'Scheduled work orders' },
-]
 
 function formatDate(value) {
   if (!value) return '—'
@@ -43,6 +40,8 @@ function formatDate(value) {
 export default function ScheduledWorkOrders() {
   const outlet = useOutletContext() || {}
   const {
+    view = 'plans',
+    setView,
     search = '',
     locationFilter = 'all',
     sortBy = 'newest',
@@ -56,7 +55,6 @@ export default function ScheduledWorkOrders() {
   const canEdit = canUpdate('work_orders_scheduled') || canUpdate('work_orders')
   const canRemove = canDelete('work_orders_scheduled') || canDelete('work_orders')
 
-  const [view, setView] = useState('plans')
   const [plans, setPlans] = useState([])
   const [loadingMeta, setLoadingMeta] = useState(true)
   const [error, setError] = useState(null)
@@ -127,17 +125,17 @@ export default function ScheduledWorkOrders() {
     [orders, locationFilter, sortBy, advancedRules, fieldFilter, locations],
   )
 
-  const filteredPlans = useMemo(() => {
-    const query = String(search || '').trim().toLowerCase()
-    if (!query) return plans
-    return plans.filter((plan) => [
-      plan.plan_number,
-      plan.name,
-      plan.activity_type?.name,
-      plan.equipment?.name,
-      plan.department?.name,
-    ].filter(Boolean).join(' ').toLowerCase().includes(query))
-  }, [plans, search])
+  const filteredPlans = useMemo(
+    () => applyPmPlanFilters(plans, {
+      search,
+      locationFilter,
+      sortBy,
+      advancedRules,
+      fieldFilter,
+      locations,
+    }),
+    [plans, search, locationFilter, sortBy, advancedRules, fieldFilter, locations],
+  )
 
   const handleSavePlan = async (payload) => {
     setSaving(true)
@@ -175,14 +173,17 @@ export default function ScheduledWorkOrders() {
   return (
     <>
       <div className="pm-subtabs" role="tablist" aria-label="Scheduled maintenance">
-        {SUBVIEWS.map((tab) => (
+        {[
+          { id: 'plans', label: 'PM Plans' },
+          { id: 'orders', label: 'Scheduled work orders' },
+        ].map((tab) => (
           <button
             key={tab.id}
             type="button"
             role="tab"
             aria-selected={view === tab.id}
             className={`pm-subtabs__btn${view === tab.id ? ' pm-subtabs__btn--active' : ''}`}
-            onClick={() => setView(tab.id)}
+            onClick={() => setView?.(tab.id)}
           >
             {tab.label}
           </button>
@@ -221,11 +222,11 @@ export default function ScheduledWorkOrders() {
                     <td>{formatScheduleSummary(plan)}</td>
                     <td>{formatDate(plan.next_due_at)}</td>
                     <td>
-                      <span className={`pm-status pm-status--${plan.status}`}>{plan.status}</span>
+                      <span className={`pm-status pm-status--${plan.status}`}>{pmPlanStatusLabel(plan.status)}</span>
                     </td>
                     <td>
                       <div className="pm-table-actions">
-                        {canAdd && plan.status === 'active' && (
+                        {canAdd && (plan.status === 'active' || plan.status === 'overdue') && (
                           <button
                             type="button"
                             className="company-btn company-btn--secondary company-btn--compact"
@@ -252,8 +253,12 @@ export default function ScheduledWorkOrders() {
                   <tr>
                     <td colSpan={8}>
                       <div className="company-empty">
-                        <strong>No PM plans yet.</strong>
-                        <p>Create a planned maintenance plan to generate scheduled work orders automatically.</p>
+                        <strong>{plans.length ? 'No matching PM plans.' : 'No PM plans yet.'}</strong>
+                        <p>
+                          {plans.length
+                            ? 'Try a different search or clear the filters.'
+                            : 'Create a planned maintenance plan to generate scheduled work orders automatically.'}
+                        </p>
                       </div>
                     </td>
                   </tr>

@@ -50,7 +50,7 @@ function getMailjetClient() {
 /**
  * Core send function — no-ops when Mailjet is not configured
  */
-export const sendEmail = async ({ to, toName, subject, htmlContent, textContent }) => {
+export const sendEmail = async ({ to, toName, subject, htmlContent, textContent, attachments }) => {
   const client = getMailjetClient()
   if (!client) {
     console.warn(`Email not sent (Mailjet not configured): ${subject} → ${to}`)
@@ -58,16 +58,23 @@ export const sendEmail = async ({ to, toName, subject, htmlContent, textContent 
   }
 
   try {
+    const payload = {
+      From: { Email: FROM_EMAIL, Name: FROM_NAME },
+      To: [{ Email: to, Name: toName || to }],
+      Subject: subject,
+      HTMLPart: htmlContent,
+      TextPart: textContent || '',
+    }
+    if (Array.isArray(attachments) && attachments.length) {
+      payload.Attachments = attachments.map((file) => ({
+        Filename: file.Filename || file.filename || 'attachment',
+        ContentType: file.ContentType || file.contentType || 'application/octet-stream',
+        Base64Content: file.Base64Content || file.data || '',
+      }))
+    }
+
     const response = await client.post('send', { version: 'v3.1' }).request({
-      Messages: [
-        {
-          From: { Email: FROM_EMAIL, Name: FROM_NAME },
-          To: [{ Email: to, Name: toName || to }],
-          Subject: subject,
-          HTMLPart: htmlContent,
-          TextPart: textContent || '',
-        },
-      ],
+      Messages: [payload],
     })
 
     const message = response?.body?.Messages?.[0]
