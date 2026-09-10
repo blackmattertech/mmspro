@@ -1,17 +1,14 @@
 import { useMemo, useState } from 'react'
-import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
+import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useOrg } from '../../hooks/useOrg'
 import { usePermissions } from '../../hooks/usePermissions'
 import { useTableColumnPrefs } from '../../hooks/useTableColumnPrefs'
 import { orgPath } from '../../config/navigation'
-import {
-  WORK_REQUEST_TABS,
-  getWorkRequestActiveTab,
-  isWorkRequestTabActive,
-} from '../../config/workRequests'
+import { getWorkRequestActiveTab } from '../../config/workRequests'
 import { WR_SORT_OPTIONS } from '../../lib/workRequestFilters'
 import TableFilterToolbar from '../shared/TableFilterToolbar'
 import TableColumnPicker from '../shared/TableColumnPicker'
+import PageBreadcrumbs from '../shared/PageBreadcrumbs'
 import NavIcon from '../layout/NavIcon'
 import { WORK_REQUEST_COLUMNS } from './workRequestColumns'
 import '../company/CompanyShared.css'
@@ -35,7 +32,7 @@ export default function WorkRequestsLayout() {
   const location = useLocation()
   const navigate = useNavigate()
   const { org } = useOrg()
-  const { canRead, canCreate } = usePermissions()
+  const { canCreate } = usePermissions()
   const [search, setSearch] = useState('')
   const [filterField, setFilterField] = useState('')
   const [filterValue, setFilterValue] = useState('')
@@ -56,11 +53,6 @@ export default function WorkRequestsLayout() {
     WORK_REQUEST_COLUMNS,
   )
 
-  const visibleTabs = useMemo(
-    () => WORK_REQUEST_TABS.filter((tab) => canRead(tab.moduleKey) || canRead('work_request')),
-    [canRead],
-  )
-
   const canCreateRequest = canCreate('work_request_create') || canCreate('work_request')
 
   const outletContext = useMemo(() => ({
@@ -74,31 +66,14 @@ export default function WorkRequestsLayout() {
     <div className="company-page wo-page">
       <header className="wo-page__top">
         <div className="wo-page__intro">
+          <PageBreadcrumbs />
           <h1 className="wo-page__title">Work Requests</h1>
           <p className="wo-page__subtitle">Create, track, and manage maintenance requests</p>
         </div>
       </header>
 
-      <div className="wr-page__toolbar">
-        <div className="wr-page__toolbar-row wr-page__toolbar-row--tabs">
-          <nav className="wo-page__tabs" aria-label="Work request views">
-            {visibleTabs.map((tab) => {
-              const isActive = isWorkRequestTabActive(tab.id, location.pathname)
-              return (
-                <Link
-                  key={tab.id}
-                  to={org?.slug ? orgPath(org.slug, tab.segment) : '#'}
-                  className={`wo-page__tab${isActive ? ' wo-page__tab--active' : ''}`}
-                  aria-current={isActive ? 'page' : undefined}
-                >
-                  {tab.label}
-                </Link>
-              )
-            })}
-          </nav>
-        </div>
-
-        {isListPage && (
+      {isListPage && (
+        <div className="wr-page__toolbar">
           <div className="wr-page__toolbar-row wr-page__toolbar-row--filters">
             <TableFilterToolbar
               search={{
@@ -137,8 +112,8 @@ export default function WorkRequestsLayout() {
               )}
             />
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
       <div className="wo-page__content">
         {isCreatePage ? (

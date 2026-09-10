@@ -10,11 +10,6 @@ import {
   updatePmPlan,
   deletePmPlan,
   generatePmWorkOrder,
-  getChecklistTemplates,
-  getChecklistTemplate,
-  createChecklistTemplate,
-  updateChecklistTemplate,
-  deleteChecklistTemplate,
 } from '../../lib/api-pm'
 import { formatScheduleSummary } from '../../config/pm'
 import { useWorkOrderList } from '../../hooks/useWorkOrderList'
@@ -29,7 +24,6 @@ import WorkOrdersTable from '../../components/workorders/WorkOrdersTable'
 import EditIcon from '../../components/ui/EditIcon'
 import TrashIcon from '../../components/ui/TrashIcon'
 import PmPlanModal from '../../components/pm/PmPlanModal'
-import ChecklistBuilderModal from '../../components/pm/ChecklistBuilderModal'
 import PmActivityTypesModal from '../../components/pm/PmActivityTypesModal'
 import '../../components/company/CompanyShared.css'
 import '../../components/workorders/WorkOrdersPage.css'
@@ -39,7 +33,6 @@ const SCHEDULED_COLUMNS = ['wo_number', 'summary', 'scheduled_at', 'assignees', 
 const SUBVIEWS = [
   { id: 'plans', label: 'PM Plans' },
   { id: 'orders', label: 'Scheduled work orders' },
-  { id: 'checklists', label: 'Checklists' },
 ]
 
 function formatDate(value) {
@@ -48,7 +41,15 @@ function formatDate(value) {
 }
 
 export default function ScheduledWorkOrders() {
-  const { search, locationFilter, sortBy, advancedRules, fieldFilter, locations } = useOutletContext()
+  const outlet = useOutletContext() || {}
+  const {
+    search = '',
+    locationFilter = 'all',
+    sortBy = 'newest',
+    advancedRules = [],
+    fieldFilter = { field: '', value: '' },
+    locations = [],
+  } = outlet
   const { setToolbar, clearToolbar } = useWorkOrderToolbar()
   const { canCreate, canUpdate, canDelete } = usePermissions()
   const canAdd = canCreate('work_orders_scheduled') || canCreate('work_orders')
@@ -57,12 +58,10 @@ export default function ScheduledWorkOrders() {
 
   const [view, setView] = useState('plans')
   const [plans, setPlans] = useState([])
-  const [checklists, setChecklists] = useState([])
   const [loadingMeta, setLoadingMeta] = useState(true)
   const [error, setError] = useState(null)
   const [saving, setSaving] = useState(false)
   const [planModal, setPlanModal] = useState(null)
-  const [checklistModal, setChecklistModal] = useState(null)
   const [showActivityTypes, setShowActivityTypes] = useState(false)
   const [selectedId, setSelectedId, closeSelected] = useOpenQueryId()
 
@@ -88,22 +87,17 @@ export default function ScheduledWorkOrders() {
     setPlans(rows)
   }, [debouncedSearch])
 
-  const loadChecklists = useCallback(async () => {
-    const rows = await getChecklistTemplates({ includeInactive: true })
-    setChecklists(rows || [])
-  }, [])
-
   const reloadMeta = useCallback(async () => {
     setLoadingMeta(true)
     setError(null)
     try {
-      await Promise.all([loadPlans(), loadChecklists()])
+      await loadPlans()
     } catch (err) {
       setError(err.message)
     } finally {
       setLoadingMeta(false)
     }
-  }, [loadPlans, loadChecklists])
+  }, [loadPlans])
 
   useEffect(() => {
     reloadMeta()
@@ -120,11 +114,6 @@ export default function ScheduledWorkOrders() {
         {canAdd && view === 'plans' && (
           <button type="button" className="company-btn company-btn--primary" onClick={() => setPlanModal({})}>
             + PM Plan
-          </button>
-        )}
-        {canAdd && view === 'checklists' && (
-          <button type="button" className="company-btn company-btn--primary" onClick={() => setChecklistModal({})}>
-            + Checklist
           </button>
         )}
       </>
@@ -150,12 +139,6 @@ export default function ScheduledWorkOrders() {
     ].filter(Boolean).join(' ').toLowerCase().includes(query))
   }, [plans, search])
 
-  const filteredChecklists = useMemo(() => {
-    const query = String(search || '').trim().toLowerCase()
-    if (!query) return checklists
-    return checklists.filter((row) => row.name?.toLowerCase().includes(query))
-  }, [checklists, search])
-
   const handleSavePlan = async (payload) => {
     setSaving(true)
     try {
@@ -166,27 +149,6 @@ export default function ScheduledWorkOrders() {
     } finally {
       setSaving(false)
     }
-  }
-
-  const handleSaveChecklist = async (payload) => {
-    setSaving(true)
-    try {
-      if (checklistModal?.id) {
-        const updated = await updateChecklistTemplate(checklistModal.id, payload)
-        setChecklistModal(updated)
-      } else {
-        const created = await createChecklistTemplate(payload)
-        setChecklistModal(created)
-      }
-      await loadChecklists()
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const openChecklist = async (row) => {
-    const detail = await getChecklistTemplate(row.id)
-    setChecklistModal(detail)
   }
 
   const handleGenerate = async (plan) => {
@@ -205,16 +167,6 @@ export default function ScheduledWorkOrders() {
     try {
       await deletePmPlan(plan.id)
       await loadPlans()
-    } catch (err) {
-      setError(err.message)
-    }
-  }
-
-  const handleDeleteChecklist = async (row) => {
-    setError(null)
-    try {
-      await deleteChecklistTemplate(row.id)
-      await loadChecklists()
     } catch (err) {
       setError(err.message)
     }
@@ -331,64 +283,6 @@ export default function ScheduledWorkOrders() {
         )
       )}
 
-      {view === 'checklists' && (
-        loadingMeta ? (
-          <div className="company-loading">Loading...</div>
-        ) : (
-          <div className="company-table-wrap">
-            <table className="company-table">
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>Version</th>
-                  <th>Fields</th>
-                  <th>Status</th>
-                  <th />
-                </tr>
-              </thead>
-              <tbody>
-                {filteredChecklists.map((row) => (
-                  <tr key={row.id}>
-                    <td><span className="company-table__name">{row.name}</span></td>
-                    <td>v{row.version || 1}</td>
-                    <td>{row.field_count ?? 0}</td>
-                    <td>
-                      <span className={`pm-status pm-status--${row.is_active === false ? 'inactive' : 'active'}`}>
-                        {row.is_active === false ? 'inactive' : 'active'}
-                      </span>
-                    </td>
-                    <td>
-                      <div className="pm-table-actions">
-                        {canEdit && (
-                          <button type="button" className="company-btn company-btn--secondary company-btn--compact company-btn--icon" onClick={() => openChecklist(row)} aria-label="Edit checklist">
-                            <EditIcon />
-                          </button>
-                        )}
-                        {canRemove && (
-                          <button type="button" className="company-btn company-btn--secondary company-btn--compact company-btn--icon" onClick={() => handleDeleteChecklist(row)} aria-label="Delete checklist">
-                            <TrashIcon />
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-                {!filteredChecklists.length && (
-                  <tr>
-                    <td colSpan={5}>
-                      <div className="company-empty">
-                        <strong>No checklist templates yet.</strong>
-                        <p>Build a reusable checklist, then assign it to a PM plan. The snapshot is copied onto each generated work order.</p>
-                      </div>
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        )
-      )}
-
       {selectedId && (
         <ReceivedWorkOrderDetailModal
           orderId={selectedId}
@@ -403,15 +297,6 @@ export default function ScheduledWorkOrders() {
           saving={saving}
           onClose={() => setPlanModal(null)}
           onSave={handleSavePlan}
-        />
-      )}
-
-      {checklistModal && (
-        <ChecklistBuilderModal
-          template={checklistModal.id ? checklistModal : null}
-          saving={saving}
-          onClose={() => { setChecklistModal(null); loadChecklists() }}
-          onSaveTemplate={handleSaveChecklist}
         />
       )}
 

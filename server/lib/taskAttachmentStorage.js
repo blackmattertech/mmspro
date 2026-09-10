@@ -1,4 +1,5 @@
 import { supabaseAdmin } from '../services/supabase.js'
+import { getSignedUrl, getSignedUrls } from './signedUrlCache.js'
 
 const ORG_ASSETS_BUCKET = 'org-assets'
 const MAX_BYTES = 25 * 1024 * 1024
@@ -60,12 +61,11 @@ export async function uploadTaskAttachment(orgId, taskId, payload) {
 }
 
 export async function getTaskAttachmentSignedUrl(path, expiresIn = 3600) {
-  const { data, error } = await supabaseAdmin.storage
-    .from(ORG_ASSETS_BUCKET)
-    .createSignedUrl(path, expiresIn)
+  return getSignedUrl(ORG_ASSETS_BUCKET, path, expiresIn)
+}
 
-  if (error) throw error
-  return data?.signedUrl || null
+export async function getTaskAttachmentSignedUrls(paths, expiresIn = 3600) {
+  return getSignedUrls(ORG_ASSETS_BUCKET, paths, expiresIn)
 }
 
 export async function deleteTaskAttachmentFile(path) {

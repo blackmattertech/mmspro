@@ -9,8 +9,12 @@ const TEMPLATE_SELECT = `
   created_by, updated_by, created_at, updated_at
 `
 
+const SECTION_SELECT = `
+  id, org_id, template_id, name, sort_order, created_at, updated_at
+`
+
 const FIELD_SELECT = `
-  id, org_id, template_id, name, field_type, options, is_required, sort_order,
+  id, org_id, template_id, section_id, name, field_type, options, is_required, sort_order,
   created_at, updated_at
 `
 
@@ -48,6 +52,23 @@ export async function bumpChecklistVersion(orgId, templateId, profileId) {
   if (updateError) throw updateError
 }
 
+async function loadSections(orgId, templateId) {
+  const { data, error } = await supabaseAdmin
+    .from('checklist_template_sections')
+    .select(SECTION_SELECT)
+    .eq('org_id', orgId)
+    .eq('template_id', templateId)
+    .order('sort_order', { ascending: true })
+    .order('name', { ascending: true })
+
+  if (error) {
+    // Table may not exist until patch 74 is applied
+    if (error.code === '42P01' || /does not exist/i.test(error.message || '')) return []
+    throw error
+  }
+  return data || []
+}
+
 async function loadFields(orgId, templateId) {
   const { data, error } = await supabaseAdmin
     .from('checklist_template_fields')
@@ -57,8 +78,50 @@ async function loadFields(orgId, templateId) {
     .order('sort_order', { ascending: true })
     .order('name', { ascending: true })
 
-  if (error) throw error
+  if (error) {
+    // Fallback if section_id column not yet applied
+    if (/section_id/i.test(error.message || '')) {
+      const { data: legacy, error: legacyError } = await supabaseAdmin
+        .from('checklist_template_fields')
+        .select(`
+          id, org_id, template_id, name, field_type, options, is_required, sort_order,
+          created_at, updated_at
+        `)
+        .eq('org_id', orgId)
+        .eq('template_id', templateId)
+        .order('sort_order', { ascending: true })
+        .order('name', { ascending: true })
+      if (legacyError) throw legacyError
+      return (legacy || []).map((row) => ({ ...row, section_id: null }))
+    }
+    throw error
+  }
   return data || []
+}
+
+function attachSectionsAndFields(template, sections, fields) {
+  const fieldsBySection = new Map()
+  const unsectioned = []
+  for (const field of fields) {
+    if (field.section_id) {
+      const list = fieldsBySection.get(field.section_id) || []
+      list.push(field)
+      fieldsBySection.set(field.section_id, list)
+    } else {
+      unsectioned.push(field)
+    }
+  }
+
+  return {
+    ...template,
+    sections: sections.map((section) => ({
+      ...section,
+      fields: fieldsBySection.get(section.id) || [],
+      field_count: (fieldsBySection.get(section.id) || []).length,
+    })),
+    fields,
+    unsectioned_fields: unsectioned,
+  }
 }
 
 export async function listChecklistTemplates(orgId, { includeInactive = false } = {}) {
@@ -85,6 +148,22 @@ export async function listChecklistTemplates(orgId, { includeInactive = false } 
 
   if (fieldsError) throw fieldsError
 
+  let sectionCounts = new Map()
+  try {
+    const { data: sections, error: sectionsError } = await supabaseAdmin
+      .from('checklist_template_sections')
+      .select('template_id')
+      .eq('org_id', orgId)
+      .in('template_id', ids)
+    if (!sectionsError) {
+      for (const section of sections || []) {
+        sectionCounts.set(section.template_id, (sectionCounts.get(section.template_id) || 0) + 1)
+      }
+    }
+  } catch {
+    sectionCounts = new Map()
+  }
+
   const counts = new Map()
   for (const field of fields || []) {
     counts.set(field.template_id, (counts.get(field.template_id) || 0) + 1)
@@ -93,6 +172,7 @@ export async function listChecklistTemplates(orgId, { includeInactive = false } 
   return templates.map((row) => ({
     ...row,
     field_count: counts.get(row.id) || 0,
+    section_count: sectionCounts.get(row.id) || 0,
   }))
 }
 
@@ -107,8 +187,11 @@ export async function getChecklistTemplate(orgId, templateId) {
   if (error) throw error
   if (!data) throw httpError('Checklist template not found.', 404)
 
-  const fields = await loadFields(orgId, templateId)
-  return { ...data, fields }
+  const [sections, fields] = await Promise.all([
+    loadSections(orgId, templateId),
+    loadFields(orgId, templateId),
+  ])
+  return attachSectionsAndFields(data, sections, fields)
 }
 
 export async function createChecklistTemplate(orgId, profileId, body = {}) {
@@ -130,7 +213,7 @@ export async function createChecklistTemplate(orgId, profileId, body = {}) {
     .single()
 
   if (error) throw error
-  return { ...data, fields: [] }
+  return attachSectionsAndFields(data, [], [])
 }
 
 export async function updateChecklistTemplate(orgId, profileId, templateId, body = {}) {
@@ -158,7 +241,7 @@ export async function updateChecklistTemplate(orgId, profileId, templateId, body
     .single()
 
   if (error) throw error
-  return { ...data, fields: existing.fields }
+  return attachSectionsAndFields(data, existing.sections || [], existing.fields || [])
 }
 
 export async function deleteChecklistTemplate(orgId, templateId) {
@@ -182,6 +265,104 @@ export async function deleteChecklistTemplate(orgId, templateId) {
   if (error) throw error
 }
 
+export async function createChecklistSection(orgId, profileId, templateId, body = {}) {
+  await getChecklistTemplate(orgId, templateId)
+  const name = String(body.name || '').trim()
+  if (!name) throw httpError('Section name is required.')
+
+  const { data: last } = await supabaseAdmin
+    .from('checklist_template_sections')
+    .select('sort_order')
+    .eq('template_id', templateId)
+    .order('sort_order', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  const { data, error } = await supabaseAdmin
+    .from('checklist_template_sections')
+    .insert({
+      org_id: orgId,
+      template_id: templateId,
+      name,
+      sort_order: body.sort_order != null
+        ? Number(body.sort_order) || 0
+        : (last?.sort_order || 0) + 10,
+    })
+    .select(SECTION_SELECT)
+    .single()
+
+  if (error) throw error
+  await bumpChecklistVersion(orgId, templateId, profileId)
+  return { ...data, fields: [], field_count: 0 }
+}
+
+export async function updateChecklistSection(orgId, profileId, templateId, sectionId, body = {}) {
+  const { data: existing, error: findError } = await supabaseAdmin
+    .from('checklist_template_sections')
+    .select(SECTION_SELECT)
+    .eq('org_id', orgId)
+    .eq('template_id', templateId)
+    .eq('id', sectionId)
+    .maybeSingle()
+
+  if (findError) throw findError
+  if (!existing) throw httpError('Section not found.', 404)
+
+  const patch = { updated_at: new Date().toISOString() }
+  if (body.name !== undefined) {
+    const name = String(body.name || '').trim()
+    if (!name) throw httpError('Section name is required.')
+    patch.name = name
+  }
+  if (body.sort_order !== undefined) patch.sort_order = Number(body.sort_order) || 0
+
+  const { data, error } = await supabaseAdmin
+    .from('checklist_template_sections')
+    .update(patch)
+    .eq('id', sectionId)
+    .eq('org_id', orgId)
+    .select(SECTION_SELECT)
+    .single()
+
+  if (error) throw error
+  await bumpChecklistVersion(orgId, templateId, profileId)
+  return data
+}
+
+export async function deleteChecklistSection(orgId, profileId, templateId, sectionId) {
+  const { error } = await supabaseAdmin
+    .from('checklist_template_sections')
+    .delete()
+    .eq('org_id', orgId)
+    .eq('template_id', templateId)
+    .eq('id', sectionId)
+
+  if (error) throw error
+  await bumpChecklistVersion(orgId, templateId, profileId)
+}
+
+export async function reorderChecklistSections(orgId, profileId, templateId, sectionIds = []) {
+  if (!Array.isArray(sectionIds) || !sectionIds.length) {
+    throw httpError('Section order is required.')
+  }
+
+  const updates = sectionIds.map((id, index) => (
+    supabaseAdmin
+      .from('checklist_template_sections')
+      .update({ sort_order: (index + 1) * 10, updated_at: new Date().toISOString() })
+      .eq('org_id', orgId)
+      .eq('template_id', templateId)
+      .eq('id', id)
+  ))
+
+  const results = await Promise.all(updates)
+  const failed = results.find((row) => row.error)
+  if (failed?.error) throw failed.error
+
+  await bumpChecklistVersion(orgId, templateId, profileId)
+  return getChecklistTemplate(orgId, templateId)
+}
+
 function normalizeFieldPayload(body) {
   const name = String(body.name || '').trim()
   if (!name) throw httpError('Field name is required.')
@@ -195,12 +376,16 @@ function normalizeFieldPayload(body) {
   if (OPTION_CHECKLIST_FIELD_TYPES.has(fieldType) && options.length < 2) {
     throw httpError('Dropdown and radio fields need at least two options.')
   }
+  const sectionId = body.section_id === undefined
+    ? undefined
+    : (body.section_id || null)
   return {
     name,
     field_type: fieldType,
     options,
     is_required: Boolean(body.is_required),
     sort_order: Number.isFinite(Number(body.sort_order)) ? Number(body.sort_order) : 0,
+    ...(sectionId !== undefined ? { section_id: sectionId } : {}),
   }
 }
 
@@ -208,10 +393,26 @@ export async function createChecklistField(orgId, profileId, templateId, body = 
   await getChecklistTemplate(orgId, templateId)
   const payload = normalizeFieldPayload(body)
 
-  const { data: last } = await supabaseAdmin
+  if (payload.section_id) {
+    const { data: section, error: sectionError } = await supabaseAdmin
+      .from('checklist_template_sections')
+      .select('id')
+      .eq('org_id', orgId)
+      .eq('template_id', templateId)
+      .eq('id', payload.section_id)
+      .maybeSingle()
+    if (sectionError) throw sectionError
+    if (!section) throw httpError('Section not found for this checklist.', 404)
+  }
+
+  let query = supabaseAdmin
     .from('checklist_template_fields')
     .select('sort_order')
     .eq('template_id', templateId)
+  if (payload.section_id) query = query.eq('section_id', payload.section_id)
+  else query = query.is('section_id', null)
+
+  const { data: last } = await query
     .order('sort_order', { ascending: false })
     .limit(1)
     .maybeSingle()
@@ -244,7 +445,12 @@ export async function updateChecklistField(orgId, profileId, templateId, fieldId
   if (existingError) throw existingError
   if (!existing) throw httpError('Checklist field not found.', 404)
 
-  const payload = normalizeFieldPayload({ ...existing, ...body, options: body.options ?? existing.options })
+  const payload = normalizeFieldPayload({
+    ...existing,
+    ...body,
+    options: body.options ?? existing.options,
+    section_id: body.section_id !== undefined ? body.section_id : existing.section_id,
+  })
   const { data, error } = await supabaseAdmin
     .from('checklist_template_fields')
     .update({
@@ -303,8 +509,14 @@ export async function snapshotChecklistTemplate(orgId, templateId) {
       template_id: template.id,
       name: template.name,
       version: template.version,
+      sections: (template.sections || []).map((section) => ({
+        id: section.id,
+        name: section.name,
+        sort_order: section.sort_order,
+      })),
       fields: (template.fields || []).map((field) => ({
         id: field.id,
+        section_id: field.section_id || null,
         name: field.name,
         field_type: field.field_type,
         options: field.options || [],

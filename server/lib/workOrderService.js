@@ -377,7 +377,8 @@ export async function updateWorkOrderLifecycle(orgId, profileId, workOrderId, bo
 
   const nextStatus = body.status || existing.status
   if (nextStatus !== existing.status) {
-    assertValidTransition(existing.status, nextStatus)
+    const { assertWorkOrderStatusChange } = await import('./orgStatusService.js')
+    await assertWorkOrderStatusChange(orgId, existing.status, nextStatus)
   }
 
   let patch = {}

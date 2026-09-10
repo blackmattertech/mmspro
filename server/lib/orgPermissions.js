@@ -173,9 +173,14 @@ export async function resolveSessionPermissions(profile) {
   const employee = await getLinkedEmployee(orgId, profile)
   const locationId = employee?.location_id || null
   const departmentId = employee?.department_id || null
-  const accessRole = employee?.access_role_id
-    ? await getAccessRoleMeta(employee.access_role_id)
-    : null
+
+  const [accessRole, permissions] = await Promise.all([
+    employee?.access_role_id ? getAccessRoleMeta(employee.access_role_id) : Promise.resolve(null),
+    orgAdmin
+      ? Promise.resolve(null)
+      : getPermissionsForRole(employee?.access_role_id),
+  ])
+
   const headFlags = await loadHeadFlags(orgId, employee, accessRole)
 
   let session
@@ -197,7 +202,7 @@ export async function resolveSessionPermissions(profile) {
       employee_id: employee?.id || null,
       access_role: accessRole,
       ...headFlags,
-      permissions: await getPermissionsForRole(employee?.access_role_id),
+      permissions: permissions || emptyPermissions(),
     }
     if (headFlags.is_department_head) {
       session.permissions = withDepartmentHeadDefaults(session.permissions)

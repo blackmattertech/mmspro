@@ -4,6 +4,7 @@ import { listWorkRequests, getWorkRequest } from '../../lib/api-work-requests'
 import { useWorkOrderList } from '../../hooks/useWorkOrderList'
 import { usePermissions } from '../../hooks/usePermissions'
 import { useOpenQueryId } from '../../hooks/useOpenQueryId'
+import { useOrgStatusOptions } from '../../hooks/useOrgStatusOptions'
 import { applyWorkRequestFilters, sortWorkRequests } from '../../lib/workRequestFilters'
 import WorkRequestDetailModal from './WorkRequestDetailModal'
 import TablePagination from '../shared/TablePagination'
@@ -38,7 +39,8 @@ function wrNumberLabel(row) {
   return '—'
 }
 
-function statusLabel(status) {
+function statusLabel(status, labelByKey = null) {
+  if (labelByKey?.[status]) return labelByKey[status]
   return (status || 'submitted').replace(/_/g, ' ')
 }
 
@@ -111,7 +113,7 @@ function clampText(value, className = 'wr-table__clamp') {
   )
 }
 
-function renderCell(row, columnId) {
+function renderCell(row, columnId, statusLabels = null) {
   switch (columnId) {
     case 'wr_number':
       return (
@@ -134,7 +136,7 @@ function renderCell(row, columnId) {
     case 'status':
       return (
         <span className={`wo-status wo-status--${row.status}`}>
-          {statusLabel(row.status)}
+          {statusLabel(row.status, statusLabels)}
         </span>
       )
     case 'breakdown':
@@ -173,6 +175,7 @@ export default function WorkRequestsTable({
   const location = useLocation()
   const [selectedId, setSelectedId, closeSelected] = useOpenQueryId()
   const { canUpdate } = usePermissions()
+  const { labelByKey: statusLabels } = useOrgStatusOptions('work_request', { includeInactive: true })
   const canApprove = filter === 'incoming' && (
     canUpdate('work_request_approve') || canUpdate('work_request_incoming')
   )
@@ -264,7 +267,7 @@ export default function WorkRequestsTable({
                 >
                   {columns.map((columnId) => (
                     <td key={columnId} className={COLUMN_CELL_CLASS[columnId] || 'wr-table__cell'}>
-                      {renderCell(row, columnId)}
+                      {renderCell(row, columnId, statusLabels)}
                     </td>
                   ))}
                 </tr>

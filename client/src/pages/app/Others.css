@@ -1,0 +1,91 @@
+.others-hub {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+  margin-top: 8px;
+}
+
+.others-hub__card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  padding: 18px 16px;
+  text-align: left;
+  border: 1px solid var(--color-light-gray-1, #e5e7eb);
+  border-radius: var(--radius-md, 12px);
+  background: var(--color-white, #fff);
+  cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.others-hub__card:hover {
+  border-color: var(--color-primary, #c62828);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.06);
+}
+
+.others-hub__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 10px;
+  background: rgba(198, 40, 40, 0.08);
+  color: var(--color-primary, #c62828);
+  flex-shrink: 0;
+}
+
+.others-hub__body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
+}
+
+.others-hub__title {
+  font-size: 1rem;
+  font-weight: 650;
+  color: var(--color-near-black, #111);
+}
+
+.others-hub__desc {
+  font-size: 0.875rem;
+  color: var(--color-gray-1, #6b7280);
+  line-height: 1.35;
+}
+
+.others-hub__chevron {
+  color: var(--color-gray-1, #9ca3af);
+  font-size: 1.35rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.others-manage__header-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.others-manage__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.company-form__input--color {
+  height: 42px;
+  padding: 4px;
+  max-width: 88px;
+}
+
+.company-form__check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}

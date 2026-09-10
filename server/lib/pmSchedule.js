@@ -1,4 +1,4 @@
-import { CALENDAR_SCHEDULE_TYPES } from './pmConstants.js'
+import { CALENDAR_SCHEDULE_TYPES, normalizeCalendarUnit } from './pmConstants.js'
 
 function addMonths(date, months) {
   const d = new Date(date.getFullYear(), date.getMonth(), date.getDate())
@@ -33,28 +33,28 @@ export function isCalendarSchedule(scheduleType) {
 }
 
 export function computeNextDueDate(plan, fromDate) {
-  const scheduleType = plan.schedule_type || 'monthly'
+  const scheduleType = plan.schedule_type || 'calendar'
   if (!isCalendarSchedule(scheduleType)) return null
 
   const every = Math.max(1, Number(plan.every_n) || 1)
+  const unit = normalizeCalendarUnit(plan.calendar_unit, scheduleType)
   const base = toDateOnly(fromDate)
   if (!base) return null
 
   let next
-  switch (scheduleType) {
-    case 'daily':
+  switch (unit) {
+    case 'day':
       next = new Date(base)
       next.setDate(next.getDate() + every)
       break
-    case 'weekly':
+    case 'week':
       next = new Date(base)
       next.setDate(next.getDate() + every * 7)
       break
-    case 'monthly':
-    case 'calendar':
+    case 'month':
       next = addMonths(base, every)
       break
-    case 'quarterly':
+    case 'quarter':
       next = addMonths(base, every * 3)
       break
     case 'half_yearly':
@@ -67,6 +67,7 @@ export function computeNextDueDate(plan, fromDate) {
       return null
   }
 
+  // Legacy schedule_type values without calendar_unit still supported via unit mapping above.
   if (plan.end_date) {
     const end = toDateOnly(plan.end_date)
     if (end && next > end) return null

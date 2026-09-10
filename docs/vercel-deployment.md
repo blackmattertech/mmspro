@@ -118,8 +118,8 @@ Swagger UI locally: http://localhost:5050/api/docs
 Run this after every production deployment and track before/after values.
 
 - Frontend Web Vitals (production): LCP, INP, CLS, TBT
-- API latency (server): p50/p95 for `/api/company/employees`, `/api/work-orders/manual/orders`, `/api/profile/me`
-- Serverless duration (Vercel): average + p95 function duration
+- API latency (server): p50/p95 for `/api/session`, `/api/work-orders/received`, `/api/tasks`, `/api/notifications`
+- Serverless duration (Vercel): average + p95 function duration **and cold start rate**
 - Bundle size budget:
   - main JS chunk gzip/brotli size
   - login background assets total transfer size
@@ -130,3 +130,40 @@ Suggested quick checks:
 2. Browser Network tab to confirm no duplicate org/profile fetches.
 3. Vercel Function logs/metrics for slow routes and cold starts.
 4. Compare values against previous deployment; only keep changes that improve metrics.
+
+### Confirm production slowness in 10 minutes
+
+1. Open the slow page in production → DevTools **Network**.
+2. Note **TTFB** for `/api/session` and the main list endpoint (received WOs / tasks).
+   - Multi-second TTFB with a small response body → cold start or API host latency.
+   - Fast TTFB but large/slow downloads → payload / ID-prefetch issues (should be fixed by patch `72-list-visibility-rpcs.sql`).
+3. In Vercel → **server** project → Observability / Functions: check cold start % and p95 duration.
+4. Hit the same list endpoint against local API with the same org: if prod TTFB is ~10–50× local, latency amplification / serverless is the cause—not the React UI.
+
+## 7. Always-on API (recommended when cold starts dominate)
+
+Express + in-memory caches + `setInterval` schedulers are a poor fit for Vercel serverless:
+
+- Cold starts reload `firebase-admin`, Supabase client, and wipe `signedUrlCache` / permission caches.
+- Background jobs in [`server/index.js`](../server/index.js) only start when the process calls `listen()` — they do **not** run reliably from the serverless `app.js` export alone.
+
+**Preferred production layout**
+
+| Piece | Host |
+|-------|------|
+| Client (Vite static) | Vercel |
+| API (`node index.js`) | Always-on: Railway, Render, Fly.io, or a small VM |
+| Schedulers | Same always-on process, or external cron → `POST /api/internal/run-jobs` |
+
+Set client `VITE_API_URL` to the always-on API URL and redeploy the client.
+
+Optional keep-warm (only if you must stay on Vercel Functions): ping `GET /health` every 1–5 minutes from an external cron. Prefer moving the API off serverless instead.
+
+### Scheduler controls
+
+| Env var | Default | Meaning |
+|---------|---------|---------|
+| `ENABLE_TASK_SCHEDULER` | `true` when not on Vercel (`VERCEL` unset) | Start in-process recurrence / reminder / PM timers |
+| `INTERNAL_JOBS_SECRET` | unset | If set, enables `POST /api/internal/run-jobs` with header `x-internal-jobs-secret` for external cron |
+
+On Vercel, leave `ENABLE_TASK_SCHEDULER=false` (automatic when `VERCEL=1`) and call the internal jobs endpoint from cron, or run schedulers on an always-on worker.

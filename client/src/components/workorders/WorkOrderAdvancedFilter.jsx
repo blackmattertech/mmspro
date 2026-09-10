@@ -6,12 +6,23 @@ import {
   createFilterRule,
   getOperatorsForField,
 } from '../../lib/workOrderFilters'
+import { useOrgStatusOptions } from '../../hooks/useOrgStatusOptions'
 import '../company/CompanyShared.css'
 import './WorkOrderAdvancedFilter.css'
 
-const WO_STATUS_OPTIONS = [
-  { value: 'created', label: 'Created' },
+const FALLBACK_WO_STATUS_OPTIONS = [
   { value: 'draft', label: 'Draft' },
+  { value: 'assigned', label: 'Assigned' },
+  { value: 'accepted', label: 'Accepted' },
+  { value: 'started', label: 'Started' },
+  { value: 'in_progress', label: 'In progress' },
+  { value: 'waiting_material', label: 'Waiting material' },
+  { value: 'waiting_shutdown', label: 'Waiting shutdown' },
+  { value: 'on_hold', label: 'On hold' },
+  { value: 'completed', label: 'Completed' },
+  { value: 'verified', label: 'Verified' },
+  { value: 'closed', label: 'Closed' },
+  { value: 'returned_rework', label: 'Returned / rework' },
 ]
 
 function AdvSelect(props) {
@@ -23,7 +34,7 @@ function AdvSelect(props) {
   )
 }
 
-function FilterValueInput({ rule, locations, onChange }) {
+function FilterValueInput({ rule, locations, statusOptions, onChange }) {
   if (rule.field === 'location') {
     return (
       <AdvSelect
@@ -42,7 +53,7 @@ function FilterValueInput({ rule, locations, onChange }) {
       <AdvSelect
         value={rule.value}
         onChange={onChange}
-        options={WO_STATUS_OPTIONS}
+        options={statusOptions}
         getOptionValue={(o) => o.value}
         getOptionLabel={(o) => o.label}
         placeholder="Select status..."
@@ -69,6 +80,8 @@ export default function WorkOrderAdvancedFilter({
 }) {
   const [open, setOpen] = useState(false)
   const panelRef = useRef(null)
+  const { options: loadedStatusOptions } = useOrgStatusOptions('work_order')
+  const statusOptions = loadedStatusOptions.length ? loadedStatusOptions : FALLBACK_WO_STATUS_OPTIONS
 
   useEffect(() => {
     if (!open) return undefined
@@ -171,6 +184,7 @@ export default function WorkOrderAdvancedFilter({
                   <FilterValueInput
                     rule={rule}
                     locations={locations}
+                    statusOptions={statusOptions}
                     onChange={(value) => updateRule(rule.id, { value })}
                   />
 

@@ -66,6 +66,31 @@ export function reorderChecklistFields(templateId, fieldIds) {
   })
 }
 
+export function createChecklistSection(templateId, data) {
+  return pmFetch(`/checklists/${templateId}/sections`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
+}
+
+export function updateChecklistSection(templateId, sectionId, data) {
+  return pmFetch(`/checklists/${templateId}/sections/${sectionId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  })
+}
+
+export function deleteChecklistSection(templateId, sectionId) {
+  return pmFetch(`/checklists/${templateId}/sections/${sectionId}`, { method: 'DELETE' })
+}
+
+export function reorderChecklistSections(templateId, sectionIds) {
+  return pmFetch(`/checklists/${templateId}/sections/reorder`, {
+    method: 'PUT',
+    body: JSON.stringify({ section_ids: sectionIds }),
+  })
+}
+
 export async function getPmPlans(params = {}) {
   const data = await pmFetch(`/plans${listQueryParams({
     status: params.status,

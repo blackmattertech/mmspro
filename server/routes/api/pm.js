@@ -28,26 +28,29 @@ import {
   updateChecklistField,
   deleteChecklistField,
   reorderChecklistFields,
+  createChecklistSection,
+  updateChecklistSection,
+  deleteChecklistSection,
+  reorderChecklistSections,
 } from '../../lib/checklistService.js'
 
 const router = Router()
 
-const canRead = requireAnyModulePermission([
-  ['work_orders_scheduled', 'read'],
-  ['work_orders', 'read'],
-])
-const canCreate = requireAnyModulePermission([
-  ['work_orders_scheduled', 'create'],
-  ['work_orders', 'create'],
-])
-const canUpdate = requireAnyModulePermission([
-  ['work_orders_scheduled', 'update'],
-  ['work_orders', 'update'],
-])
-const canDelete = requireAnyModulePermission([
-  ['work_orders_scheduled', 'delete'],
-  ['work_orders', 'delete'],
-])
+function allowPm(action) {
+  const moduleGuard = requireAnyModulePermission([
+    ['work_orders_scheduled', action],
+    ['work_orders', action],
+  ])
+  return (req, res, next) => {
+    if (['admin', 'super_admin', 'owner'].includes(req.userProfile?.role)) return next()
+    return moduleGuard(req, res, next)
+  }
+}
+
+const canRead = allowPm('read')
+const canCreate = allowPm('create')
+const canUpdate = allowPm('update')
+const canDelete = allowPm('delete')
 
 router.use(verifyAuth, requireOrgAccess, loadOrgPermissions)
 
@@ -208,6 +211,63 @@ router.put('/checklists/:id/fields/reorder', canUpdate, async (req, res) => {
       req.userProfile.id,
       req.params.id,
       req.body?.field_ids || [],
+    )
+    res.json(row)
+  } catch (err) {
+    sendError(res, err)
+  }
+})
+
+router.post('/checklists/:id/sections', canUpdate, async (req, res) => {
+  try {
+    const row = await createChecklistSection(
+      req.userProfile.org_id,
+      req.userProfile.id,
+      req.params.id,
+      req.body || {},
+    )
+    res.status(201).json(row)
+  } catch (err) {
+    sendError(res, err)
+  }
+})
+
+router.patch('/checklists/:id/sections/:sectionId', canUpdate, async (req, res) => {
+  try {
+    const row = await updateChecklistSection(
+      req.userProfile.org_id,
+      req.userProfile.id,
+      req.params.id,
+      req.params.sectionId,
+      req.body || {},
+    )
+    res.json(row)
+  } catch (err) {
+    sendError(res, err)
+  }
+})
+
+router.delete('/checklists/:id/sections/:sectionId', canDelete, async (req, res) => {
+  try {
+    await deleteChecklistSection(
+      req.userProfile.org_id,
+      req.userProfile.id,
+      req.params.id,
+      req.params.sectionId,
+    )
+    res.status(204).end()
+  } catch (err) {
+    sendError(res, err)
+  }
+})
+
+router.put('/checklists/:id/sections/reorder', canUpdate, async (req, res) => {
+  try {
+    const row = await reorderChecklistSections(
+      req.userProfile.org_id,
+      req.userProfile.id,
+      req.params.id,
+      req.body?.section_ids || [],
     )
     res.json(row)
   } catch (err) {

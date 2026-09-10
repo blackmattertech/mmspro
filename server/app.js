@@ -18,9 +18,11 @@ import pmRoutes from './routes/api/pm.js'
 import workRequestsRoutes from './routes/api/workRequests.js'
 import warrantiesRoutes from './routes/api/warranties.js'
 import vendorsRoutes from './routes/api/vendors.js'
+import orgStatusesRoutes from './routes/api/orgStatuses.js'
 import tasksRoutes from './routes/api/tasks.js'
 import profileRoutes from './routes/api/profile.js'
 import rolesRoutes from './routes/api/roles.js'
+import internalRoutes from './routes/api/internal.js'
 
 const app = express()
 const isDev = process.env.NODE_ENV !== 'production'
@@ -82,6 +84,7 @@ try {
 }
 
 app.use('/api/auth', authRoutes)
+app.use('/api/internal', internalRoutes)
 app.use('/api/company', companyRoutes)
 app.use('/api/roles', rolesRoutes)
 app.use('/api/assets', assetsRoutes)
@@ -92,6 +95,7 @@ app.use('/api/pm', pmRoutes)
 app.use('/api/work-requests', workRequestsRoutes)
 app.use('/api/warranties', warrantiesRoutes)
 app.use('/api/vendors', vendorsRoutes)
+app.use('/api/org-statuses', orgStatusesRoutes)
 app.use('/api/tasks', tasksRoutes)
 app.use('/api/profile', profileRoutes)
 app.use('/api', apiRoutes)

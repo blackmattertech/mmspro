@@ -3,6 +3,7 @@ import { formatWorkOrderDate } from '../../lib/workOrderTableUtils'
 import { stopTableRowClick, tableRowClickProps } from '../../lib/clickableTableRow'
 import { useTablePagination } from '../../hooks/useTablePagination'
 import { useTableColumnPrefs } from '../../hooks/useTableColumnPrefs'
+import { useOrgStatusOptions } from '../../hooks/useOrgStatusOptions'
 import TablePagination from '../shared/TablePagination'
 import TableColumnPicker from '../shared/TableColumnPicker'
 import AssignedToCell from './AssignedToCell'
@@ -58,6 +59,7 @@ export default function WorkOrdersTable({
     toggleColumn,
     resetColumns,
   } = useTableColumnPrefs(tableId, columnDefs)
+  const { labelByKey: statusLabels } = useOrgStatusOptions('work_order', { includeInactive: true })
 
   const localPagination = useTablePagination(totalCount ?? orders.length, { resetKey: paginationResetKey })
   const pagination = paginationProp || localPagination
@@ -90,13 +92,13 @@ export default function WorkOrdersTable({
       case 'status':
         return (
           <span className={`wo-status wo-status--${order.status}`}>
-            {String(order.status || '').replace(/_/g, ' ')}
+            {statusLabels[order.status] || String(order.status || '').replace(/_/g, ' ')}
           </span>
         )
       default:
         return '—'
     }
-  }, [])
+  }, [statusLabels])
 
   if (!orders.length) {
     return (
@@ -110,21 +112,23 @@ export default function WorkOrdersTable({
   return (
     <div className="company-table-wrap">
       <div className="company-table-scroll">
-      <div className="company-table-toolbar">
-        <TableColumnPicker
-          columnDefs={columnDefs}
-          visibleColumnIds={visibleColumnIds}
-          onToggle={toggleColumn}
-          onReset={resetColumns}
-        />
-      </div>
       <table className="company-table master-table">
         <thead>
           <tr>
             {visibleColumnIds.map((column) => (
               <th key={column}>{COLUMN_CONFIG[column]?.label || column}</th>
             ))}
-            <th>Actions</th>
+            <th>
+              <div className="wo-table__actions-head">
+                <span>Actions</span>
+                <TableColumnPicker
+                  columnDefs={columnDefs}
+                  visibleColumnIds={visibleColumnIds}
+                  onToggle={toggleColumn}
+                  onReset={resetColumns}
+                />
+              </div>
+            </th>
           </tr>
         </thead>
         <tbody>

@@ -19,6 +19,7 @@ import { computeNextOccurrence, normalizeRecurrencePayload } from './taskRecurre
 import {
   uploadTaskAttachment,
   getTaskAttachmentSignedUrl,
+  getTaskAttachmentSignedUrls,
   deleteTaskAttachmentFile,
 } from './taskAttachmentStorage.js'
 import { getSignedUrl, getSignedUrls } from './signedUrlCache.js'
@@ -726,10 +727,12 @@ export async function getTaskDetail(orgId, taskId, profileId) {
   if (error) throw error
   if (!data) throw Object.assign(new Error('Task not found'), { status: 404 })
 
-  const attachments = await Promise.all((data.task_attachments || []).map(async (file) => ({
+  const attachmentPaths = (data.task_attachments || []).map((file) => file.storage_path)
+  const signedByPath = await getTaskAttachmentSignedUrls(attachmentPaths)
+  const attachments = (data.task_attachments || []).map((file) => ({
     ...file,
-    signed_url: await getTaskAttachmentSignedUrl(file.storage_path),
-  })))
+    signed_url: signedByPath.get(file.storage_path) || null,
+  }))
 
   const comments = (data.task_comments || [])
     .filter((c) => !c.is_deleted)

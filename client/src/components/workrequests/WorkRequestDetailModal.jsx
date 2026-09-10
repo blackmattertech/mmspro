@@ -531,53 +531,6 @@ export default function WorkRequestDetailModal({
 
                     {mode === 'approve' && (
                       <div className="wr-assign-block">
-                        <div className="company-form__field company-form__field--full">
-                          <span className="company-form__label">
-                            Technicians
-                            {assigneeIds.length > 0 ? ` (${assigneeIds.length} selected)` : ''}
-                          </span>
-                          <div className="wr-tech-grid" role="group" aria-label="Technicians">
-                            {employees.length === 0 ? (
-                              <p className="wr-assign-block__empty">
-                                No Maintenance employees at this location.
-                              </p>
-                            ) : employees.map((emp) => {
-                              const checked = assigneeIds.includes(emp.id)
-                              return (
-                                <button
-                                  key={emp.id}
-                                  type="button"
-                                  className={`wr-tech-card${checked ? ' wr-tech-card--selected' : ''}`}
-                                  onClick={() => {
-                                    setAssigneeIds((prev) => (
-                                      checked
-                                        ? prev.filter((id) => id !== emp.id)
-                                        : [...prev, emp.id]
-                                    ))
-                                  }}
-                                  aria-pressed={checked}
-                                >
-                                  <span className="wr-tech-card__check" aria-hidden="true">
-                                    {checked ? '✓' : ''}
-                                  </span>
-                                  <EmployeeAvatar employee={emp} />
-                                  <span className="wr-tech-card__body">
-                                    <span className="wr-tech-card__name">
-                                      {emp.name}
-                                      {emp.emp_id ? ` (${emp.emp_id})` : ''}
-                                    </span>
-                                    <span className="wr-tech-card__meta">
-                                      {emp.departments?.name || '—'}
-                                    </span>
-                                    <span className="wr-tech-card__meta">
-                                      {emp.mobile ? formatPhoneDisplay(emp.mobile) : '—'}
-                                    </span>
-                                  </span>
-                                </button>
-                              )
-                            })}
-                          </div>
-                        </div>
                         <div className="company-form__grid">
                           <label className="company-form__field">
                             <span className="company-form__label">Work center</span>
@@ -643,6 +596,53 @@ export default function WorkRequestDetailModal({
                             onChange={(e) => setAssignmentRemarks(e.target.value)}
                           />
                         </label>
+                        <div className="company-form__field company-form__field--full">
+                          <span className="company-form__label">
+                            Technicians
+                            {assigneeIds.length > 0 ? ` (${assigneeIds.length} selected)` : ''}
+                          </span>
+                          <div className="wr-tech-grid" role="group" aria-label="Technicians">
+                            {employees.length === 0 ? (
+                              <p className="wr-assign-block__empty">
+                                No Maintenance employees at this location.
+                              </p>
+                            ) : employees.map((emp) => {
+                              const checked = assigneeIds.includes(emp.id)
+                              return (
+                                <button
+                                  key={emp.id}
+                                  type="button"
+                                  className={`wr-tech-card${checked ? ' wr-tech-card--selected' : ''}`}
+                                  onClick={() => {
+                                    setAssigneeIds((prev) => (
+                                      checked
+                                        ? prev.filter((id) => id !== emp.id)
+                                        : [...prev, emp.id]
+                                    ))
+                                  }}
+                                  aria-pressed={checked}
+                                >
+                                  <span className="wr-tech-card__check" aria-hidden="true">
+                                    {checked ? '✓' : ''}
+                                  </span>
+                                  <EmployeeAvatar employee={emp} />
+                                  <span className="wr-tech-card__body">
+                                    <span className="wr-tech-card__name">
+                                      {emp.name}
+                                      {emp.emp_id ? ` (${emp.emp_id})` : ''}
+                                    </span>
+                                    <span className="wr-tech-card__meta">
+                                      {emp.departments?.name || '—'}
+                                    </span>
+                                    <span className="wr-tech-card__meta">
+                                      {emp.mobile ? formatPhoneDisplay(emp.mobile) : '—'}
+                                    </span>
+                                  </span>
+                                </button>
+                              )
+                            })}
+                          </div>
+                        </div>
                         <div className="wr-actions">
                           <button
                             type="button"

@@ -14,13 +14,6 @@ export const WORK_ORDER_TABS = [
     moduleKey: 'work_orders_assigned',
   },
   {
-    id: 'scheduled',
-    label: 'Scheduled',
-    segment: 'work-orders/scheduled',
-    countKey: 'scheduled',
-    moduleKey: 'work_orders_scheduled',
-  },
-  {
     id: 'manual',
     label: 'Manual',
     segment: 'work-orders/manual',
