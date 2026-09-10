@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useBackdropClose } from '../../hooks/useBackdropClose'
 import { useWorkOrderDetail } from '../../hooks/useWorkOrderList'
 import { useOrg } from '../../hooks/useOrg'
@@ -20,7 +21,7 @@ import EmployeeAvatar from '../company/EmployeeAvatar'
 import DateField from '../ui/DateField'
 import FilterableSelect from '../ui/FilterableSelect'
 import WorkRequestAttachmentsField from './WorkRequestAttachmentsField'
-import { formatPhoneDisplay } from '../shared/PhoneInput'
+import TechnicianMultiSelect from './TechnicianMultiSelect'
 import '../company/CompanyShared.css'
 import '../workorders/WorkOrdersPage.css'
 import '../workorders/ManualWorkOrder.css'
@@ -211,6 +212,13 @@ export default function WorkRequestDetailModal({
   const [acting, setActing] = useState(false)
   const [mode, setMode] = useState(null)
 
+  const closeRejectDialog = useCallback(() => {
+    if (acting) return
+    setMode((current) => (current === 'reject' ? null : current))
+    setRejectReason('')
+  }, [acting])
+  const handleRejectBackdropClick = useBackdropClose(closeRejectDialog)
+
   useEffect(() => {
     if (!detail) return
     if (detail.priority) setApprovePriority(detail.priority)
@@ -234,11 +242,16 @@ export default function WorkRequestDetailModal({
 
   useEffect(() => {
     const onKey = (e) => {
-      if (e.key === 'Escape') onClose()
+      if (e.key !== 'Escape') return
+      if (mode === 'reject') {
+        closeRejectDialog()
+        return
+      }
+      onClose()
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
-  }, [onClose])
+  }, [closeRejectDialog, mode, onClose])
 
   useEffect(() => {
     if (!showActions || !requestId) return
@@ -283,6 +296,7 @@ export default function WorkRequestDetailModal({
       onUpdated?.()
       reload()
       setMode(null)
+      setRejectReason('')
     } catch (err) {
       setActionError(err.message)
       onUpdated?.()
@@ -500,13 +514,13 @@ export default function WorkRequestDetailModal({
                 {showActions && (
                   <section className="wo-received-detail__section wo-assignment-actions">
                     <h3>Actions</h3>
-                    {mode !== 'reject' && mode !== 'info' && (
+                    {mode !== 'approve' && mode !== 'info' && (
                       <div className="wr-actions">
                         <button
                           type="button"
                           className="company-btn company-btn--primary"
                           onClick={() => setMode(mode === 'approve' ? null : 'approve')}
-                          disabled={acting}
+                          disabled={acting || mode === 'reject'}
                         >
                           Approve &amp; assign
                         </button>
@@ -514,7 +528,7 @@ export default function WorkRequestDetailModal({
                           type="button"
                           className="company-btn company-btn--secondary"
                           onClick={() => setMode('reject')}
-                          disabled={acting}
+                          disabled={acting || mode === 'reject'}
                         >
                           Reject
                         </button>
@@ -522,7 +536,7 @@ export default function WorkRequestDetailModal({
                           type="button"
                           className="company-btn company-btn--secondary"
                           onClick={() => setMode('info')}
-                          disabled={acting}
+                          disabled={acting || mode === 'reject'}
                         >
                           Request more info
                         </button>
@@ -531,6 +545,19 @@ export default function WorkRequestDetailModal({
 
                     {mode === 'approve' && (
                       <div className="wr-assign-block">
+                        <div className="company-form__field company-form__field--full">
+                          <span className="company-form__label">
+                            Technicians
+                            {assigneeIds.length > 0 ? ` (${assigneeIds.length} selected)` : ''}
+                          </span>
+                          <TechnicianMultiSelect
+                            employees={employees}
+                            value={assigneeIds}
+                            onChange={setAssigneeIds}
+                            disabled={acting}
+                            placeholder="Select technicians…"
+                          />
+                        </div>
                         <div className="company-form__grid">
                           <label className="company-form__field">
                             <span className="company-form__label">Work center</span>
@@ -596,53 +623,6 @@ export default function WorkRequestDetailModal({
                             onChange={(e) => setAssignmentRemarks(e.target.value)}
                           />
                         </label>
-                        <div className="company-form__field company-form__field--full">
-                          <span className="company-form__label">
-                            Technicians
-                            {assigneeIds.length > 0 ? ` (${assigneeIds.length} selected)` : ''}
-                          </span>
-                          <div className="wr-tech-grid" role="group" aria-label="Technicians">
-                            {employees.length === 0 ? (
-                              <p className="wr-assign-block__empty">
-                                No Maintenance employees at this location.
-                              </p>
-                            ) : employees.map((emp) => {
-                              const checked = assigneeIds.includes(emp.id)
-                              return (
-                                <button
-                                  key={emp.id}
-                                  type="button"
-                                  className={`wr-tech-card${checked ? ' wr-tech-card--selected' : ''}`}
-                                  onClick={() => {
-                                    setAssigneeIds((prev) => (
-                                      checked
-                                        ? prev.filter((id) => id !== emp.id)
-                                        : [...prev, emp.id]
-                                    ))
-                                  }}
-                                  aria-pressed={checked}
-                                >
-                                  <span className="wr-tech-card__check" aria-hidden="true">
-                                    {checked ? '✓' : ''}
-                                  </span>
-                                  <EmployeeAvatar employee={emp} />
-                                  <span className="wr-tech-card__body">
-                                    <span className="wr-tech-card__name">
-                                      {emp.name}
-                                      {emp.emp_id ? ` (${emp.emp_id})` : ''}
-                                    </span>
-                                    <span className="wr-tech-card__meta">
-                                      {emp.departments?.name || '—'}
-                                    </span>
-                                    <span className="wr-tech-card__meta">
-                                      {emp.mobile ? formatPhoneDisplay(emp.mobile) : '—'}
-                                    </span>
-                                  </span>
-                                </button>
-                              )
-                            })}
-                          </div>
-                        </div>
                         <div className="wr-actions">
                           <button
                             type="button"
@@ -662,38 +642,6 @@ export default function WorkRequestDetailModal({
                             }))}
                           >
                             {acting ? 'Saving…' : 'Confirm approval'}
-                          </button>
-                          <button
-                            type="button"
-                            className="company-btn company-btn--secondary"
-                            onClick={() => setMode(null)}
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                      </div>
-                    )}
-
-                    {mode === 'reject' && (
-                      <div className="wr-assign-block">
-                        <label className="company-form__field company-form__field--full">
-                          <span className="company-form__label">Rejection reason</span>
-                          <textarea
-                            className="company-form__input company-form__textarea"
-                            rows={3}
-                            value={rejectReason}
-                            onChange={(e) => setRejectReason(e.target.value)}
-                            required
-                          />
-                        </label>
-                        <div className="wr-actions">
-                          <button
-                            type="button"
-                            className="company-btn company-btn--primary"
-                            disabled={acting || !rejectReason.trim()}
-                            onClick={() => runAction(() => rejectWorkRequest(requestId, rejectReason))}
-                          >
-                            Confirm reject
                           </button>
                           <button
                             type="button"
@@ -748,6 +696,81 @@ export default function WorkRequestDetailModal({
           )}
         </div>
       </div>
+      {mode === 'reject' && createPortal(
+        <div
+          className="company-modal-overlay company-modal-overlay--popup wr-reject-overlay"
+          onMouseDown={handleRejectBackdropClick}
+          role="presentation"
+        >
+          <div
+            className="company-modal company-modal--popup"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="wr-reject-title"
+          >
+            <div className="company-modal__header">
+              <h2 id="wr-reject-title">Reject work request</h2>
+              <button
+                type="button"
+                className="company-modal__close"
+                onClick={closeRejectDialog}
+                disabled={acting}
+                aria-label="Close"
+              >
+                ×
+              </button>
+            </div>
+            <form
+              className="company-modal__form"
+              onSubmit={(e) => {
+                e.preventDefault()
+                if (!rejectReason.trim() || acting) return
+                runAction(() => rejectWorkRequest(requestId, rejectReason))
+              }}
+            >
+              <p className="company-modal__hint">
+                This will reject the work request
+                {detail?.request_number ? ` ${detail.request_number}` : ''}. This cannot be undone.
+              </p>
+              <label className="company-form__field">
+                <span className="company-form__label">Rejection reason *</span>
+                <textarea
+                  className="company-form__input company-form__textarea"
+                  rows={4}
+                  value={rejectReason}
+                  onChange={(e) => setRejectReason(e.target.value)}
+                  placeholder="Explain why this request is being rejected"
+                  required
+                  autoFocus
+                  disabled={acting}
+                />
+              </label>
+              {actionError && (
+                <div className="wo-alert wo-alert--error" role="alert">{actionError}</div>
+              )}
+              <div className="company-modal__actions">
+                <button
+                  type="button"
+                  className="company-btn company-btn--secondary"
+                  onClick={closeRejectDialog}
+                  disabled={acting}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="company-btn company-btn--danger"
+                  disabled={acting || !rejectReason.trim()}
+                >
+                  {acting ? 'Rejecting…' : 'Reject request'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>,
+        document.body,
+      )}
     </div>
   )
 }

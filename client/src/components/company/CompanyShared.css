@@ -989,11 +989,9 @@
 }
 
 .company-employee-select__menu {
-  position: absolute;
-  z-index: 20;
-  top: calc(100% + 4px);
-  left: 0;
-  right: 0;
+  position: fixed;
+  z-index: 1400;
+  box-sizing: border-box;
   margin: 0;
   padding: 6px;
   list-style: none;
@@ -1001,7 +999,6 @@
   border: 1px solid var(--color-light-gray-2);
   border-radius: var(--radius-sm);
   box-shadow: var(--shadow-sm);
-  max-height: 320px;
   overflow-y: auto;
 }
 
@@ -1072,11 +1069,9 @@
 }
 
 .filterable-select__menu {
-  position: absolute;
-  z-index: 50;
-  top: calc(100% + 4px);
-  left: 0;
-  right: 0;
+  position: fixed;
+  z-index: 1400;
+  box-sizing: border-box;
   margin: 0;
   padding: 6px;
   list-style: none;
@@ -1084,7 +1079,6 @@
   border: 1px solid var(--color-light-gray-2);
   border-radius: var(--radius-sm);
   box-shadow: var(--shadow-md);
-  max-height: 260px;
   overflow-y: auto;
 }
 

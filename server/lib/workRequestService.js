@@ -616,7 +616,7 @@ export async function createWorkRequest(orgId, profileId, email, body, { isOrgAd
   }
 
   let orderToId = body?.order_to_department_id || null
-  let orderFromId = employee?.department_id || body?.order_from_department_id || null
+  let orderFromId = body?.order_from_department_id || employee?.department_id || null
 
   if (!orderFromId && isOrgAdmin) {
     const err = new Error('Order from department is required.')
@@ -921,6 +921,12 @@ async function createLinkedWorkOrderFromRequest(orgId, profileId, wr, {
     } else {
       workOrder = insert.data
     }
+  } else if (wr.short_description && !String(workOrder.short_description || '').trim()) {
+    await supabaseAdmin
+      .from('manual_work_orders')
+      .update({ short_description: wr.short_description })
+      .eq('id', workOrder.id)
+    workOrder = { ...workOrder, short_description: wr.short_description }
   }
 
   const linkedNumber = workOrder.wo_number || woNumber
@@ -1413,7 +1419,8 @@ export async function listWorkRequestTechnicians(orgId, workRequestId) {
     .from('org_employees')
     .select(`
       id, name, emp_id, email, mobile, photo_url, department_id, location_id,
-      departments!department_id ( id, name, code )
+      departments!department_id ( id, name, code ),
+      org_locations!location_id ( id, name, code )
     `)
     .eq('org_id', orgId)
     .eq('is_active', true)

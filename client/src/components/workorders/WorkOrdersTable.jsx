@@ -13,7 +13,7 @@ import '../shared/TableColumnPicker.css'
 
 export const WORK_ORDER_COLUMN_CONFIG = {
   wo_number: { label: 'WO #', className: '' },
-  summary: { label: 'Summary', className: 'wo-table__summary' },
+  summary: { label: 'Short description', className: 'wo-table__summary' },
   assignees: { label: 'Assigned to', className: 'wo-table__assignees' },
   assigned_with: { label: 'Assigned to', className: 'wo-table__assignees' },
   creator: { label: 'Created by', className: 'wo-table__creator' },
@@ -69,10 +69,14 @@ export default function WorkOrdersTable({
     switch (column) {
       case 'wo_number':
         return order.wo_number || '—'
-      case 'summary':
+      case 'summary': {
+        const text = String(order.short_description || order.summary || '').trim()
         return (
-          <span className="company-table__name">{order.summary || '—'}</span>
+          <span className="company-table__name" title={text || undefined}>
+            {text || '—'}
+          </span>
         )
+      }
       case 'assignees':
       case 'assigned_with':
         return (

@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { getSortOptionsForView } from '../../lib/assetFieldTypes'
+import { isEventInFixedPopover, useFixedPopover } from '../../hooks/useFixedPopover'
 import FilterableSelect from '../ui/FilterableSelect'
 import '../company/CompanyShared.css'
 
@@ -27,6 +29,16 @@ function SortIcon() {
 export default function AssetFieldSortMenu({ view, sortBy, sortDir, onChange }) {
   const [open, setOpen] = useState(false)
   const rootRef = useRef(null)
+  const triggerRef = useRef(null)
+  const { popoverRef, style, popoverProps } = useFixedPopover({
+    open,
+    anchorRef: triggerRef,
+    matchWidth: false,
+    minWidth: 220,
+    maxHeight: 360,
+    gap: 6,
+    align: 'start',
+  })
   const options = getSortOptionsForView(view)
   const numeric = sortBy === 'parents' || sortBy === 'values' || sortBy === 'active'
   const orderLabels = sortBy === 'sort_order'
@@ -38,15 +50,23 @@ export default function AssetFieldSortMenu({ view, sortBy, sortDir, onChange }) 
   useEffect(() => {
     if (!open) return undefined
     const handleClick = (event) => {
-      if (!rootRef.current?.contains(event.target)) setOpen(false)
+      if (
+        rootRef.current?.contains(event.target)
+        || popoverRef.current?.contains(event.target)
+        || isEventInFixedPopover(event)
+      ) {
+        return
+      }
+      setOpen(false)
     }
     document.addEventListener('mousedown', handleClick)
     return () => document.removeEventListener('mousedown', handleClick)
-  }, [open])
+  }, [open, popoverRef])
 
   return (
     <div className="asset-field-sort" ref={rootRef}>
       <button
+        ref={triggerRef}
         type="button"
         className={`asset-field-sort-btn ${open ? 'asset-field-sort-btn--active' : ''}`}
         onClick={() => setOpen((prev) => !prev)}
@@ -55,8 +75,8 @@ export default function AssetFieldSortMenu({ view, sortBy, sortDir, onChange }) 
       >
         <SortIcon />
       </button>
-      {open && (
-        <div className="asset-field-sort-menu" role="dialog" aria-label="Sort options">
+      {open && style && createPortal(
+        <div className="asset-field-sort-menu" role="dialog" aria-label="Sort options" {...popoverProps}>
           <label className="asset-field-sort-menu__field">
             <span className="asset-field-sort-menu__label">Sort by</span>
             <FilterableSelect
@@ -84,7 +104,8 @@ export default function AssetFieldSortMenu({ view, sortBy, sortDir, onChange }) 
               allowEmpty={false}
             />
           </label>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   )

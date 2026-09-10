@@ -32,6 +32,7 @@ export function filterWorkOrders(orders, search) {
   return orders.filter((order) => {
     const haystack = [
       order.wo_number,
+      order.short_description,
       order.summary,
       order.status,
       order.creator?.email,

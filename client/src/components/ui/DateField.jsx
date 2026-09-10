@@ -182,6 +182,7 @@ export default function DateField({
         className="date-field__popover"
         role="dialog"
         aria-label="Choose date"
+        data-fixed-popover=""
         style={{ top: coords.top, left: coords.left }}
       >
         <div className="date-field__head">
