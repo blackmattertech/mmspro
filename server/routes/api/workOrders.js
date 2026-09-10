@@ -821,11 +821,27 @@ function isAssignableStatus(status) {
 }
 
 async function attachSummaries(_orgId, workOrders) {
-  return workOrders.map((row) => ({
-    ...row,
-    wo_number: resolveDisplayWoNumber(row),
-    summary: row.summary || row.short_description || row.problem_description?.slice(0, 120) || 'Work order',
-  }))
+  const wrIds = [...new Set((workOrders || []).map((row) => row.work_request_id).filter(Boolean))]
+  let wrDescriptions = new Map()
+  if (wrIds.length) {
+    const { data } = await supabaseAdmin
+      .from('work_requests')
+      .select('id, short_description')
+      .in('id', wrIds)
+    wrDescriptions = new Map((data || []).map((row) => [row.id, row.short_description]))
+  }
+
+  return workOrders.map((row) => {
+    const wrShort = String(wrDescriptions.get(row.work_request_id) || '').trim()
+    const woShort = String(row.short_description || '').trim()
+    const shortDescription = wrShort || woShort || null
+    return {
+      ...row,
+      wo_number: resolveDisplayWoNumber(row),
+      short_description: shortDescription,
+      summary: shortDescription || '',
+    }
+  })
 }
 
 async function buildWorkOrderListResponse(orgId, rows, existingAssigneesByWo = null) {
@@ -1071,13 +1087,18 @@ async function loadWorkOrderDetail(orgId, workOrderId, { employee = null, profil
   if (workOrder.work_request_id) {
     const { data: wr } = await supabaseAdmin
       .from('work_requests')
-      .select('request_number, job_nature, is_breakdown')
+      .select('request_number, job_nature, is_breakdown, short_description')
       .eq('org_id', orgId)
       .eq('id', workOrder.work_request_id)
       .maybeSingle()
     workRequestNumber = wr?.request_number || null
     if (!jobNature) {
       jobNature = wr?.job_nature || (wr?.is_breakdown ? 'Breakdown' : null)
+    }
+    const wrShort = String(wr?.short_description || '').trim()
+    if (wrShort) {
+      enriched.short_description = wrShort
+      enriched.summary = wrShort
     }
   }
   if (!jobNature && workOrder.is_breakdown) jobNature = 'Breakdown'
@@ -1855,7 +1876,7 @@ async function loadDashboardAggregatesFallback(orgId, filters) {
     applyDashboardFilters(
       supabaseAdmin
         .from('manual_work_orders')
-        .select('id, status, wo_number, created_at, updated_at, created_by, assigned_location_id, short_description, problem_description')
+        .select('id, status, wo_number, created_at, updated_at, created_by, assigned_location_id, work_request_id, short_description, problem_description')
         .order('created_at', { ascending: false })
         .limit(10),
       { orgId, ...filters },
@@ -1925,6 +1946,27 @@ router.get('/dashboard', canReadWorkOrders, async (req, res) => {
     ])
     if (locationRows.error) throw locationRows.error
 
+    const recentSource = aggregates.recent || []
+    let recentRows = recentSource
+    if (recentSource.length) {
+      const missingWr = recentSource.some((row) => !row.work_request_id)
+      if (missingWr) {
+        const ids = recentSource.map((row) => row.id).filter(Boolean)
+        const { data: woRows } = await supabaseAdmin
+          .from('manual_work_orders')
+          .select('id, work_request_id, short_description')
+          .eq('org_id', orgId)
+          .in('id', ids)
+        const extra = new Map((woRows || []).map((row) => [row.id, row]))
+        recentRows = recentSource.map((row) => ({
+          ...row,
+          work_request_id: row.work_request_id || extra.get(row.id)?.work_request_id,
+          short_description: row.short_description ?? extra.get(row.id)?.short_description,
+        }))
+      }
+      recentRows = await attachSummaries(orgId, recentRows)
+    }
+
     const payload = assembleDashboardPayload({
       byStatus: aggregates.by_status,
       byLocation: aggregates.by_location,
@@ -1932,7 +1974,7 @@ router.get('/dashboard', canReadWorkOrders, async (req, res) => {
       last30: aggregates.last30,
       prev30: aggregates.prev30,
       trend: aggregates.trend,
-      recentRows: aggregates.recent,
+      recentRows,
     })
 
     res.json({

@@ -77,7 +77,11 @@ router.get('/form', canReadCreate, async (req, res) => {
       orgId,
       req.userProfile.id,
       req.userProfile.email,
-      { isOrgAdmin: canCreateWorkRequestWithoutEmployeeDepartment(req.orgPermissions) },
+      {
+        isOrgAdmin: canCreateWorkRequestWithoutEmployeeDepartment(req.orgPermissions),
+        departmentId: req.orgPermissions?.department_id || null,
+        locationId: req.orgPermissions?.location_id || null,
+      },
     )
     res.json(ctx)
   } catch (err) {
