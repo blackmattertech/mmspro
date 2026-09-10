@@ -13,7 +13,7 @@ const EQUIPMENT_SELECT = `
   id, org_id, location_id, department_id, area_id,
   name, code, qr_code, image_path, is_active, created_at, updated_at,
   org_locations(id, name, code),
-  departments(id, name, code),
+  departments(id, name),
   areas(id, name, code)
 `
 

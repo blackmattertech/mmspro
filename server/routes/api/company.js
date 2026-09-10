@@ -536,7 +536,7 @@ router.delete('/locations/:id', canDeleteLocations, assertOrgOwnership('org_loca
 // ── Departments ──
 
 const DEPARTMENT_SELECT = `
-  id, org_id, name, code, description, location_id, parent_id, all_locations, is_active, created_at, updated_at,
+  id, org_id, name, description, location_id, parent_id, all_locations, is_active, created_at, updated_at,
   org_locations!location_id ( id, name, code )
 `
 
@@ -554,7 +554,7 @@ router.get('/departments', canReadDepartments, async (req, res) => {
   if (locationFilter) {
     query = query.or(`location_id.eq.${locationFilter},all_locations.eq.true`)
   }
-  query = applyIlikeSearch(query, req.query.search, ['name', 'code'])
+  query = applyIlikeSearch(query, req.query.search, ['name'])
 
   const { data, error, count } = await query
 
@@ -767,7 +767,7 @@ router.delete('/departments/:id', canDeleteDepartments, assertOrgOwnership('depa
 
 const EMPLOYEE_SELECT = `
   *,
-  departments!department_id ( id, name, code ),
+  departments!department_id ( id, name ),
   org_locations!location_id ( id, name, code ),
   org_employee_emails ( id, email ),
   manager:manager_id ( id, emp_id, name ),
@@ -777,7 +777,7 @@ const EMPLOYEE_SELECT = `
 const EMPLOYEE_LIST_SELECT = `
   id, org_id, emp_id, name, email, mobile, is_active, location_id, department_id,
   manager_id, photo_url, access_role_id, login_required, created_at, updated_at,
-  departments!department_id ( id, name, code ),
+  departments!department_id ( id, name ),
   org_locations!location_id ( id, name, code ),
   manager:manager_id ( id, emp_id, name, photo_url ),
   access_role:access_role_id ( id, name )
@@ -1459,7 +1459,7 @@ router.delete('/employees/:id', canDeleteEmployees, assertOrgOwnership('org_empl
 const AREA_SELECT = `
   id, org_id, location_id, department_id, name, code, is_active, created_at, updated_at,
   org_locations(id, name, code),
-  departments(id, name, code)
+  departments(id, name)
 `
 
 router.get('/areas', canReadAreas, async (req, res) => {

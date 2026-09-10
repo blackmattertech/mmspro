@@ -33,7 +33,7 @@ const PLAN_SELECT = `
   checklist_template_id, contractor_vendor_id, estimated_labour_hours,
   estimated_duration_hours, required_tools, required_skills, allow_multiple_open,
   created_by, updated_by, created_at, updated_at,
-  departments(id, name, code),
+  departments(id, name),
   org_locations(id, name),
   areas(id, name),
   equipment(id, name, code),
@@ -344,7 +344,7 @@ async function syncPlanTechnicians(orgId, planId, employeeIds, { locationId } = 
 
   const { data: employees, error: empError } = await supabaseAdmin
     .from('org_employees')
-    .select('id, location_id, departments!department_id(id, name, code)')
+    .select('id, location_id, departments!department_id(id, name)')
     .eq('org_id', orgId)
     .eq('is_active', true)
     .in('id', unique)
