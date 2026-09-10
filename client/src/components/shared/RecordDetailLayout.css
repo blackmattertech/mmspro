@@ -86,12 +86,12 @@
 }
 
 .record-detail-layout__menu-panel {
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
-  z-index: 20;
+  position: fixed;
+  z-index: 1400;
+  box-sizing: border-box;
   min-width: 160px;
   padding: 6px;
+  overflow: auto;
   background: var(--color-white);
   border: 1px solid var(--color-light-gray-2);
   border-radius: 12px;

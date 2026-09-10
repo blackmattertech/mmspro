@@ -106,6 +106,7 @@ export default function TableColumnPicker({
           role="listbox"
           id={listId}
           aria-label="Table columns"
+          data-fixed-popover=""
           style={menuStyle}
         >
           <div className="table-column-picker__menu-head">

@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import FilterableSelect from '../ui/FilterableSelect'
+import { isEventInFixedPopover, useFixedPopover } from '../../hooks/useFixedPopover'
 import {
   ADVANCED_FILTER_FIELDS,
   FILTER_JOIN_OPTIONS,
@@ -80,21 +82,36 @@ export default function WorkOrderAdvancedFilter({
 }) {
   const [open, setOpen] = useState(false)
   const panelRef = useRef(null)
+  const triggerRef = useRef(null)
   const { options: loadedStatusOptions } = useOrgStatusOptions('work_order')
   const statusOptions = loadedStatusOptions.length ? loadedStatusOptions : FALLBACK_WO_STATUS_OPTIONS
+  const { popoverRef, style, popoverProps } = useFixedPopover({
+    open,
+    anchorRef: triggerRef,
+    matchWidth: false,
+    minWidth: 0,
+    maxHeight: 560,
+    gap: 8,
+    align: 'end',
+  })
 
   useEffect(() => {
     if (!open) return undefined
 
     const handleClick = (event) => {
-      if (panelRef.current && !panelRef.current.contains(event.target)) {
-        setOpen(false)
+      if (
+        panelRef.current?.contains(event.target)
+        || popoverRef.current?.contains(event.target)
+        || isEventInFixedPopover(event)
+      ) {
+        return
       }
+      setOpen(false)
     }
 
     document.addEventListener('mousedown', handleClick)
     return () => document.removeEventListener('mousedown', handleClick)
-  }, [open])
+  }, [open, popoverRef])
 
   const updateRule = (id, patch) => {
     onChange(rules.map((rule) => (rule.id === id ? { ...rule, ...patch } : rule)))
@@ -116,6 +133,7 @@ export default function WorkOrderAdvancedFilter({
   return (
     <div className="wo-adv-filter" ref={panelRef}>
       <button
+        ref={triggerRef}
         type="button"
         className={`wo-adv-filter__trigger${activeCount > 0 ? ' wo-adv-filter__trigger--active' : ''}`}
         onClick={() => setOpen((value) => !value)}
@@ -130,8 +148,8 @@ export default function WorkOrderAdvancedFilter({
         )}
       </button>
 
-      {open && (
-        <div className="wo-adv-filter__panel">
+      {open && style && createPortal(
+        <div className="wo-adv-filter__panel" {...popoverProps}>
           <div className="wo-adv-filter__header">
             <strong>Advanced filters</strong>
             <button type="button" className="wo-adv-filter__clear" onClick={clearAll}>
@@ -215,7 +233,8 @@ export default function WorkOrderAdvancedFilter({
               Apply
             </button>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   )

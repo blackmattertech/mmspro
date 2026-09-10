@@ -6,7 +6,6 @@ import {
   capacityOptionsForSelection,
   distinctAreasFromEquipment,
   distinctFieldValues,
-  equipmentFieldValue,
   fieldValuesFromEquipment,
   fieldsForWorkRequestSection,
   filterEquipmentByArea,
@@ -23,8 +22,7 @@ import '../assets/AssetsFields.css'
 import '../company/CompanyShared.css'
 
 function formatEquipmentLabel(row) {
-  const parts = [row.name, row.code].filter(Boolean)
-  return parts.join(' · ') || row.id
+  return row?.name || row?.id || ''
 }
 
 function AssetFieldInput({
@@ -379,7 +377,7 @@ export default function WorkRequestAssetFields({
 
   const renderField = (field) => {
     const role = getEquipmentFieldRole(field)
-    if (role === 'redundant' || role === 'area') return null
+    if (role === 'redundant' || role === 'area' || role === 'equipmentCode') return null
 
     const typeField = allFields.find((f) => getEquipmentFieldRole(f) === 'equipmentType')
     const nameField = allFields.find((f) => getEquipmentFieldRole(f) === 'equipmentName')
@@ -388,12 +386,6 @@ export default function WorkRequestAssetFields({
     if (role === 'equipmentType' && !areaId) return null
     if (role === 'equipmentName' && (!areaId || scopedEquipment.length === 0 || !typeField || !fieldValues[typeField.id])) return null
     if (role === 'equipmentTag' && (!areaId || scopedEquipment.length === 0 || !nameField || !fieldValues[nameField.id])) return null
-    if (role === 'equipmentCode') {
-      if (!areaId || scopedEquipment.length === 0) return null
-      if (tagField && !fieldValues[tagField.id]) return null
-      if (!tagField && nameField && !fieldValues[nameField.id]) return null
-      if (!tagField && !nameField && typeField && !fieldValues[typeField.id]) return null
-    }
     if (role === 'capacity' && (!areaId || scopedEquipment.length === 0 || !tagField || !fieldValues[tagField.id])) return null
 
     const options = optionsForAssetField(field, scopedEquipment, fieldValues, allFields)
@@ -416,29 +408,6 @@ export default function WorkRequestAssetFields({
 
     if (role === 'equipmentName' || role === 'equipmentTag') {
       forceSelect = true
-    }
-
-    if (role === 'equipmentCode' && codeField?.id === field.id) {
-      const matches = filterEquipmentByValues(scopedEquipment, fieldValues, {
-        excludeFieldId: field.id,
-        allFields,
-      })
-      const codeOptions = distinctFieldValues(matches, field.id, allFields)
-      if (codeOptions.length === 1) {
-        value = codeOptions[0]
-        readOnly = true
-      } else if (codeOptions.length > 1) {
-        forceSelect = true
-      } else {
-        const resolvedRow = equipmentId
-          ? (scopedEquipment.find((r) => r.id === equipmentId)
-            || equipment.find((r) => r.id === equipmentId))
-          : null
-        if (resolvedRow) {
-          value = equipmentFieldValue(resolvedRow, field)
-          if (value) readOnly = true
-        }
-      }
     }
 
     if (role === 'capacity' && capacityField?.id === field.id) {
@@ -471,18 +440,9 @@ export default function WorkRequestAssetFields({
         field={field}
         value={noEquipmentTypeInArea ? '' : value}
         errorMessage={noEquipmentTypeInArea ? 'No equipment type in this area.' : null}
-        options={forceSelect ? (role === 'capacity'
+        options={forceSelect && role === 'capacity'
           ? capacityOptionsForSelection(scopedEquipment, fieldValues, allFields, field)
-          : role === 'equipmentCode'
-            ? distinctFieldValues(
-              filterEquipmentByValues(scopedEquipment, fieldValues, {
-                excludeFieldId: field.id,
-                allFields,
-              }),
-              field.id,
-              allFields,
-            )
-            : options) : options}
+          : options}
         disabled={fieldDisabled}
         forceSelect={forceSelect}
         readOnly={readOnly}
@@ -543,7 +503,7 @@ export default function WorkRequestAssetFields({
 
       {areaId && scopedEquipment.length > 0 && !equipmentId && !loading && !showEquipmentTypeGap && (
         <p className="wo-manual__intro" style={{ marginTop: 0 }}>
-          Complete Area, Equipment Type, Name, Tag, Code, and Capacity to select equipment.
+          Complete Area, Equipment Type, Name, Tag, and Capacity to select equipment.
         </p>
       )}
 

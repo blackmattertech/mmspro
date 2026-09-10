@@ -125,6 +125,7 @@ function CountryDialPicker({ iso, disabled, onSelect }) {
         <div
           ref={panelRef}
           className="phone-input__picker"
+          data-fixed-popover=""
           style={panelStyle}
           role="dialog"
           aria-label="Select country code"

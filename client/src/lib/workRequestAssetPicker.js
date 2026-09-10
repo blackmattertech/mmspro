@@ -56,7 +56,7 @@ export function fieldsForWorkRequestSection(fields) {
   const seenNames = new Set()
   return sortFieldsForWorkRequestPicker(fields).filter((field) => {
     const role = getEquipmentFieldRole(field)
-    if (role === 'redundant') return false
+    if (role === 'redundant' || role === 'equipmentCode') return false
     const name = String(field.name || '').trim().toLowerCase()
     if (name && seenNames.has(name)) return false
     if (role !== 'other' && seenRoles.has(role)) return false

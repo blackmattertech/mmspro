@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
+import { isEventInFixedPopover, useFixedPopover } from '../../hooks/useFixedPopover'
 import EmployeeAvatar from './EmployeeAvatar'
 
 function employeeSelectMeta(employee) {
@@ -33,20 +35,33 @@ export default function EmployeeSelect({
 }) {
   const [open, setOpen] = useState(false)
   const rootRef = useRef(null)
+  const triggerRef = useRef(null)
   const selected = options.find((emp) => emp.id === value)
+  const { popoverRef, style, popoverProps } = useFixedPopover({
+    open,
+    anchorRef: triggerRef,
+    matchWidth: true,
+    maxHeight: 320,
+    gap: 4,
+  })
 
   useEffect(() => {
     if (!open) return undefined
 
     const handleClickOutside = (e) => {
-      if (!rootRef.current?.contains(e.target)) {
-        setOpen(false)
+      if (
+        rootRef.current?.contains(e.target)
+        || popoverRef.current?.contains(e.target)
+        || isEventInFixedPopover(e)
+      ) {
+        return
       }
+      setOpen(false)
     }
 
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [open])
+  }, [open, popoverRef])
 
   const pick = (nextValue) => {
     onChange(nextValue)
@@ -58,6 +73,7 @@ export default function EmployeeSelect({
       {label && <span className="company-form__label">{label}</span>}
       <div className="company-employee-select" ref={rootRef}>
         <button
+          ref={triggerRef}
           type="button"
           className="company-employee-select__trigger"
           onClick={() => !disabled && setOpen((prev) => !prev)}
@@ -73,8 +89,8 @@ export default function EmployeeSelect({
           <span className="company-employee-select__chevron" aria-hidden>▾</span>
         </button>
 
-        {open && (
-          <ul className="company-employee-select__menu" role="listbox">
+        {open && style && createPortal(
+          <ul className="company-employee-select__menu" role="listbox" {...popoverProps}>
             <li role="option" aria-selected={!value}>
               <button
                 type="button"
@@ -95,7 +111,8 @@ export default function EmployeeSelect({
                 </button>
               </li>
             ))}
-          </ul>
+          </ul>,
+          document.body,
         )}
       </div>
     </label>

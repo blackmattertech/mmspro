@@ -6,6 +6,8 @@ import {
   useRef,
   useState,
 } from 'react'
+import { createPortal } from 'react-dom'
+import { useFixedPopover } from '../../hooks/useFixedPopover'
 import '../company/CompanyShared.css'
 
 function normalizeOptions(options, getOptionValue, getOptionLabel, getOptionSearchLabel) {
@@ -61,10 +63,18 @@ export default function FilterableSelect({
   const listId = `${id}-listbox`
   const rootRef = useRef(null)
   const inputRef = useRef(null)
+  const controlRef = useRef(null)
 
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [highlightedIndex, setHighlightedIndex] = useState(0)
+  const { popoverRef, style, popoverProps } = useFixedPopover({
+    open,
+    anchorRef: controlRef,
+    matchWidth: true,
+    maxHeight: 320,
+    gap: 4,
+  })
 
   useEffect(() => {
     onQueryChange?.(query)
@@ -115,13 +125,12 @@ export default function FilterableSelect({
   useEffect(() => {
     if (!open) return undefined
     const handlePointer = (e) => {
-      if (!rootRef.current?.contains(e.target)) {
-        close()
-      }
+      if (rootRef.current?.contains(e.target) || popoverRef.current?.contains(e.target)) return
+      close()
     }
     document.addEventListener('mousedown', handlePointer)
     return () => document.removeEventListener('mousedown', handlePointer)
-  }, [open, close])
+  }, [open, close, popoverRef])
 
   useEffect(() => {
     if (!open) return
@@ -191,8 +200,69 @@ export default function FilterableSelect({
     }
   }
 
+  useEffect(() => {
+    if (!open) return
+    const highlighted = popoverRef.current?.querySelector('.filterable-select__option--highlighted')
+    highlighted?.scrollIntoView({ block: 'nearest' })
+  }, [highlightedIndex, open, popoverRef])
+
   const inputDisplay = open ? query : (selected?.label || '')
   const showPlaceholder = !open && !selected?.label
+
+  const menu = open && style
+    ? createPortal(
+      <ul
+        id={listId}
+        className="filterable-select__menu"
+        role="listbox"
+        {...popoverProps}
+      >
+        {showCreate ? (
+          <li className="filterable-select__empty" role="presentation">
+            <span className="filterable-select__empty-text">
+              {query.trim() ? 'No vendors found' : 'No vendors yet'}
+            </span>
+            <button
+              type="button"
+              className="filterable-select__create company-btn company-btn--secondary company-btn--compact"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={handleCreate}
+            >
+              {createLabel}
+            </button>
+          </li>
+        ) : listItems.length === 0 ? (
+          <li className="filterable-select__empty" role="presentation">
+            No matches
+          </li>
+        ) : (
+          listItems.map((item, index) => (
+            <li key={item.value || `empty-${index}`} role="presentation">
+              <button
+                type="button"
+                role="option"
+                aria-selected={item.value === selectedValue}
+                className={[
+                  'filterable-select__option',
+                  item.value === selectedValue ? 'filterable-select__option--selected' : '',
+                  index === highlightedIndex ? 'filterable-select__option--highlighted' : '',
+                  item.isPlaceholder ? 'filterable-select__option--placeholder' : '',
+                ].filter(Boolean).join(' ')}
+                onMouseEnter={() => setHighlightedIndex(index)}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => pick(item.value)}
+              >
+                {renderOption && !item.isPlaceholder && item.option != null
+                  ? renderOption(item.option, item)
+                  : item.label}
+              </button>
+            </li>
+          ))
+        )}
+      </ul>,
+      document.body,
+    )
+    : null
 
   const control = (
     <div
@@ -209,7 +279,7 @@ export default function FilterableSelect({
           onChange={() => {}}
         />
       ) : null}
-      <div className="filterable-select__control">
+      <div className="filterable-select__control" ref={controlRef}>
         <input
           ref={inputRef}
           id={id}
@@ -239,57 +309,7 @@ export default function FilterableSelect({
           <span aria-hidden>▾</span>
         </button>
       </div>
-
-      {open && (
-        <ul
-          id={listId}
-          className="filterable-select__menu"
-          role="listbox"
-        >
-          {showCreate ? (
-            <li className="filterable-select__empty" role="presentation">
-              <span className="filterable-select__empty-text">
-                {query.trim() ? 'No vendors found' : 'No vendors yet'}
-              </span>
-              <button
-                type="button"
-                className="filterable-select__create company-btn company-btn--secondary company-btn--compact"
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={handleCreate}
-              >
-                {createLabel}
-              </button>
-            </li>
-          ) : listItems.length === 0 ? (
-            <li className="filterable-select__empty" role="presentation">
-              No matches
-            </li>
-          ) : (
-            listItems.map((item, index) => (
-              <li key={item.value || `empty-${index}`} role="presentation">
-                <button
-                  type="button"
-                  role="option"
-                  aria-selected={item.value === selectedValue}
-                  className={[
-                    'filterable-select__option',
-                    item.value === selectedValue ? 'filterable-select__option--selected' : '',
-                    index === highlightedIndex ? 'filterable-select__option--highlighted' : '',
-                    item.isPlaceholder ? 'filterable-select__option--placeholder' : '',
-                  ].filter(Boolean).join(' ')}
-                  onMouseEnter={() => setHighlightedIndex(index)}
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => pick(item.value)}
-                >
-                  {renderOption && !item.isPlaceholder && item.option != null
-                    ? renderOption(item.option, item)
-                    : item.label}
-                </button>
-              </li>
-            ))
-          )}
-        </ul>
-      )}
+      {menu}
     </div>
   )
 

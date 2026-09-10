@@ -316,7 +316,7 @@ export function RecentWorkOrders({ orders }) {
           {orders.map((order) => (
             <div key={order.id} className="recent-list__item">
               <span className="recent-list__id">{order.wo_number || order.work_order_number}</span>
-              <span className="recent-list__title">{order.title || order.summary}</span>
+              <span className="recent-list__title">{order.short_description || order.title || order.summary}</span>
               <span className="recent-list__plant">{order.location_name || '—'}</span>
               <span className="recent-list__time">{timeAgo(order.created_at)}</span>
               <span className={`status-badge status-badge--${order.status}`}>

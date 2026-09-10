@@ -129,12 +129,12 @@
 }
 
 .table-filter-menu__panel {
-  position: absolute;
-  top: calc(100% + 8px);
-  left: 0;
-  z-index: 80;
+  position: fixed;
+  z-index: 1400;
+  box-sizing: border-box;
   width: min(320px, calc(100vw - 32px));
   padding: 16px;
+  overflow: auto;
   background: var(--color-white);
   border: 1px solid #e8edf3;
   border-radius: 14px;

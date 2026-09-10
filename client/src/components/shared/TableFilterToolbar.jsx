@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
+import { isEventInFixedPopover, useFixedPopover } from '../../hooks/useFixedPopover'
 import { assetUrl } from '../../lib/assets'
 import './TableFilterToolbar.css'
 
@@ -15,12 +17,19 @@ function IconMask({ url, className }) {
   )
 }
 
-function useOutsideClose(open, onClose) {
+function useOutsideClose(open, onClose, extraRef) {
   const ref = useRef(null)
   useEffect(() => {
     if (!open) return undefined
     const onPointerDown = (event) => {
-      if (!ref.current?.contains(event.target)) onClose()
+      if (
+        ref.current?.contains(event.target)
+        || extraRef?.current?.contains(event.target)
+        || isEventInFixedPopover(event)
+      ) {
+        return
+      }
+      onClose()
     }
     const onKeyDown = (event) => {
       if (event.key === 'Escape') onClose()
@@ -31,7 +40,7 @@ function useOutsideClose(open, onClose) {
       document.removeEventListener('mousedown', onPointerDown)
       document.removeEventListener('keydown', onKeyDown)
     }
-  }, [open, onClose])
+  }, [open, onClose, extraRef])
   return ref
 }
 
@@ -42,7 +51,17 @@ function FilterMenu({ filter }) {
   const value = filter.value || ''
   const selectedField = fields.find((item) => item.value === field) || null
   const active = Boolean(field && String(value).trim())
-  const rootRef = useOutsideClose(open, () => setOpen(false))
+  const triggerRef = useRef(null)
+  const { popoverRef, style, popoverProps } = useFixedPopover({
+    open,
+    anchorRef: triggerRef,
+    matchWidth: false,
+    minWidth: 320,
+    maxHeight: 480,
+    gap: 8,
+    align: 'start',
+  })
+  const rootRef = useOutsideClose(open, () => setOpen(false), popoverRef)
 
   const clear = () => {
     filter.onFieldChange?.('')
@@ -52,6 +71,7 @@ function FilterMenu({ filter }) {
   return (
     <div className="table-filter-menu" ref={rootRef}>
       <button
+        ref={triggerRef}
         type="button"
         className={`table-filter-menu__trigger${open ? ' table-filter-menu__trigger--open' : ''}${active ? ' table-filter-menu__trigger--active' : ''}`}
         onClick={() => setOpen((prev) => !prev)}
@@ -64,8 +84,8 @@ function FilterMenu({ filter }) {
         {active && <span className="table-filter-menu__badge">1</span>}
       </button>
 
-      {open && (
-        <div className="table-filter-menu__panel" role="dialog" aria-label="Table filter">
+      {open && style && createPortal(
+        <div className="table-filter-menu__panel" role="dialog" aria-label="Table filter" {...popoverProps}>
           <div className="table-filter-menu__header">
             <div>
               <strong className="table-filter-menu__title">Filter</strong>
@@ -111,7 +131,8 @@ function FilterMenu({ filter }) {
               />
             </label>
           )}
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   )
@@ -122,11 +143,22 @@ function SortMenu({ sort }) {
   const options = sort.options || []
   const value = sort.value || ''
   const selected = options.find((item) => item.value === value)
-  const rootRef = useOutsideClose(open, () => setOpen(false))
+  const triggerRef = useRef(null)
+  const { popoverRef, style, popoverProps } = useFixedPopover({
+    open,
+    anchorRef: triggerRef,
+    matchWidth: false,
+    minWidth: 260,
+    maxHeight: 420,
+    gap: 8,
+    align: 'start',
+  })
+  const rootRef = useOutsideClose(open, () => setOpen(false), popoverRef)
 
   return (
     <div className="table-filter-menu" ref={rootRef}>
       <button
+        ref={triggerRef}
         type="button"
         className={`table-filter-menu__trigger${open ? ' table-filter-menu__trigger--open' : ''}`}
         onClick={() => setOpen((prev) => !prev)}
@@ -138,8 +170,8 @@ function SortMenu({ sort }) {
         <IconMask url={SORT_ICON_URL} className="table-filter-menu__icon" />
       </button>
 
-      {open && (
-        <div className="table-filter-menu__panel table-filter-menu__panel--sort" role="listbox" aria-label="Sort options">
+      {open && style && createPortal(
+        <div className="table-filter-menu__panel table-filter-menu__panel--sort" role="listbox" aria-label="Sort options" {...popoverProps}>
           <div className="table-filter-menu__header">
             <div>
               <strong className="table-filter-menu__title">Sort</strong>
@@ -163,7 +195,8 @@ function SortMenu({ sort }) {
               </button>
             ))}
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   )

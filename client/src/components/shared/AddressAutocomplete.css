@@ -9,11 +9,9 @@
 }
 
 .address-autocomplete__list {
-  position: absolute;
-  z-index: 30;
-  top: calc(100% + 4px);
-  left: 0;
-  right: 0;
+  position: fixed;
+  z-index: 1400;
+  box-sizing: border-box;
   margin: 0;
   padding: 4px 0;
   list-style: none;
@@ -21,7 +19,6 @@
   border: 1px solid var(--color-light-gray-2);
   border-radius: var(--radius-sm);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
-  max-height: 220px;
   overflow-y: auto;
 }
 

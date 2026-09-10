@@ -222,6 +222,7 @@ export default function TimeField({
         className="time-field__popover"
         role="dialog"
         aria-label="Choose time"
+        data-fixed-popover=""
         style={{ top: coords.top, left: coords.left }}
       >
         <div className="time-field__head">

@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
+import { isEventInFixedPopover, useFixedPopover } from '../../hooks/useFixedPopover'
 import { useBackdropClose } from '../../hooks/useBackdropClose'
 import EditIcon from '../ui/EditIcon'
 import PageBack from './PageBack'
@@ -25,6 +27,16 @@ export default function RecordDetailModal({
   const handleBackdropClick = useBackdropClose(onClose)
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef(null)
+  const menuTriggerRef = useRef(null)
+  const { style: menuStyle, popoverProps: menuPopoverProps } = useFixedPopover({
+    open: menuOpen,
+    anchorRef: menuTriggerRef,
+    matchWidth: false,
+    minWidth: 160,
+    maxHeight: 320,
+    gap: 6,
+    align: 'end',
+  })
   const isProfile = variant === 'profile'
 
   useEffect(() => {
@@ -52,7 +64,14 @@ export default function RecordDetailModal({
   useEffect(() => {
     if (!menuOpen) return undefined
     const onPointerDown = (event) => {
-      if (!menuRef.current?.contains(event.target)) setMenuOpen(false)
+      if (
+        menuRef.current?.contains(event.target)
+        || menuTriggerRef.current?.contains(event.target)
+        || isEventInFixedPopover(event)
+      ) {
+        return
+      }
+      setMenuOpen(false)
     }
     document.addEventListener('mousedown', onPointerDown)
     return () => document.removeEventListener('mousedown', onPointerDown)
@@ -92,6 +111,7 @@ export default function RecordDetailModal({
             {menuItems?.length > 0 && (
               <div className="record-detail-layout__menu" ref={menuRef}>
                 <button
+                  ref={menuTriggerRef}
                   type="button"
                   className="record-detail-layout__icon-btn"
                   aria-label="More actions"
@@ -100,8 +120,8 @@ export default function RecordDetailModal({
                 >
                   <span aria-hidden="true">⋯</span>
                 </button>
-                {menuOpen && (
-                  <div className="record-detail-layout__menu-panel" role="menu">
+                {menuOpen && menuStyle && createPortal(
+                  <div className="record-detail-layout__menu-panel" role="menu" {...menuPopoverProps}>
                     {menuItems.map((item) => (
                       <button
                         key={item.label}
@@ -116,7 +136,8 @@ export default function RecordDetailModal({
                         {item.label}
                       </button>
                     ))}
-                  </div>
+                  </div>,
+                  document.body,
                 )}
               </div>
             )}

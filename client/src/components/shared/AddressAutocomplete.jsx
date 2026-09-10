@@ -1,4 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
+import { createPortal } from 'react-dom'
+import { useFixedPopover } from '../../hooks/useFixedPopover'
 import { searchIndianAddresses } from '../../lib/addressGeocoder'
 import './AddressAutocomplete.css'
 
@@ -16,6 +18,14 @@ export default function AddressAutocomplete({
   const [searching, setSearching] = useState(false)
   const debounceRef = useRef(null)
   const rootRef = useRef(null)
+  const inputRef = useRef(null)
+  const { popoverRef, style, popoverProps } = useFixedPopover({
+    open,
+    anchorRef: inputRef,
+    matchWidth: true,
+    maxHeight: 240,
+    gap: 4,
+  })
 
   useEffect(() => {
     setQuery(value || '')
@@ -23,13 +33,14 @@ export default function AddressAutocomplete({
 
   useEffect(() => {
     const handleClickOutside = (event) => {
-      if (rootRef.current && !rootRef.current.contains(event.target)) {
-        setOpen(false)
+      if (rootRef.current?.contains(event.target) || popoverRef.current?.contains(event.target)) {
+        return
       }
+      setOpen(false)
     }
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [])
+  }, [popoverRef])
 
   const search = useCallback((text) => {
     if (debounceRef.current) clearTimeout(debounceRef.current)
@@ -72,6 +83,7 @@ export default function AddressAutocomplete({
   return (
     <div className={`address-autocomplete ${className}`} ref={rootRef}>
       <input
+        ref={inputRef}
         type="text"
         value={query}
         onChange={handleChange}
@@ -82,8 +94,8 @@ export default function AddressAutocomplete({
         autoComplete="off"
       />
       {searching && <p className="address-autocomplete__hint">Searching addresses...</p>}
-      {open && results.length > 0 && (
-        <ul className="address-autocomplete__list" role="listbox">
+      {open && results.length > 0 && style && createPortal(
+        <ul className="address-autocomplete__list" role="listbox" {...popoverProps}>
           {results.map((suggestion) => (
             <li key={suggestion.id}>
               <button
@@ -98,7 +110,8 @@ export default function AddressAutocomplete({
               </button>
             </li>
           ))}
-        </ul>
+        </ul>,
+        document.body,
       )}
     </div>
   )

@@ -31,8 +31,7 @@ import '../../components/workorders/ManualWorkOrder.css'
 import '../../components/workrequests/WorkRequests.css'
 
 function formatEquipmentLabel(row) {
-  const parts = [row.name, row.code].filter(Boolean)
-  return parts.join(' · ') || row.id
+  return row?.name || row?.id || ''
 }
 
 function departmentSearchLabel(department) {
@@ -158,15 +157,14 @@ export default function WorkRequestCreate() {
         const data = await getWorkRequestFormContext()
         if (cancelled) return
         setCtx(data)
-        if (data.order_from_selectable) {
-          setOrderFromId('')
+        const fromId = data.order_from_department?.id || data.employee?.department_id || ''
+        setOrderFromId(fromId)
+        if (fromId) {
+          setOrderToId(fromId)
+          setRequestType('intra_department')
+        } else {
           setOrderToId('')
           setRequestType('inter_department')
-        } else {
-          const fromId = data.order_from_department?.id
-          setOrderFromId(fromId || '')
-          setOrderToId(fromId || '')
-          setRequestType('intra_department')
         }
       } catch (err) {
         if (!cancelled) setError(err.message)
@@ -183,11 +181,16 @@ export default function WorkRequestCreate() {
   const orderFrom = ctx?.order_from_department
 
   const orderFromOptions = useMemo(() => {
-    if (orderFromSelectable || !scopeLocationId) return allDepartments
-    return departmentsForEmployeeLocation(allDepartments, scopeLocationId)
-  }, [allDepartments, orderFromSelectable, scopeLocationId])
+    const list = (orderFromSelectable || !scopeLocationId)
+      ? allDepartments
+      : departmentsForEmployeeLocation(allDepartments, scopeLocationId)
+    const selected = orderFrom?.id
+      ? (list.find((department) => department.id === orderFrom.id) ? null : orderFrom)
+      : null
+    return selected ? [selected, ...list] : list
+  }, [allDepartments, orderFrom, orderFromSelectable, scopeLocationId])
 
-  const effectiveOrderFromId = orderFromSelectable ? orderFromId : orderFrom?.id
+  const effectiveOrderFromId = orderFromId || orderFrom?.id
   const orderToLocationId = useMemo(() => {
     const fromDept = orderFromOptions.find((department) => department.id === effectiveOrderFromId)
       || allDepartments.find((department) => department.id === effectiveOrderFromId)
@@ -201,11 +204,10 @@ export default function WorkRequestCreate() {
   }, [allDepartments, orderToLocationId])
 
   const effectiveOrderFromName = useMemo(() => {
-    if (orderFromSelectable) {
-      return orderFromOptions.find((d) => d.id === orderFromId)?.name || '—'
-    }
-    return orderFrom?.name || '—'
-  }, [orderFrom?.name, orderFromId, orderFromOptions, orderFromSelectable])
+    return orderFromOptions.find((d) => d.id === effectiveOrderFromId)?.name
+      || orderFrom?.name
+      || '—'
+  }, [effectiveOrderFromId, orderFrom?.name, orderFromOptions])
   const lockOrderTo = requestType === 'intra_department' || requestType === 'user_self'
 
   useEffect(() => {
@@ -261,13 +263,13 @@ export default function WorkRequestCreate() {
     return catalogEquipment.some((row) => row.id === equipmentId)
   }, [catalogEquipment, equipmentEmpty, equipmentId])
 
-  const canSaveDraft = Boolean(orderToId && (!orderFromSelectable || effectiveOrderFromId))
+  const canSaveDraft = Boolean(orderToId && effectiveOrderFromId)
 
   const buildPayload = useCallback(
     (saveAs, attachments = []) => ({
       save_as: saveAs,
       request_type: requestType,
-      ...(orderFromSelectable ? { order_from_department_id: effectiveOrderFromId || null } : {}),
+      order_from_department_id: effectiveOrderFromId || null,
       order_to_department_id: orderToId,
       equipment_id: equipmentId || null,
       short_description: shortDescription,
@@ -284,7 +286,6 @@ export default function WorkRequestCreate() {
       equipmentId,
       jobNature,
       maintenanceFieldValues,
-      orderFromSelectable,
       orderToId,
       priority,
       problem,
@@ -331,7 +332,7 @@ export default function WorkRequestCreate() {
         setError('Select an Order to department before saving.')
         return
       }
-      if (orderFromSelectable && !effectiveOrderFromId) {
+      if (!effectiveOrderFromId) {
         setError('Select an Order from department before saving.')
         return
       }
@@ -373,7 +374,6 @@ export default function WorkRequestCreate() {
       equipmentId,
       isBreakdown,
       navigate,
-      orderFromSelectable,
       orderToId,
       org?.id,
       org?.slug,
@@ -468,32 +468,26 @@ export default function WorkRequestCreate() {
                     className="company-form__input--select"
                   />
                 </label>
-                {orderFromSelectable ? (
-                  <label className="company-form__field">
-                    <span className="company-form__label">Order from</span>
-                    <FilterableSelect
-                      value={orderFromId}
-                      onChange={(id) => {
-                        setOrderFromId(id)
-                        if (lockOrderTo) setOrderToId(id)
-                        else setOrderToId('')
-                      }}
-                      options={orderFromOptions}
-                      getOptionValue={(d) => d.id}
-                      getOptionLabel={(d) => d.name}
-                      getOptionSearchLabel={departmentSearchLabel}
-                      renderOption={(d) => <DepartmentOption department={d} />}
-                      placeholder="Select department"
-                      required
-                      className="company-form__input--select"
-                    />
-                  </label>
-                ) : (
-                  <div className="company-form__field">
-                    <span className="company-form__label">Order from</span>
-                    <div className="wr-form__input-readonly">{orderFrom?.name || '—'}</div>
-                  </div>
-                )}
+                <label className="company-form__field">
+                  <span className="company-form__label">Order from</span>
+                  <FilterableSelect
+                    value={orderFromId}
+                    onChange={(id) => {
+                      setOrderFromId(id)
+                      if (lockOrderTo) setOrderToId(id)
+                      else setOrderToId('')
+                    }}
+                    options={orderFromOptions}
+                    getOptionValue={(d) => d.id}
+                    getOptionLabel={(d) => d.name}
+                    getOptionSearchLabel={departmentSearchLabel}
+                    renderOption={(d) => <DepartmentOption department={d} />}
+                    placeholder="Select department"
+                    required
+                    allowEmpty={false}
+                    className="company-form__input--select"
+                  />
+                </label>
                 <label className="company-form__field">
                   <span className="company-form__label">Order to</span>
                   {lockOrderTo ? (
@@ -509,7 +503,7 @@ export default function WorkRequestCreate() {
                       renderOption={(d) => <DepartmentOption department={d} />}
                       placeholder="Select department"
                       required
-                      disabled={orderFromSelectable && !effectiveOrderFromId}
+                      disabled={!effectiveOrderFromId}
                       className="company-form__input--select"
                     />
                   )}

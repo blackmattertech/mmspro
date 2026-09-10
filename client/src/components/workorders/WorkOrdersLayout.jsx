@@ -18,7 +18,7 @@ import './WorkOrderAdvancedFilter.css'
 const WO_FILTER_FIELDS = [
   { value: 'location', label: 'Location' },
   { value: 'status', label: 'Status' },
-  { value: 'summary', label: 'Summary' },
+  { value: 'summary', label: 'Short description' },
   { value: 'wo_number', label: 'WO #' },
   { value: 'assignee', label: 'Assignee' },
   { value: 'creator', label: 'Created by' },

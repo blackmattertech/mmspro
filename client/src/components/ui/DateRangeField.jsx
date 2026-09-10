@@ -206,6 +206,7 @@ export default function DateRangeField({
         className="date-range-field__popover"
         role="dialog"
         aria-label="Choose date range"
+        data-fixed-popover=""
         style={{ top: coords.top, left: coords.left }}
       >
         <div className="date-range-field__head">
