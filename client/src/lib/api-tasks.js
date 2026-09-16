@@ -37,6 +37,17 @@ export function createTask(data) {
   return apiFetch('/api/tasks', { method: 'POST', body: JSON.stringify(data) })
 }
 
+export function getTasksTemplate() {
+  return apiFetch('/api/tasks/template')
+}
+
+export function bulkUploadTasks(base64Data) {
+  return apiFetch('/api/tasks/import', {
+    method: 'POST',
+    body: JSON.stringify({ data: base64Data }),
+  })
+}
+
 export function updateTask(id, data) {
   return apiFetch(`/api/tasks/${id}`, { method: 'PATCH', body: JSON.stringify(data) })
 }

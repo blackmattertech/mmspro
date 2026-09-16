@@ -1,0 +1,460 @@
+:root {
+  --mobile-topbar-inner-height: 56px;
+  --mobile-topbar-height: 0px;
+}
+
+@media (max-width: 1024px) {
+  :root {
+    --mobile-topbar-height: calc(var(--mobile-topbar-inner-height) + env(safe-area-inset-top, 0px));
+  }
+
+  html,
+  body,
+  #root {
+    max-width: 100%;
+  }
+
+  body {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  img,
+  video {
+    max-width: 100%;
+    height: auto;
+  }
+
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
+    max-width: 100%;
+  }
+
+  #root .dash-header,
+  #root .company-page__header,
+  #root .roles-page__header,
+  #root .wo-page__top,
+  #root .admin-page__header,
+  #root .import-jobs-banner {
+    top: var(--mobile-topbar-height);
+  }
+
+  #root .import-page__setup {
+    top: calc(var(--mobile-topbar-height) + 12px);
+  }
+
+  #root .dash-header,
+  #root .dashboard__content,
+  #root .company-page__header,
+  #root .company-page__content,
+  #root .roles-page__header,
+  #root .roles-page__content,
+  #root .wo-page__top,
+  #root .wo-page__bar,
+  #root .wo-page__content,
+  #root .wo-page__toolbar-row,
+  #root .admin-page__header,
+  #root .admin-page__content,
+  #root .calendar-page__body,
+  #root .placeholder-page,
+  #root .error-fallback,
+  #root .task-detail-page,
+  #root .task-form-page,
+  #root .import-jobs-banner,
+  #root .wr-detail-main,
+  #root .wr-detail-sheet__body {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  #root .dash-header__subtitle {
+    white-space: normal;
+  }
+
+  #root .dash-header__right,
+  #root .company-page__header-bar,
+  #root .company-page__header-actions,
+  #root .company-panel__toolbar,
+  #root .table-filter-toolbar,
+  #root .table-filter-toolbar__actions,
+  #root .wo-page__bar,
+  #root .wo-page__actions,
+  #root .wo-page__header,
+  #root .roles-page__header,
+  #root .tasks-page__header,
+  #root .tasks-page__actions,
+  #root .reports-toolbar__group,
+  #root .cal-toolbar,
+  #root .admin-page__header,
+  #root .record-detail-layout__header,
+  #root .record-detail-layout__actions,
+  #root .company-modal__actions,
+  #root .company-modal__footer,
+  #root .modal__actions,
+  #root .wr-page__bar-actions,
+  #root .wr-page__header-actions,
+  #root .wo-footer,
+  #root .wr-form__actions,
+  #root .company-form__actions {
+    flex-wrap: wrap;
+    min-width: 0;
+  }
+
+  #root .table-filter-toolbar.wo-page__bar-controls .wo-page__search,
+  #root .table-filter-toolbar.wo-page__bar-controls .spellcheck-field--inline,
+  #root .spellcheck-field--inline,
+  #root .wo-page__search,
+  #root .company-form__input--search,
+  #root .company-form__input--select {
+    min-width: 0 !important;
+    max-width: none;
+    width: 100%;
+    flex: 1 1 100%;
+  }
+
+  #root .table-filter-toolbar__actions {
+    margin-left: 0;
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  #root .company-form__grid,
+  #root .company-form__grid--2,
+  #root .company-form__row,
+  #root .wo-assignment__filters,
+  #root .wo-assignment__grid,
+  #root .app-shell--sidebar-collapsed .wo-assignment__grid,
+  #root .wo-received-detail__meta,
+  #root .wo-received-detail__field,
+  #root .wo-dos-donts,
+  #root .wo-daily-log__layout,
+  #root .warranty-form__row,
+  #root .warranty-form__row--split,
+  #root .warranty-form__row--pair,
+  #root .wr-form__meta-row,
+  #root .wr-detail-layout,
+  #root .wr-detail-meta,
+  #root .others-limits__row,
+  #root .others-hub,
+  #root .task-form__grid--2,
+  #root .task-form__grid--3,
+  #root .task-form__field-row--2,
+  #root .task-form__field-row--4,
+  #root .task-form__field-row--5,
+  #root .task-form__datetime-row,
+  #root .task-form__schedule,
+  #root .task-detail-layout,
+  #root .task-detail-overview__top,
+  #root .task-detail-split,
+  #root .task-detail-grid,
+  #root .reports-filters__grid,
+  #root .reports-filters__grid--3,
+  #root .import-page__layout,
+  #root .checklist-builder,
+  #root .asset-layout-modal__body,
+  #root .employee-detail__grid,
+  #root .employee-detail__fields,
+  #root .detail-view__grid,
+  #root .profile-form__grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  #root .wo-received-detail__field {
+    gap: 4px;
+  }
+
+  #root .company-tabs,
+  #root .pm-steps {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+  }
+
+  #root .wo-page__tabs,
+  #root .wr-page__toolbar-row--tabs .wo-page__tabs,
+  #root .tasks-page__tabs-row .wo-page__tabs {
+    flex-wrap: wrap;
+    overflow: visible;
+  }
+
+  #root .company-tabs__btn,
+  #root .wo-page__tab,
+  #root .pm-steps__item {
+    flex-shrink: 0;
+  }
+
+  #root .company-table-wrap,
+  #root .company-table-scroll,
+  #root .reports-table-wrap,
+  #root .admin-table-wrap,
+  #root .wr-table-wrap,
+  #root .cal-table-wrap,
+  #root .detail-view__table-wrap,
+  #root .wo-permit-table-wrap,
+  #root .wo-material-table-wrap,
+  #root .warranty-form__items-table-wrap,
+  #root .task-detail-table-wrap,
+  #root .task-meta-section__table-wrap,
+  #root .assign-employees-modal__table-wrap {
+    max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  #root .company-table th,
+  #root .company-table td {
+    padding-left: 10px;
+    padding-right: 10px;
+  }
+
+  #root .company-panel,
+  #root .kpi-card,
+  #root .dash-card,
+  #root .reports-kpi {
+    padding: 16px;
+    min-width: 0;
+  }
+
+  #root .kpi-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  #root .dashboard__row--2,
+  #root .dashboard__row--3 {
+    grid-template-columns: 1fr;
+  }
+
+  #root .donut-chart {
+    flex-wrap: wrap;
+  }
+
+  #root .recent-list__item {
+    grid-template-columns: 1fr;
+    gap: 4px;
+    align-items: start;
+  }
+
+  #root .cal-toolbar__left,
+  #root .cal-toolbar,
+  #root .cal-filters {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  #root .calendar-page__body,
+  #root .calendar-page__sidebar {
+    grid-template-columns: 1fr;
+  }
+
+  #root .tasks-page .company-panel--kanban,
+  #root .tasks-page .company-panel--kanban > .tasks-kanban {
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+
+  #root .tasks-kanban {
+    display: flex;
+    width: max-content;
+    min-width: 100%;
+    grid-template-columns: none;
+  }
+
+  #root .tasks-kanban__column {
+    flex: 0 0 260px;
+    width: 260px;
+    max-height: calc(100dvh - 260px);
+  }
+
+  #root .company-modal-overlay--popup,
+  #root .company-modal-overlay.task-voice-overlay,
+  #root .company-modal-overlay.task-meta-settings-overlay,
+  #root .app-shell .company-modal-overlay.pm-modal-overlay {
+    padding: 12px !important;
+    padding-bottom: max(12px, env(safe-area-inset-bottom, 0px)) !important;
+    align-items: flex-end !important;
+  }
+
+  #root .company-modal--popup,
+  #root .company-modal.company-modal--popup.pm-modal,
+  #root .company-modal.company-modal--popup.pm-modal--wide {
+    width: 100%;
+    max-width: 100%;
+    max-height: min(92dvh, 900px);
+    border-radius: 16px 16px 8px 8px;
+  }
+
+  #root .company-modal__header,
+  #root .modal__header,
+  #root .company-modal--wide .company-modal__body,
+  #root .company-modal__header--profile {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  #root .notif-panel {
+    position: fixed;
+    top: calc(var(--mobile-topbar-height) + 8px);
+    right: 12px;
+    left: 12px;
+    width: auto;
+    max-width: none;
+    max-height: min(70dvh, 480px);
+  }
+
+  #root .table-filter-menu__panel,
+  #root .reports-filters__panel {
+    width: min(100vw - 24px, 520px);
+  }
+
+  #root .import-jobs-banner__item {
+    flex-wrap: wrap;
+  }
+
+  #root .import-jobs-banner__actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+
+  #root .page-breadcrumbs__link,
+  #root .page-breadcrumbs__current {
+    white-space: normal;
+  }
+
+  #root .asset-field-filters__search {
+    width: 100%;
+    min-width: 0;
+    flex: 1 1 100%;
+  }
+
+  #root .wo-section__header,
+  #root .wo-section__body {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+}
+
+@media (max-width: 768px) {
+  #root .kpi-grid,
+  #root .admin-kpi-grid,
+  #root .admin-org-kpi-grid,
+  #root .reports-kpi-grid {
+    grid-template-columns: 1fr;
+  }
+
+  #root .dash-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 14px;
+    padding-top: 16px;
+    padding-bottom: 16px;
+  }
+
+  #root .dash-header__right {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  #root .dash-header__create-btn,
+  #root .dash-header__date-range,
+  #root .dash-header__filter {
+    width: 100%;
+  }
+
+  #root .dash-header__date,
+  #root .dash-header__date-range .date-field,
+  #root .dash-header__select {
+    width: 100%;
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+
+  #root .dash-header__title,
+  #root .company-page__title,
+  #root .wo-page__title,
+  #root .roles-page__title,
+  #root .admin-page__title {
+    font-size: 20px;
+    line-height: 28px;
+  }
+
+  #root .donut-chart {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  #root .cal-grid__cell {
+    min-height: 72px;
+    padding: 4px;
+  }
+
+  #root .tasks-page > .company-page__header {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  #root .task-form-page__panel,
+  #root .task-detail-card {
+    padding: 16px;
+  }
+
+  #root .company-page__header-actions,
+  #root .tasks-page__actions,
+  #root .wo-page__actions {
+    width: 100%;
+  }
+}
+
+@media (max-width: 480px) {
+  #root .dash-header,
+  #root .dashboard__content,
+  #root .company-page__header,
+  #root .company-page__content,
+  #root .roles-page__header,
+  #root .roles-page__content,
+  #root .wo-page__top,
+  #root .wo-page__bar,
+  #root .wo-page__content,
+  #root .wo-page__toolbar-row,
+  #root .admin-page__header,
+  #root .admin-page__content,
+  #root .calendar-page__body,
+  #root .placeholder-page {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+
+  #root .dash-header__logo-wrap {
+    width: 44px;
+    height: 44px;
+  }
+
+  #root .kpi-card__value,
+  #root .reports-kpi__value {
+    font-size: 24px;
+    line-height: 30px;
+  }
+
+  #root .cal-grid__cell {
+    min-height: 58px;
+  }
+
+  #root .calendar-widget__day {
+    height: 28px;
+    font-size: 12px;
+  }
+
+  #root .tasks-kanban__column {
+    flex-basis: 220px;
+    width: 220px;
+  }
+
+  #root .mobile-topbar {
+    padding-left: 12px;
+  }
+
+  #root .app-shell .mobile-topbar {
+    padding-right: 60px;
+  }
+}

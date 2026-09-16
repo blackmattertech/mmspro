@@ -1,6 +1,12 @@
 import { supabaseAdmin } from '../services/supabase.js'
 import { notifyWorkOrderParties } from '../services/notifications.js'
 import { loadTimelineActors } from './timelineActors.js'
+import {
+  clipDosDontsValue,
+  clipMaterialConsumedValue,
+  clipTrimmedToLimit,
+  getTextFieldLimitsMap,
+} from './textFieldLimits.js'
 
 export const WO_STATUSES = [
   'draft',
@@ -381,6 +387,16 @@ export async function updateWorkOrderLifecycle(orgId, profileId, workOrderId, bo
     await assertWorkOrderStatusChange(orgId, existing.status, nextStatus)
   }
 
+  const fieldLimits = await getTextFieldLimitsMap(orgId)
+  const actionRemarks = clipTrimmedToLimit(fieldLimits, 'remarks', body.remarks)
+  const limitedTextKeys = new Set([
+    'job_description',
+    'root_cause',
+    'action_taken',
+    'lessons_learned',
+    'execution_remarks',
+    'verification_remarks',
+  ])
   let patch = {}
 
   const scalarKeys = [
@@ -414,7 +430,20 @@ export async function updateWorkOrderLifecycle(orgId, profileId, workOrderId, bo
   ]
 
   for (const key of scalarKeys) {
-    if (body[key] !== undefined) patch[key] = body[key]
+    if (body[key] === undefined) continue
+    if (key === 'material_consumed') {
+      patch[key] = clipMaterialConsumedValue(fieldLimits, body[key])
+      continue
+    }
+    if (key === 'dos_and_donts') {
+      patch[key] = clipDosDontsValue(fieldLimits, body[key])
+      continue
+    }
+    if (limitedTextKeys.has(key)) {
+      patch[key] = body[key] == null ? null : clipTrimmedToLimit(fieldLimits, key, body[key])
+      continue
+    }
+    patch[key] = body[key]
   }
 
   if (body.permit_types !== undefined || body.permit_details !== undefined) {
@@ -500,7 +529,7 @@ export async function updateWorkOrderLifecycle(orgId, profileId, workOrderId, bo
 
   if (nextStatus !== existing.status) {
     const label = nextStatus.replace(/_/g, ' ')
-    const message = body.remarks?.trim()
+    const message = actionRemarks
       || `Work order status updated to ${label}.`
     await addWorkOrderTimelineEvent(
       orgId,
@@ -511,7 +540,7 @@ export async function updateWorkOrderLifecycle(orgId, profileId, workOrderId, bo
       {
         previousStatus: existing.status,
         newStatus: nextStatus,
-        remarks: body.remarks || null,
+        remarks: actionRemarks,
       },
     )
     await addWorkOrderAuditEntry(
@@ -522,7 +551,7 @@ export async function updateWorkOrderLifecycle(orgId, profileId, workOrderId, bo
       {
         previousStatus: existing.status,
         newStatus: nextStatus,
-        remarks: body.remarks || null,
+        remarks: actionRemarks,
       },
     )
     await syncWorkRequestFromWorkOrder(
@@ -542,7 +571,7 @@ export async function updateWorkOrderLifecycle(orgId, profileId, workOrderId, bo
           type: 'work_order_status',
           status: nextStatus,
           actor_id: profileId,
-          message: body.remarks || null,
+          message: actionRemarks,
         },
         url: '/',
       }, { actorId: profileId })
@@ -563,9 +592,9 @@ export async function updateWorkOrderLifecycle(orgId, profileId, workOrderId, bo
       orgId,
       workOrderId,
       'details_updated',
-      body.remarks?.trim() || 'Work order details updated.',
+      actionRemarks || 'Work order details updated.',
       profileId,
-      { remarks: body.remarks || null },
+      { remarks: actionRemarks },
     )
   }
 

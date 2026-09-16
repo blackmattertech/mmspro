@@ -1856,4 +1856,21 @@
   .task-detail-grid {
     grid-template-columns: 1fr;
   }
+
+  .tasks-page .company-panel--kanban,
+  .tasks-page .company-panel--kanban > .tasks-kanban {
+    overflow-x: auto;
+  }
+
+  .tasks-kanban {
+    display: flex;
+    width: max-content;
+    min-width: 100%;
+  }
+
+  .tasks-kanban__column {
+    flex: 0 0 260px;
+    width: 260px;
+    max-height: calc(100dvh - 260px);
+  }
 }

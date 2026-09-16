@@ -8,6 +8,7 @@ import GooToggle from '../ui/GooToggle'
 import LocationModal from './LocationModal'
 import DepartmentModal from './DepartmentModal'
 import PhoneInput from '../shared/PhoneInput'
+import SpellcheckInput from '../shared/SpellcheckInput'
 import FilterableSelect from '../ui/FilterableSelect'
 import ImageCropModal from '../shared/ImageCropModal'
 import {
@@ -440,7 +441,7 @@ export default function EmployeeModal({
               </label>
               <label className="company-form__field">
                 <span className="company-form__label">Employee Name *</span>
-                <input
+                <SpellcheckInput
                   className="company-form__input"
                   value={form.name}
                   onChange={(e) => setForm({ ...form, name: e.target.value })}

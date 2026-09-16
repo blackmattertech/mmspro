@@ -34,15 +34,16 @@
 
 .app-shell {
   --app-notif-gutter: 88px;
+  overflow-x: clip;
+  max-width: 100%;
 }
 
 .app-shell .app-shell__main .dash-header,
 .app-shell .app-shell__main .company-page__header,
 .app-shell .app-shell__main .roles-page__header,
 .app-shell .app-shell__main .wo-page__top,
+.app-shell .app-shell__main .reports-page__toolbar,
 .app-shell .app-shell__main .tasks-page__header,
-.app-shell .app-shell__main .reports-page__header,
-.app-shell .app-shell__main .reports-page__bar,
 .app-shell .wr-detail-sheet__header,
 .app-shell .modal:not(.company-modal--popup) .modal__header,
 .app-shell .company-modal:not(.company-modal--popup) .company-modal__header {
@@ -56,10 +57,38 @@
 }
 
 @media (max-width: 1024px) {
+  .app-shell {
+    --app-notif-gutter: 12px;
+  }
+
   .app-shell__main,
   .app-shell--sidebar-collapsed .app-shell__main {
     margin-left: 0;
     width: 100%;
     max-width: 100%;
+  }
+
+  .app-shell__main > .app-shell__notif {
+    top: calc(8px + env(safe-area-inset-top, 0px));
+    right: 12px;
+    z-index: 60;
+  }
+
+  .app-shell:has(.dashboard) .app-shell__main > .app-shell__notif {
+    top: calc(8px + env(safe-area-inset-top, 0px));
+    height: 40px;
+  }
+
+  .app-shell__nav-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 1200;
+    display: block;
+    width: 100%;
+    height: 100%;
+    padding: 0;
+    border: none;
+    background: rgba(17, 24, 39, 0.5);
+    cursor: pointer;
   }
 }

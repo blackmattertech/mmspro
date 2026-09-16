@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useOrg } from '../../hooks/useOrg'
+import { useTextFieldLimits } from '../../hooks/useTextFieldLimits'
 import { useDebouncedValue } from '../../hooks/useDebouncedValue'
 import { orgPath } from '../../config/navigation'
 import {
@@ -14,8 +15,9 @@ import WorkRequestSectionHead from '../../components/workrequests/WorkRequestSec
 import WorkRequestBreakdownFields from '../../components/workrequests/WorkRequestBreakdownFields'
 import WorkRequestAttachmentsField from '../../components/workrequests/WorkRequestAttachmentsField'
 import FilterableSelect from '../../components/ui/FilterableSelect'
+import SpellcheckInput from '../../components/shared/SpellcheckInput'
+import FormLabel from '../../components/shared/FormLabel'
 import EmployeeAvatar from '../../components/company/EmployeeAvatar'
-import PageBack from '../../components/shared/PageBack'
 import {
   clearBreakdownFieldValues,
   missingRequiredBreakdownFields,
@@ -65,9 +67,10 @@ function WorkRequestFormActions({
   onCancel,
   onSaveDraft,
   formId = 'wr-create-form',
+  className = '',
 }) {
   return (
-    <div className="wr-page__header-actions">
+    <div className={`wr-page__header-actions${className ? ` ${className}` : ''}`}>
       <div className="wr-page__bar-actions">
         <button
           type="button"
@@ -103,6 +106,7 @@ function WorkRequestFormActions({
 export default function WorkRequestCreate() {
   const navigate = useNavigate()
   const { org } = useOrg()
+  const { maxLength } = useTextFieldLimits()
   const [ctx, setCtx] = useState(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -400,52 +404,27 @@ export default function WorkRequestCreate() {
   const allAssetFields = useMemo(() => flattenAssetSections(assetSections), [assetSections])
 
   if (loading) {
-    return (
-      <div className="company-page wo-page">
-        <div className="wo-page__content">
-          <div className="company-loading">Loading...</div>
-        </div>
-      </div>
-    )
+    return <div className="company-loading">Loading...</div>
   }
 
   if (!ctx) {
-    return (
-      <div className="company-page wo-page">
-        <div className="wo-page__content">
-          <div className="wo-alert wo-alert--error">{error || 'Unable to load form.'}</div>
-        </div>
-      </div>
-    )
+    return <div className="wo-alert wo-alert--error">{error || 'Unable to load form.'}</div>
   }
 
   return (
-    <div className="company-page wo-page">
-      <header className="wo-page__top wo-page__top--with-actions">
-        <div className="wo-page__top-copy">
-          <PageBack
-            to={org?.slug ? orgPath(org.slug, 'work-request/my') : '#'}
-            label="Work Requests"
-          />
-          <h1 className="wo-page__title">Create Work Request</h1>
-          <p className="wo-page__subtitle">
-            Submit a maintenance request for your department or another executing department.
-          </p>
-        </div>
-        <WorkRequestFormActions
-          saving={saving}
-          saveMode={saveMode}
-          canSaveDraft={canSaveDraft}
-          canSubmitAssets={canSubmitAssets}
-          onCancel={goBack}
-          onSaveDraft={handleSaveDraft}
-        />
-      </header>
+    <>
+      {error && <div className="wo-alert wo-alert--error" role="alert">{error}</div>}
 
-      <div className="wo-page__content">
-        {error && <div className="wo-alert wo-alert--error" role="alert">{error}</div>}
+      <WorkRequestFormActions
+        saving={saving}
+        saveMode={saveMode}
+        canSaveDraft={canSaveDraft}
+        canSubmitAssets={canSubmitAssets}
+        onCancel={goBack}
+        onSaveDraft={handleSaveDraft}
+      />
 
-        <form id="wr-create-form" className="wo-form" onSubmit={handleSubmit}>
+      <form id="wr-create-form" className="wo-form wr-create-form" onSubmit={handleSubmit}>
           <section className="wo-section" aria-labelledby="wr-section-request">
             <WorkRequestSectionHead
               id="wr-section-request"
@@ -583,23 +562,25 @@ export default function WorkRequestCreate() {
             <div className="wo-section__body">
               <div className="company-form__grid">
                 <label className="company-form__field company-form__field--full">
-                  <span className="company-form__label">Short description</span>
-                  <input
+                  <FormLabel limit={maxLength('short_description')}>Short description</FormLabel>
+                  <SpellcheckInput
                     className="company-form__input"
                     value={shortDescription}
                     onChange={(e) => setShortDescription(e.target.value)}
                     placeholder="Brief summary shown in lists and tables"
-                    maxLength={200}
+                    maxLength={maxLength('short_description')}
                   />
                 </label>
                 <label className="company-form__field company-form__field--full">
-                  <span className="company-form__label">Problem description</span>
-                  <textarea
+                  <FormLabel limit={maxLength('problem_description')}>Problem description</FormLabel>
+                  <SpellcheckInput
+                    multiline
                     className="company-form__input company-form__textarea"
                     rows={4}
                     value={problem}
                     onChange={(e) => setProblem(e.target.value)}
                     placeholder="Describe the issue or maintenance need"
+                    maxLength={maxLength('problem_description')}
                   />
                 </label>
                 <div className="wr-form__meta-row">
@@ -645,20 +626,30 @@ export default function WorkRequestCreate() {
                   disabled={saving}
                 />
                 <label className="company-form__field company-form__field--full">
-                  <span className="company-form__label">Remarks</span>
-                  <textarea
+                  <FormLabel limit={maxLength('remarks')}>Remarks</FormLabel>
+                  <SpellcheckInput
+                    multiline
                     className="company-form__input company-form__textarea"
                     rows={3}
                     value={remarks}
                     onChange={(e) => setRemarks(e.target.value)}
                     placeholder="Optional additional notes"
+                    maxLength={maxLength('remarks')}
                   />
                 </label>
               </div>
             </div>
           </section>
+          <WorkRequestFormActions
+            saving={saving}
+            saveMode={saveMode}
+            canSaveDraft={canSaveDraft}
+            canSubmitAssets={canSubmitAssets}
+            onCancel={goBack}
+            onSaveDraft={handleSaveDraft}
+            className="wr-form__actions--in-form"
+          />
         </form>
-      </div>
-    </div>
+    </>
   )
 }

@@ -1,5 +1,6 @@
 import { supabaseAdmin } from '../services/supabase.js'
 import { addWorkOrderTimelineEvent } from './workOrderService.js'
+import { clipMaterialDescriptions, clipTrimmedToLimit, getTextFieldLimitsMap } from './textFieldLimits.js'
 
 export const DAILY_LOG_ACTIVE_STATUSES = new Set([
   'started',
@@ -225,7 +226,10 @@ export async function updateWorkOrderDailyLog(orgId, profileId, workOrderId, log
   }
 
   if (body.work_done !== undefined) patch.work_done = String(body.work_done || '').trim() || null
-  if (body.remarks !== undefined) patch.remarks = String(body.remarks || '').trim() || null
+  if (body.remarks !== undefined) {
+    const fieldLimits = await getTextFieldLimitsMap(orgId)
+    patch.remarks = clipTrimmedToLimit(fieldLimits, 'remarks', body.remarks)
+  }
   if (body.labour_count !== undefined) {
     patch.labour_count = body.labour_count === '' || body.labour_count == null
       ? null
@@ -235,7 +239,8 @@ export async function updateWorkOrderDailyLog(orgId, profileId, workOrderId, log
     }
   }
   if (body.materials !== undefined) {
-    patch.materials = sanitizeDailyLogMaterials(body.materials)
+    const fieldLimits = await getTextFieldLimitsMap(orgId)
+    patch.materials = clipMaterialDescriptions(fieldLimits, sanitizeDailyLogMaterials(body.materials))
   }
 
   const { data, error } = await supabaseAdmin
@@ -289,9 +294,13 @@ export async function endWorkOrderDay(orgId, profileId, workOrderId, logId, body
     throw httpError('Describe the work done today before ending the day.')
   }
 
-  const materials = body.materials !== undefined
-    ? sanitizeDailyLogMaterials(body.materials)
-    : sanitizeDailyLogMaterials(existing.materials)
+  const fieldLimits = await getTextFieldLimitsMap(orgId)
+  const materials = clipMaterialDescriptions(
+    fieldLimits,
+    body.materials !== undefined
+      ? sanitizeDailyLogMaterials(body.materials)
+      : sanitizeDailyLogMaterials(existing.materials),
+  )
 
   const now = new Date().toISOString()
   const patch = {
@@ -302,7 +311,7 @@ export async function endWorkOrderDay(orgId, profileId, workOrderId, logId, body
     updated_by: profileId,
     updated_at: now,
   }
-  if (body.remarks !== undefined) patch.remarks = String(body.remarks || '').trim() || null
+  if (body.remarks !== undefined) patch.remarks = clipTrimmedToLimit(fieldLimits, 'remarks', body.remarks)
   if (body.labour_count !== undefined) {
     patch.labour_count = body.labour_count === '' || body.labour_count == null
       ? null

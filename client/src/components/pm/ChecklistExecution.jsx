@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import DateField from '../ui/DateField'
 import TimeField from '../ui/TimeField'
 import FilterableSelect from '../ui/FilterableSelect'
+import SpellcheckInput from '../shared/SpellcheckInput'
 import './Pm.css'
 
 function FieldLabel({ field }) {
@@ -85,7 +86,8 @@ function ChecklistField({ field, value, disabled, onChange }) {
     return (
       <label className="pm-checklist-item">
         <FieldLabel field={field} />
-        <textarea
+        <SpellcheckInput
+          multiline
           className="company-form__input company-form__textarea"
           rows={3}
           value={value}
@@ -126,11 +128,13 @@ function ChecklistField({ field, value, disabled, onChange }) {
         : field.field_type === 'image'
           ? 'Image note or reference'
           : ''
+  const isIdentifier = field.field_type === 'qr' || field.field_type === 'barcode'
+  const Control = inputType === 'number' || isIdentifier ? 'input' : SpellcheckInput
 
   return (
     <label className="pm-checklist-item">
       <FieldLabel field={field} />
-      <input
+      <Control
         id={id}
         className="company-form__input"
         type={inputType}

@@ -128,6 +128,10 @@ export function pmPlanStatusLabel(value) {
   return key.replace(/_/g, ' ') || '—'
 }
 
+export function pmPriorityLabel(value) {
+  return PM_PRIORITIES.find((row) => row.value === value)?.label || value || '—'
+}
+
 export function checklistFieldTypeLabel(value) {
   return CHECKLIST_FIELD_TYPES.find((row) => row.value === value)?.label || value || '—'
 }

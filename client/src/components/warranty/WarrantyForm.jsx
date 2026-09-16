@@ -3,6 +3,8 @@ import DateField from '../ui/DateField'
 import FilterableSelect from '../ui/FilterableSelect'
 import VendorModal from '../vendors/VendorModal'
 import WarrantyDocumentsSection from './WarrantyDocumentsSection'
+import SpellcheckInput from '../shared/SpellcheckInput'
+import { useTextFieldLimits } from '../../hooks/useTextFieldLimits'
 import { warrantyDocumentLabelText } from '../../config/warrantyDocuments'
 import './WarrantyManager.css'
 
@@ -189,6 +191,7 @@ export default function WarrantyForm({
   vendorCreateSaving = false,
 }) {
   const [vendorDraft, setVendorDraft] = useState(null)
+  const { maxLength } = useTextFieldLimits()
 
   const setField = (key, value) => {
     onChange({ ...values, [key]: value })
@@ -320,8 +323,7 @@ export default function WarrantyForm({
         />
 
         <FieldRow label="Make">
-          <input
-            type="text"
+          <SpellcheckInput
             className="company-form__input"
             value={values.make}
             onChange={(e) => setField('make', e.target.value)}
@@ -440,8 +442,7 @@ export default function WarrantyForm({
           )}
           rightLabel="Contact Name"
           right={(
-            <input
-              type="text"
+            <SpellcheckInput
               className="company-form__input"
               value={values.contact_name}
               onChange={(e) => setField('contact_name', e.target.value)}
@@ -494,7 +495,7 @@ export default function WarrantyForm({
                 <th>Product / Material Name</th>
                 <th>Model / P.No</th>
                 <th>Value</th>
-                <th>Remarks</th>
+                <th>Remarks{maxLength('remarks') ? ` (Max ${maxLength('remarks')})` : ''}</th>
                 <th aria-label="Actions" />
               </tr>
             </thead>
@@ -503,8 +504,7 @@ export default function WarrantyForm({
                 <tr key={index}>
                   <td className="warranty-form__line-no">{index + 1}</td>
                   <td>
-                    <input
-                      type="text"
+                    <SpellcheckInput
                       className="company-form__input"
                       value={item.product_name}
                       onChange={(e) => setItemField(index, 'product_name', e.target.value)}
@@ -529,11 +529,11 @@ export default function WarrantyForm({
                     />
                   </td>
                   <td>
-                    <input
-                      type="text"
+                    <SpellcheckInput
                       className="company-form__input"
                       value={item.remarks}
                       onChange={(e) => setItemField(index, 'remarks', e.target.value)}
+                      maxLength={maxLength('remarks')}
                     />
                   </td>
                   <td>

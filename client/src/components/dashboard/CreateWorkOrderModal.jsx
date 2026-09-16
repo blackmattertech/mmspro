@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import FilterableSelect from '../ui/FilterableSelect'
 import PageBack from '../shared/PageBack'
+import SpellcheckInput from '../shared/SpellcheckInput'
 import './CreateWorkOrderModal.css'
 
 export default function CreateWorkOrderModal({
@@ -41,9 +42,8 @@ export default function CreateWorkOrderModal({
 
           <div className="modal__field">
             <label htmlFor="wo-title">Title</label>
-            <input
+            <SpellcheckInput
               id="wo-title"
-              type="text"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="Describe the maintenance task"

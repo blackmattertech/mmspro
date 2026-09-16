@@ -18,6 +18,17 @@ export function createWarranty(data) {
   return apiFetch('/api/warranties', { method: 'POST', body: JSON.stringify(data) })
 }
 
+export function getWarrantiesTemplate() {
+  return apiFetch('/api/warranties/template')
+}
+
+export function bulkUploadWarranties(base64Data) {
+  return apiFetch('/api/warranties/import', {
+    method: 'POST',
+    body: JSON.stringify({ data: base64Data }),
+  })
+}
+
 export function updateWarranty(id, data) {
   return apiFetch(`/api/warranties/${id}`, { method: 'PATCH', body: JSON.stringify(data) })
 }

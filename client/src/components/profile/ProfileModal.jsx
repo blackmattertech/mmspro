@@ -5,6 +5,7 @@ import { useBackdropClose } from '../../hooks/useBackdropClose'
 import PageBack from '../shared/PageBack'
 import { profileDisplayName, profileFormName, profileFormPhone } from '../../hooks/useProfile'
 import PhoneInput from '../shared/PhoneInput'
+import SpellcheckInput from '../shared/SpellcheckInput'
 import ImageCropModal from '../shared/ImageCropModal'
 import {
   uploadUserAvatar,
@@ -294,8 +295,7 @@ export default function ProfileModal({ profile, employee, avatarUrl, onClose, on
 
             <label className="company-form__field company-form__field--full">
               <span className="company-form__label">Full Name</span>
-              <input
-                type="text"
+              <SpellcheckInput
                 className="company-form__input"
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}

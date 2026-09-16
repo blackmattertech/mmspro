@@ -18,6 +18,7 @@ import NavIcon from '../layout/NavIcon'
 import { formatPhoneDisplay } from '../shared/PhoneInput'
 import { CommentIcon, AttachmentIcon } from './TaskCardIcons'
 import TaskAssigneeAvatars, { resolveTaskAssignees } from './TaskAssigneeAvatars'
+import SpellcheckInput from '../shared/SpellcheckInput'
 
 const ACTIVITY_PREVIEW_COUNT = 5
 const ATTACHMENT_PREVIEW_COUNT = 3
@@ -300,7 +301,8 @@ export function TaskComments({ comments = [], onAdd, saving }) {
           setBody('')
         }}
       >
-        <textarea
+        <SpellcheckInput
+          multiline
           className="company-form__input task-detail-comments__input"
           rows={3}
           value={body}

@@ -1,9 +1,11 @@
-export function listEnvelope(items, { total, limit, offset }) {
+export function listEnvelope(items, extras = {}) {
+  const { total, limit, offset, ...rest } = extras
   return {
     items: items || [],
     total: Number.isFinite(total) ? total : (items?.length || 0),
     limit,
     offset,
+    ...rest,
   }
 }
 

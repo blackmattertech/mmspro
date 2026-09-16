@@ -1,16 +1,25 @@
 import { useMemo, useState } from 'react'
-import { Outlet, useLocation, useNavigate } from 'react-router-dom'
+import { NavLink, Navigate, Outlet, useLocation } from 'react-router-dom'
 import { useOrg } from '../../hooks/useOrg'
 import { usePermissions } from '../../hooks/usePermissions'
 import { useTableColumnPrefs } from '../../hooks/useTableColumnPrefs'
 import { orgPath } from '../../config/navigation'
-import { getWorkRequestActiveTab } from '../../config/workRequests'
+import {
+  defaultWorkRequestTab,
+  getWorkRequestActiveTab,
+  visibleWorkRequestTabs,
+} from '../../config/workRequests'
 import { WR_SORT_OPTIONS } from '../../lib/workRequestFilters'
+import { getWorkRequestsTemplate, bulkUploadWorkRequests } from '../../lib/api-work-requests'
 import TableFilterToolbar from '../shared/TableFilterToolbar'
 import TableColumnPicker from '../shared/TableColumnPicker'
 import PageBreadcrumbs from '../shared/PageBreadcrumbs'
 import NavIcon from '../layout/NavIcon'
 import { WORK_REQUEST_COLUMNS } from './workRequestColumns'
+import {
+  useMasterBulkUpload,
+  MasterBulkActions,
+} from '../company/MasterBulkUpload'
 import '../company/CompanyShared.css'
 import '../shared/TableFilterToolbar.css'
 import '../shared/TableColumnPicker.css'
@@ -30,18 +39,38 @@ const WR_FILTER_FIELDS = [
 
 export default function WorkRequestsLayout() {
   const location = useLocation()
-  const navigate = useNavigate()
   const { org } = useOrg()
-  const { canCreate } = usePermissions()
+  const { canRead, canCreate, loading: permsLoading } = usePermissions()
   const [search, setSearch] = useState('')
   const [filterField, setFilterField] = useState('')
   const [filterValue, setFilterValue] = useState('')
   const [sortBy, setSortBy] = useState('newest')
+  const [bulkReloadToken, setBulkReloadToken] = useState(0)
+  const canCreateRequest = canCreate('work_request_create') || canCreate('work_request')
+  const {
+    bulkInputRef,
+    bulkBusy,
+    bulkError,
+    bulkResult,
+    handleDownloadTemplate,
+    handleBulkFile,
+  } = useMasterBulkUpload({
+    downloadTemplate: getWorkRequestsTemplate,
+    upload: bulkUploadWorkRequests,
+    onSuccess: () => setBulkReloadToken((value) => value + 1),
+    defaultFilename: 'work-requests-template.xlsx',
+  })
 
+  const tabs = useMemo(
+    () => (permsLoading ? [] : visibleWorkRequestTabs(canRead)),
+    [canRead, permsLoading],
+  )
   const activeTab = getWorkRequestActiveTab(location.pathname)
   const listFilter = activeTab && activeTab !== 'create' ? activeTab : null
   const isCreatePage = activeTab === 'create'
   const isListPage = Boolean(listFilter)
+  const onIndex = /\/work-request\/?$/.test(location.pathname)
+  const fallbackTab = defaultWorkRequestTab(canRead)
 
   const {
     visibleColumnIds,
@@ -53,14 +82,28 @@ export default function WorkRequestsLayout() {
     WORK_REQUEST_COLUMNS,
   )
 
-  const canCreateRequest = canCreate('work_request_create') || canCreate('work_request')
-
   const outletContext = useMemo(() => ({
     search,
     fieldFilter: { field: filterField, value: filterValue },
     sortBy,
     visibleColumnIds,
-  }), [search, filterField, filterValue, sortBy, visibleColumnIds])
+    bulkReloadToken,
+  }), [search, filterField, filterValue, sortBy, visibleColumnIds, bulkReloadToken])
+
+  if (!permsLoading && onIndex && org?.slug && fallbackTab) {
+    return <Navigate to={orgPath(org.slug, fallbackTab.segment)} replace />
+  }
+
+  if (
+    !permsLoading
+    && activeTab
+    && org?.slug
+    && tabs.length
+    && !tabs.some((tab) => tab.id === activeTab)
+    && fallbackTab
+  ) {
+    return <Navigate to={orgPath(org.slug, fallbackTab.segment)} replace />
+  }
 
   return (
     <div className="company-page wo-page">
@@ -72,8 +115,40 @@ export default function WorkRequestsLayout() {
         </div>
       </header>
 
-      {isListPage && (
-        <div className="wr-page__toolbar">
+      <div className="wr-page__toolbar">
+        <div className="wr-page__toolbar-row wr-page__toolbar-row--tabs">
+          <nav className="wo-page__tabs" aria-label="Work request views">
+            {tabs.map((tab) => (
+              <NavLink
+                key={tab.id}
+                to={org?.slug ? orgPath(org.slug, tab.segment) : '#'}
+                end
+                className={({ isActive }) =>
+                  `wo-page__tab${isActive ? ' wo-page__tab--active' : ''}`
+                }
+              >
+                {tab.icon ? <NavIcon name={tab.icon} /> : null}
+                {tab.label}
+              </NavLink>
+            ))}
+          </nav>
+          {canCreateRequest && isCreatePage && (
+            <div className="wr-page__tab-actions">
+              <MasterBulkActions
+                onDownload={handleDownloadTemplate}
+                bulkBusy={bulkBusy}
+                bulkInputRef={bulkInputRef}
+                onFileChange={handleBulkFile}
+                title="Bulk upload work requests"
+                noun="work request"
+                bulkError={bulkError}
+                bulkResult={bulkResult}
+              />
+            </div>
+          )}
+        </div>
+
+        {isListPage && (
           <div className="wr-page__toolbar-row wr-page__toolbar-row--filters">
             <TableFilterToolbar
               search={{
@@ -91,15 +166,16 @@ export default function WorkRequestsLayout() {
               }}
               sort={{ value: sortBy, onChange: setSortBy, options: WR_SORT_OPTIONS }}
               actions={canCreateRequest ? (
-                <button
-                  type="button"
-                  className="wr-page__create-btn"
-                  onClick={() => org?.slug && navigate(orgPath(org.slug, 'work-request/create'))}
-                  aria-label="Create work request"
-                  title="Create work request"
-                >
-                  <NavIcon name="addSquare" />
-                </button>
+                <MasterBulkActions
+                  onDownload={handleDownloadTemplate}
+                  bulkBusy={bulkBusy}
+                  bulkInputRef={bulkInputRef}
+                  onFileChange={handleBulkFile}
+                  title="Bulk upload work requests"
+                  noun="work request"
+                  bulkError={bulkError}
+                  bulkResult={bulkResult}
+                />
               ) : null}
               columnPicker={(
                 <TableColumnPicker
@@ -112,15 +188,15 @@ export default function WorkRequestsLayout() {
               )}
             />
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
       <div className="wo-page__content">
         {isCreatePage ? (
           <Outlet />
         ) : (
           <div className="company-panel">
-            <Outlet context={outletContext} />
+            <Outlet key={listFilter} context={outletContext} />
           </div>
         )}
       </div>

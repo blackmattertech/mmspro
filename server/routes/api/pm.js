@@ -16,8 +16,15 @@ import {
   createPmPlan,
   updatePmPlan,
   deletePmPlan,
+  duplicatePmPlan,
   generateScheduledWorkOrder,
 } from '../../lib/pmService.js'
+import {
+  buildPmPlansTemplate,
+  bulkImportPmPlans,
+} from '../../lib/pmPlanBulkService.js'
+import { attachFailedFileToResult } from '../../lib/importErrorWorkbook.js'
+import { bufferFromBase64Upload, excelFilePayload } from '../../lib/excelTemplate.js'
 import {
   listChecklistTemplates,
   getChecklistTemplate,
@@ -290,6 +297,29 @@ router.get('/plans', canRead, async (req, res) => {
   }
 })
 
+router.get('/plans/template', canCreate, async (req, res) => {
+  try {
+    const buffer = await buildPmPlansTemplate(req.userProfile.org_id)
+    res.json(excelFilePayload('pm-plans-template.xlsx', buffer))
+  } catch (err) {
+    sendError(res, err)
+  }
+})
+
+router.post('/plans/import', canCreate, async (req, res) => {
+  try {
+    const buffer = bufferFromBase64Upload(req.body?.data)
+    const result = await bulkImportPmPlans(
+      req.userProfile.org_id,
+      req.userProfile.id,
+      buffer,
+    )
+    res.json(await attachFailedFileToResult(result, buffer, 'pm-plans-import-failed-rows.xlsx'))
+  } catch (err) {
+    sendError(res, err)
+  }
+})
+
 router.get('/plans/:id', canRead, async (req, res) => {
   try {
     const row = await getPmPlan(req.userProfile.org_id, req.params.id)
@@ -326,6 +356,19 @@ router.delete('/plans/:id', canDelete, async (req, res) => {
   try {
     await deletePmPlan(req.userProfile.org_id, req.params.id)
     res.status(204).end()
+  } catch (err) {
+    sendError(res, err)
+  }
+})
+
+router.post('/plans/:id/duplicate', canCreate, async (req, res) => {
+  try {
+    const row = await duplicatePmPlan(
+      req.userProfile.org_id,
+      req.userProfile.id,
+      req.params.id,
+    )
+    res.status(201).json(row)
   } catch (err) {
     sendError(res, err)
   }

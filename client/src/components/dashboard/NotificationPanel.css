@@ -97,6 +97,17 @@
   color: var(--color-medium-gray);
 }
 
+@media (max-width: 1024px) {
+  .notif-panel {
+    position: fixed;
+    top: calc(var(--mobile-topbar-height, 56px) + 8px);
+    right: 12px;
+    left: 12px;
+    width: auto;
+    max-height: min(70dvh, 480px);
+  }
+}
+
 .notif-panel__item {
   display: flex;
   flex-direction: column;

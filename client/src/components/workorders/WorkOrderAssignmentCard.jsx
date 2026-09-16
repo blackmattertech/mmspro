@@ -5,6 +5,7 @@ import { useEmployees } from '../../hooks/useEmployees'
 import EmployeeAvatar from '../company/EmployeeAvatar'
 import GooToggle from '../ui/GooToggle'
 import FilterableSelect from '../ui/FilterableSelect'
+import SpellcheckInput from '../shared/SpellcheckInput'
 import { formatPhoneDisplay } from '../shared/PhoneInput'
 import '../../components/company/CompanyShared.css'
 import './ManualWorkOrder.css'
@@ -124,9 +125,10 @@ function EmployeePicker({
   return (
     <>
       <div className="wo-assignment__toolbar">
-        <input
+        <SpellcheckInput
           type="search"
-          className="company-form__input wo-assignment__search"
+          wrapperClassName="wo-assignment__search"
+          className="company-form__input"
           placeholder="Search employees..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}

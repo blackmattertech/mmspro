@@ -20,6 +20,7 @@ import {
   writeFormDraft,
 } from '../../lib/formDraftStorage'
 import { INFO_BUTTON_ICON_SRC } from '../../lib/infoIcon'
+import SpellcheckInput from '../shared/SpellcheckInput'
 import '../company/CompanyShared.css'
 import './AssetsFields.css'
 
@@ -531,7 +532,7 @@ export default function FieldModal({
           {showSchemaFields && !isChild && (
           <label className="company-form__field">
             <span className="company-form__label">Name *</span>
-            <input
+            <SpellcheckInput
               className="company-form__input"
               value={form.name}
               onChange={(e) => updateForm({ name: e.target.value })}
@@ -771,7 +772,8 @@ export default function FieldModal({
                 <div className="asset-bulk-options-paste">
                   <label className="asset-bulk-options-paste__field">
                     <span className="company-form__label">Paste multiple at once</span>
-                    <textarea
+                    <SpellcheckInput
+                      multiline
                       className="company-form__input company-form__textarea asset-bulk-options-paste__textarea"
                       rows={4}
                       value={bulkPasteText}
@@ -802,7 +804,7 @@ export default function FieldModal({
               <div className="asset-dropdown-options">
                 {form.dropdown_options.map((opt, index) => (
                   <div key={index} className="asset-dropdown-options__row">
-                    <input
+                    <SpellcheckInput
                       className="company-form__input"
                       value={opt}
                       onChange={(e) => updateOption(index, e.target.value)}

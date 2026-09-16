@@ -3,6 +3,7 @@ import { useBackdropClose } from '../../hooks/useBackdropClose'
 import { useLocations } from '../../hooks/useLocations'
 import FilterableSelect from '../ui/FilterableSelect'
 import PageBack from '../shared/PageBack'
+import SpellcheckInput from '../shared/SpellcheckInput'
 import '../company/CompanyShared.css'
 
 const EMPTY = {
@@ -80,7 +81,7 @@ export default function WorkCenterModal({
           {error && <div className="company-alert">{error}</div>}
           <label className="company-form__field">
             <span className="company-form__label">Name *</span>
-            <input
+            <SpellcheckInput
               className="company-form__input"
               value={form.name}
               onChange={(e) => setForm((current) => ({ ...current, name: e.target.value }))}
@@ -112,7 +113,8 @@ export default function WorkCenterModal({
           </label>
           <label className="company-form__field company-form__field--full">
             <span className="company-form__label">Description</span>
-            <textarea
+            <SpellcheckInput
+              multiline
               className="company-form__input company-form__textarea"
               rows={3}
               value={form.description}

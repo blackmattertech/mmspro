@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useBackdropClose } from '../../hooks/useBackdropClose'
 import PageBack from '../shared/PageBack'
+import SpellcheckInput from '../shared/SpellcheckInput'
 import GooToggle from '../ui/GooToggle'
 import EditIcon from '../ui/EditIcon'
 import TrashIcon from '../ui/TrashIcon'
@@ -130,11 +131,11 @@ export default function PmActivityTypesModal({ onClose }) {
             <div className="company-form__grid company-form__grid--2">
               <label className="company-form__field">
                 <span className="company-form__label">Name *</span>
-                <input className="company-form__input" value={name} onChange={(e) => setName(e.target.value)} required />
+                <SpellcheckInput className="company-form__input" value={name} onChange={(e) => setName(e.target.value)} required />
               </label>
               <label className="company-form__field">
                 <span className="company-form__label">Description</span>
-                <input className="company-form__input" value={description} onChange={(e) => setDescription(e.target.value)} />
+                <SpellcheckInput className="company-form__input" value={description} onChange={(e) => setDescription(e.target.value)} />
               </label>
             </div>
             {error && <p className="company-alert">{error}</p>}

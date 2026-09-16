@@ -521,3 +521,19 @@
   font-weight: 600;
   color: var(--color-dark-navy);
 }
+
+@media (max-width: 768px) {
+  .pm-steps {
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    margin: 0 12px 4px;
+  }
+
+  .pm-steps__item {
+    flex: 0 0 auto;
+  }
+
+  .pm-field-row {
+    grid-template-columns: 18px minmax(0, 1fr);
+  }
+}

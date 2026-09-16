@@ -130,6 +130,17 @@
 }
 
 @media (max-width: 1024px) {
+  .company-modal-overlay--popup {
+    padding: 12px !important;
+    align-items: flex-end !important;
+  }
+
+  .company-modal--popup {
+    width: 100%;
+    max-width: 100%;
+    max-height: min(92dvh, 900px);
+  }
+
   .app-shell .modal-overlay:not(.image-crop-overlay):not(.task-voice-overlay):not(.task-meta-edit-overlay):not(.task-meta-settings-overlay):not(.company-modal-overlay--popup),
   .app-shell .company-modal-overlay:not(.image-crop-overlay):not(.task-voice-overlay):not(.task-meta-edit-overlay):not(.task-meta-settings-overlay):not(.company-modal-overlay--popup),
   .app-shell--sidebar-collapsed .modal-overlay:not(.image-crop-overlay):not(.task-voice-overlay):not(.task-meta-edit-overlay):not(.task-meta-settings-overlay):not(.company-modal-overlay--popup),

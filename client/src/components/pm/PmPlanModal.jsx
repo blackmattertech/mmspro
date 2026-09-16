@@ -13,6 +13,7 @@ import { PM_PRIORITIES, PM_SCHEDULE_TYPES, PM_CALENDAR_UNITS, CALENDAR_SCHEDULE_
 import DateField from '../ui/DateField'
 import FilterableSelect from '../ui/FilterableSelect'
 import GooToggle from '../ui/GooToggle'
+import SpellcheckInput from '../shared/SpellcheckInput'
 import TechnicianMultiSelect from '../workrequests/TechnicianMultiSelect'
 import PageBack from '../shared/PageBack'
 import '../company/CompanyShared.css'
@@ -324,7 +325,7 @@ export default function PmPlanModal({ plan, saving, onClose, onSave }) {
             <div className="company-form__grid company-form__grid--2">
               <label className="company-form__field" id="pm-field-name">
                 <span className="company-form__label">PM plan name *</span>
-                <input
+                <SpellcheckInput
                   className="company-form__input"
                   value={form.name}
                   onChange={(e) => setField('name', e.target.value)}
@@ -354,7 +355,7 @@ export default function PmPlanModal({ plan, saving, onClose, onSave }) {
               </label>
               <label className="company-form__field" id="pm-field-work-center">
                 <span className="company-form__label">Work center *</span>
-                <input
+                <SpellcheckInput
                   className="company-form__input"
                   value={form.work_center}
                   onChange={(e) => setField('work_center', e.target.value)}

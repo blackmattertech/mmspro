@@ -10,11 +10,15 @@ import { useVendors } from '../../hooks/useVendors'
 import { useAuth } from '../../hooks/useAuth'
 import { useProfile, profileDisplayName } from '../../hooks/useProfile'
 import { orgPath } from '../../config/navigation'
-import { createTask, getTask, updateTask } from '../../lib/api-tasks'
+import { createTask, getTask, updateTask, getTasksTemplate, bulkUploadTasks } from '../../lib/api-tasks'
 import { syncTaskAttachments, attachmentsFromTask } from '../../lib/taskAttachmentSync'
 import { validateTaskForm, buildTaskPayload } from '../../lib/taskFormSchema'
 import PageBack from '../../components/shared/PageBack'
 import TaskForm, { EMPTY_TASK_FORM } from '../../components/tasks/TaskForm'
+import {
+  useMasterBulkUpload,
+  MasterBulkActions,
+} from '../../components/company/MasterBulkUpload'
 import '../../components/company/CompanyShared.css'
 import '../../components/tasks/Tasks.css'
 
@@ -85,6 +89,18 @@ export default function TaskFormPage() {
   const [loading, setLoading] = useState(isEdit)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
+  const {
+    bulkInputRef,
+    bulkBusy,
+    bulkError,
+    bulkResult,
+    handleDownloadTemplate,
+    handleBulkFile,
+  } = useMasterBulkUpload({
+    downloadTemplate: getTasksTemplate,
+    upload: bulkUploadTasks,
+    defaultFilename: 'tasks-template.xlsx',
+  })
 
   useEffect(() => {
     if (!isEdit || !taskId) return undefined
@@ -181,13 +197,31 @@ export default function TaskFormPage() {
   return (
     <div className="company-page task-form-page">
       <header className="company-page__header">
-        <PageBack onClick={goBack} label="Tasks & Follow-ups" />
-        <h1 className="company-page__title">{isEdit ? 'Edit Task' : 'Create Task'}</h1>
-        <p className="company-page__subtitle">
-          {isEdit
-            ? 'Update task details per the Tasks & Follow-ups specification.'
-            : 'Create a task with category, assignment, schedule, references, and attachments.'}
-        </p>
+        <div className="company-page__header-bar">
+          <div className="company-page__header-main">
+            <PageBack onClick={goBack} label="Tasks & Follow-ups" />
+            <h1 className="company-page__title">{isEdit ? 'Edit Task' : 'Create Task'}</h1>
+            <p className="company-page__subtitle">
+              {isEdit
+                ? 'Update task details per the Tasks & Follow-ups specification.'
+                : 'Create a task with category, assignment, schedule, references, and attachments.'}
+            </p>
+          </div>
+          {!isEdit && canCreate('tasks_followups') && (
+            <div className="company-page__header-actions">
+              <MasterBulkActions
+                onDownload={handleDownloadTemplate}
+                bulkBusy={bulkBusy}
+                bulkInputRef={bulkInputRef}
+                onFileChange={handleBulkFile}
+                title="Bulk upload tasks"
+                noun="task"
+                bulkError={bulkError}
+                bulkResult={bulkResult}
+              />
+            </div>
+          )}
+        </div>
       </header>
       <div className="company-page__content task-form-page__content">
         <div className="company-panel task-form-page__panel">

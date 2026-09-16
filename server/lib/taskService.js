@@ -24,6 +24,8 @@ import {
 } from './taskAttachmentStorage.js'
 import { getSignedUrl, getSignedUrls } from './signedUrlCache.js'
 import { applyTaskVisibilityFilter } from './taskListQuery.js'
+import { tallyStatusCounts } from './statusCounts.js'
+import { clipToLimit, getTextFieldLimitsMap } from './textFieldLimits.js'
 import {
   ensureOrgTaskDefaultsCached,
   getCachedActiveTaskMeta,
@@ -148,6 +150,12 @@ async function ensureOrgTaskDefaults(orgId) {
 function trimOrNull(value) {
   const text = String(value ?? '').trim()
   return text || null
+}
+
+function clipTaskField(limits, fieldKey, value) {
+  const text = trimOrNull(value)
+  if (!text) return null
+  return clipToLimit(limits, fieldKey, text)
 }
 
 async function addActivity(orgId, taskId, actorProfileId, actionType, {
@@ -617,7 +625,7 @@ export async function listTasks(orgId, profileId, filters = {}, options = {}) {
   const limit = Math.min(200, Math.max(1, Number(filters.limit) || 50))
   const offset = Math.max(0, Number(filters.offset) || 0)
   const select = lean ? KANBAN_TASK_SELECT : TASK_LIST_SELECT
-  const empty = withCount ? { items: [], total: 0, limit, offset } : []
+  const empty = withCount ? { items: [], total: 0, limit, offset, status_counts: [] } : []
 
   let query = supabaseAdmin
     .from('tasks')
@@ -692,7 +700,15 @@ export async function listTasks(orgId, profileId, filters = {}, options = {}) {
     tags: tagsMap.get(row.id) || [],
     references: refsMap.get(row.id) || [],
   }))
-  if (withCount) return { items, total: count || 0, limit, offset }
+  if (withCount) {
+    return {
+      items,
+      total: count || 0,
+      limit,
+      offset,
+      status_counts: tallyStatusCounts(items, (row) => row.status_id || row.status?.id),
+    }
+  }
   return items
 }
 
@@ -793,12 +809,14 @@ export async function createTask(orgId, profileId, body) {
   const isTemplate = taskType === 'recurring'
   const taskNumber = await nextTaskNumber(orgId)
 
+  const fieldLimits = await getTextFieldLimitsMap(orgId)
+
   const insertPayload = {
     org_id: orgId,
     task_number: taskNumber,
     title: validated.title,
-    short_description: trimOrNull(body.short_description),
-    detailed_description: validated.detailedDescription,
+    short_description: clipTaskField(fieldLimits, 'short_description', body.short_description),
+    detailed_description: clipTaskField(fieldLimits, 'problem_description', validated.detailedDescription),
     visibility_type: visibilityType,
     task_type: taskType,
     status_id: body.status_id || statusId,
@@ -812,9 +830,9 @@ export async function createTask(orgId, profileId, body) {
     department_id: assignment.departmentId,
     location_id: assignment.locationId,
     is_recurrence_template: isTemplate,
-    follow_up_remarks: trimOrNull(body.follow_up_remarks),
+    follow_up_remarks: clipTaskField(fieldLimits, 'remarks', body.follow_up_remarks),
     next_action: trimOrNull(body.next_action),
-    completion_remarks: trimOrNull(body.completion_remarks),
+    completion_remarks: clipTaskField(fieldLimits, 'remarks', body.completion_remarks),
     tags: [],
     created_by_profile_id: profileId,
     updated_by_profile_id: profileId,
@@ -890,16 +908,25 @@ export async function updateTask(orgId, taskId, profileId, body) {
 
   validateTaskPayload(body, { isCreate: false, existing })
 
+  const fieldLimits = await getTextFieldLimitsMap(orgId)
   const patch = { updated_by_profile_id: profileId, updated_at: new Date().toISOString() }
   const trackFields = ['title', 'short_description', 'detailed_description', 'status_id', 'priority_id',
     'start_date', 'start_time', 'due_date', 'due_time', 'visibility_type', 'category_id', 'vendor_id',
     'follow_up_remarks', 'next_action', 'completion_remarks']
+  const limitedFields = {
+    short_description: 'short_description',
+    detailed_description: 'problem_description',
+    follow_up_remarks: 'remarks',
+    completion_remarks: 'remarks',
+  }
 
   for (const field of trackFields) {
     if (body[field] !== undefined) {
       const oldVal = existing[field]
       let newVal = body[field]
-      if (['follow_up_remarks', 'next_action', 'completion_remarks', 'short_description', 'detailed_description'].includes(field)) {
+      if (limitedFields[field]) {
+        newVal = clipTaskField(fieldLimits, limitedFields[field], newVal)
+      } else if (field === 'next_action') {
         newVal = trimOrNull(newVal)
       }
       if (oldVal !== newVal) {
@@ -1280,7 +1307,7 @@ export async function getTasksBootstrap(orgId, profileId, filters = {}, { view =
       queryActiveTaskMeta(orgId),
       listTasks(orgId, profileId, filters, { lean: true, skipEnsure: true, withCount: true }),
     ])
-    return { ...meta, tasks: page.items, total: page.total, board: null }
+    return { ...meta, tasks: page.items, total: page.total, board: null, status_counts: page.status_counts || [] }
   }
 
   const [meta, tasks] = await Promise.all([
@@ -1289,5 +1316,11 @@ export async function getTasksBootstrap(orgId, profileId, filters = {}, { view =
   ])
 
   const board = await buildKanbanFromTasks(orgId, meta.statuses, tasks)
-  return { ...meta, board, tasks: null }
+  const status_counts = (board.columns || []).map((column) => ({
+    status: column.status?.id,
+    count: (column.tasks || []).length,
+    label: column.status?.name,
+    color: column.status?.color,
+  }))
+  return { ...meta, board, tasks: null, status_counts }
 }

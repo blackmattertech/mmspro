@@ -1,65 +1,56 @@
-import { lazy, Suspense } from 'react'
-import { WORK_REQUEST_MODULE_KEYS } from './lib/accessModules'
+import { Suspense } from 'react'
+import { WORK_REQUEST_MODULE_KEYS, REPORT_MODULE_KEYS } from './lib/accessModules'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { lazyPage } from './lib/lazyPage'
 import { AuthProvider } from './hooks/useAuth'
 import { OrgProvider } from './hooks/useOrg'
 import { ProtectedRoute, OrgRoute, AdminRoute, ModuleRoute } from './components/shared/ProtectedRoute'
 import { LegacyAppRedirect, RootRedirect } from './components/shared/OrgRedirect'
-const AppLayout = lazy(() => import('./layouts/AppLayout'))
-const AdminLayout = lazy(() => import('./layouts/AdminLayout'))
-const Login = lazy(() => import('./pages/auth/Login'))
-const ResetPassword = lazy(() => import('./pages/auth/ResetPassword'))
-const Dashboard = lazy(() => import('./pages/app/Dashboard'))
-const Calendar = lazy(() => import('./pages/app/Calendar'))
-const Company = lazy(() => import('./pages/app/Company'))
-const Assets = lazy(() => import('./pages/app/Assets'))
-const Equipment = lazy(() => import('./pages/app/Equipment'))
-const WorkOrdersRouteLayout = lazy(() => import('./components/workorders/WorkOrdersRouteLayout'))
-const PmScheduledRouteLayout = lazy(() => import('./components/workorders/PmScheduledRouteLayout'))
-const ManualWorkOrders = lazy(() => import('./pages/app/ManualWorkOrders'))
-const ManualWorkOrderCreate = lazy(() => import('./pages/app/ManualWorkOrderCreate'))
-const ReceivedWorkOrders = lazy(() => import('./pages/app/ReceivedWorkOrders'))
-const AssignedWorkOrders = lazy(() => import('./pages/app/AssignedWorkOrders'))
-const ScheduledWorkOrders = lazy(() => import('./pages/app/ScheduledWorkOrders'))
-const PlaceholderPage = lazy(() => import('./pages/app/PlaceholderPage'))
-const DailyLogsReport = lazy(() => import('./pages/app/reports/DailyLogsReport'))
-const PlantWiseReport = lazy(() => import('./pages/app/reports/PlantWiseReport'))
-const OpenLogsReport = lazy(() => import('./pages/app/reports/OpenLogsReport'))
-const CompletedLogsReport = lazy(() => import('./pages/app/reports/CompletedLogsReport'))
-const OverdueWorkOrdersReport = lazy(() => import('./pages/app/reports/OverdueWorkOrdersReport'))
-const TasksRouteLayout = lazy(() => import('./components/tasks/TasksRouteLayout'))
-const TasksManager = lazy(() => import('./pages/app/TasksManager'))
-const TaskDetailPage = lazy(() => import('./pages/app/TaskDetailPage'))
-const TaskFormPage = lazy(() => import('./pages/app/TaskFormPage'))
-const WarrantyManager = lazy(() => import('./pages/app/WarrantyManager'))
-const WarrantyDetailPage = lazy(() => import('./pages/app/WarrantyDetailPage'))
-const WarrantyFormPage = lazy(() => import('./pages/app/WarrantyFormPage'))
-const Vendors = lazy(() => import('./pages/app/Vendors'))
-const VendorDetailPage = lazy(() => import('./pages/app/VendorDetailPage'))
-const Others = lazy(() => import('./pages/app/Others'))
-const OthersStatusTypes = lazy(() => import('./pages/app/OthersStatusTypes'))
-const OthersStatusManage = lazy(() => import('./pages/app/OthersStatusManage'))
-const OthersChecklists = lazy(() => import('./pages/app/OthersChecklists'))
-const OthersChecklistBuilder = lazy(() => import('./pages/app/OthersChecklistBuilder'))
-const ConfigurationImport = lazy(() => import('./pages/app/ConfigurationImport'))
-const WorkRequestCreate = lazy(() => import('./pages/app/WorkRequestCreate'))
-const WorkRequestListPage = lazy(() => import('./pages/app/WorkRequestListPage'))
-const WorkRequestsRouteLayout = lazy(() => import('./components/workrequests/WorkRequestsRouteLayout'))
-const RolesAccess = lazy(() => import('./pages/app/RolesAccess'))
-const OrgHomeRedirect = lazy(() => import('./components/shared/OrgHomeRedirect'))
-const AdminDashboard = lazy(() => import('./pages/admin/Dashboard'))
-const Organizations = lazy(() => import('./pages/admin/Organizations'))
-const AdminOrgAssets = lazy(() => import('./pages/admin/AdminOrgAssets'))
-const AdminOrgEquipment = lazy(() => import('./pages/admin/AdminOrgEquipment'))
-const Users = lazy(() => import('./pages/admin/Users'))
+const AppLayout = lazyPage(() => import('./layouts/AppLayout'))
+const AdminLayout = lazyPage(() => import('./layouts/AdminLayout'))
+const Login = lazyPage(() => import('./pages/auth/Login'))
+const ResetPassword = lazyPage(() => import('./pages/auth/ResetPassword'))
+const Dashboard = lazyPage(() => import('./pages/app/Dashboard'))
+const Calendar = lazyPage(() => import('./pages/app/Calendar'))
+const Company = lazyPage(() => import('./pages/app/Company'))
+const Assets = lazyPage(() => import('./pages/app/Assets'))
+const Equipment = lazyPage(() => import('./pages/app/Equipment'))
+const WorkOrdersRouteLayout = lazyPage(() => import('./components/workorders/WorkOrdersRouteLayout'))
+const PmScheduledRouteLayout = lazyPage(() => import('./components/workorders/PmScheduledRouteLayout'))
+const ManualWorkOrders = lazyPage(() => import('./pages/app/ManualWorkOrders'))
+const ManualWorkOrderCreate = lazyPage(() => import('./pages/app/ManualWorkOrderCreate'))
+const ReceivedWorkOrders = lazyPage(() => import('./pages/app/ReceivedWorkOrders'))
+const AssignedWorkOrders = lazyPage(() => import('./pages/app/AssignedWorkOrders'))
+const ScheduledWorkOrders = lazyPage(() => import('./pages/app/ScheduledWorkOrders'))
+const PlaceholderPage = lazyPage(() => import('./pages/app/PlaceholderPage'))
+const ReportPage = lazyPage(() => import('./pages/app/reports/ReportPage'))
+const TasksRouteLayout = lazyPage(() => import('./components/tasks/TasksRouteLayout'))
+const TasksManager = lazyPage(() => import('./pages/app/TasksManager'))
+const TaskDetailPage = lazyPage(() => import('./pages/app/TaskDetailPage'))
+const TaskFormPage = lazyPage(() => import('./pages/app/TaskFormPage'))
+const WarrantyManager = lazyPage(() => import('./pages/app/WarrantyManager'))
+const WarrantyDetailPage = lazyPage(() => import('./pages/app/WarrantyDetailPage'))
+const WarrantyFormPage = lazyPage(() => import('./pages/app/WarrantyFormPage'))
+const Vendors = lazyPage(() => import('./pages/app/Vendors'))
+const VendorDetailPage = lazyPage(() => import('./pages/app/VendorDetailPage'))
+const Others = lazyPage(() => import('./pages/app/Others'))
+const OthersStatusTypes = lazyPage(() => import('./pages/app/OthersStatusTypes'))
+const OthersStatusManage = lazyPage(() => import('./pages/app/OthersStatusManage'))
+const OthersChecklists = lazyPage(() => import('./pages/app/OthersChecklists'))
+const OthersChecklistBuilder = lazyPage(() => import('./pages/app/OthersChecklistBuilder'))
+const OthersCharacterLimits = lazyPage(() => import('./pages/app/OthersCharacterLimits'))
+const ConfigurationImport = lazyPage(() => import('./pages/app/ConfigurationImport'))
+const WorkRequestCreate = lazyPage(() => import('./pages/app/WorkRequestCreate'))
+const WorkRequestListPage = lazyPage(() => import('./pages/app/WorkRequestListPage'))
+const WorkRequestsRouteLayout = lazyPage(() => import('./components/workrequests/WorkRequestsRouteLayout'))
+const RolesAccess = lazyPage(() => import('./pages/app/RolesAccess'))
+const OrgHomeRedirect = lazyPage(() => import('./components/shared/OrgHomeRedirect'))
+const AdminDashboard = lazyPage(() => import('./pages/admin/Dashboard'))
+const Organizations = lazyPage(() => import('./pages/admin/Organizations'))
+const AdminOrgAssets = lazyPage(() => import('./pages/admin/AdminOrgAssets'))
+const AdminOrgEquipment = lazyPage(() => import('./pages/admin/AdminOrgEquipment'))
+const Users = lazyPage(() => import('./pages/admin/Users'))
 
-const reportRoutes = [
-  { slug: 'daily-logs', moduleKey: 'reports_daily_logs', element: <DailyLogsReport /> },
-  { slug: 'plant-wise', moduleKey: 'reports_plant_wise', element: <PlantWiseReport /> },
-  { slug: 'open-logs', moduleKey: 'reports_open_logs', element: <OpenLogsReport /> },
-  { slug: 'completed-logs', moduleKey: 'reports_completed_logs', element: <CompletedLogsReport /> },
-  { slug: 'overdue', moduleKey: 'reports_overdue', element: <OverdueWorkOrdersReport /> },
-]
 const masterRoutes = ['order', 'activity']
 const companyPageModules = ['company', 'locations', 'departments', 'work_centers', 'employees']
 const workOrderModules = [
@@ -88,7 +79,7 @@ export default function App() {
   return (
     <AuthProvider>
       <OrgProvider>
-        <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+        <BrowserRouter future={{ v7_relativeSplatPath: true }}>
           <Routes>
             <Route path="/login" element={withSuspense(<Login />)} />
             <Route path="/reset-password" element={withSuspense(<ResetPassword />)} />
@@ -111,6 +102,7 @@ export default function App() {
                 path="work-request"
                 element={withModule([...WORK_REQUEST_MODULE_KEYS, 'work_request'], <WorkRequestsRouteLayout />)}
               >
+                <Route index element={<Navigate to="create" replace />} />
                 <Route
                   path="create"
                   element={withModule(['work_request_create', 'work_request'], <WorkRequestCreate />)}
@@ -173,6 +165,7 @@ export default function App() {
               <Route path="masters/others/status/:entityType" element={withSuspense(<OthersStatusManage />)} />
               <Route path="masters/others/checklists" element={withSuspense(<OthersChecklists />)} />
               <Route path="masters/others/checklists/:checklistId" element={withSuspense(<OthersChecklistBuilder />)} />
+              <Route path="masters/others/character-limits" element={withSuspense(<OthersCharacterLimits />)} />
               <Route
                 path="work-orders/scheduled"
                 element={withModule('work_orders_scheduled', <PmScheduledRouteLayout />)}
@@ -180,19 +173,21 @@ export default function App() {
                 <Route index element={withSuspense(<ScheduledWorkOrders />)} />
               </Route>
               <Route path="work-orders" element={withModule(workOrderModules, <WorkOrdersRouteLayout />)}>
+                <Route index element={<Navigate to="received" replace />} />
                 <Route path="received" element={withModule('work_orders_received', <ReceivedWorkOrders />)} />
                 <Route path="assigned" element={withModule('work_orders_assigned', <AssignedWorkOrders />)} />
                 <Route path="manual" element={withModule('work_orders_manual', <ManualWorkOrders />)} />
                 <Route path="manual/create" element={withModule('work_orders_manual', <ManualWorkOrderCreate />)} />
                 <Route path="manual/:workOrderId/edit" element={withModule('work_orders_manual', <ManualWorkOrderCreate />)} />
               </Route>
-              {reportRoutes.map((route) => (
-                <Route
-                  key={route.slug}
-                  path={`reports/${route.slug}`}
-                  element={withModule([route.moduleKey, 'reports'], route.element)}
-                />
-              ))}
+              <Route
+                path="reports"
+                element={withModule(REPORT_MODULE_KEYS, <ReportPage />)}
+              />
+              <Route
+                path="reports/:legacy"
+                element={<Navigate to=".." relative="path" replace />}
+              />
               {masterRoutes.map((r) => (
                 <Route
                   key={r}

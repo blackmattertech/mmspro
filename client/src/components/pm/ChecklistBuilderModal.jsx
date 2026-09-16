@@ -3,6 +3,7 @@ import { useBackdropClose } from '../../hooks/useBackdropClose'
 import PageBack from '../shared/PageBack'
 import FilterableSelect from '../ui/FilterableSelect'
 import GooToggle from '../ui/GooToggle'
+import SpellcheckInput from '../shared/SpellcheckInput'
 import EditIcon from '../ui/EditIcon'
 import TrashIcon from '../ui/TrashIcon'
 import {
@@ -180,7 +181,7 @@ export default function ChecklistBuilderModal({
             <div className="company-form__grid company-form__grid--2">
               <label className="company-form__field">
                 <span className="company-form__label">Name *</span>
-                <input
+                <SpellcheckInput
                   className="company-form__input"
                   value={form.name}
                   onChange={(e) => setForm({ ...form, name: e.target.value })}
@@ -196,7 +197,8 @@ export default function ChecklistBuilderModal({
               </div>
               <label className="company-form__field company-form__field--full">
                 <span className="company-form__label">Description</span>
-                <textarea
+                <SpellcheckInput
+                  multiline
                   className="company-form__input company-form__textarea"
                   rows={2}
                   value={form.description}
@@ -249,7 +251,7 @@ export default function ChecklistBuilderModal({
               <div className="company-form__grid company-form__grid--2">
                 <label className="company-form__field">
                   <span className="company-form__label">Field name *</span>
-                  <input
+                  <SpellcheckInput
                     className="company-form__input"
                     value={fieldDraft.name}
                     onChange={(e) => setFieldDraft({ ...fieldDraft, name: e.target.value })}
@@ -270,7 +272,8 @@ export default function ChecklistBuilderModal({
                 {OPTION_CHECKLIST_FIELD_TYPES.has(fieldDraft.field_type) && (
                   <label className="company-form__field company-form__field--full">
                     <span className="company-form__label">Options (one per line)</span>
-                    <textarea
+                    <SpellcheckInput
+                      multiline
                       className="company-form__input company-form__textarea"
                       rows={4}
                       value={fieldDraft.optionsText}

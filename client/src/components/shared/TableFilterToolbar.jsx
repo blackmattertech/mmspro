@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { isEventInFixedPopover, useFixedPopover } from '../../hooks/useFixedPopover'
 import { assetUrl } from '../../lib/assets'
+import SpellcheckInput from './SpellcheckInput'
 import './TableFilterToolbar.css'
 
 const FILTER_ICON_URL = assetUrl('Assets/icons/filter3-outline.svg')
@@ -121,8 +122,7 @@ function FilterMenu({ filter }) {
           {selectedField && (
             <label className="table-filter-menu__field">
               <span className="table-filter-menu__label">{selectedField.label}</span>
-              <input
-                type="text"
+              <SpellcheckInput
                 className="company-form__input"
                 value={value}
                 onChange={(e) => filter.onValueChange?.(e.target.value)}
@@ -212,6 +212,7 @@ export default function TableFilterToolbar({
   className = '',
   search,
   filter,
+  filterSlot = null,
   sort,
   actions,
   columnPicker,
@@ -225,7 +226,8 @@ export default function TableFilterToolbar({
   return (
     <div className={`table-filter-toolbar wo-page__bar-controls ${className}`.trim()}>
       {search && (
-        <input
+        <SpellcheckInput
+          variant="inline"
           type="search"
           id={search.id}
           className="company-form__input wo-page__search"
@@ -236,6 +238,7 @@ export default function TableFilterToolbar({
         />
       )}
 
+      {filterSlot}
       {filter?.fields?.length > 0 && <FilterMenu filter={filter} />}
       {sort?.options?.length > 0 && <SortMenu sort={sort} />}
 

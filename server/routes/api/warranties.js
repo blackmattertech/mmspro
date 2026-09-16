@@ -15,6 +15,12 @@ import {
   updateWarrantyDocumentLabel,
   deleteWarrantyDocument,
 } from '../../lib/warrantyService.js'
+import {
+  buildWarrantiesTemplate,
+  bulkImportWarranties,
+} from '../../lib/warrantyBulkService.js'
+import { attachFailedFileToResult } from '../../lib/importErrorWorkbook.js'
+import { bufferFromBase64Upload, excelFilePayload } from '../../lib/excelTemplate.js'
 
 const router = Router()
 
@@ -44,6 +50,25 @@ router.get('/', canRead, async (req, res) => {
     res.json(rows)
   } catch (err) {
     res.status(500).json({ error: err.message })
+  }
+})
+
+router.get('/template', canCreate, async (req, res) => {
+  try {
+    const buffer = await buildWarrantiesTemplate(req.userProfile.org_id)
+    res.json(excelFilePayload('warranties-template.xlsx', buffer))
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message })
+  }
+})
+
+router.post('/import', canCreate, async (req, res) => {
+  try {
+    const buffer = bufferFromBase64Upload(req.body?.data)
+    const result = await bulkImportWarranties(req.userProfile.org_id, buffer)
+    res.json(await attachFailedFileToResult(result, buffer, 'warranties-import-failed-rows.xlsx'))
+  } catch (err) {
+    res.status(err.status || 400).json({ error: err.message })
   }
 })
 

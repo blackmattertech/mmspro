@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { useBackdropClose } from '../../hooks/useBackdropClose'
 import { useWorkOrderDetail } from '../../hooks/useWorkOrderList'
 import { useOrg } from '../../hooks/useOrg'
+import { useTextFieldLimits } from '../../hooks/useTextFieldLimits'
 import {
   approveWorkRequest,
   rejectWorkRequest,
@@ -22,6 +23,8 @@ import DateField from '../ui/DateField'
 import FilterableSelect from '../ui/FilterableSelect'
 import WorkRequestAttachmentsField from './WorkRequestAttachmentsField'
 import TechnicianMultiSelect from './TechnicianMultiSelect'
+import SpellcheckInput from '../shared/SpellcheckInput'
+import FormLabel from '../shared/FormLabel'
 import '../company/CompanyShared.css'
 import '../workorders/WorkOrdersPage.css'
 import '../workorders/ManualWorkOrder.css'
@@ -193,6 +196,7 @@ export default function WorkRequestDetailModal({
 }) {
   const { detail, loading, error, reload } = useWorkOrderDetail(requestId, fetchWorkRequest)
   const { org } = useOrg()
+  const { maxLength } = useTextFieldLimits()
   const handleBackdropClick = useBackdropClose(onClose)
   const [employees, setEmployees] = useState([])
   const [assigneeIds, setAssigneeIds] = useState([])
@@ -482,7 +486,8 @@ export default function WorkRequestDetailModal({
                     <div className="wr-assign-block">
                       <label className="company-form__field company-form__field--full">
                         <span className="company-form__label">Your reply</span>
-                        <textarea
+                        <SpellcheckInput
+                          multiline
                           className="company-form__input company-form__textarea"
                           rows={3}
                           value={replyMessage}
@@ -574,7 +579,7 @@ export default function WorkRequestDetailModal({
                                 required
                               />
                             ) : (
-                              <input
+                              <SpellcheckInput
                                 className="company-form__input"
                                 value={workCenter}
                                 onChange={(e) => setWorkCenter(e.target.value)}
@@ -615,12 +620,14 @@ export default function WorkRequestDetailModal({
                           </label>
                         </div>
                         <label className="company-form__field company-form__field--full">
-                          <span className="company-form__label">Assignment remarks</span>
-                          <textarea
+                          <FormLabel limit={maxLength('assignment_remarks')}>Assignment remarks</FormLabel>
+                          <SpellcheckInput
+                            multiline
                             className="company-form__input company-form__textarea"
                             rows={2}
                             value={assignmentRemarks}
                             onChange={(e) => setAssignmentRemarks(e.target.value)}
+                            maxLength={maxLength('assignment_remarks')}
                           />
                         </label>
                         <div className="wr-actions">
@@ -658,7 +665,8 @@ export default function WorkRequestDetailModal({
                       <div className="wr-assign-block">
                         <label className="company-form__field company-form__field--full">
                           <span className="company-form__label">Message to requester</span>
-                          <textarea
+                          <SpellcheckInput
+                            multiline
                             className="company-form__input company-form__textarea"
                             rows={3}
                             value={infoMessage}
@@ -735,7 +743,8 @@ export default function WorkRequestDetailModal({
               </p>
               <label className="company-form__field">
                 <span className="company-form__label">Rejection reason *</span>
-                <textarea
+                <SpellcheckInput
+                  multiline
                   className="company-form__input company-form__textarea"
                   rows={4}
                   value={rejectReason}

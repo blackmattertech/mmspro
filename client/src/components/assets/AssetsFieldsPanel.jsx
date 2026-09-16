@@ -24,6 +24,7 @@ import FieldModal from './FieldModal'
 import AssetFieldSortMenu from './AssetFieldSortMenu'
 import AssetFormLayoutModal from './AssetFormLayoutModal'
 import TablePagination from '../shared/TablePagination'
+import SpellcheckInput from '../shared/SpellcheckInput'
 import FilterableSelect from '../ui/FilterableSelect'
 import { useTablePagination } from '../../hooks/useTablePagination'
 import '../company/CompanyShared.css'
@@ -553,7 +554,7 @@ export default function AssetsFieldsPanel({
         <div className="asset-field-filters__search-group">
           <label className="company-filter asset-field-filters__search">
             <span>Search</span>
-            <input
+            <SpellcheckInput
               type="search"
               className="company-form__input"
               value={search}

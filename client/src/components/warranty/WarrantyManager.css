@@ -377,6 +377,12 @@
     grid-template-columns: 1fr;
   }
 
+  .warranty-manager__actions {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+}
+
   .warranty-form__row--split .warranty-form__label--sub,
   .warranty-form__row--pair .warranty-form__label--sub {
     margin-top: 4px;

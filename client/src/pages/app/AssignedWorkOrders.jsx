@@ -11,7 +11,7 @@ import WorkOrdersTable from '../../components/workorders/WorkOrdersTable'
 import '../../components/company/CompanyShared.css'
 import '../../components/workorders/WorkOrdersPage.css'
 
-const ASSIGNED_COLUMNS = ['wo_number', 'summary', 'assignees', 'created_at', 'status']
+const ASSIGNED_COLUMNS = ['wo_number', 'summary', 'assignees', 'created_at', 'status', 'progress']
 
 export default function AssignedWorkOrders() {
   const [selectedId, setSelectedId, closeSelected] = useOpenQueryId()
@@ -29,7 +29,7 @@ export default function AssignedWorkOrders() {
     }),
     [debouncedSearch, pagination.pageSize, pagination.offset],
   )
-  const { orders, total, loading, error } = useWorkOrderList(fetchOrders)
+  const { orders, total, statusCounts, loading, error } = useWorkOrderList(fetchOrders)
   useEffect(() => { setListTotal(total) }, [total])
 
   if (loading) {
@@ -49,6 +49,7 @@ export default function AssignedWorkOrders() {
         serverPaged
         columns={ASSIGNED_COLUMNS}
         tableId="work-orders-assigned"
+        statusCounts={statusCounts}
         emptyTitle="No work orders assigned yet."
         emptyHint="Work orders you requested or created and assigned to someone else appear here."
         onView={setSelectedId}

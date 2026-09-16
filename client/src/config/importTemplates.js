@@ -10,15 +10,21 @@ import {
 } from '../lib/api'
 import { getEquipmentTemplate, bulkUploadEquipment } from '../lib/api-equipment'
 import { getVendorsTemplate, bulkUploadVendors } from '../lib/api-vendors'
+import { getWorkRequestsTemplate, bulkUploadWorkRequests } from '../lib/api-work-requests'
+import { getWorkOrdersTemplate, bulkUploadWorkOrders } from '../lib/api-work-orders'
+import { getPmPlansTemplate, bulkUploadPmPlans } from '../lib/api-pm'
+import { getTasksTemplate, bulkUploadTasks } from '../lib/api-tasks'
+import { getWarrantiesTemplate, bulkUploadWarranties } from '../lib/api-warranties'
 
-/** @typedef {'locations' | 'departments' | 'employees' | 'areas' | 'equipment' | 'vendors'} ImportTemplateId */
+/** @typedef {'locations' | 'departments' | 'employees' | 'areas' | 'equipment' | 'vendors' | 'work_requests' | 'work_orders' | 'pm_plans' | 'tasks' | 'warranties'} ImportTemplateId */
 
 /**
  * @typedef {Object} ImportTemplateConfig
  * @property {ImportTemplateId} id
  * @property {string} label
  * @property {string} description
- * @property {string} moduleKey
+ * @property {string} [moduleKey]
+ * @property {string[]} [moduleKeys]
  * @property {boolean} [showWithoutPermission]
  * @property {string[]} instructions
  * @property {() => Promise<{ filename: string, contentType: string, data: string }>} downloadTemplate
@@ -70,6 +76,35 @@ export const IMPORT_PREVIEW_COLUMNS = {
     { key: 'mobile', label: 'Mobile' },
     { key: 'city', label: 'City' },
     { key: 'gstin', label: 'GSTIN' },
+  ],
+  work_requests: [
+    { key: 'name', label: 'Request' },
+    { key: 'from', label: 'From' },
+    { key: 'to', label: 'To' },
+    { key: 'type', label: 'Type' },
+  ],
+  work_orders: [
+    { key: 'name', label: 'Work order' },
+    { key: 'department', label: 'Department' },
+    { key: 'location', label: 'Location' },
+    { key: 'status', label: 'Status' },
+  ],
+  pm_plans: [
+    { key: 'name', label: 'Plan' },
+    { key: 'activity', label: 'Activity' },
+    { key: 'equipment', label: 'Equipment' },
+    { key: 'status', label: 'Status' },
+  ],
+  tasks: [
+    { key: 'name', label: 'Task' },
+    { key: 'category', label: 'Category' },
+    { key: 'priority', label: 'Priority' },
+    { key: 'visibility', label: 'Visibility' },
+  ],
+  warranties: [
+    { key: 'name', label: 'S.No' },
+    { key: 'make', label: 'Make' },
+    { key: 'vendor', label: 'Vendor' },
   ],
 }
 
@@ -170,6 +205,77 @@ export const IMPORT_TEMPLATES = [
     downloadTemplate: getVendorsTemplate,
     upload: bulkUploadVendors,
     failedFilename: 'vendor-master-import-failed-rows.xlsx',
+  },
+  {
+    id: 'work_requests',
+    label: 'Work Requests',
+    description: 'Bulk create work requests from a sample Excel file.',
+    moduleKey: 'work_request_create',
+    instructions: [
+      'Download the Work Requests sample Excel file. It includes every form field, plus child and grandchild fields named Parent → Child.',
+      'Fill Request Type, departments, equipment, descriptions, and priority from Valid values. Child fields appear as extra columns.',
+      'Save As can be Submit or Draft. Upload the .xlsx file from this page or the Work Requests toolbar.',
+    ],
+    downloadTemplate: getWorkRequestsTemplate,
+    upload: bulkUploadWorkRequests,
+    failedFilename: 'work-requests-import-failed-rows.xlsx',
+  },
+  {
+    id: 'work_orders',
+    label: 'Work Orders',
+    description: 'Bulk create manual work orders from a sample Excel file.',
+    moduleKey: 'work_orders',
+    moduleKeys: ['work_orders', 'work_orders_manual'],
+    instructions: [
+      'Download the Work Orders sample Excel file. It includes assignment fields plus every parent, child, and grandchild form field.',
+      'Enter short description, priority, location, department, equipment, and assigned technicians from Valid values.',
+      'Dependent fields are named Parent → Child. Status can be Draft or Assigned.',
+    ],
+    downloadTemplate: getWorkOrdersTemplate,
+    upload: bulkUploadWorkOrders,
+    failedFilename: 'work-orders-import-failed-rows.xlsx',
+  },
+  {
+    id: 'pm_plans',
+    label: 'PM Plans',
+    description: 'Bulk create preventive maintenance plans from a sample Excel file.',
+    moduleKey: 'work_orders_scheduled',
+    instructions: [
+      'Download the PM Plans sample Excel file.',
+      'Name, department, activity type, and equipment are required. Use Valid values for schedule type, interval, technicians, and checklist.',
+      'Upload the .xlsx file from this page or the PM Plans toolbar.',
+    ],
+    downloadTemplate: getPmPlansTemplate,
+    upload: bulkUploadPmPlans,
+    failedFilename: 'pm-plans-import-failed-rows.xlsx',
+  },
+  {
+    id: 'tasks',
+    label: 'Tasks & Follow-ups',
+    description: 'Bulk create one-time tasks from a sample Excel file.',
+    moduleKey: 'tasks_followups',
+    instructions: [
+      'Download the Tasks sample Excel file. It includes recurrence, reminders, links, and references as child columns.',
+      'Title, description, category, priority, start date, and due date are required.',
+      'Use Reminder 1/2, Link 1/2, and Reference 1/2 columns for child rows. Recurring tasks also use the recurrence columns.',
+    ],
+    downloadTemplate: getTasksTemplate,
+    upload: bulkUploadTasks,
+    failedFilename: 'tasks-import-failed-rows.xlsx',
+  },
+  {
+    id: 'warranties',
+    label: 'Warranty Manager',
+    description: 'Bulk create warranty records from a sample Excel file.',
+    moduleKey: 'warranty_manager',
+    instructions: [
+      'Download the Warranties sample Excel file. Product lines are child columns (Item 1, Item 2, Item 3).',
+      'Fill purchase and warranty dates, vendor, and at least one item product name.',
+      'Upload the completed .xlsx file from this page or Warranty Manager.',
+    ],
+    downloadTemplate: getWarrantiesTemplate,
+    upload: bulkUploadWarranties,
+    failedFilename: 'warranties-import-failed-rows.xlsx',
   },
 ]
 

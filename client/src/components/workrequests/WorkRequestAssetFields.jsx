@@ -18,6 +18,9 @@ import {
   visibleAssetSections,
 } from '../../lib/workRequestAssetPicker'
 import FilterableSelect from '../ui/FilterableSelect'
+import SpellcheckInput from '../shared/SpellcheckInput'
+import FormLabel from '../shared/FormLabel'
+import { useTextFieldLimits } from '../../hooks/useTextFieldLimits'
 import '../assets/AssetsFields.css'
 import '../company/CompanyShared.css'
 
@@ -37,6 +40,8 @@ function AssetFieldInput({
 }) {
   const label = field.is_required ? `${field.name} *` : field.name
   const hint = dependencyLabel(field)
+  const { maxLengthForField } = useTextFieldLimits()
+  const limit = maxLengthForField(field)
 
   if (readOnly) {
     return (
@@ -50,16 +55,18 @@ function AssetFieldInput({
   if (field.field_type === 'textarea') {
     return (
       <label className="company-form__field company-form__field--full">
-        <span className="company-form__label">{label}</span>
+        <FormLabel limit={limit}>{label}</FormLabel>
         {hint && (
           <span className="wo-manual__intro" style={{ margin: '0 0 6px', fontSize: 12 }}>{hint}</span>
         )}
-        <textarea
+        <SpellcheckInput
+          multiline
           className="company-form__input company-form__textarea"
           rows={3}
           value={value || ''}
           onChange={(e) => onChange(e.target.value)}
           disabled={disabled}
+          maxLength={limit}
         />
       </label>
     )
@@ -162,15 +169,30 @@ function AssetFieldInput({
     )
   }
 
+  if (field.field_type === 'number') {
+    return (
+      <label className="company-form__field">
+        <span className="company-form__label">{label}</span>
+        <input
+          className="company-form__input"
+          type="number"
+          value={value || ''}
+          onChange={(e) => onChange(e.target.value)}
+          disabled={disabled}
+        />
+      </label>
+    )
+  }
+
   return (
     <label className="company-form__field">
-      <span className="company-form__label">{label}</span>
-      <input
+      <FormLabel limit={limit}>{label}</FormLabel>
+      <SpellcheckInput
         className="company-form__input"
-        type={field.field_type === 'number' ? 'number' : 'text'}
         value={value || ''}
         onChange={(e) => onChange(e.target.value)}
         disabled={disabled}
+        maxLength={limit}
       />
     </label>
   )

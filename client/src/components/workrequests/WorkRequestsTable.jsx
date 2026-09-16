@@ -8,12 +8,15 @@ import { useOrgStatusOptions } from '../../hooks/useOrgStatusOptions'
 import { applyWorkRequestFilters, sortWorkRequests } from '../../lib/workRequestFilters'
 import WorkRequestDetailModal from './WorkRequestDetailModal'
 import TablePagination from '../shared/TablePagination'
+import StatusCountBar from '../shared/StatusCountBar'
+import { colorByStatus } from '../../lib/statusCounts'
 import { useTablePagination } from '../../hooks/useTablePagination'
 import { useDebouncedValue } from '../../hooks/useDebouncedValue'
 import { WORK_REQUEST_COLUMNS } from './workRequestColumns'
 import EmployeeAvatar from '../company/EmployeeAvatar'
 import './WorkRequests.css'
 import '../company/CompanyShared.css'
+import '../shared/StatusCountBar.css'
 
 function formatDate(value) {
   if (!value) return '—'
@@ -171,11 +174,13 @@ export default function WorkRequestsTable({
   fieldFilter = { field: '', value: '' },
   sortBy = 'newest',
   visibleColumnIds = DEFAULT_VISIBLE,
+  bulkReloadToken = 0,
 }) {
   const location = useLocation()
   const [selectedId, setSelectedId, closeSelected] = useOpenQueryId()
   const { canUpdate } = usePermissions()
-  const { labelByKey: statusLabels } = useOrgStatusOptions('work_request', { includeInactive: true })
+  const { statuses, labelByKey: statusLabels } = useOrgStatusOptions('work_request', { includeInactive: true })
+  const statusColors = colorByStatus(statuses)
   const canApprove = filter === 'incoming' && (
     canUpdate('work_request_approve') || canUpdate('work_request_incoming')
   )
@@ -190,9 +195,9 @@ export default function WorkRequestsTable({
       limit: pagination.pageSize,
       offset: pagination.offset,
     }),
-    [filter, debouncedSearch, pagination.pageSize, pagination.offset],
+    [filter, debouncedSearch, pagination.pageSize, pagination.offset, bulkReloadToken],
   )
-  const { orders: requests, total, loading, error, reload } = useWorkOrderList(fetchList)
+  const { orders: requests, total, statusCounts, loading, error, reload } = useWorkOrderList(fetchList)
   useEffect(() => { setListTotal(total) }, [total])
 
   const success = location.state?.success
@@ -225,6 +230,14 @@ export default function WorkRequestsTable({
       )}
       {error && <div className="wo-alert wo-alert--error" role="alert">{error}</div>}
 
+      <StatusCountBar
+        counts={statusCounts}
+        statuses={statuses}
+        labelByKey={statusLabels}
+        colorByKey={statusColors}
+        ariaLabel="Work request status counts"
+      />
+
       {!filtered.length ? (
         <div className="company-empty">
           <p>
@@ -236,44 +249,46 @@ export default function WorkRequestsTable({
       ) : (
         <>
         <div className="company-table-wrap wr-table-wrap">
-          <table className="company-table master-table wr-table">
-            <thead>
-              <tr>
-                {columns.map((columnId) => {
-                  const col = WORK_REQUEST_COLUMNS.find((item) => item.id === columnId)
-                  return (
-                    <th key={columnId} className={COLUMN_CELL_CLASS[columnId] || 'wr-table__cell'}>
-                      {col?.label || columnId}
-                    </th>
-                  )
-                })}
-              </tr>
-            </thead>
-            <tbody>
-              {pagedRows.map((row) => (
-                <tr
-                  key={row.id}
-                  className={`wr-list-row${selectedId === row.id ? ' wr-list-row--active' : ''}`}
-                  onClick={() => setSelectedId(row.id)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault()
-                      setSelectedId(row.id)
-                    }
-                  }}
-                  tabIndex={0}
-                  role="button"
-                  aria-label={`View work request ${wrNumberLabel(row)}`}
-                >
-                  {columns.map((columnId) => (
-                    <td key={columnId} className={COLUMN_CELL_CLASS[columnId] || 'wr-table__cell'}>
-                      {renderCell(row, columnId, statusLabels)}
-                    </td>
-                  ))}
+          <div className="company-table-scroll">
+            <table className="company-table master-table wr-table">
+              <thead>
+                <tr>
+                  {columns.map((columnId) => {
+                    const col = WORK_REQUEST_COLUMNS.find((item) => item.id === columnId)
+                    return (
+                      <th key={columnId} className={COLUMN_CELL_CLASS[columnId] || 'wr-table__cell'}>
+                        {col?.label || columnId}
+                      </th>
+                    )
+                  })}
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {pagedRows.map((row) => (
+                  <tr
+                    key={row.id}
+                    className={`wr-list-row${selectedId === row.id ? ' wr-list-row--active' : ''}`}
+                    onClick={() => setSelectedId(row.id)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault()
+                        setSelectedId(row.id)
+                      }
+                    }}
+                    tabIndex={0}
+                    role="button"
+                    aria-label={`View work request ${wrNumberLabel(row)}`}
+                  >
+                    {columns.map((columnId) => (
+                      <td key={columnId} className={COLUMN_CELL_CLASS[columnId] || 'wr-table__cell'}>
+                        {renderCell(row, columnId, statusLabels)}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
         <TablePagination {...pagination} />
         </>

@@ -18,7 +18,7 @@ import WorkOrdersTable from '../../components/workorders/WorkOrdersTable'
 import '../../components/company/CompanyShared.css'
 import '../../components/workorders/WorkOrdersPage.css'
 
-const MANUAL_COLUMNS = ['wo_number', 'summary', 'assignees', 'creator', 'created_at', 'status']
+const MANUAL_COLUMNS = ['wo_number', 'summary', 'assignees', 'creator', 'created_at', 'status', 'progress']
 
 export default function ManualWorkOrders() {
   const location = useLocation()
@@ -29,7 +29,7 @@ export default function ManualWorkOrders() {
   const canRemove = canDelete('work_orders_manual') || canDelete('work_orders')
   const [selectedId, setSelectedId, closeSelected] = useOpenQueryId()
   const [actionError, setActionError] = useState(null)
-  const { search, locationFilter, sortBy, advancedRules, fieldFilter, locations } = useOutletContext()
+  const { search, locationFilter, sortBy, advancedRules, fieldFilter, locations, bulkReloadToken = 0 } = useOutletContext()
   const debouncedSearch = useDebouncedValue(search)
   const [listTotal, setListTotal] = useState(0)
   const pagination = useTablePagination(listTotal, {
@@ -41,9 +41,9 @@ export default function ManualWorkOrders() {
       limit: pagination.pageSize,
       offset: pagination.offset,
     }),
-    [debouncedSearch, pagination.pageSize, pagination.offset],
+    [debouncedSearch, pagination.pageSize, pagination.offset, bulkReloadToken],
   )
-  const { orders, total, loading, error, reload } = useWorkOrderList(fetchManualOrders)
+  const { orders, total, statusCounts, loading, error, reload } = useWorkOrderList(fetchManualOrders)
   useEffect(() => { setListTotal(total) }, [total])
   const successMessage = location.state?.success
 
@@ -96,6 +96,7 @@ export default function ManualWorkOrders() {
         serverPaged
         columns={MANUAL_COLUMNS}
         tableId="work-orders-manual"
+        statusCounts={statusCounts}
         emptyTitle="No manual work orders yet."
         emptyHint="Click + Add Work Order to create a manual work order."
         onView={setSelectedId}

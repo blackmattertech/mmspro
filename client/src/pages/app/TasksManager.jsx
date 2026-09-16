@@ -7,21 +7,28 @@ import { useTasksPage, useTaskPoll } from '../../hooks/useTasksPage'
 import { orgPath } from '../../config/navigation'
 import { TASK_TABS, VISIBILITY_OPTIONS } from '../../config/tasks'
 import { TABLE_SORT_OPTIONS, applyTableFilters } from '../../lib/tableFilters'
-import { deleteTask } from '../../lib/api-tasks'
+import { deleteTask, getTasksTemplate, bulkUploadTasks } from '../../lib/api-tasks'
 import { invalidateTasksBootstrapCache } from '../../lib/tasksBootstrapCache'
 import { useTablePagination } from '../../hooks/useTablePagination'
 import TableFilterToolbar from '../../components/shared/TableFilterToolbar'
 import TaskKanban from '../../components/tasks/TaskKanban'
 import TaskKanbanSkeleton from '../../components/tasks/TaskKanbanSkeleton'
 import TaskKanbanProgress from '../../components/tasks/TaskKanbanProgress'
+import StatusCountBar from '../../components/shared/StatusCountBar'
 import TasksTable from '../../components/tasks/TasksTable'
 import TaskMetaSettingsModal from '../../components/tasks/TaskMetaSettingsModal'
 import SettingsIcon from '../../components/ui/SettingsIcon'
+import {
+  useMasterBulkUpload,
+  MasterBulkActions,
+} from '../../components/company/MasterBulkUpload'
+import '../../components/shared/TableFilterToolbar.css'
+import '../../components/shared/StatusCountBar.css'
+import '../../components/company/CompanyShared.css'
+import '../../components/tasks/Tasks.css'
 
 const TaskVoiceAssistant = lazy(() => import('../../components/tasks/TaskVoiceAssistant'))
 const VoiceAgentIcon = lazy(() => import('../../components/ui/VoiceAgentIcon'))
-import '../../components/shared/TableFilterToolbar.css'
-import '../../components/tasks/Tasks.css'
 
 const TASK_FILTER_FIELDS = [
   { value: 'status', label: 'Status' },
@@ -90,6 +97,7 @@ export default function TasksManager() {
     items,
     total,
     board,
+    statusCounts,
     loading,
     error,
     reload,
@@ -116,6 +124,18 @@ export default function TasksManager() {
       })),
     }
   }, [board, filterField, filterValue, sortBy])
+
+  const displayStatusCounts = useMemo(() => {
+    if (filteredBoard?.columns) {
+      return filteredBoard.columns.map((column) => ({
+        status: column.status?.id,
+        count: (column.tasks || []).length,
+        label: column.status?.name,
+        color: column.status?.color,
+      }))
+    }
+    return statusCounts
+  }, [filteredBoard, statusCounts])
 
   const openCreate = () => {
     if (!org?.slug) return
@@ -145,6 +165,23 @@ export default function TasksManager() {
     invalidateTasksBootstrapCache()
     reload({ silent: true })
   }
+
+  const {
+    bulkInputRef,
+    bulkBusy,
+    bulkError,
+    bulkResult,
+    handleDownloadTemplate,
+    handleBulkFile,
+  } = useMasterBulkUpload({
+    downloadTemplate: getTasksTemplate,
+    upload: bulkUploadTasks,
+    onSuccess: async () => {
+      invalidateTasksBootstrapCache()
+      await reload({ silent: true })
+    },
+    defaultFilename: 'tasks-template.xlsx',
+  })
 
 
   return (
@@ -186,9 +223,18 @@ export default function TasksManager() {
             </button>
           </div>
           {canCreate('tasks_followups') && (
-            <button type="button" className="company-btn company-btn--primary" onClick={openCreate}>
-              + New Task
-            </button>
+            <MasterBulkActions
+              onDownload={handleDownloadTemplate}
+              bulkBusy={bulkBusy}
+              bulkInputRef={bulkInputRef}
+              onFileChange={handleBulkFile}
+              addLabel="+ New Task"
+              onAdd={openCreate}
+              title="Bulk upload tasks"
+              noun="task"
+              bulkError={bulkError}
+              bulkResult={bulkResult}
+            />
           )}
           {isAdmin && (
             <button
@@ -267,6 +313,11 @@ export default function TasksManager() {
           </div>
 
           {error && <div className="company-alert" role="alert">{error}</div>}
+
+          <StatusCountBar
+            counts={displayStatusCounts}
+            ariaLabel="Task status counts"
+          />
 
           {viewMode === 'kanban' ? (
             loading ? (

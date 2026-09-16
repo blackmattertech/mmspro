@@ -55,6 +55,7 @@
 }
 
 .company-page__header > .page-back:not(.page-back--inline),
+.company-page__header-main > .page-back:not(.page-back--inline),
 .wo-page__top > .page-back:not(.page-back--inline),
 .wo-page__top-copy > .page-back:not(.page-back--inline),
 .roles-page__header .page-back:not(.page-back--inline),

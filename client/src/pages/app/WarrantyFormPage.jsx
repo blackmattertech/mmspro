@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { useOrg } from '../../hooks/useOrg'
 import { usePermissions } from '../../hooks/usePermissions'
 import { orgPath } from '../../config/navigation'
-import { getWarranty, createWarranty, updateWarranty } from '../../lib/api-warranties'
+import { getWarranty, createWarranty, updateWarranty, getWarrantiesTemplate, bulkUploadWarranties } from '../../lib/api-warranties'
 import { syncWarrantyDocuments } from '../../lib/warrantyDocumentSync'
 import { useVendors } from '../../hooks/useVendors'
 import PageBack from '../../components/shared/PageBack'
@@ -12,6 +12,10 @@ import WarrantyForm, {
   computeWarrantyPeriodMonths,
   warrantyToForm,
 } from '../../components/warranty/WarrantyForm'
+import {
+  useMasterBulkUpload,
+  MasterBulkActions,
+} from '../../components/company/MasterBulkUpload'
 import '../../components/company/CompanyShared.css'
 import '../../components/warranty/WarrantyManager.css'
 
@@ -35,6 +39,18 @@ export default function WarrantyFormPage() {
     items: EMPTY_WARRANTY_FORM.items.map((row) => ({ ...row })),
   }))
   const [similarSnapshot, setSimilarSnapshot] = useState(null)
+  const {
+    bulkInputRef,
+    bulkBusy,
+    bulkError,
+    bulkResult,
+    handleDownloadTemplate,
+    handleBulkFile,
+  } = useMasterBulkUpload({
+    downloadTemplate: getWarrantiesTemplate,
+    upload: bulkUploadWarranties,
+    defaultFilename: 'warranties-template.xlsx',
+  })
 
   const goBack = useCallback(() => {
     if (org?.slug) navigate(orgPath(org.slug, 'warranty-manager'))
@@ -140,11 +156,29 @@ export default function WarrantyFormPage() {
   return (
     <div className="company-page">
       <header className="company-page__header">
-        <PageBack onClick={goBack} label="Warranty Manager" />
-        <h1 className="company-page__title">{pageTitle}</h1>
-        <p className="company-page__subtitle">
-          Record purchase details, warranty period, vendor contacts, and product line items.
-        </p>
+        <div className="company-page__header-bar">
+          <div className="company-page__header-main">
+            <PageBack onClick={goBack} label="Warranty Manager" />
+            <h1 className="company-page__title">{pageTitle}</h1>
+            <p className="company-page__subtitle">
+              Record purchase details, warranty period, vendor contacts, and product line items.
+            </p>
+          </div>
+          {!isEdit && canCreate('warranty_manager') && (
+            <div className="company-page__header-actions">
+              <MasterBulkActions
+                onDownload={handleDownloadTemplate}
+                bulkBusy={bulkBusy}
+                bulkInputRef={bulkInputRef}
+                onFileChange={handleBulkFile}
+                title="Bulk upload warranties"
+                noun="warranty"
+                bulkError={bulkError}
+                bulkResult={bulkResult}
+              />
+            </div>
+          )}
+        </div>
       </header>
 
       <div className="company-page__content">

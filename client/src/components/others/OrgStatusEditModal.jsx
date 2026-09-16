@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useBackdropClose } from '../../hooks/useBackdropClose'
 import PageBack from '../shared/PageBack'
+import SpellcheckInput from '../shared/SpellcheckInput'
 import '../company/CompanyShared.css'
 
 const DEFAULT_FORM = {
@@ -75,7 +76,7 @@ export default function OrgStatusEditModal({
           <div className="company-form__grid">
             <label className="company-form__field company-form__field--full">
               <span className="company-form__label">Name *</span>
-              <input
+              <SpellcheckInput
                 className="company-form__input"
                 value={form.name}
                 onChange={(e) => setField('name', e.target.value)}
@@ -109,7 +110,8 @@ export default function OrgStatusEditModal({
 
             <label className="company-form__field company-form__field--full">
               <span className="company-form__label">Description</span>
-              <textarea
+              <SpellcheckInput
+                multiline
                 className="company-form__input company-form__textarea"
                 rows={2}
                 value={form.description || ''}

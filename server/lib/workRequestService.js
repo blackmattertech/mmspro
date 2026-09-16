@@ -5,6 +5,7 @@ import { listEquipment, getEquipmentDetail, deriveEquipmentIdentity, orderedPare
 import { notifyUser, notifyEmployees, notifyByModule } from '../services/notifications.js'
 import { buildManualWorkOrderFormSchema } from './manualWorkOrderForm.js'
 import { applyIlikeSearch, listEnvelope } from './listQuery.js'
+import { fetchStatusCounts } from './statusCounts.js'
 import {
   departmentFitsLocation,
   isMaintenanceDepartment,
@@ -16,6 +17,7 @@ import {
   addWorkOrderAuditEntry,
   mapRequestTypeToSource,
 } from './workOrderService.js'
+import { clipDynamicFieldValues, clipTrimmedToLimit, getTextFieldLimitsMap } from './textFieldLimits.js'
 
 export async function getEmployeeByProfile(orgId, profileId, { email = null } = {}) {
   if (!profileId && !email) return null
@@ -652,8 +654,9 @@ export async function createWorkRequest(orgId, profileId, email, body, { isOrgAd
 
   const isDraft = body?.save_as === 'draft'
 
-  let problem = String(body?.problem_description || '').trim()
-  let shortDescription = String(body?.short_description || '').trim().slice(0, 200)
+  const fieldLimits = await getTextFieldLimitsMap(orgId)
+  let problem = clipTrimmedToLimit(fieldLimits, 'problem_description', body?.problem_description) || ''
+  let shortDescription = clipTrimmedToLimit(fieldLimits, 'short_description', body?.short_description) || ''
   let priority = body?.priority
   const equipmentId = body?.equipment_id || null
 
@@ -710,9 +713,14 @@ export async function createWorkRequest(orgId, profileId, email, body, { isOrgAd
   const requestNumber = isDraft ? null : await generateWorkRequestNumber(orgId, orderToId)
   const assetHierarchy = equipmentId ? await buildAssetHierarchy(orgId, equipmentId) : []
   const now = new Date().toISOString()
-  const formFieldValues = body?.form_field_values && typeof body.form_field_values === 'object'
-    ? body.form_field_values
-    : {}
+  const maintenanceFormSchema = await buildManualWorkOrderFormSchema(orgId)
+  const formFieldValues = clipDynamicFieldValues(
+    fieldLimits,
+    maintenanceFormSchema,
+    body?.form_field_values && typeof body.form_field_values === 'object'
+      ? body.form_field_values
+      : {},
+  )
 
   const jobNatureField = await resolveJobNatureField(orgId)
   const jobNatureOptions = jobNatureOptionsFromField(jobNatureField).map((row) => row.value)
@@ -753,7 +761,7 @@ export async function createWorkRequest(orgId, profileId, email, body, { isOrgAd
       job_nature: jobNature,
       is_breakdown: isBreakdown,
       priority,
-      remarks: body?.remarks?.trim() || null,
+      remarks: clipTrimmedToLimit(fieldLimits, 'remarks', body?.remarks),
       attachments: Array.isArray(body?.attachments) ? body.attachments : [],
       form_field_values: formFieldValues,
       requested_by: profileId,
@@ -854,6 +862,9 @@ async function createLinkedWorkOrderFromRequest(orgId, profileId, wr, {
   plannedDurationHours = null,
   autoApproved = false,
 } = {}) {
+  const fieldLimits = await getTextFieldLimitsMap(orgId)
+  const limitedAssignmentRemarks = clipTrimmedToLimit(fieldLimits, 'remarks', assignmentRemarks)
+
   const { data: equipment } = await supabaseAdmin
     .from('equipment')
     .select('location_id, department_id')
@@ -964,7 +975,7 @@ async function createLinkedWorkOrderFromRequest(orgId, profileId, wr, {
       {
         newStatus: 'assigned',
         departmentId,
-        remarks: assignmentRemarks?.trim() || null,
+        remarks: limitedAssignmentRemarks,
         metadata: { work_request_id: wr.id, wo_number: linkedNumber },
       },
     )
@@ -982,7 +993,7 @@ async function createLinkedWorkOrderFromRequest(orgId, profileId, wr, {
       execution_status: 'assigned',
       approved_by: profileId,
       approved_at: now,
-      approval_remarks: assignmentRemarks?.trim() || (autoApproved ? 'Auto-converted (no approval required).' : null),
+      approval_remarks: limitedAssignmentRemarks || (autoApproved ? 'Auto-converted (no approval required).' : null),
       manual_work_order_id: workOrder.id,
       updated_at: now,
     })
@@ -1568,25 +1579,38 @@ export async function listWorkRequests(orgId, filter, {
     .order('request_date', { ascending: false })
     .range(offset, offset + limit - 1)
 
+  let countQuery = supabaseAdmin
+    .from('work_requests')
+    .select('status')
+    .eq('org_id', orgId)
+
   if (filter === 'my' && profileId) {
     query = query.eq('requested_by', profileId)
+    countQuery = countQuery.eq('requested_by', profileId)
   } else if (filter === 'outgoing' && departmentId) {
     query = query.eq('order_from_department_id', departmentId)
+    countQuery = countQuery.eq('order_from_department_id', departmentId)
   } else if (filter === 'incoming' && departmentId) {
     query = query.eq('order_to_department_id', departmentId)
+    countQuery = countQuery.eq('order_to_department_id', departmentId)
   }
 
   if (filter !== 'my') {
     query = await applyWorkRequestLocationScope(query, orgId, locationId)
+    countQuery = await applyWorkRequestLocationScope(countQuery, orgId, locationId)
   }
 
   query = applyIlikeSearch(query, search, ['request_number', 'short_description', 'status'])
+  countQuery = applyIlikeSearch(countQuery, search, ['request_number', 'short_description', 'status'])
 
-  const { data, error, count } = await query
+  const [{ data, error, count }, status_counts] = await Promise.all([
+    query,
+    fetchStatusCounts(countQuery),
+  ])
   if (error) throw error
 
   const rows = await enrichWorkRequests(data || [], { lean: true })
-  return listEnvelope(rows, { total: count || 0, limit, offset })
+  return listEnvelope(rows, { total: count || 0, limit, offset, status_counts })
 }
 
 export async function getWorkRequestById(orgId, id) {

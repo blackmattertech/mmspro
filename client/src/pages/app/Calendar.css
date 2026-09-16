@@ -614,4 +614,21 @@
   .cal-task__priority {
     display: none;
   }
+
+  .cal-toolbar__left,
+  .cal-toolbar {
+    width: 100%;
+  }
+}
+
+@media (max-width: 480px) {
+  .cal-grid__cell {
+    min-height: 58px;
+    padding: 4px;
+  }
+
+  .cal-grid__weekday {
+    padding: 8px 2px;
+    font-size: 11px;
+  }
 }
