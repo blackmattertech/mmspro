@@ -1,5 +1,6 @@
 @import './variables.css';
 @import './dialogs.css';
+@import './responsive.css';
 
 *,
 *::before,
@@ -39,6 +40,15 @@ button {
 a {
   color: inherit;
   text-decoration: none;
+}
+
+.loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40vh;
+  padding: 24px 16px;
+  color: var(--color-gray-blue);
 }
 
 img {

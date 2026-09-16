@@ -1,0 +1,135 @@
+.spellcheck-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  min-width: 0;
+}
+
+.spellcheck-field--inline {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 200px;
+  max-width: 420px;
+}
+
+.spellcheck-field__hints {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  min-height: 0;
+  padding: 0 2px;
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--color-gray-blue);
+}
+
+.spellcheck-field__label {
+  font-weight: 600;
+  color: var(--color-gray-blue);
+}
+
+.spellcheck-field__group {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+.spellcheck-field__word {
+  text-decoration: underline;
+  text-decoration-style: wavy;
+  text-underline-offset: 2px;
+  text-decoration-color: var(--color-primary);
+}
+
+.spellcheck-field__arrow {
+  color: var(--color-medium-gray);
+}
+
+.spellcheck-field__suggestion {
+  padding: 1px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: inherit;
+  color: var(--color-primary);
+  background: var(--color-light-pink-2);
+  border: 1px solid #fecaca;
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+}
+
+.spellcheck-field__suggestion:hover {
+  color: var(--color-white);
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+}
+
+.spellcheck-field__control {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+}
+
+.spellcheck-field__control--boxed {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-sizing: border-box;
+  border: 1px solid var(--color-light-gray-2);
+  border-radius: var(--radius-sm);
+  background: var(--color-white, #fff);
+  padding-right: 10px;
+}
+
+.spellcheck-field__control--boxed.spellcheck-field__control--multiline {
+  flex-direction: column;
+  align-items: stretch;
+  padding-right: 0;
+}
+
+.spellcheck-field__control--boxed:focus-within {
+  border-color: var(--color-primary);
+}
+
+.spellcheck-field__control--boxed:has(:disabled),
+.spellcheck-field__control--boxed:has([readonly]) {
+  background: var(--color-off-white, #f8fafc);
+}
+
+.spellcheck-field__control--boxed .spellcheck-field__input--limited {
+  border: none !important;
+  box-shadow: none !important;
+  background: transparent;
+  outline: none;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.spellcheck-field__control--boxed.spellcheck-field__control--multiline .spellcheck-field__input--limited {
+  padding-bottom: 4px;
+}
+
+.spellcheck-field__count {
+  flex-shrink: 0;
+  font-size: 12px;
+  line-height: 1;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-gray-1, #6b7280);
+  white-space: nowrap;
+}
+
+.spellcheck-field__control--multiline .spellcheck-field__count {
+  align-self: flex-end;
+  padding: 0 10px 8px;
+}
+
+@media (max-width: 768px) {
+  .spellcheck-field--inline {
+    min-width: 0;
+    max-width: none;
+    width: 100%;
+  }
+}

@@ -213,4 +213,8 @@
   .import-page__setup {
     position: static;
   }
+
+  .import-page__content {
+    padding-left: 0;
+  }
 }

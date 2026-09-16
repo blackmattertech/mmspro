@@ -220,7 +220,10 @@ export default function ConfigurationImport() {
   const templateFromUrl = searchParams.get('template')
 
   const availableTemplates = useMemo(
-    () => IMPORT_TEMPLATES.filter((t) => t.showWithoutPermission || canCreate(t.moduleKey)),
+    () => IMPORT_TEMPLATES.filter((t) => (
+      t.showWithoutPermission
+      || (t.moduleKeys || [t.moduleKey]).some((key) => key && canCreate(key))
+    )),
     [canCreate],
   )
 
@@ -401,7 +404,7 @@ export default function ConfigurationImport() {
                 <span className="equipment-bulk-btn__icon" aria-hidden="true">
                   <NavIcon name="download" />
                 </span>
-                {downloadBusy ? 'Preparing…' : 'Download template'}
+                {downloadBusy ? 'Preparing…' : 'Download sample'}
               </button>
             </div>
 

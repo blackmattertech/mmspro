@@ -10,11 +10,13 @@ import PageBack from '../shared/PageBack'
 import WorkOrderAssignmentActions from './WorkOrderAssignmentActions'
 import WorkOrderLifecyclePanel, { formatStatus } from './WorkOrderLifecyclePanel'
 import RecordTimeline from '../shared/RecordTimeline'
+import { progressPercentForStatus } from '../../lib/statusProgress'
 import '../shared/RecordDetailLayout.css'
 import '../dashboard/CreateWorkOrderModal.css'
 import '../company/CompanyShared.css'
 import '../workrequests/WorkRequests.css'
 import './ManualWorkOrder.css'
+import '../shared/StatusCountBar.css'
 
 function formatDate(value) {
   if (!value) return '—'
@@ -201,6 +203,18 @@ export default function ReceivedWorkOrderDetailModal({
                     {formatStatus(view.status, statusLabels)}
                   </span>
                 </div>
+                <div>
+                  <span className="wo-received-detail__label">Progress %</span>
+                  <div className="wo-progress">
+                    <div className="wo-progress__track">
+                      <span
+                        className="wo-progress__fill"
+                        style={{ width: `${progressPercentForStatus(view.status)}%` }}
+                      />
+                    </div>
+                    <span className="wo-progress__value">{progressPercentForStatus(view.status)}%</span>
+                  </div>
+                </div>
               </div>
 
               {view.summary && !view.problem_description && (
@@ -211,7 +225,7 @@ export default function ReceivedWorkOrderDetailModal({
                 <WorkOrderAssignmentActions detail={view} onUpdated={handleUpdated} />
               )}
 
-              <WorkOrderLifecyclePanel detail={view} onUpdated={handleUpdated} />
+              <WorkOrderLifecyclePanel key={view.id} detail={view} onUpdated={handleUpdated} />
 
               {sections.map((section) => (
                 <section key={section.id} className="wo-received-detail__section">

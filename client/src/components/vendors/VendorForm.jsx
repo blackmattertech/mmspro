@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 import FilterableSelect from '../ui/FilterableSelect'
+import SpellcheckInput from '../shared/SpellcheckInput'
 import { getAllIndianCities, getStateForCity, formatCityDisplay } from '../../lib/indiaLocations'
 import { panFromGstin } from '../../lib/vendorValidation'
 import './Vendors.css'
@@ -120,7 +121,7 @@ export default function VendorForm({
         </Field>
 
         <Field label="Vendor Name" required error={errors.name}>
-          <input
+          <SpellcheckInput
             className="company-form__input"
             value={form.name}
             onChange={(e) => setField('name', e.target.value)}
@@ -129,7 +130,7 @@ export default function VendorForm({
         </Field>
 
         <Field label="Contact Person" error={errors.contact_person}>
-          <input
+          <SpellcheckInput
             className="company-form__input"
             value={form.contact_person}
             onChange={(e) => setField('contact_person', e.target.value)}
@@ -158,7 +159,8 @@ export default function VendorForm({
 
       <Section title="Address">
         <Field label="Address Line 1" className="company-form__field--full" error={errors.address_line1}>
-          <textarea
+          <SpellcheckInput
+            multiline
             className="company-form__input company-form__textarea"
             rows={2}
             value={form.address_line1}
@@ -167,7 +169,8 @@ export default function VendorForm({
         </Field>
 
         <Field label="Address Line 2" className="company-form__field--full" error={errors.address_line2}>
-          <textarea
+          <SpellcheckInput
+            multiline
             className="company-form__input company-form__textarea"
             rows={2}
             value={form.address_line2}
@@ -245,7 +248,7 @@ export default function VendorForm({
         </Field>
 
         <Field label="Bank Name" error={errors.bank_name}>
-          <input
+          <SpellcheckInput
             className="company-form__input"
             value={form.bank_name}
             onChange={(e) => setField('bank_name', e.target.value)}
@@ -253,7 +256,7 @@ export default function VendorForm({
         </Field>
 
         <Field label="Account Name" error={errors.account_name}>
-          <input
+          <SpellcheckInput
             className="company-form__input"
             value={form.account_name}
             onChange={(e) => setField('account_name', e.target.value)}
@@ -270,7 +273,7 @@ export default function VendorForm({
         </Field>
 
         <Field label="Branch" className="company-form__field--full" error={errors.branch}>
-          <input
+          <SpellcheckInput
             className="company-form__input"
             value={form.branch}
             onChange={(e) => setField('branch', e.target.value)}

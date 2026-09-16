@@ -5,6 +5,7 @@ import { useDepartments } from '../../hooks/useDepartments'
 import { departmentsForEmployeeLocation } from '../../lib/departmentLocation'
 import FilterableSelect from '../ui/FilterableSelect'
 import PageBack from '../shared/PageBack'
+import SpellcheckInput from '../shared/SpellcheckInput'
 import '../company/CompanyShared.css'
 
 const EMPTY = {
@@ -95,7 +96,7 @@ export default function AreaModal({
         <form className="company-modal__form" onSubmit={handleSubmit}>
           <label className="company-form__field">
             <span className="company-form__label">Name *</span>
-            <input
+            <SpellcheckInput
               className="company-form__input"
               value={form.name}
               onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}

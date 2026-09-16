@@ -7,7 +7,6 @@ import { useDebouncedValue } from '../../hooks/useDebouncedValue'
 import { orgPath } from '../../config/navigation'
 import EditIcon from '../../components/ui/EditIcon'
 import TrashIcon from '../../components/ui/TrashIcon'
-import NavIcon from '../../components/layout/NavIcon'
 import TablePagination from '../../components/shared/TablePagination'
 import TableColumnPicker from '../../components/shared/TableColumnPicker'
 import TableFilterToolbar from '../../components/shared/TableFilterToolbar'
@@ -15,11 +14,18 @@ import { useTablePagination } from '../../hooks/useTablePagination'
 import { useTableColumnPrefs } from '../../hooks/useTableColumnPrefs'
 import { TABLE_SORT_OPTIONS, applyTableFilters } from '../../lib/tableFilters'
 import { stopTableRowClick, tableRowClickProps } from '../../lib/clickableTableRow'
+import { getWarrantiesTemplate, bulkUploadWarranties } from '../../lib/api-warranties'
+import {
+  useMasterBulkUpload,
+  MasterBulkActions,
+} from '../../components/company/MasterBulkUpload'
 import '../../components/shared/TableColumnPicker.css'
 import '../../components/shared/TableFilterToolbar.css'
 import WarrantyExpiringFilter from '../../components/warranty/WarrantyExpiringFilter'
+import StatusCountBar from '../../components/shared/StatusCountBar'
 import { DEFAULT_WARRANTY_EXPIRING_FILTER, isWarrantyExpiringFilterValid, warrantyExpiringFilterSummary } from '../../lib/warrantyExpiringFilter'
 import '../../components/warranty/WarrantyExpiringFilter.css'
+import '../../components/shared/StatusCountBar.css'
 import '../../components/workorders/WorkOrdersPage.css'
 import '../../components/company/CompanyShared.css'
 import '../../components/warranty/WarrantyManager.css'
@@ -206,8 +212,21 @@ export default function WarrantyManager() {
     limit: pagination.pageSize,
     offset: pagination.offset,
   }), [debouncedSearch, pagination.pageSize, pagination.offset])
-  const { items, total, loading, saving, error, remove } = useWarranties(filters)
+  const { items, total, statusCounts, loading, saving, error, remove, reload } = useWarranties(filters)
   useEffect(() => { setListTotal(total) }, [total])
+  const {
+    bulkInputRef,
+    bulkBusy,
+    bulkError,
+    bulkResult,
+    handleDownloadTemplate,
+    handleBulkFile,
+  } = useMasterBulkUpload({
+    downloadTemplate: getWarrantiesTemplate,
+    upload: bulkUploadWarranties,
+    onSuccess: () => reload({ silent: true }),
+    defaultFilename: 'warranties-template.xlsx',
+  })
 
   const warrantyStatusFilter = useMemo(
     () => resolveWarrantyStatusFilter(filterField, filterValue),
@@ -324,14 +343,18 @@ export default function WarrantyManager() {
               sort={{ value: sortBy, onChange: setSortBy, options: TABLE_SORT_OPTIONS }}
               actions={canCreate('warranty_manager') && (
                 <div className="warranty-manager__actions">
-                  <button
-                    type="button"
-                    className="company-btn company-btn--primary warranty-manager__create-btn"
-                    onClick={openCreate}
-                  >
-                    <NavIcon name="addSquare" />
-                    New Warranty
-                  </button>
+                  <MasterBulkActions
+                    onDownload={handleDownloadTemplate}
+                    bulkBusy={bulkBusy}
+                    bulkInputRef={bulkInputRef}
+                    onFileChange={handleBulkFile}
+                    addLabel="New Warranty"
+                    onAdd={openCreate}
+                    title="Bulk upload warranties"
+                    noun="warranty"
+                    bulkError={bulkError}
+                    bulkResult={bulkResult}
+                  />
                 </div>
               )}
               columnPicker={showTable && (
@@ -381,6 +404,16 @@ export default function WarrantyManager() {
           )}
 
           {error && <div className="company-alert" role="alert">{error}</div>}
+
+          <StatusCountBar
+            counts={statusCounts}
+            labelByKey={{
+              active: 'Active',
+              expired: 'Expired',
+              expiring_soon: 'Expiring soon',
+            }}
+            ariaLabel="Warranty status counts"
+          />
 
           {loading ? (
             <div className="company-loading">Loading warranties…</div>

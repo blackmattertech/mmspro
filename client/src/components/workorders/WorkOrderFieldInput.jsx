@@ -13,6 +13,9 @@ import {
 } from '../../lib/workOrderFileValues'
 import { assetUrl } from '../../lib/assets'
 import ImageLightbox from '../shared/ImageLightbox'
+import SpellcheckInput from '../shared/SpellcheckInput'
+import FormLabel from '../shared/FormLabel'
+import { useTextFieldLimits } from '../../hooks/useTextFieldLimits'
 
 const FILE_ACCEPT = '.pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png'
 const IMAGE_ACCEPT = 'image/jpeg,image/png,image/webp,image/gif'
@@ -20,6 +23,19 @@ const IMAGE_TILE_SIZE = 96
 const FILE_ICON_SRC = assetUrl('Assets/icons/file-outline.svg')
 const VIEW_MORE_BTN_WIDTH = 104
 const FILE_CHIP_GAP = 8
+
+function isPermitRequiredField(field) {
+  return /permit\s*required/i.test(String(field?.name || '').trim())
+}
+
+function singleOptionValue(value) {
+  if (Array.isArray(value)) {
+    const first = value.find((item) => String(item ?? '').trim())
+    return first == null ? '' : String(first)
+  }
+  if (value == null || typeof value === 'boolean') return ''
+  return String(value)
+}
 
 function ImageFieldPreview({ field, value, onChange, disabled }) {
   const inputRef = useRef(null)
@@ -390,33 +406,41 @@ export default function WorkOrderFieldInput({ field, value, onChange, disabled }
   const label = field.is_required ? `${field.name} *` : field.name
   const type = field.field_type
   const optionValues = field.dropdown_options || []
+  const { maxLengthForField } = useTextFieldLimits()
+  const limit = maxLengthForField(field)
 
   if (type === 'textarea') {
     return (
       <div className="company-form__field company-form__field--full">
-        <label className="company-form__label" htmlFor={id}>{label}</label>
-        <textarea
+        <FormLabel htmlFor={id} limit={limit}>{label}</FormLabel>
+        <SpellcheckInput
+          multiline
           id={id}
           className="company-form__input company-form__textarea"
           rows={4}
           value={value || ''}
           onChange={(e) => onChange(e.target.value)}
           disabled={disabled}
+          maxLength={limit}
         />
       </div>
     )
   }
 
-  if (type === 'dropdown') {
+  if (type === 'dropdown' || (isPermitRequiredField(field) && optionValues.length)) {
+    const selected = singleOptionValue(value)
     return (
       <div className="company-form__field">
         <label className="company-form__label" htmlFor={id}>{label}</label>
         <FilterableSelect
           id={id}
-          value={value || ''}
-          onChange={onChange}
+          value={selected}
+          onChange={(next) => {
+            if (type === 'checkbox') onChange(next ? [next] : [])
+            else onChange(next)
+          }}
           options={optionValues}
-          placeholder={`Select ${label}`}
+          placeholder={`Select ${field.name}`}
           disabled={disabled}
           className="company-form__input--select"
         />
@@ -564,14 +588,14 @@ export default function WorkOrderFieldInput({ field, value, onChange, disabled }
 
   return (
     <div className="company-form__field">
-      <label className="company-form__label" htmlFor={id}>{label}</label>
-      <input
+      <FormLabel htmlFor={id} limit={limit}>{label}</FormLabel>
+      <SpellcheckInput
         id={id}
-        type="text"
         className="company-form__input"
         value={value || ''}
         onChange={(e) => onChange(e.target.value)}
         disabled={disabled}
+        maxLength={limit}
       />
     </div>
   )

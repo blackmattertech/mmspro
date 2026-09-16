@@ -15,6 +15,9 @@ import {
 import '../company/CompanyShared.css'
 import './Tasks.css'
 import TaskAttachmentsSection from './TaskAttachmentsSection'
+import SpellcheckInput from '../shared/SpellcheckInput'
+import FormLabel from '../shared/FormLabel'
+import { useTextFieldLimits } from '../../hooks/useTextFieldLimits'
 
 export const EMPTY_TASK_FORM = {
   task_number: '',
@@ -73,15 +76,16 @@ function FormField({
   required = false,
   fullWidth = false,
   hint,
+  maxLength,
   children,
 }) {
   return (
     <label className={`company-form__field${fullWidth ? ' company-form__field--full' : ''}`}>
       {label && (
-        <span className="company-form__label">
+        <FormLabel limit={maxLength}>
           {label}
           {required ? ' *' : ''}
-        </span>
+        </FormLabel>
       )}
       {children}
       {hint && <span className="task-form__hint">{hint}</span>}
@@ -256,6 +260,7 @@ export default function TaskForm({
   const [tagError, setTagError] = useState(null)
   const [showTagInput, setShowTagInput] = useState(false)
   const tagInputRef = useRef(null)
+  const { maxLength } = useTextFieldLimits()
 
   const departmentOptions = useMemo(
     () => (departments || []).map((d) => ({ value: d.id, label: d.name })),
@@ -388,7 +393,7 @@ export default function TaskForm({
 
           <div className="task-form__field-row task-form__field-row--2 company-form__field--full">
             <FormField label="Task Title" required>
-              <input
+              <SpellcheckInput
                 className="company-form__input"
                 value={values.title}
                 onChange={(e) => setField('title', e.target.value)}
@@ -396,24 +401,27 @@ export default function TaskForm({
               />
             </FormField>
 
-            <FormField label="Short Description">
-              <input
+            <FormField label="Short Description" maxLength={maxLength('short_description')}>
+              <SpellcheckInput
                 className="company-form__input"
                 value={values.short_description}
                 onChange={(e) => setField('short_description', e.target.value)}
                 placeholder="Brief summary shown on cards and lists"
+                maxLength={maxLength('short_description')}
               />
             </FormField>
           </div>
 
-          <FormField label="Detailed Description" required fullWidth>
-            <textarea
+          <FormField label="Detailed Description" required fullWidth maxLength={maxLength('problem_description')}>
+            <SpellcheckInput
+              multiline
               className="company-form__input company-form__textarea"
               rows={5}
               value={values.detailed_description}
               onChange={(e) => setField('detailed_description', e.target.value)}
               placeholder="Full task details, instructions, and context"
               required
+              maxLength={maxLength('problem_description')}
             />
           </FormField>
 
@@ -500,9 +508,8 @@ export default function TaskForm({
               })}
               {showTagInput ? (
                 <div className="task-tag-picker__create">
-                  <input
+                  <SpellcheckInput
                     ref={tagInputRef}
-                    type="text"
                     className="company-form__input task-tag-picker__create-input"
                     value={newTagName}
                     onChange={(e) => {
@@ -824,7 +831,7 @@ export default function TaskForm({
                 />
               </FormField>
               <FormField label="Label">
-                <input
+                <SpellcheckInput
                   className="company-form__input"
                   value={ref.reference_label || ''}
                   onChange={(e) => updateReference(index, 'reference_label', e.target.value)}
@@ -842,28 +849,33 @@ export default function TaskForm({
       {isEdit && (
         <FormSection title="Section E — Task Updates" description="Follow-up notes and completion details.">
           <div className="company-form__grid task-form__grid">
-            <FormField label="Follow-up Remarks" fullWidth>
-              <textarea
+            <FormField label="Follow-up Remarks" fullWidth maxLength={maxLength('follow_up_remarks')}>
+              <SpellcheckInput
+                multiline
                 className="company-form__input company-form__textarea"
                 rows={3}
                 value={values.follow_up_remarks}
                 onChange={(e) => setField('follow_up_remarks', e.target.value)}
+                maxLength={maxLength('follow_up_remarks')}
               />
             </FormField>
             <FormField label="Next Action" fullWidth>
-              <textarea
+              <SpellcheckInput
+                multiline
                 className="company-form__input company-form__textarea"
                 rows={3}
                 value={values.next_action}
                 onChange={(e) => setField('next_action', e.target.value)}
               />
             </FormField>
-            <FormField label="Completion Remarks" fullWidth>
-              <textarea
+            <FormField label="Completion Remarks" fullWidth maxLength={maxLength('completion_remarks')}>
+              <SpellcheckInput
+                multiline
                 className="company-form__input company-form__textarea"
                 rows={3}
                 value={values.completion_remarks}
                 onChange={(e) => setField('completion_remarks', e.target.value)}
+                maxLength={maxLength('completion_remarks')}
               />
             </FormField>
           </div>
@@ -875,7 +887,7 @@ export default function TaskForm({
           {(values.links || []).map((link, index) => (
             <div key={index} className="task-link-row">
               <FormField label="Title">
-                <input
+                <SpellcheckInput
                   className="company-form__input"
                   value={link.title}
                   onChange={(e) => updateLink(index, 'title', e.target.value)}

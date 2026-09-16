@@ -9,6 +9,7 @@ import {
   getOperatorsForField,
 } from '../../lib/workOrderFilters'
 import { useOrgStatusOptions } from '../../hooks/useOrgStatusOptions'
+import SpellcheckInput from '../shared/SpellcheckInput'
 import '../company/CompanyShared.css'
 import './WorkOrderAdvancedFilter.css'
 
@@ -63,8 +64,20 @@ function FilterValueInput({ rule, locations, statusOptions, onChange }) {
     )
   }
 
+  if (rule.field === 'wo_number') {
+    return (
+      <input
+        type="text"
+        className="wo-adv-filter__input"
+        value={rule.value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="Enter value..."
+      />
+    )
+  }
+
   return (
-    <input
+    <SpellcheckInput
       type="text"
       className="wo-adv-filter__input"
       value={rule.value}

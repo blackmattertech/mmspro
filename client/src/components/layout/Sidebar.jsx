@@ -21,7 +21,8 @@ function findActiveParentId(navItems, pathname) {
   return null
 }
 
-export default function Sidebar({ collapsed = false, onToggle }) {
+export default function Sidebar({ collapsed = false, onToggle, mobileOpen = false, onMobileClose }) {
+  const visualCollapsed = collapsed && !mobileOpen
   const { signOut } = useAuth()
   const { org, orgRole } = useOrg()
   const { canRead, loading: permsLoading, accessRole, isOrgAdmin } = usePermissions()
@@ -45,7 +46,7 @@ export default function Sidebar({ collapsed = false, onToggle }) {
   }, [location.pathname, org, canRead, permsLoading])
 
   const toggleMenu = (id) => {
-    if (collapsed) return
+    if (visualCollapsed) return
     setOpenMenu((prev) => (prev === id ? null : id))
   }
 
@@ -54,11 +55,19 @@ export default function Sidebar({ collapsed = false, onToggle }) {
     || formatAccountRole(orgRole)
     || 'No role assigned'
 
+  const handleNavClick = (event) => {
+    if (event.target.closest('a[href]')) onMobileClose?.()
+  }
+
   return (
-    <aside className={`sidebar ${collapsed ? 'sidebar--collapsed' : ''}`}>
+    <aside
+      id="app-sidebar"
+      className={`sidebar ${visualCollapsed ? 'sidebar--collapsed' : ''} ${mobileOpen ? 'sidebar--mobile-open' : ''}`}
+      onClick={handleNavClick}
+    >
       <div className="sidebar__brand">
         <img src={assetUrl('Assets/images/logo.svg')} alt="MMS PRO" className="sidebar__logo" />
-        {!collapsed && (
+        {!visualCollapsed && (
           <div className="sidebar__brand-text">
             <span className="sidebar__brand-name">MMS PRO</span>
             <span className="sidebar__brand-tag">Maintenance Solution</span>
@@ -66,21 +75,31 @@ export default function Sidebar({ collapsed = false, onToggle }) {
         )}
         <button
           type="button"
-          className="sidebar__toggle"
+          className="sidebar__toggle sidebar__toggle--collapse"
           onClick={onToggle}
-          aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          aria-label={visualCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
         >
-          <NavIcon name={collapsed ? 'sidebarExpand' : 'sidebarCollapse'} />
-          {collapsed && (
+          <NavIcon name={visualCollapsed ? 'sidebarExpand' : 'sidebarCollapse'} />
+          {visualCollapsed && (
             <span className="sidebar__tooltip" aria-hidden="true">Expand sidebar</span>
           )}
         </button>
+        {onMobileClose && (
+          <button
+            type="button"
+            className="sidebar__toggle sidebar__toggle--close"
+            onClick={onMobileClose}
+            aria-label="Close navigation"
+          >
+            <NavIcon name="close" />
+          </button>
+        )}
       </div>
 
       <nav className="sidebar__nav">
         {navItems.map((item) => {
           if (item.children) {
-            const isOpen = !collapsed && openMenu === item.id
+            const isOpen = !visualCollapsed && openMenu === item.id
 
             return (
               <div key={item.id} className="sidebar__group">
@@ -91,16 +110,16 @@ export default function Sidebar({ collapsed = false, onToggle }) {
                 >
                   <NavIcon name={item.icon} />
                   <span className="sidebar__link-label">{item.label}</span>
-                  {collapsed && (
+                  {visualCollapsed && (
                     <span className="sidebar__tooltip" aria-hidden="true">{item.label}</span>
                   )}
-                  {!collapsed && (
+                  {!visualCollapsed && (
                     <span className={`sidebar__chevron ${isOpen ? 'sidebar__chevron--open' : ''}`}>
                       <NavIcon name="chevron" />
                     </span>
                   )}
                 </button>
-                {collapsed ? (
+                {visualCollapsed ? (
                   <div className="sidebar__flyout">
                     <span className="sidebar__flyout-title">{item.label}</span>
                     {item.children.map((child) => (
@@ -144,13 +163,16 @@ export default function Sidebar({ collapsed = false, onToggle }) {
             <NavLink
               key={item.id}
               to={item.path}
-              className={({ isActive }) =>
-                `sidebar__link ${isActive ? 'sidebar__link--active' : ''}`
-              }
+              className={({ isActive }) => {
+                const active = item.isPathActive
+                  ? item.isPathActive(location.pathname)
+                  : isActive
+                return `sidebar__link ${active ? 'sidebar__link--active' : ''}`
+              }}
             >
               <NavIcon name={item.icon} />
               <span className="sidebar__link-label">{item.label}</span>
-              {collapsed && (
+              {visualCollapsed && (
                 <span className="sidebar__tooltip" aria-hidden="true">{item.label}</span>
               )}
             </NavLink>
@@ -161,14 +183,14 @@ export default function Sidebar({ collapsed = false, onToggle }) {
       <div className="sidebar__footer">
         {org && (
           <SidebarQuickAccess
-            collapsed={collapsed}
+            collapsed={visualCollapsed}
             scope={quickAccessScope}
             options={quickAccessOptions}
             catalog={shortcutCatalog}
           />
         )}
         <SidebarUserFooter
-          collapsed={collapsed}
+          collapsed={visualCollapsed}
           roleLabel={roleLabel}
           onSignOut={signOut}
         />

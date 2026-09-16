@@ -7,6 +7,7 @@ export default function WorkRequestListPage({ filter, emptyHint }) {
     fieldFilter = { field: '', value: '' },
     sortBy = 'newest',
     visibleColumnIds,
+    bulkReloadToken = 0,
   } = useOutletContext() || {}
 
   return (
@@ -17,6 +18,7 @@ export default function WorkRequestListPage({ filter, emptyHint }) {
       fieldFilter={fieldFilter}
       sortBy={sortBy}
       visibleColumnIds={visibleColumnIds}
+      bulkReloadToken={bulkReloadToken}
     />
   )
 }

@@ -29,6 +29,17 @@ export function createWorkRequest(body) {
   })
 }
 
+export function getWorkRequestsTemplate() {
+  return workRequestsFetch('/template')
+}
+
+export function bulkUploadWorkRequests(base64Data) {
+  return workRequestsFetch('/import', {
+    method: 'POST',
+    body: JSON.stringify({ data: base64Data }),
+  })
+}
+
 export async function listWorkRequests(filter, { search, limit = 50, offset = 0 } = {}) {
   const qs = new URLSearchParams({ filter })
   if (search) qs.set('search', search)

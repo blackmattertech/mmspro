@@ -7,7 +7,10 @@ import '@fontsource/inter/latin-600.css'
 import '@fontsource/inter/latin-700.css'
 import { initAnalytics } from './lib/firebase'
 import { initAssetCssVars } from './lib/assets'
+import { installChunkLoadRecovery } from './lib/chunkLoadRecovery'
 import App from './App.jsx'
+
+installChunkLoadRecovery()
 
 const scheduleAnalyticsInit = () => {
   if (typeof window === 'undefined') return

@@ -1,4 +1,5 @@
 import { useRef } from 'react'
+import SpellcheckInput from '../shared/SpellcheckInput'
 import {
   WARRANTY_DOCUMENT_ACCEPT,
   inferWarrantyDocumentContentType,
@@ -97,7 +98,7 @@ export default function WarrantyDocumentsSection({
               <div className="warranty-form__document-meta">
                 <label className="company-form__field warranty-form__document-label-field">
                   <span className="company-form__label">Label</span>
-                  <input
+                  <SpellcheckInput
                     type="text"
                     className="company-form__input"
                     value={doc.label ?? ''}

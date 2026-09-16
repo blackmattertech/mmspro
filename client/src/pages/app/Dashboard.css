@@ -491,4 +491,12 @@
     grid-template-columns: 1fr;
     gap: 4px;
   }
+
+  .donut-chart {
+    flex-wrap: wrap;
+  }
+
+  .dash-card {
+    padding: 16px;
+  }
 }

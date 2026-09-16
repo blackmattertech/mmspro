@@ -11,11 +11,18 @@
   gap: 10px;
 }
 
-.table-filter-toolbar.wo-page__bar-controls .wo-page__search {
+.table-filter-toolbar.wo-page__bar-controls .wo-page__search,
+.table-filter-toolbar.wo-page__bar-controls .spellcheck-field--inline {
   flex: 1 1 auto;
   width: auto;
   min-width: 200px;
   max-width: 420px;
+}
+
+.table-filter-toolbar.wo-page__bar-controls .spellcheck-field--inline .wo-page__search {
+  width: 100%;
+  min-width: 0;
+  max-width: none;
 }
 
 .table-filter-toolbar__actions {
@@ -250,4 +257,18 @@
   background: #d42f3c;
   border-color: #d42f3c;
   color: var(--color-white);
+}
+
+@media (max-width: 768px) {
+  .table-filter-toolbar.wo-page__bar-controls .wo-page__search,
+  .table-filter-toolbar.wo-page__bar-controls .spellcheck-field--inline {
+    min-width: 0;
+    max-width: none;
+    flex: 1 1 100%;
+  }
+
+  .table-filter-toolbar__actions {
+    margin-left: 0;
+    width: 100%;
+  }
 }

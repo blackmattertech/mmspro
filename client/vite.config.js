@@ -32,6 +32,24 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [
+      {
+        name: 'hunspell-en-dictionary',
+        resolveId(id) {
+          if (id === 'virtual:en-aff' || id === 'virtual:en-dic') return `\0${id}`
+          return undefined
+        },
+        load(id) {
+          if (id === '\0virtual:en-aff') {
+            const text = readFileSync(resolve(__dirname, 'node_modules/dictionary-en/index.aff'), 'utf8')
+            return `export default ${JSON.stringify(text)}`
+          }
+          if (id === '\0virtual:en-dic') {
+            const text = readFileSync(resolve(__dirname, 'node_modules/dictionary-en/index.dic'), 'utf8')
+            return `export default ${JSON.stringify(text)}`
+          }
+          return undefined
+        },
+      },
       react(),
       {
         name: 'dev-ngrok-skip-warning',
@@ -110,6 +128,7 @@ export default defineConfig(({ mode }) => {
       },
       VitePWA({
         registerType: 'autoUpdate',
+        injectRegister: false,
         strategies: 'injectManifest',
         srcDir: 'public',
         filename: 'firebase-messaging-sw.js',
@@ -132,6 +151,7 @@ export default defineConfig(({ mode }) => {
                 || id.includes('/react/')
               ) return 'vendor-react'
               if (id.includes('@lottiefiles')) return 'vendor-lottie'
+              if (id.includes('nspell') || id.includes('dictionary-en')) return 'vendor-spellcheck'
             }
           },
         },

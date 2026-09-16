@@ -4,7 +4,10 @@ import {
   updateWorkOrderDailyLog,
   endWorkOrderDay,
 } from '../../lib/api-work-orders'
+import { useTextFieldLimits } from '../../hooks/useTextFieldLimits'
 import WorkOrderMaterialRowsTable, { normalizeMaterialRows } from './WorkOrderMaterialRowsTable'
+import SpellcheckInput from '../shared/SpellcheckInput'
+import FormLabel from '../shared/FormLabel'
 import './ManualWorkOrder.css'
 
 function formatDayLabel(logDate) {
@@ -53,6 +56,7 @@ function draftFromLog(log) {
 }
 
 export default function WorkOrderDailyLogSection({ detail, onUpdated }) {
+  const { maxLength } = useTextFieldLimits()
   const canEdit = Boolean(detail?.daily_log_can_edit)
   const logs = detail?.daily_logs || []
   const openLog = detail?.daily_log_open || logs.find((row) => row.day_status === 'open') || null
@@ -180,7 +184,8 @@ export default function WorkOrderDailyLogSection({ detail, onUpdated }) {
 
               <label className="company-form__field">
                 <span className="company-form__label">Work done today</span>
-                <textarea
+                <SpellcheckInput
+                  multiline
                   className="company-form__input company-form__textarea"
                   rows={3}
                   value={draft.work_done}
@@ -203,12 +208,13 @@ export default function WorkOrderDailyLogSection({ detail, onUpdated }) {
                   />
                 </label>
                 <label className="company-form__field">
-                  <span className="company-form__label">Remarks</span>
-                  <input
+                  <FormLabel limit={maxLength('remarks')}>Remarks</FormLabel>
+                  <SpellcheckInput
                     className="company-form__input"
                     value={draft.remarks}
                     disabled={saving || !(editingOpen || editingClosed)}
                     onChange={(e) => setDraftField('remarks', e.target.value)}
+                    maxLength={maxLength('remarks')}
                   />
                 </label>
               </div>
@@ -220,6 +226,7 @@ export default function WorkOrderDailyLogSection({ detail, onUpdated }) {
                   onChange={(next) => setDraftField('materials', next)}
                   readOnly={!(editingOpen || editingClosed)}
                   disabled={saving}
+                  descriptionMaxLength={maxLength('material_consumed')}
                 />
               </div>
 

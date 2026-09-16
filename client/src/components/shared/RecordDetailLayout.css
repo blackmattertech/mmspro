@@ -121,6 +121,25 @@
   color: #dc2626;
 }
 
+@media (max-width: 768px) {
+  .record-detail-layout__header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .record-detail-layout__actions {
+    width: 100%;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .company-modal--wide .company-modal__body,
+  .company-modal__header--profile {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+}
+
 .company-modal--wide {
   display: flex;
   flex-direction: column;

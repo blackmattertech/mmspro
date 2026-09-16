@@ -7,6 +7,7 @@ import {
 } from '../../lib/departmentLocation'
 import LocationModal from './LocationModal'
 import FilterableSelect from '../ui/FilterableSelect'
+import SpellcheckInput from '../shared/SpellcheckInput'
 import './CompanyShared.css'
 
 const EMPTY = {
@@ -171,7 +172,7 @@ export default function DepartmentModal({
             <div className="company-form__grid company-form__grid--2">
               <label className="company-form__field">
                 <span className="company-form__label">Name *</span>
-                <input className="company-form__input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
+                <SpellcheckInput className="company-form__input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
               </label>
               <label className="company-form__field">
                 <span className="company-form__label">Code *</span>
@@ -186,7 +187,8 @@ export default function DepartmentModal({
             </div>
             <label className="company-form__field">
               <span className="company-form__label">Description</span>
-              <textarea
+              <SpellcheckInput
+                multiline
                 className="company-form__input company-form__textarea"
                 rows={3}
                 value={form.description}

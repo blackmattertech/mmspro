@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import RolePermissionsTable from './RolePermissionsTable'
 import { emptyPermissions } from '../../lib/accessModules'
 import PageBack from '../shared/PageBack'
+import SpellcheckInput from '../shared/SpellcheckInput'
 import '../company/CompanyShared.css'
 import './RoleModal.css'
 
@@ -73,7 +74,7 @@ export default function RoleModal({
         <div className="role-modal__top">
           <label className="company-form__field">
             <span className="company-form__label">Role name</span>
-            <input
+            <SpellcheckInput
               className="company-form__input"
               value={form.name}
               onChange={(e) => setForm({ ...form, name: e.target.value })}
@@ -84,7 +85,8 @@ export default function RoleModal({
 
           <label className="company-form__field">
             <span className="company-form__label">Description</span>
-            <textarea
+            <SpellcheckInput
+              multiline
               className="company-form__input company-form__input--textarea"
               value={form.description}
               onChange={(e) => setForm({ ...form, description: e.target.value })}

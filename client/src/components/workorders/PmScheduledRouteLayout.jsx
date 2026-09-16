@@ -15,9 +15,13 @@ import {
 } from '../../lib/pmPlanFilters'
 import WorkOrderAdvancedFilter from './WorkOrderAdvancedFilter'
 import TableFilterToolbar from '../shared/TableFilterToolbar'
+import TableColumnPicker from '../shared/TableColumnPicker'
 import PageBreadcrumbs from '../shared/PageBreadcrumbs'
+import { useTableColumnPrefs } from '../../hooks/useTableColumnPrefs'
+import { PM_PLAN_COLUMNS } from '../pm/pmPlanColumns'
 import '../company/CompanyShared.css'
 import '../shared/TableFilterToolbar.css'
+import '../shared/TableColumnPicker.css'
 import './WorkOrdersPage.css'
 import './WorkOrderAdvancedFilter.css'
 import '../pm/Pm.css'
@@ -44,6 +48,12 @@ function PmScheduledLayoutInner() {
   const [advancedRules, setAdvancedRules] = useState([createPmPlanFilterRule()])
 
   const isPlansView = view === 'plans'
+  const {
+    visibleColumnIds: pmVisibleColumnIds,
+    toggleColumn: togglePmColumn,
+    resetColumns: resetPmColumns,
+    columnDefs: pmColumnDefs,
+  } = useTableColumnPrefs('pm-plans', PM_PLAN_COLUMNS)
   const filterFields = isPlansView ? PM_PLAN_FILTER_FIELDS : WO_FILTER_FIELDS
   const sortOptions = isPlansView ? PM_PLAN_SORT_OPTIONS : WO_SORT_OPTIONS
   const advancedFields = isPlansView ? PM_PLAN_ADVANCED_FILTER_FIELDS : ADVANCED_FILTER_FIELDS
@@ -79,7 +89,8 @@ function PmScheduledLayoutInner() {
     advancedRules,
     fieldFilter: { field: filterField, value: filterValue },
     locations: activeLocations,
-  }), [view, search, locationFilter, sortBy, advancedRules, filterField, filterValue, activeLocations])
+    pmVisibleColumnIds,
+  }), [view, search, locationFilter, sortBy, advancedRules, filterField, filterValue, activeLocations, pmVisibleColumnIds])
 
   return (
     <div className="company-page wo-page">
@@ -126,6 +137,14 @@ function PmScheduledLayoutInner() {
                 {toolbarRight}
               </>
             )}
+            columnPicker={isPlansView ? (
+              <TableColumnPicker
+                columnDefs={pmColumnDefs}
+                visibleColumnIds={pmVisibleColumnIds}
+                onToggle={togglePmColumn}
+                onReset={resetPmColumns}
+              />
+            ) : null}
           />
         </div>
       </div>

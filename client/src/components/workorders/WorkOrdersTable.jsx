@@ -9,7 +9,11 @@ import TableColumnPicker from '../shared/TableColumnPicker'
 import AssignedToCell from './AssignedToCell'
 import EditIcon from '../ui/EditIcon'
 import TrashIcon from '../ui/TrashIcon'
+import StatusCountBar from '../shared/StatusCountBar'
+import { progressPercentForStatus } from '../../lib/statusProgress'
+import { colorByStatus, tallyStatusCounts } from '../../lib/statusCounts'
 import '../shared/TableColumnPicker.css'
+import '../shared/StatusCountBar.css'
 
 export const WORK_ORDER_COLUMN_CONFIG = {
   wo_number: { label: 'WO #', className: '' },
@@ -21,6 +25,7 @@ export const WORK_ORDER_COLUMN_CONFIG = {
   received_at: { label: 'Received', className: '' },
   scheduled_at: { label: 'Scheduled', className: '' },
   status: { label: 'Status', className: '' },
+  progress: { label: 'Progress %', className: 'wo-table__progress' },
 }
 
 const COLUMN_CONFIG = WORK_ORDER_COLUMN_CONFIG
@@ -44,6 +49,7 @@ export default function WorkOrdersTable({
   emptyTitle,
   emptyHint,
   onView,
+  statusCounts,
   onApprove,
   onEdit,
   onDelete,
@@ -59,7 +65,9 @@ export default function WorkOrdersTable({
     toggleColumn,
     resetColumns,
   } = useTableColumnPrefs(tableId, columnDefs)
-  const { labelByKey: statusLabels } = useOrgStatusOptions('work_order', { includeInactive: true })
+  const { statuses, labelByKey: statusLabels } = useOrgStatusOptions('work_order', { includeInactive: true })
+  const statusColors = useMemo(() => colorByStatus(statuses), [statuses])
+  const displayCounts = statusCounts?.length ? statusCounts : tallyStatusCounts(orders)
 
   const localPagination = useTablePagination(totalCount ?? orders.length, { resetKey: paginationResetKey })
   const pagination = paginationProp || localPagination
@@ -99,22 +107,50 @@ export default function WorkOrdersTable({
             {statusLabels[order.status] || String(order.status || '').replace(/_/g, ' ')}
           </span>
         )
+      case 'progress': {
+        const pct = Number.isFinite(Number(order.progress_percent))
+          ? Number(order.progress_percent)
+          : progressPercentForStatus(order.status, statuses)
+        return (
+          <div className="wo-progress" title={`${pct}%`}>
+            <div className="wo-progress__track">
+              <span className="wo-progress__fill" style={{ width: `${pct}%` }} />
+            </div>
+            <span className="wo-progress__value">{pct}%</span>
+          </div>
+        )
+      }
       default:
         return '—'
     }
-  }, [statusLabels])
+  }, [statusLabels, statuses])
+
+  const countBar = (
+    <StatusCountBar
+      counts={displayCounts}
+      statuses={statuses}
+      labelByKey={statusLabels}
+      colorByKey={statusColors}
+      ariaLabel="Work order status counts"
+    />
+  )
 
   if (!orders.length) {
     return (
-      <div className="company-empty">
-        <p>{emptyTitle}</p>
-        {emptyHint && <p className="wo-page__empty-hint">{emptyHint}</p>}
+      <div>
+        {countBar}
+        <div className="company-empty">
+          <p>{emptyTitle}</p>
+          {emptyHint && <p className="wo-page__empty-hint">{emptyHint}</p>}
+        </div>
       </div>
     )
   }
 
   return (
-    <div className="company-table-wrap">
+    <div>
+      {countBar}
+      <div className="company-table-wrap">
       <div className="company-table-scroll">
       <table className="company-table master-table">
         <thead>
@@ -202,6 +238,7 @@ export default function WorkOrdersTable({
         </tbody>
       </table>
       <TablePagination {...pagination} />
+      </div>
       </div>
     </div>
   )

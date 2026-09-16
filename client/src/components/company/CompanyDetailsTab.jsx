@@ -3,6 +3,7 @@ import { useCompanyDetails } from '../../hooks/useCompany'
 import LogoUpload from './LogoUpload'
 import AddressAutocomplete from '../shared/AddressAutocomplete'
 import PhoneInput from '../shared/PhoneInput'
+import SpellcheckInput from '../shared/SpellcheckInput'
 import { validatePostalCode, validatePhoneE164 } from '../../lib/validation'
 import './CompanyShared.css'
 
@@ -112,14 +113,24 @@ export default function CompanyDetailsTab({ canManage }) {
           {TEXT_FIELDS_TOP.map((field) => (
             <label key={field.key} className="company-form__field">
               <span className="company-form__label">{field.label}</span>
-              <input
-                type={field.type || 'text'}
-                className="company-form__input"
-                value={form[field.key] ?? ''}
-                onChange={(e) => handleChange(field.key, e.target.value)}
-                disabled={!canManage}
-                required={field.required && canManage}
-              />
+              {field.type || field.key === 'tax_id' ? (
+                <input
+                  type={field.type || 'text'}
+                  className="company-form__input"
+                  value={form[field.key] ?? ''}
+                  onChange={(e) => handleChange(field.key, e.target.value)}
+                  disabled={!canManage}
+                  required={field.required && canManage}
+                />
+              ) : (
+                <SpellcheckInput
+                  className="company-form__input"
+                  value={form[field.key] ?? ''}
+                  onChange={(e) => handleChange(field.key, e.target.value)}
+                  disabled={!canManage}
+                  required={field.required && canManage}
+                />
+              )}
             </label>
           ))}
 
@@ -158,8 +169,7 @@ export default function CompanyDetailsTab({ canManage }) {
 
           <label className="company-form__field company-form__field--full">
             <span className="company-form__label">Address Line 2</span>
-            <input
-              type="text"
+            <SpellcheckInput
               className="company-form__input"
               value={form.address_line2 ?? ''}
               onChange={(e) => handleChange('address_line2', e.target.value)}
@@ -170,15 +180,25 @@ export default function CompanyDetailsTab({ canManage }) {
           {TEXT_FIELDS_BOTTOM.map((field) => (
             <label key={field.key} className="company-form__field">
               <span className="company-form__label">{field.label}</span>
-              <input
-                type={field.type || 'text'}
-                className="company-form__input"
-                value={form[field.key] ?? ''}
-                onChange={(e) => handleChange(field.key, e.target.value)}
-                disabled={!canManage}
-                required={field.required && canManage}
-                placeholder={field.key === 'postal_code' ? 'Postal / PIN / ZIP code' : undefined}
-              />
+              {field.key === 'postal_code' ? (
+                <input
+                  type="text"
+                  className="company-form__input"
+                  value={form[field.key] ?? ''}
+                  onChange={(e) => handleChange(field.key, e.target.value)}
+                  disabled={!canManage}
+                  required={field.required && canManage}
+                  placeholder="Postal / PIN / ZIP code"
+                />
+              ) : (
+                <SpellcheckInput
+                  className="company-form__input"
+                  value={form[field.key] ?? ''}
+                  onChange={(e) => handleChange(field.key, e.target.value)}
+                  disabled={!canManage}
+                  required={field.required && canManage}
+                />
+              )}
             </label>
           ))}
         </div>

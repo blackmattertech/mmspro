@@ -36,6 +36,57 @@
   flex-wrap: wrap;
 }
 
+.wo-page__toolbar {
+  background: var(--color-white);
+  border-bottom: 1px solid var(--color-light-gray-1);
+}
+
+.wo-page__toolbar-row {
+  padding: 12px 28px;
+}
+
+.wo-page__toolbar-row--tabs {
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--color-light-gray-1);
+}
+
+.wo-page__toolbar-row--tabs .wo-page__tabs {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  -webkit-overflow-scrolling: touch;
+}
+
+.wo-page__toolbar-row--tabs .wo-page__tab {
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.wo-page__toolbar-row--tabs .wo-page__tab svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.wo-page__toolbar-row--filters {
+  padding-top: 10px;
+  padding-bottom: 12px;
+  overflow: visible;
+}
+
+.wo-page__toolbar-row--filters .wo-page__bar-controls {
+  width: 100%;
+  justify-content: flex-start;
+}
+
+@media (max-width: 900px) {
+  .wo-page__toolbar-row--tabs .wo-page__tabs {
+    flex-wrap: wrap;
+  }
+}
+
 .wo-page__tabs {
   display: flex;
   align-items: center;
@@ -215,6 +266,10 @@
   text-overflow: ellipsis;
 }
 
+.wo-table__progress {
+  min-width: 110px;
+}
+
 .wo-table__approve {
   display: inline-flex;
   align-items: center;
@@ -342,7 +397,8 @@
 @media (max-width: 768px) {
   .wo-page__top,
   .wo-page__bar,
-  .wo-page__content {
+  .wo-page__content,
+  .wo-page__toolbar-row {
     padding-left: 16px;
     padding-right: 16px;
   }

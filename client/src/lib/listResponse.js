@@ -1,6 +1,10 @@
 export function unwrapList(data) {
   if (Array.isArray(data)) {
-    return { items: data, total: data.length }
+    return {
+      items: data,
+      total: data.length,
+      status_counts: data.status_counts || [],
+    }
   }
   const items = Array.isArray(data?.items) ? data.items : []
   return {
@@ -8,6 +12,7 @@ export function unwrapList(data) {
     total: Number.isFinite(data?.total) ? data.total : items.length,
     limit: data?.limit,
     offset: data?.offset,
+    status_counts: Array.isArray(data?.status_counts) ? data.status_counts : [],
   }
 }
 
@@ -19,6 +24,7 @@ export function asListArray(data) {
     total: { value: page.total, enumerable: false },
     limit: { value: page.limit, enumerable: false },
     offset: { value: page.offset, enumerable: false },
+    status_counts: { value: page.status_counts, enumerable: false },
   })
   return items
 }

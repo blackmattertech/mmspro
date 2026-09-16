@@ -12,7 +12,7 @@ import WorkOrdersTable from '../../components/workorders/WorkOrdersTable'
 import '../../components/company/CompanyShared.css'
 import '../../components/workorders/WorkOrdersPage.css'
 
-const RECEIVED_COLUMNS = ['wo_number', 'summary', 'assignees', 'creator', 'received_at', 'status']
+const RECEIVED_COLUMNS = ['wo_number', 'summary', 'assignees', 'creator', 'received_at', 'status', 'progress']
 const APPROVABLE_STATUSES = new Set(['assigned', 'returned_rework'])
 
 export default function ReceivedWorkOrders() {
@@ -37,7 +37,7 @@ export default function ReceivedWorkOrders() {
     }),
     [debouncedSearch, pagination.pageSize, pagination.offset],
   )
-  const { orders, total, loading, error, reload } = useWorkOrderList(fetchOrders)
+  const { orders, total, statusCounts, loading, error, reload } = useWorkOrderList(fetchOrders)
   useEffect(() => { setListTotal(total) }, [total])
 
   const filtered = useMemo(
@@ -79,6 +79,7 @@ export default function ReceivedWorkOrders() {
         serverPaged
         columns={RECEIVED_COLUMNS}
         tableId="work-orders-received"
+        statusCounts={statusCounts}
         emptyTitle="No work orders received yet."
         emptyHint="Incoming work assigned to you, your department, or your location appears here. Work you requested or assigned out is under Assigned."
         onView={setSelectedId}

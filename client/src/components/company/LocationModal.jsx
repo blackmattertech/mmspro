@@ -6,6 +6,7 @@ import { validatePostalCode } from '../../lib/validation'
 import { employeesForLocationHead } from '../../lib/departmentLocation'
 import EmployeeSelect from './EmployeeSelect'
 import GooToggle from '../ui/GooToggle'
+import SpellcheckInput from '../shared/SpellcheckInput'
 import './CompanyShared.css'
 
 const EMPTY = {
@@ -127,7 +128,7 @@ export default function LocationModal({
         <form className="company-modal__form" onSubmit={handleSubmit}>
           <label className="company-form__field">
             <span className="company-form__label">Name *</span>
-            <input className="company-form__input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
+            <SpellcheckInput className="company-form__input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
           </label>
           <label className="company-form__field">
             <span className="company-form__label">Code *</span>
@@ -144,16 +145,16 @@ export default function LocationModal({
           </label>
           <label className="company-form__field">
             <span className="company-form__label">Address Line 2</span>
-            <input className="company-form__input" value={form.address_line2} onChange={(e) => setForm({ ...form, address_line2: e.target.value })} />
+            <SpellcheckInput className="company-form__input" value={form.address_line2} onChange={(e) => setForm({ ...form, address_line2: e.target.value })} />
           </label>
           <div className="company-form__grid company-form__grid--2">
             <label className="company-form__field">
               <span className="company-form__label">City</span>
-              <input className="company-form__input" value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} />
+              <SpellcheckInput className="company-form__input" value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} />
             </label>
             <label className="company-form__field">
               <span className="company-form__label">State</span>
-              <input className="company-form__input" value={form.state} onChange={(e) => setForm({ ...form, state: e.target.value })} />
+              <SpellcheckInput className="company-form__input" value={form.state} onChange={(e) => setForm({ ...form, state: e.target.value })} />
             </label>
           </div>
           <div className="company-form__grid company-form__grid--2">
@@ -168,7 +169,7 @@ export default function LocationModal({
             </label>
             <label className="company-form__field">
               <span className="company-form__label">Country</span>
-              <input className="company-form__input" value={form.country} onChange={(e) => setForm({ ...form, country: e.target.value })} />
+              <SpellcheckInput className="company-form__input" value={form.country} onChange={(e) => setForm({ ...form, country: e.target.value })} />
             </label>
           </div>
           <div className="company-employee-photo__login">

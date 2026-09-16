@@ -117,6 +117,21 @@ export function deletePmPlan(id) {
   return pmFetch(`/plans/${id}`, { method: 'DELETE' })
 }
 
+export function duplicatePmPlan(id) {
+  return pmFetch(`/plans/${id}/duplicate`, { method: 'POST' })
+}
+
 export function generatePmWorkOrder(id) {
   return pmFetch(`/plans/${id}/generate`, { method: 'POST' })
+}
+
+export function getPmPlansTemplate() {
+  return pmFetch('/plans/template')
+}
+
+export function bulkUploadPmPlans(base64Data) {
+  return pmFetch('/plans/import', {
+    method: 'POST',
+    body: JSON.stringify({ data: base64Data }),
+  })
 }

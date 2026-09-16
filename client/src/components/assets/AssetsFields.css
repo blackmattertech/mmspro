@@ -4,6 +4,18 @@
   flex-wrap: wrap;
 }
 
+@media (max-width: 640px) {
+  .asset-field-tabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .asset-field-tabs__btn {
+    flex-shrink: 0;
+  }
+}
+
 .asset-field-tabs__btn {
   padding: 8px 16px;
   font-size: 13px;
@@ -330,6 +342,12 @@
 
   .asset-field-dependency__grid {
     grid-template-columns: 1fr;
+  }
+
+  .asset-field-filters__search {
+    width: 100%;
+    min-width: 0;
+    flex: 1 1 100%;
   }
 }
 

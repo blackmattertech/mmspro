@@ -35,6 +35,19 @@
   gap: 24px;
 }
 
+@media (max-width: 768px) {
+  .roles-page__header,
+  .roles-page__content {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  .roles-page__header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
 .roles-table__name-btn {
   padding: 0;
   border: none;

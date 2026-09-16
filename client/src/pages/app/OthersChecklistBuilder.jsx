@@ -25,6 +25,7 @@ import PageBack from '../../components/shared/PageBack'
 import EditIcon from '../../components/ui/EditIcon'
 import TrashIcon from '../../components/ui/TrashIcon'
 import GooToggle from '../../components/ui/GooToggle'
+import SpellcheckInput from '../../components/shared/SpellcheckInput'
 import '../../components/company/CompanyShared.css'
 import './Others.css'
 import './OthersChecklistBuilder.css'
@@ -365,7 +366,7 @@ export default function OthersChecklistBuilder() {
           <form className="checklist-builder__meta" onSubmit={handleSaveMeta}>
             <label className="company-form__field">
               <span className="company-form__label">Checklist title *</span>
-              <input
+              <SpellcheckInput
                 className="company-form__input"
                 value={form.name}
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
@@ -376,7 +377,8 @@ export default function OthersChecklistBuilder() {
             </label>
             <label className="company-form__field">
               <span className="company-form__label">Checklist description</span>
-              <textarea
+              <SpellcheckInput
+                multiline
                 className="company-form__input company-form__textarea"
                 rows={3}
                 value={form.description}
@@ -405,7 +407,7 @@ export default function OthersChecklistBuilder() {
               <h3>Sections</h3>
               {canManage && (
                 <div className="checklist-builder__section-add">
-                  <input
+                  <SpellcheckInput
                     className="company-form__input"
                     value={sectionNameDraft}
                     onChange={(e) => setSectionNameDraft(e.target.value)}
@@ -527,7 +529,7 @@ export default function OthersChecklistBuilder() {
                   <div className="checklist-builder__field-grid">
                     <label className="company-form__field">
                       <span className="company-form__label">Item name *</span>
-                      <input
+                      <SpellcheckInput
                         className="company-form__input"
                         value={fieldDraft.name}
                         onChange={(e) => setFieldDraft({ ...fieldDraft, name: e.target.value })}
@@ -562,7 +564,8 @@ export default function OthersChecklistBuilder() {
                   {needsCustomOptions && (
                     <label className="company-form__field">
                       <span className="company-form__label">Dropdown options (one per line)</span>
-                      <textarea
+                      <SpellcheckInput
+                        multiline
                         className="company-form__input company-form__textarea"
                         rows={3}
                         value={fieldDraft.optionsText}

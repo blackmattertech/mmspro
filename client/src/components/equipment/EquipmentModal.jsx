@@ -9,6 +9,7 @@ import { getEquipmentFields } from '../../lib/api-equipment'
 import { seedDateFieldDefaults } from '../../lib/dateInputDefaults'
 import DateField from '../ui/DateField'
 import FilterableSelect from '../ui/FilterableSelect'
+import SpellcheckInput from '../shared/SpellcheckInput'
 import '../company/CompanyShared.css'
 
 const IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp']
@@ -203,7 +204,8 @@ export default function EquipmentModal({
     <label key={field.id} className="company-form__field">
       <span className="company-form__label">{field.is_required ? `${field.name} *` : field.name}</span>
       {field.field_type === 'textarea' ? (
-        <textarea
+        <SpellcheckInput
+          multiline
           className="company-form__input"
           rows={3}
           value={values[field.id] || ''}
@@ -272,10 +274,16 @@ export default function EquipmentModal({
           onChange={(val) => setValues((v) => ({ ...v, [field.id]: val }))}
           withTime={field.field_type === 'datetime'}
         />
-      ) : (
+      ) : field.field_type === 'number' ? (
         <input
           className="company-form__input"
-          type={field.field_type === 'number' ? 'number' : 'text'}
+          type="number"
+          value={values[field.id] || ''}
+          onChange={(e) => setValues((v) => ({ ...v, [field.id]: e.target.value }))}
+        />
+      ) : (
+        <SpellcheckInput
+          className="company-form__input"
           value={values[field.id] || ''}
           onChange={(e) => setValues((v) => ({ ...v, [field.id]: e.target.value }))}
         />

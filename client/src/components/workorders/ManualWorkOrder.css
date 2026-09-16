@@ -946,6 +946,10 @@
   min-width: 200px;
 }
 
+.wo-assignment__search .company-form__input {
+  width: 100%;
+}
+
 .wo-assignment__context {
   margin: 0 0 14px;
   font-size: 13px;
@@ -1671,6 +1675,11 @@
   margin-bottom: 6px;
 }
 
+.wo-material-summary__label-row .company-form__label {
+  width: auto;
+  flex: 1;
+}
+
 .wo-material-details-modal {
   width: min(720px, 100%);
   max-height: 90vh;
@@ -1955,11 +1964,19 @@
 }
 
 .wo-dos-donts__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   padding: 8px 12px;
   font-size: 13px;
   font-weight: 700;
   color: #fff;
   text-align: center;
+}
+
+.wo-dos-donts__header .company-form__char-limit {
+  color: rgba(255, 255, 255, 0.95);
 }
 
 .wo-dos-donts__header--dos {
@@ -2062,5 +2079,16 @@
   .wo-footer {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .wo-section__header,
+  .wo-section__body {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  .wo-assignment__search {
+    min-width: 0;
+    width: 100%;
   }
 }

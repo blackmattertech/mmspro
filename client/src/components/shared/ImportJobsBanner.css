@@ -112,6 +112,22 @@
   color: var(--color-dark-navy);
 }
 
+@media (max-width: 768px) {
+  .import-jobs-banner {
+    padding: 10px 16px;
+  }
+
+  .import-jobs-banner__item {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .import-jobs-banner__actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+}
+
 .import-jobs-banner__footer {
   margin: 0;
   font-size: 12px;

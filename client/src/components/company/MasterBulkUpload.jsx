@@ -33,6 +33,7 @@ export function useMasterBulkUpload({
       URL.revokeObjectURL(url)
     } catch (err) {
       setBulkError(err.message)
+      throw err
     }
   }
 
@@ -80,16 +81,39 @@ export function MasterBulkActions({
   addLabel,
   onAdd,
   title = 'Bulk upload',
-  description = 'Download the template, fill in your rows, then upload the completed Excel file.',
+  description = 'Download the sample Excel file, replace the example row with your records (or add more rows below), then upload the completed .xlsx file.',
   bulkError,
   bulkResult,
   noun = 'record',
 }) {
   const [open, setOpen] = useState(false)
+  const [downloading, setDownloading] = useState(false)
   const handleBackdropClick = useBackdropClose(() => setOpen(false))
+
+  const handleDownload = async () => {
+    setDownloading(true)
+    try {
+      await onDownload?.()
+    } catch {
+      setOpen(true)
+    } finally {
+      setDownloading(false)
+    }
+  }
 
   return (
     <>
+      <button
+        type="button"
+        className="company-btn company-btn--secondary equipment-bulk-btn"
+        onClick={handleDownload}
+        disabled={bulkBusy || downloading}
+      >
+        <span className="equipment-bulk-btn__icon" aria-hidden="true">
+          <NavIcon name="download" />
+        </span>
+        {downloading ? 'Preparing…' : 'Download sample'}
+      </button>
       <button
         type="button"
         className="company-btn company-btn--secondary equipment-bulk-btn"
@@ -98,11 +122,13 @@ export function MasterBulkActions({
         <span className="equipment-bulk-btn__icon" aria-hidden="true">
           <NavIcon name="upload" />
         </span>
-        Bulk
+        Upload
       </button>
-      <button type="button" className="company-btn company-btn--primary" onClick={onAdd}>
-        {addLabel}
-      </button>
+      {onAdd && (
+        <button type="button" className="company-btn company-btn--primary" onClick={onAdd}>
+          {addLabel}
+        </button>
+      )}
 
       {open && (
         <div
@@ -139,13 +165,13 @@ export function MasterBulkActions({
                 <button
                   type="button"
                   className="company-btn company-btn--secondary equipment-bulk-btn"
-                  onClick={onDownload}
-                  disabled={bulkBusy}
+                  onClick={handleDownload}
+                  disabled={bulkBusy || downloading}
                 >
                   <span className="equipment-bulk-btn__icon" aria-hidden="true">
                     <NavIcon name="download" />
                   </span>
-                  Download template
+                  {downloading ? 'Preparing…' : 'Download sample'}
                 </button>
 
                 <button

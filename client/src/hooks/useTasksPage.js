@@ -8,11 +8,12 @@ import {
 } from '../lib/tasksBootstrapCache'
 import { useTaskMetaContext } from '../context/TaskMetaContext'
 
-function applyBootstrapPayload(data, { setStatuses, setPriorities, setCategories, setTags, setBoard, setItems, setTotal, view }) {
+function applyBootstrapPayload(data, { setStatuses, setPriorities, setCategories, setTags, setBoard, setItems, setTotal, setStatusCounts, view }) {
   setStatuses(data.statuses || [])
   setPriorities(data.priorities || [])
   setCategories(data.categories || [])
   setTags(data.tags || [])
+  setStatusCounts(Array.isArray(data.status_counts) ? data.status_counts : [])
 
   if (view === 'kanban') {
     setBoard(data.board || null)
@@ -35,6 +36,7 @@ export function useTasksPage(filters = {}, { mode = 'kanban' } = {}) {
   const [items, setItems] = useState([])
   const [total, setTotal] = useState(0)
   const [board, setBoard] = useState(null)
+  const [statusCounts, setStatusCounts] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
@@ -51,6 +53,7 @@ export function useTasksPage(filters = {}, { mode = 'kanban' } = {}) {
       setBoard,
       setItems,
       setTotal,
+      setStatusCounts,
       view,
     })
     taskMeta?.hydrate?.({
@@ -110,6 +113,7 @@ export function useTasksPage(filters = {}, { mode = 'kanban' } = {}) {
     items,
     total,
     board,
+    statusCounts,
     loading,
     error,
     reload: (opts) => load({ ...opts, force: true }),

@@ -5,6 +5,8 @@ import {
   WORK_REQUEST_MODULE_KEYS,
   REPORT_MODULE_KEYS,
 } from '../lib/accessModules'
+import { WORK_REQUEST_TABS } from './workRequests'
+import { WORK_ORDER_TABS, isWorkOrdersNavPath } from './workOrders'
 
 const APP_SEGMENTS = [
   {
@@ -15,28 +17,28 @@ const APP_SEGMENTS = [
     moduleKey: 'dashboard',
   },
   {
+    id: 'calendar',
+    label: 'Calendar',
+    segment: 'calendar',
+    icon: 'calendar',
+    moduleKey: 'calendar',
+  },
+  {
     id: 'work-request',
     label: 'Work Request',
+    segment: 'work-request',
     icon: 'clipboard',
     moduleKey: 'work_request',
-    children: [
-      { label: 'Create Work Request', segment: 'work-request/create', moduleKey: 'work_request_create', icon: 'addSquare' },
-      { label: 'My Requests', segment: 'work-request/my', moduleKey: 'work_request_my', icon: 'profileIncoming' },
-      { label: 'Incoming Requests', segment: 'work-request/incoming', moduleKey: 'work_request_incoming', icon: 'arrowDownLeft' },
-      { label: 'Outgoing Requests', segment: 'work-request/outgoing', moduleKey: 'work_request_outgoing', icon: 'arrowUpRight' },
-      { label: 'All Requests', segment: 'work-request/all', moduleKey: 'work_request_all', icon: 'arrowSwap' },
-    ],
+    altModuleKeys: WORK_REQUEST_MODULE_KEYS,
   },
   {
     id: 'work-orders',
     label: 'Work Orders',
+    segment: 'work-orders',
     icon: 'document',
-    moduleKey: 'work_orders',
-    children: [
-      { label: 'Received', segment: 'work-orders/received', moduleKey: 'work_orders_received', icon: 'addItem' },
-      { label: 'Assigned', segment: 'work-orders/assigned', moduleKey: 'work_orders_assigned', icon: 'userAdd' },
-      { label: 'Manual', segment: 'work-orders/manual', moduleKey: 'work_orders_manual', icon: 'bill' },
-    ],
+    moduleKey: 'work_orders_received',
+    altModuleKeys: ['work_orders_assigned', 'work_orders_manual'],
+    isPathActive: isWorkOrdersNavPath,
   },
   {
     id: 'pm-scheduled',
@@ -46,11 +48,11 @@ const APP_SEGMENTS = [
     moduleKey: 'work_orders_scheduled',
   },
   {
-    id: 'calendar',
-    label: 'Calendar',
-    segment: 'calendar',
-    icon: 'calendar',
-    moduleKey: 'calendar',
+    id: 'tasks-followups',
+    label: 'Tasks & Follow-ups',
+    segment: 'tasks-and-followups',
+    icon: 'alarmCheck',
+    moduleKey: 'tasks_followups',
   },
   {
     id: 'warranty-manager',
@@ -60,24 +62,12 @@ const APP_SEGMENTS = [
     moduleKey: 'warranty_manager',
   },
   {
-    id: 'tasks-followups',
-    label: 'Tasks & Follow-ups',
-    segment: 'tasks-and-followups',
-    icon: 'alarmCheck',
-    moduleKey: 'tasks_followups',
-  },
-  {
     id: 'reports',
     label: 'Reports',
+    segment: 'reports',
     icon: 'chart',
     moduleKey: 'reports',
-    children: [
-      { label: 'Daily Logs', segment: 'reports/daily-logs', moduleKey: 'reports_daily_logs' },
-      { label: 'Plant Wise Report', segment: 'reports/plant-wise', moduleKey: 'reports_plant_wise' },
-      { label: 'Open Logs', segment: 'reports/open-logs', moduleKey: 'reports_open_logs' },
-      { label: 'Completed Logs', segment: 'reports/completed-logs', moduleKey: 'reports_completed_logs' },
-      { label: 'Overdue Workorders', segment: 'reports/overdue', moduleKey: 'reports_overdue' },
-    ],
+    altModuleKeys: REPORT_MODULE_KEYS,
   },
   {
     id: 'masters',
@@ -136,11 +126,6 @@ export function moduleKeyForPath(pathname, orgSlug) {
   if (rest.startsWith('calendar')) return 'calendar'
   if (rest.startsWith('warranty-manager')) return 'warranty_manager'
   if (rest.startsWith('tasks-and-followups')) return 'tasks_followups'
-  if (rest.startsWith('reports/daily-logs')) return 'reports_daily_logs'
-  if (rest.startsWith('reports/plant-wise')) return 'reports_plant_wise'
-  if (rest.startsWith('reports/open-logs')) return 'reports_open_logs'
-  if (rest.startsWith('reports/completed-logs')) return 'reports_completed_logs'
-  if (rest.startsWith('reports/overdue')) return 'reports_overdue'
   if (rest.startsWith('reports')) return 'reports'
   if (rest.startsWith('masters/company')) return 'company'
   if (rest.startsWith('masters/assets')) return 'assets'
@@ -273,7 +258,17 @@ export function getBreadcrumbsForPath(pathname, orgSlug) {
   })
 
   const after = rest.slice(match.leaf.segment.length)
-  if (after === '/create' || after.startsWith('/create/')) {
+  if (match.leaf.segment === 'work-request' && after) {
+    const tabId = after.replace(/^\//, '').split('/')[0]
+    const tab = WORK_REQUEST_TABS.find((item) => item.id === tabId)
+    if (tab) crumbs.push({ label: tab.label, to: orgPath(orgSlug, tab.segment) })
+  } else if (match.leaf.segment === 'work-orders' && after && !after.startsWith('/scheduled')) {
+    const tabId = after.replace(/^\//, '').split('/')[0]
+    const tab = WORK_ORDER_TABS.find((item) => item.id === tabId)
+    if (tab) crumbs.push({ label: tab.label, to: orgPath(orgSlug, tab.segment) })
+    if (after.includes('/create')) crumbs.push({ label: 'Create' })
+    else if (/\/[^/]+\/edit(?:\/|$)/.test(after)) crumbs.push({ label: 'Edit' })
+  } else if (after === '/create' || after.startsWith('/create/')) {
     crumbs.push({ label: 'Create' })
   } else if (/^\/[^/]+\/edit(?:\/|$)/.test(after)) {
     crumbs.push({ label: 'Edit' })

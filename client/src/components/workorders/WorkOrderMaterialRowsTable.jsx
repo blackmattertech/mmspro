@@ -1,4 +1,5 @@
 import TrashIcon from '../ui/TrashIcon'
+import SpellcheckInput from '../shared/SpellcheckInput'
 
 function emptyRow() {
   return { code: '', description: '', uom: '', qty: '' }
@@ -32,6 +33,7 @@ export default function WorkOrderMaterialRowsTable({
   onChange,
   readOnly = false,
   disabled = false,
+  descriptionMaxLength,
 }) {
   const list = normalizeMaterialRows(rows)
 
@@ -54,7 +56,7 @@ export default function WorkOrderMaterialRowsTable({
           <tr>
             <th>S.No</th>
             <th>Material code</th>
-            <th>Material description</th>
+            <th>Material description{descriptionMaxLength ? ` (Max ${descriptionMaxLength})` : ''}</th>
             <th>UOM</th>
             <th>Qty</th>
             {!readOnly && <th aria-label="Actions" />}
@@ -81,12 +83,13 @@ export default function WorkOrderMaterialRowsTable({
                 {readOnly ? (
                   row.description || '—'
                 ) : (
-                  <input
+                  <SpellcheckInput
                     className="company-form__input"
                     value={row.description}
                     disabled={disabled}
                     onChange={(e) => updateRow(index, 'description', e.target.value)}
                     aria-label={`Material description ${index + 1}`}
+                    maxLength={descriptionMaxLength}
                   />
                 )}
               </td>

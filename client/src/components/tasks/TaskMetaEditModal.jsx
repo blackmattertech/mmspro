@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useBackdropClose } from '../../hooks/useBackdropClose'
 import PageBack from '../shared/PageBack'
 import TaskPriorityIcon, { PRIORITY_ICON_OPTIONS } from './TaskPriorityIcon'
+import SpellcheckInput from '../shared/SpellcheckInput'
 import '../company/CompanyShared.css'
 import './TaskMetaSettings.css'
 
@@ -112,7 +113,7 @@ export default function TaskMetaEditModal({
 
           <label className="company-form__field">
             <span className="company-form__label">Name</span>
-            <input
+            <SpellcheckInput
               className="company-form__input"
               value={form.name || ''}
               onChange={(e) => setField('name', e.target.value)}
@@ -146,7 +147,8 @@ export default function TaskMetaEditModal({
           {(isStatus || isPriority) && (
             <label className="company-form__field">
               <span className="company-form__label">Description</span>
-              <textarea
+              <SpellcheckInput
+                multiline
                 className="company-form__input company-form__textarea"
                 rows={3}
                 value={form.description || ''}

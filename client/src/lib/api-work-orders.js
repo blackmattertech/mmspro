@@ -52,6 +52,17 @@ export function createManualWorkOrder({
   })
 }
 
+export function getWorkOrdersTemplate() {
+  return workOrdersFetch('/manual/template')
+}
+
+export function bulkUploadWorkOrders(base64Data) {
+  return workOrdersFetch('/manual/import', {
+    method: 'POST',
+    body: JSON.stringify({ data: base64Data }),
+  })
+}
+
 export function updateManualWorkOrderValues(workOrderId, values) {
   return workOrdersFetch(`/manual/${workOrderId}/values`, {
     method: 'PATCH',

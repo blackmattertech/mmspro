@@ -20,6 +20,13 @@ const HUB_CARDS = [
     icon: 'clipboard',
     segment: 'masters/others/checklists',
   },
+  {
+    id: 'character-limits',
+    title: 'Character limits',
+    description: 'Set how many characters users can enter in descriptions, remarks, and related fields.',
+    icon: 'document',
+    segment: 'masters/others/character-limits',
+  },
 ]
 
 export default function Others() {

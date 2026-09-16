@@ -9,9 +9,11 @@ import {
   createPmPlan,
   updatePmPlan,
   deletePmPlan,
+  duplicatePmPlan,
   generatePmWorkOrder,
+  getPmPlansTemplate,
+  bulkUploadPmPlans,
 } from '../../lib/api-pm'
-import { formatScheduleSummary, pmPlanStatusLabel } from '../../config/pm'
 import { useWorkOrderList } from '../../hooks/useWorkOrderList'
 import { useWorkOrderToolbar } from '../../hooks/useWorkOrderToolbar'
 import { usePermissions } from '../../hooks/usePermissions'
@@ -22,20 +24,18 @@ import { applyWorkOrderFilters } from '../../lib/workOrderFilters'
 import { applyPmPlanFilters } from '../../lib/pmPlanFilters'
 import ReceivedWorkOrderDetailModal from '../../components/workorders/ReceivedWorkOrderDetailModal'
 import WorkOrdersTable from '../../components/workorders/WorkOrdersTable'
-import EditIcon from '../../components/ui/EditIcon'
-import TrashIcon from '../../components/ui/TrashIcon'
 import PmPlanModal from '../../components/pm/PmPlanModal'
+import PmPlansTable from '../../components/pm/PmPlansTable'
 import PmActivityTypesModal from '../../components/pm/PmActivityTypesModal'
+import {
+  useMasterBulkUpload,
+  MasterBulkActions,
+} from '../../components/company/MasterBulkUpload'
 import '../../components/company/CompanyShared.css'
 import '../../components/workorders/WorkOrdersPage.css'
 import '../../components/pm/Pm.css'
 
-const SCHEDULED_COLUMNS = ['wo_number', 'summary', 'scheduled_at', 'assignees', 'status']
-
-function formatDate(value) {
-  if (!value) return '—'
-  return String(value).slice(0, 10)
-}
+const SCHEDULED_COLUMNS = ['wo_number', 'summary', 'scheduled_at', 'assignees', 'status', 'progress']
 
 export default function ScheduledWorkOrders() {
   const outlet = useOutletContext() || {}
@@ -48,6 +48,7 @@ export default function ScheduledWorkOrders() {
     advancedRules = [],
     fieldFilter = { field: '', value: '' },
     locations = [],
+    pmVisibleColumnIds,
   } = outlet
   const { setToolbar, clearToolbar } = useWorkOrderToolbar()
   const { canCreate, canUpdate, canDelete } = usePermissions()
@@ -60,6 +61,7 @@ export default function ScheduledWorkOrders() {
   const [error, setError] = useState(null)
   const [saving, setSaving] = useState(false)
   const [planModal, setPlanModal] = useState(null)
+  const [duplicatingId, setDuplicatingId] = useState(null)
   const [showActivityTypes, setShowActivityTypes] = useState(false)
   const [selectedId, setSelectedId, closeSelected] = useOpenQueryId()
 
@@ -77,7 +79,7 @@ export default function ScheduledWorkOrders() {
     }),
     [debouncedSearch, pagination.pageSize, pagination.offset],
   )
-  const { orders, total, loading, error: ordersError } = useWorkOrderList(fetchOrders)
+  const { orders, total, statusCounts, loading, error: ordersError } = useWorkOrderList(fetchOrders)
   useEffect(() => { setListTotal(total) }, [total])
 
   const loadPlans = useCallback(async () => {
@@ -97,6 +99,20 @@ export default function ScheduledWorkOrders() {
     }
   }, [loadPlans])
 
+  const {
+    bulkInputRef,
+    bulkBusy,
+    bulkError,
+    bulkResult,
+    handleDownloadTemplate,
+    handleBulkFile,
+  } = useMasterBulkUpload({
+    downloadTemplate: getPmPlansTemplate,
+    upload: bulkUploadPmPlans,
+    onSuccess: () => loadPlans(),
+    defaultFilename: 'pm-plans-template.xlsx',
+  })
+
   useEffect(() => {
     reloadMeta()
   }, [reloadMeta])
@@ -110,15 +126,24 @@ export default function ScheduledWorkOrders() {
           </button>
         )}
         {canAdd && view === 'plans' && (
-          <button type="button" className="company-btn company-btn--primary" onClick={() => setPlanModal({})}>
-            + PM Plan
-          </button>
+          <MasterBulkActions
+            onDownload={handleDownloadTemplate}
+            bulkBusy={bulkBusy}
+            bulkInputRef={bulkInputRef}
+            onFileChange={handleBulkFile}
+            addLabel="+ PM Plan"
+            onAdd={() => setPlanModal({})}
+            title="Bulk upload PM plans"
+            noun="PM plan"
+            bulkError={bulkError}
+            bulkResult={bulkResult}
+          />
         )}
       </>
     )
     setToolbar(null, actions)
     return () => clearToolbar()
-  }, [view, canAdd, setToolbar, clearToolbar])
+  }, [view, canAdd, setToolbar, clearToolbar, bulkBusy, bulkError, bulkResult, handleDownloadTemplate, handleBulkFile])
 
   const filteredOrders = useMemo(
     () => applyWorkOrderFilters(orders, { search: '', locationFilter, sortBy, advancedRules, fieldFilter, locations }),
@@ -170,6 +195,19 @@ export default function ScheduledWorkOrders() {
     }
   }
 
+  const handleDuplicatePlan = async (plan) => {
+    setError(null)
+    setDuplicatingId(plan.id)
+    try {
+      await duplicatePmPlan(plan.id)
+      await loadPlans()
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setDuplicatingId(null)
+    }
+  }
+
   return (
     <>
       <div className="pm-subtabs" role="tablist" aria-label="Scheduled maintenance">
@@ -198,74 +236,19 @@ export default function ScheduledWorkOrders() {
         loadingMeta ? (
           <div className="company-loading">Loading...</div>
         ) : (
-          <div className="company-table-wrap">
-            <table className="company-table">
-              <thead>
-                <tr>
-                  <th>Plan #</th>
-                  <th>Name</th>
-                  <th>Activity</th>
-                  <th>Asset</th>
-                  <th>Schedule</th>
-                  <th>Next due</th>
-                  <th>Status</th>
-                  <th />
-                </tr>
-              </thead>
-              <tbody>
-                {filteredPlans.map((plan) => (
-                  <tr key={plan.id}>
-                    <td>{plan.plan_number || '—'}</td>
-                    <td><span className="company-table__name">{plan.name}</span></td>
-                    <td>{plan.activity_type?.name || '—'}</td>
-                    <td>{plan.equipment?.name || '—'}</td>
-                    <td>{formatScheduleSummary(plan)}</td>
-                    <td>{formatDate(plan.next_due_at)}</td>
-                    <td>
-                      <span className={`pm-status pm-status--${plan.status}`}>{pmPlanStatusLabel(plan.status)}</span>
-                    </td>
-                    <td>
-                      <div className="pm-table-actions">
-                        {canAdd && (plan.status === 'active' || plan.status === 'overdue') && (
-                          <button
-                            type="button"
-                            className="company-btn company-btn--secondary company-btn--compact"
-                            onClick={() => handleGenerate(plan)}
-                          >
-                            Generate
-                          </button>
-                        )}
-                        {canEdit && (
-                          <button type="button" className="company-btn company-btn--secondary company-btn--compact company-btn--icon" onClick={() => setPlanModal(plan)} aria-label="Edit plan">
-                            <EditIcon />
-                          </button>
-                        )}
-                        {canRemove && (
-                          <button type="button" className="company-btn company-btn--secondary company-btn--compact company-btn--icon" onClick={() => handleDeletePlan(plan)} aria-label="Delete plan">
-                            <TrashIcon />
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-                {!filteredPlans.length && (
-                  <tr>
-                    <td colSpan={8}>
-                      <div className="company-empty">
-                        <strong>{plans.length ? 'No matching PM plans.' : 'No PM plans yet.'}</strong>
-                        <p>
-                          {plans.length
-                            ? 'Try a different search or clear the filters.'
-                            : 'Create a planned maintenance plan to generate scheduled work orders automatically.'}
-                        </p>
-                      </div>
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+          <PmPlansTable
+            plans={filteredPlans}
+            totalCount={plans.length}
+            visibleColumnIds={pmVisibleColumnIds}
+            canAdd={canAdd}
+            canEdit={canEdit}
+            canRemove={canRemove}
+            duplicatingId={duplicatingId}
+            onGenerate={handleGenerate}
+            onDuplicate={handleDuplicatePlan}
+            onEdit={setPlanModal}
+            onDelete={handleDeletePlan}
+          />
         )
       )}
 
@@ -280,6 +263,7 @@ export default function ScheduledWorkOrders() {
             serverPaged
             columns={SCHEDULED_COLUMNS}
             tableId="work-orders-scheduled"
+            statusCounts={statusCounts}
             emptyTitle="No scheduled work orders yet."
             emptyHint="Activate a PM plan and the scheduler will generate work orders before each due date. You can also click Generate on a plan."
             onView={setSelectedId}

@@ -3,6 +3,7 @@ import { generateOrgSlug } from '../../lib/slug'
 import { LIMIT_ITEMS, PLAN_DEFAULTS, formatLimitValue } from '../../lib/orgLimits'
 import FilterableSelect from '../ui/FilterableSelect'
 import PageBack from '../shared/PageBack'
+import SpellcheckInput from '../shared/SpellcheckInput'
 import '../../components/company/CompanyShared.css'
 import './CreateOrgModal.css'
 
@@ -72,8 +73,7 @@ export default function CreateOrgModal({ onClose, onSubmit, saving }) {
         <form className="admin-modal__form" onSubmit={handleSubmit}>
           <label className="admin-modal__field">
             <span className="admin-modal__label">Organization Name</span>
-            <input
-              type="text"
+            <SpellcheckInput
               className="admin-modal__input"
               value={name}
               onChange={(e) => setName(e.target.value)}
