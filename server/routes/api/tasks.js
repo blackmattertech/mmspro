@@ -56,6 +56,12 @@ import {
 } from '../../lib/taskTagService.js'
 import { searchTaskReferenceEntities } from '../../lib/taskReferenceService.js'
 import { listUpcomingRemindersForUser } from '../../lib/taskReminderJob.js'
+import {
+  buildTasksTemplate,
+  bulkImportTasks,
+} from '../../lib/taskBulkService.js'
+import { attachFailedFileToResult } from '../../lib/importErrorWorkbook.js'
+import { bufferFromBase64Upload, excelFilePayload } from '../../lib/excelTemplate.js'
 
 const router = Router()
 
@@ -400,6 +406,29 @@ router.get('/', canRead, async (req, res) => {
     }))
   } catch (err) {
     res.status(500).json({ error: err.message })
+  }
+})
+
+router.get('/template', canCreate, async (req, res) => {
+  try {
+    const buffer = await buildTasksTemplate(req.userProfile.org_id)
+    res.json(excelFilePayload('tasks-template.xlsx', buffer))
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message })
+  }
+})
+
+router.post('/import', canCreate, async (req, res) => {
+  try {
+    const buffer = bufferFromBase64Upload(req.body?.data)
+    const result = await bulkImportTasks(
+      req.userProfile.org_id,
+      req.userProfile.id,
+      buffer,
+    )
+    res.json(await attachFailedFileToResult(result, buffer, 'tasks-import-failed-rows.xlsx'))
+  } catch (err) {
+    res.status(err.status || 400).json({ error: err.message })
   }
 })
 

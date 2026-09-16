@@ -4,14 +4,30 @@ import { requireOrgAccess } from '../../middleware/orgAccess.js'
 import {
   loadOrgPermissions,
   requireModulePermission,
+  requireAnyModulePermission,
 } from '../../middleware/modulePermission.js'
-import { columnsForReport, getReportCatalog } from '../../lib/reportConstants.js'
-import { getReportData } from '../../lib/reportService.js'
-import { buildReportPdfBuffer, reportPdfFilename } from '../../lib/reportPdf.js'
+import { getReportCatalog, UNIFIED_REPORT_KEY } from '../../lib/reportConstants.js'
+import { getReportData, getReportFilterOptions } from '../../lib/reportService.js'
+import { REPORT_MODULE_KEYS } from '../../lib/accessModules.js'
+import {
+  buildReportExport,
+  deliverScheduleReport,
+  emailReportExport,
+} from '../../lib/reportDelivery.js'
+import {
+  createCustomReport,
+  deleteCustomReport,
+  getCustomReport,
+  listCustomReports,
+  updateCustomReport,
+} from '../../lib/reportCustomService.js'
 import {
   createReportSchedule,
   deleteReportSchedule,
+  getReportSchedule,
   listReportSchedules,
+  markScheduleSentNow,
+  parseEmails,
   updateReportSchedule,
 } from '../../lib/reportScheduleService.js'
 
@@ -30,44 +46,93 @@ function requireReportRead(req, res, next) {
     return res.status(404).json({ error: 'Unknown report' })
   }
   req.reportCatalog = catalog
+  if (catalog.key === UNIFIED_REPORT_KEY) {
+    return requireAnyModulePermission(REPORT_MODULE_KEYS.map((key) => [key, 'read']))(req, res, next)
+  }
   return requireModulePermission(catalog.moduleKey, 'read')(req, res, next)
 }
 
 function requireOrgAdmin(req, res, next) {
   if (!req.orgPermissions?.is_org_admin) {
-    return res.status(403).json({ error: 'Only organization admins can manage report schedules' })
+    return res.status(403).json({ error: 'Only organization admins can manage custom reports and schedules' })
   }
   next()
+}
+
+async function requireCustomReportAdmin(req, res, next) {
+  if (!req.orgPermissions?.is_org_admin) {
+    return res.status(403).json({ error: 'Only organization admins can manage custom reports' })
+  }
+  try {
+    const row = await getCustomReport(req.userProfile.org_id, req.params.id)
+    const catalog = getReportCatalog(row.report_key)
+    if (!catalog) {
+      return res.status(404).json({ error: 'Unknown report' })
+    }
+    req.customReport = row
+    req.reportCatalog = catalog
+    return requireModulePermission(catalog.moduleKey, 'read')(req, res, next)
+  } catch (err) {
+    return sendError(res, err)
+  }
 }
 
 function reportQueryFrom(source = {}) {
   return {
     date_from: source.date_from,
     date_to: source.date_to,
-    location_id: source.location_id,
+    location_id: source.location_id || source.facility_id,
+    facility_id: source.facility_id || source.location_id,
     search: source.search,
+    order_type: source.order_type,
+    order_from: source.order_from,
+    order_to: source.order_to,
+    area_id: source.area_id,
+    equipment_id: source.equipment_id,
+    equipment_type: source.equipment_type,
+    equipment_capacity: source.equipment_capacity,
+    equipment_tag: source.equipment_tag,
+    priority: source.priority,
+    status: source.status || source.job_status,
+    job_nature: source.job_nature,
+    created_by: source.created_by,
+    reported_by: source.reported_by,
+    assigned_to: source.assigned_to,
   }
 }
 
-function selectedColumns(kind, requested) {
-  const allowed = new Set(columnsForReport(kind).map((col) => col.id))
-  const list = Array.isArray(requested)
-    ? requested.map((id) => String(id || '').trim()).filter((id) => allowed.has(id))
-    : []
-  return list.length ? list : columnsForReport(kind).map((col) => col.id)
+async function exportFromRequest(req, body = {}) {
+  return buildReportExport({
+    orgId: req.userProfile.org_id,
+    session: req.orgPermissions,
+    reportKey: req.reportCatalog.key,
+    customReportId: body.custom_report_id || undefined,
+    dateFrom: body.date_from,
+    dateTo: body.date_to,
+    search: body.search,
+    locationId: body.location_id || body.facility_id,
+    filters: reportQueryFrom(body),
+    columns: body.columns,
+  })
 }
 
-function periodLabel(from, to) {
-  if (from && to && from === to) return from
-  if (from && to) return `${from} to ${to}`
-  return 'Selected period'
-}
+router.patch('/custom/:id', requireCustomReportAdmin, async (req, res) => {
+  try {
+    const row = await updateCustomReport(req.userProfile.org_id, req.params.id, req.body || {})
+    res.json(row)
+  } catch (err) {
+    sendError(res, err)
+  }
+})
 
-function formatGeneratedAt(iso) {
-  const date = new Date(iso)
-  if (Number.isNaN(date.getTime())) return String(iso || '')
-  return `${date.toISOString().replace('T', ' ').slice(0, 16)} UTC`
-}
+router.delete('/custom/:id', requireCustomReportAdmin, async (req, res) => {
+  try {
+    const result = await deleteCustomReport(req.userProfile.org_id, req.params.id)
+    res.json(result)
+  } catch (err) {
+    sendError(res, err)
+  }
+})
 
 router.patch('/schedules/:id', requireOrgAdmin, async (req, res) => {
   try {
@@ -87,6 +152,28 @@ router.delete('/schedules/:id', requireOrgAdmin, async (req, res) => {
   }
 })
 
+router.post('/schedules/:id/send', requireOrgAdmin, async (req, res) => {
+  try {
+    const schedule = await getReportSchedule(req.userProfile.org_id, req.params.id)
+    await deliverScheduleReport(schedule)
+    await markScheduleSentNow(schedule.id)
+    res.json({ ok: true })
+  } catch (err) {
+    sendError(res, err)
+  }
+})
+
+router.get('/filters', requireAnyModulePermission(
+  REPORT_MODULE_KEYS.map((key) => [key, 'read']),
+), async (req, res) => {
+  try {
+    const data = await getReportFilterOptions(req.userProfile.org_id, req.orgPermissions)
+    res.json(data)
+  } catch (err) {
+    sendError(res, err)
+  }
+})
+
 router.get('/:key', requireReportRead, async (req, res) => {
   try {
     const data = await getReportData(
@@ -101,33 +188,57 @@ router.get('/:key', requireReportRead, async (req, res) => {
   }
 })
 
+router.get('/:key/custom', requireReportRead, async (req, res) => {
+  try {
+    const items = await listCustomReports(req.userProfile.org_id, req.params.key)
+    res.json({ items })
+  } catch (err) {
+    sendError(res, err)
+  }
+})
+
+router.post('/:key/custom', requireReportRead, requireOrgAdmin, async (req, res) => {
+  try {
+    const row = await createCustomReport(req.userProfile.org_id, req.params.key, req.body || {})
+    res.status(201).json(row)
+  } catch (err) {
+    sendError(res, err)
+  }
+})
+
 router.post('/:key/pdf', requireReportRead, async (req, res) => {
   try {
-    const body = req.body || {}
-    const report = await getReportData(
-      req.userProfile.org_id,
-      req.orgPermissions,
-      req.params.key,
-      reportQueryFrom(body),
-    )
-    const columns = selectedColumns(report.kind, body.columns)
-    const pdf = await buildReportPdfBuffer({
-      orgName: report.org_name,
-      title: report.title,
-      periodLabel: periodLabel(report.filters.date_from, report.filters.date_to),
-      generatedAt: formatGeneratedAt(report.generated_at),
-      locationLabel: report.filters.location_name,
-      kpis: report.kpis,
-      columns,
-      rows: report.rows,
-      kind: report.kind,
-    })
-    const filename = reportPdfFilename(report.title, report.filters.date_from, report.filters.date_to)
+    const bundle = await exportFromRequest(req, req.body || {})
     res.json({
-      filename,
+      filename: bundle.pdfFilename,
       contentType: 'application/pdf',
-      data: pdf.toString('base64'),
+      data: bundle.pdf.toString('base64'),
     })
+  } catch (err) {
+    sendError(res, err)
+  }
+})
+
+router.post('/:key/csv', requireReportRead, async (req, res) => {
+  try {
+    const bundle = await exportFromRequest(req, req.body || {})
+    res.json({
+      filename: bundle.csvFilename,
+      contentType: 'text/csv; charset=utf-8',
+      data: Buffer.from(bundle.csv, 'utf8').toString('base64'),
+    })
+  } catch (err) {
+    sendError(res, err)
+  }
+})
+
+router.post('/:key/send', requireReportRead, requireOrgAdmin, async (req, res) => {
+  try {
+    const body = req.body || {}
+    const emails = parseEmails(body.emails)
+    const bundle = await exportFromRequest(req, body)
+    const result = await emailReportExport(bundle, emails)
+    res.json({ ok: true, ...result })
   } catch (err) {
     sendError(res, err)
   }

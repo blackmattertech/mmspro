@@ -5,6 +5,8 @@ import {
   deleteWarrantyDocumentFile,
 } from './warrantyDocumentStorage.js'
 import { listEnvelope } from './listQuery.js'
+import { tallyStatusCounts } from './statusCounts.js'
+import { clipTrimmedToLimit, getTextFieldLimitsMap } from './textFieldLimits.js'
 
 const WARRANTY_SELECT = `
   id, org_id, serial_number,
@@ -50,7 +52,7 @@ function parseDecimal(value) {
   return Number.isFinite(num) ? num : null
 }
 
-function normalizeItems(items) {
+function normalizeItems(items, limits = null) {
   if (!Array.isArray(items)) return []
   return items
     .map((item, index) => ({
@@ -58,7 +60,9 @@ function normalizeItems(items) {
       product_name: trimOrNull(item.product_name),
       model_part_no: trimOrNull(item.model_part_no),
       value: parseDecimal(item.value),
-      remarks: trimOrNull(item.remarks),
+      remarks: limits
+        ? clipTrimmedToLimit(limits, 'remarks', item.remarks)
+        : trimOrNull(item.remarks),
     }))
     .filter((item) => (
       item.product_name
@@ -113,6 +117,49 @@ async function resolveVendorFields(orgId, payload) {
     contact_phone: payload.contact_phone || vendor.mobile || null,
     contact_email: payload.contact_email || vendor.email || null,
   }
+}
+
+function warrantyStatusKey(row, now = new Date()) {
+  if (!row?.warranty_end) return 'active'
+  const end = new Date(`${String(row.warranty_end).slice(0, 10)}T23:59:59`)
+  if (Number.isNaN(end.getTime())) return 'active'
+  if (end < now) return 'expired'
+  const notifyDays = Number(row.expiry_notification_days)
+  const windowDays = Number.isFinite(notifyDays) && notifyDays >= 0 ? notifyDays : 30
+  const soon = new Date(now)
+  soon.setDate(soon.getDate() + windowDays)
+  if (end <= soon) return 'expiring_soon'
+  return 'active'
+}
+
+async function countWarrantyStatuses(orgId, { search = null } = {}) {
+  let query = supabaseAdmin
+    .from('warranties')
+    .select('warranty_end, expiry_notification_days')
+    .eq('org_id', orgId)
+
+  const term = trimOrNull(search)
+  if (term) {
+    const q = term.replace(/%/g, '')
+    const itemWarrantyIds = await findWarrantyIdsByItemSearch(orgId, term)
+    const filters = [
+      `serial_number.ilike.%${q}%`,
+      `make.ilike.%${q}%`,
+      `vendor.ilike.%${q}%`,
+      `po_number.ilike.%${q}%`,
+      `invoice_number.ilike.%${q}%`,
+      `contact_name.ilike.%${q}%`,
+      `contact_email.ilike.%${q}%`,
+    ]
+    if (itemWarrantyIds.length) {
+      filters.push(`id.in.(${itemWarrantyIds.join(',')})`)
+    }
+    query = query.or(filters.join(','))
+  }
+
+  const { data, error } = await query
+  if (error) throw error
+  return tallyStatusCounts(data, (row) => warrantyStatusKey(row))
 }
 
 function enrichWarrantyRow(row) {
@@ -372,9 +419,12 @@ export async function listWarranties(orgId, { search = null, limit = 100, offset
     query = query.or(filters.join(','))
   }
 
-  const { data, error, count } = await query
+  const [{ data, error, count }, status_counts] = await Promise.all([
+    query,
+    countWarrantyStatuses(orgId, { search }),
+  ])
   if (error) throw error
-  return listEnvelope((data || []).map(enrichWarrantyRow), { total: count || 0, limit, offset })
+  return listEnvelope((data || []).map(enrichWarrantyRow), { total: count || 0, limit, offset, status_counts })
 }
 
 export async function getWarrantyDetail(orgId, id) {
@@ -395,7 +445,8 @@ export async function getWarrantyDetail(orgId, id) {
 
 export async function createWarranty(orgId, body) {
   const payload = await resolveVendorFields(orgId, normalizeWarrantyPayload(body))
-  const items = normalizeItems(body.items)
+  const fieldLimits = await getTextFieldLimitsMap(orgId)
+  const items = normalizeItems(body.items, fieldLimits)
   const serial_number = await nextSerialNumber(orgId)
 
   const { data, error } = await supabaseAdmin
@@ -416,7 +467,8 @@ export async function createWarranty(orgId, body) {
 
 export async function updateWarranty(orgId, id, body) {
   const payload = await resolveVendorFields(orgId, normalizeWarrantyPayload(body))
-  const items = normalizeItems(body.items)
+  const fieldLimits = await getTextFieldLimitsMap(orgId)
+  const items = normalizeItems(body.items, fieldLimits)
 
   const { data, error } = await supabaseAdmin
     .from('warranties')

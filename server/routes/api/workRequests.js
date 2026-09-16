@@ -22,6 +22,12 @@ import {
   getEmployeeByProfile,
 } from '../../lib/workRequestService.js'
 import { getScopedLocationId } from '../../lib/orgPermissions.js'
+import {
+  buildWorkRequestsTemplate,
+  bulkImportWorkRequests,
+} from '../../lib/workRequestBulkService.js'
+import { attachFailedFileToResult } from '../../lib/importErrorWorkbook.js'
+import { bufferFromBase64Upload, excelFilePayload } from '../../lib/excelTemplate.js'
 
 const router = Router()
 
@@ -133,6 +139,31 @@ router.post('/', canCreate, async (req, res) => {
       { isOrgAdmin: canCreateWorkRequestWithoutEmployeeDepartment(req.orgPermissions) },
     )
     res.status(201).json(row)
+  } catch (err) {
+    sendError(res, err)
+  }
+})
+
+router.get('/template', canCreate, async (req, res) => {
+  try {
+    const buffer = await buildWorkRequestsTemplate(req.userProfile.org_id)
+    res.json(excelFilePayload('work-requests-template.xlsx', buffer))
+  } catch (err) {
+    sendError(res, err)
+  }
+})
+
+router.post('/import', canCreate, async (req, res) => {
+  try {
+    const buffer = bufferFromBase64Upload(req.body?.data)
+    const result = await bulkImportWorkRequests(
+      req.userProfile.org_id,
+      req.userProfile.id,
+      req.userProfile.email,
+      buffer,
+      { isOrgAdmin: canCreateWorkRequestWithoutEmployeeDepartment(req.orgPermissions) },
+    )
+    res.json(await attachFailedFileToResult(result, buffer, 'work-requests-import-failed-rows.xlsx'))
   } catch (err) {
     sendError(res, err)
   }

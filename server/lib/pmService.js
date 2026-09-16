@@ -5,6 +5,7 @@ import {
   addWorkOrderTimelineEvent,
   addWorkOrderAuditEntry,
 } from './workOrderService.js'
+import { clipToLimit, getTextFieldLimitsMap } from './textFieldLimits.js'
 import { snapshotChecklistTemplate } from './checklistService.js'
 import { isMaintenanceDepartment } from './bulkMasterMatch.js'
 import {
@@ -744,6 +745,54 @@ export async function deletePmPlan(orgId, planId) {
   if (error) throw error
 }
 
+export async function duplicatePmPlan(orgId, profileId, planId) {
+  const existing = await getPmPlan(orgId, planId)
+  const sourceName = String(existing.name || '').trim() || 'PM plan'
+  const copyName = `${sourceName} (copy)`
+
+  const copy = await createPmPlan(orgId, profileId, {
+    name: copyName,
+    department_id: existing.department_id,
+    location_id: existing.location_id,
+    area_id: existing.area_id,
+    equipment_id: existing.equipment_id,
+    activity_type_id: existing.activity_type_id,
+    work_center: existing.work_center,
+    priority: existing.priority,
+    status: 'inactive',
+    schedule_type: existing.schedule_type,
+    calendar_unit: existing.calendar_unit,
+    every_n: existing.every_n,
+    start_date: existing.start_date,
+    end_date: existing.end_date,
+    grace_days: existing.grace_days,
+    generate_before_days: existing.generate_before_days,
+    last_reading: existing.last_reading,
+    last_service_date: existing.last_service_date,
+    reading_interval: existing.reading_interval,
+    whichever_comes_first: existing.whichever_comes_first,
+    checklist_template_id: existing.checklist_template_id,
+    contractor_vendor_id: existing.contractor_vendor_id,
+    estimated_labour_hours: existing.estimated_labour_hours,
+    estimated_duration_hours: existing.estimated_duration_hours,
+    required_tools: existing.required_tools,
+    required_skills: existing.required_skills,
+    technician_ids: (existing.technicians || []).map((row) => row.id),
+  })
+
+  await addPlanAudit(
+    orgId,
+    copy.id,
+    profileId,
+    'duplicated',
+    { source_plan_id: existing.id, source_plan_number: existing.plan_number },
+    { plan_number: copy.plan_number },
+    `Duplicated from ${existing.plan_number || existing.id}`,
+  )
+
+  return copy
+}
+
 async function countOpenScheduledWorkOrders(orgId, planId) {
   const { count, error } = await supabaseAdmin
     .from('manual_work_orders')
@@ -802,6 +851,9 @@ export async function generateScheduledWorkOrder(orgId, planId, {
   const technicianIds = (plan.technicians || []).map((row) => row.id)
   const assignedDepartmentId = plan.location_id ? plan.department_id : null
 
+  const fieldLimits = await getTextFieldLimitsMap(orgId)
+  const pmSummary = `${plan.name} — ${activityName}`
+
   const { data: workOrder, error } = await supabaseAdmin
     .from('manual_work_orders')
     .insert({
@@ -815,8 +867,8 @@ export async function generateScheduledWorkOrder(orgId, planId, {
       assigned_location_id: plan.location_id || null,
       equipment_id: plan.equipment_id || null,
       asset_hierarchy: hierarchy,
-      short_description: `${plan.name} — ${activityName}`.slice(0, 200),
-      problem_description: `${plan.name} — ${activityName}`,
+      short_description: clipToLimit(fieldLimits, 'short_description', pmSummary),
+      problem_description: clipToLimit(fieldLimits, 'problem_description', pmSummary),
       priority: plan.priority,
       work_center: plan.work_center || 'General',
       planned_start_at: dueIso,
