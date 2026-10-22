@@ -56,6 +56,13 @@ export const ACCESS_MODULE_GROUPS = [
     ],
   },
   {
+    id: 'logbook',
+    label: 'Logbook',
+    modules: [
+      { key: 'logbook', label: 'Logbook', actions: ['create', 'read', 'delete'] },
+    ],
+  },
+  {
     id: 'reports',
     label: 'Reports',
     modules: [

@@ -471,6 +471,7 @@ export default function OrderedFormLayout({
     return (
       <section
         key={section.id}
+        data-section-id={section.id}
         className={`company-form__layout-section wo-section ${sectionDisabled && filledBy !== 'any' ? 'is-fillership-locked' : ''}`}
       >
         {section.label || badge ? (

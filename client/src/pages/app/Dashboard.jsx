@@ -63,6 +63,8 @@ export default function Dashboard() {
               modules={modules}
               charts={charts}
               locationLabel={locationFilterLabel}
+              onCreateWorkRequest={canCreateWorkRequest ? createWorkRequest : null}
+              onCreateWorkOrder={canCreateWorkOrder ? createWorkOrder : null}
             />
           )}
         </div>

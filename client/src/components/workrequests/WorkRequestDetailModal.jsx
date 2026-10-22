@@ -18,7 +18,7 @@ import ChecklistExecution from '../pm/ChecklistExecution'
 import { getWorkCenters } from '../../lib/api'
 import { getWorkOrderFileSignedUrl, uploadWorkOrderFile } from '../../lib/workOrderAssets'
 import { downloadFromUrl } from '../../lib/fileDownload'
-import { getWorkOrderFiles, isImageFileItem, revokeWorkOrderFilePreviews } from '../../lib/workOrderFileValues'
+import { getWorkOrderFiles, isImageFileItem, revokeWorkOrderFilePreviews, workOrderFilesValue, filesNeedStoredPreview } from '../../lib/workOrderFileValues'
 import ImageLightbox from '../shared/ImageLightbox'
 import PageBack from '../shared/PageBack'
 import RecordTimeline from '../shared/RecordTimeline'
@@ -30,6 +30,7 @@ import TechnicianMultiSelect from './TechnicianMultiSelect'
 import SpellcheckInput from '../shared/SpellcheckInput'
 import FormLabel from '../shared/FormLabel'
 import OrderedFormLayout from '../forms/OrderedFormLayout'
+import EquipmentQrCode from '../equipment/EquipmentQrCode'
 
 function WorkRequestChecklistPanel({ detail }) {
   const fields = detail?.checklist_snapshot?.fields || []
@@ -76,8 +77,9 @@ function WorkRequestChecklistPanel({ detail }) {
 }
 import { useFormLayout } from '../../hooks/useFormLayout'
 import { useFormFieldValues } from '../../hooks/useFormFieldValues'
-import { resolveFormActors, canEditFilledBy, validateRepeatableGroups } from '../../lib/formFillership'
-import { normalizeFilledBy } from '../../lib/formLayoutIds'
+import { resolveFormActors } from '../../lib/formFillership'
+import { catalogId, parseLayoutId } from '../../lib/formLayoutIds'
+import { getEquipmentFieldRole } from '../../lib/workRequestAssetPicker'
 import '../company/CompanyShared.css'
 import '../workorders/WorkOrdersPage.css'
 import '../workorders/ManualWorkOrder.css'
@@ -89,6 +91,206 @@ function formatDate(value) {
     dateStyle: 'medium',
     timeStyle: 'short',
   })
+}
+
+function hasFilledValue(value) {
+  if (value == null || value === '') return false
+  if (Array.isArray(value)) return value.length > 0
+  if (typeof value === 'object') {
+    if (Array.isArray(value.files)) return value.files.length > 0
+    return Object.keys(value).length > 0
+  }
+  return String(value).trim() !== '' && String(value).trim() !== '—'
+}
+
+function fieldLabel(field, catalog) {
+  return String(field?.label || catalog?.name || catalog?.label || '').trim().toLowerCase()
+}
+
+function isAreaLayoutField(field, catalog, parsed) {
+  return parsed.value === 'areas'
+    || field.masterSource === 'areas'
+    || field.bindKey === 'area_id'
+    || fieldLabel(field, catalog) === 'area'
+    || getEquipmentFieldRole(catalog || { name: field?.label }) === 'area'
+}
+
+function isImageLayoutField(field, catalog, parsed) {
+  const label = fieldLabel(field, catalog)
+  const type = String(field.fieldType || catalog?.field_type || '').toLowerCase()
+  return type === 'image' || /^images?$/.test(label)
+}
+
+function incomingDisplayLayout(layout, catalogFields) {
+  if (!layout) return layout
+  const catalogById = new Map((catalogFields || []).map((row) => [String(row.id), row]))
+  return {
+    ...layout,
+    fields: (layout.fields || []).filter((field) => {
+      const parsed = parseLayoutId(field.id)
+      const catalog = parsed.kind === 'catalog' ? catalogById.get(String(parsed.value)) : null
+      return !isAreaLayoutField(field, catalog, parsed)
+    }),
+  }
+}
+
+function firstLayoutText(layout, catalogFields, values, test) {
+  const catalogById = new Map((catalogFields || []).map((row) => [String(row.id), row]))
+  for (const field of layout?.fields || []) {
+    const parsed = parseLayoutId(field.id)
+    const catalog = parsed.kind === 'catalog' ? catalogById.get(String(parsed.value)) : null
+    if (!test(field, catalog, parsed, fieldLabel(field, catalog))) continue
+    const candidates = [values?.[field.id], values?.[catalog?.id], values?.[parsed.value]]
+    for (const raw of candidates) {
+      if (raw == null || typeof raw === 'object') continue
+      const text = String(raw).trim()
+      if (text && text !== '—') return text
+    }
+  }
+  return ''
+}
+
+function jobNatureDisplay(detail, layout, catalogFields, extrasValues) {
+  const native = String(detail?.job_nature || detail?.job_nature_label || '').trim()
+  if (native) return native
+  const fromRows = (detail?.layout_fields || []).find((field) => /job\s*nature/i.test(String(field.label || '')))?.value
+  if (fromRows) return fromRows
+  return firstLayoutText(
+    layout,
+    catalogFields,
+    extrasValues,
+    (field, catalog, parsed, label) => field.bindKey === 'job_nature' || /job\s*nature/.test(label),
+  ) || '—'
+}
+
+function seedWorkRequestFormValues(layout, catalogFields, values, detail) {
+  if (!layout) return null
+  const next = { ...values }
+  let changed = false
+  const equipment = detail?.equipment || {}
+  const hierarchy = Array.isArray(detail?.asset_hierarchy) ? detail.asset_hierarchy : []
+  const areaId = equipment.area_id || null
+  const areaName = equipment.area_name
+    || hierarchy.find((step) => /^area$/i.test(String(step.field_name || '')))?.value
+    || ''
+  const catalogById = new Map((catalogFields || []).map((row) => [String(row.id), row]))
+  const nativeByKey = {
+    short_description: detail?.short_description,
+    problem_description: detail?.problem_description,
+    remarks: detail?.remarks,
+    job_nature: detail?.job_nature_label || detail?.job_nature,
+    priority: detail?.priority,
+    area_id: areaId || areaName,
+    location_id: equipment.location_id,
+    department_id: equipment.department_id,
+    equipment_id: equipment.id,
+  }
+
+  const assign = (key, value) => {
+    if (!key || !hasFilledValue(value) || hasFilledValue(next[key])) return
+    next[key] = value
+    changed = true
+  }
+
+  const assignBoth = (fieldId, catalogKey, value) => {
+    assign(fieldId, value)
+    if (catalogKey && catalogKey !== fieldId) assign(catalogKey, value)
+  }
+
+  for (const [key, stored] of Object.entries(detail?.field_values || {})) {
+    assign(key, stored)
+    assign(catalogId(key), stored)
+  }
+
+  for (const step of hierarchy) {
+    if (!hasFilledValue(step?.value)) continue
+    if (step.field_id) {
+      assign(step.field_id, step.value)
+      assign(catalogId(step.field_id), step.value)
+    }
+  }
+
+  const equipmentValues = equipment.values && typeof equipment.values === 'object' && !Array.isArray(equipment.values)
+    ? equipment.values
+    : {}
+  for (const [id, value] of Object.entries(equipmentValues)) {
+    assign(id, value)
+    assign(catalogId(id), value)
+  }
+
+  for (const field of layout.fields || []) {
+    const parsed = parseLayoutId(field.id)
+    const catalog = parsed.kind === 'catalog' ? catalogById.get(String(parsed.value)) : null
+    const catalogKey = catalog?.id || (parsed.kind === 'catalog' ? parsed.value : null)
+    const label = fieldLabel(field, catalog)
+    const bind = String(field.bindKey || '')
+    const type = String(field.fieldType || catalog?.field_type || '').toLowerCase()
+
+    if (nativeByKey[bind]) assignBoth(field.id, catalogKey, nativeByKey[bind])
+    if (bind === 'short_description' || label === 'short description') {
+      assignBoth(field.id, catalogKey, nativeByKey.short_description)
+    }
+    if (bind === 'problem_description' || label === 'problem description' || label === 'problem detailed description') {
+      assignBoth(field.id, catalogKey, nativeByKey.problem_description)
+    }
+    if (bind === 'remarks' || label === 'remarks') {
+      assignBoth(field.id, catalogKey, nativeByKey.remarks)
+    }
+    if (bind === 'job_nature' || /job\s*nature/.test(label)) {
+      assignBoth(field.id, catalogKey, nativeByKey.job_nature)
+    }
+    if (bind === 'priority' || /^(job\s*)?priority$/.test(label)) {
+      assignBoth(field.id, catalogKey, nativeByKey.priority)
+    }
+
+    if (isAreaLayoutField(field, catalog, parsed)) {
+      const options = catalog?.dropdown_options || []
+      const match = options.find((option) => {
+        const value = option?.value ?? option?.id ?? option
+        const optionLabel = option?.label ?? option?.name ?? option
+        return String(value) === String(areaId)
+          || String(optionLabel) === String(areaName)
+          || String(value) === String(areaName)
+      })
+      const masterValue = areaId || areaName
+      const catalogValue = match
+        ? (match.value ?? match.id ?? match)
+        : (areaName || areaId)
+      if (parsed.kind === 'master' || field.masterSource === 'areas' || bind === 'area_id') {
+        assignBoth(field.id, catalogKey, masterValue)
+      } else {
+        assignBoth(field.id, catalogKey, catalogValue)
+      }
+    }
+
+    if (type === 'image' || /^images?$/.test(label)) {
+      const current = next[field.id] ?? next[catalogKey]
+      const storedFiles = getWorkOrderFiles(current)
+      const attachmentFiles = getWorkOrderFiles(detail?.attachments)
+      const byName = new Map(attachmentFiles.map((file) => [String(file.name || '').toLowerCase(), file]))
+      if (storedFiles.length && attachmentFiles.length) {
+        let merged = false
+        const nextFiles = storedFiles.map((file) => {
+          if (file.path || file.url) return file
+          const match = byName.get(String(file.name || '').toLowerCase())
+          if (!match?.path && !match?.url) return file
+          merged = true
+          return { ...file, path: match.path || file.path, url: match.url || file.url }
+        })
+        if (merged) {
+          next[field.id] = workOrderFilesValue(nextFiles)
+          if (catalogKey) next[catalogKey] = workOrderFilesValue(nextFiles)
+          changed = true
+        }
+      } else if (filesNeedStoredPreview(current) && attachmentFiles.length) {
+        next[field.id] = workOrderFilesValue(attachmentFiles)
+        if (catalogKey) next[catalogKey] = workOrderFilesValue(attachmentFiles)
+        changed = true
+      }
+    }
+  }
+
+  return changed ? next : null
 }
 
 function MetaItem({ label, children }) {
@@ -254,8 +456,6 @@ export default function WorkRequestDetailModal({
   const { maxLength } = useTextFieldLimits()
   const { layout, catalogFields, hasLayout } = useFormLayout('work_request.create')
   const extras = useFormFieldValues('work_request.create', requestId || null)
-  const [extrasSaving, setExtrasSaving] = useState(false)
-  const [extrasError, setExtrasError] = useState(null)
   const handleBackdropClick = useBackdropClose(onClose)
   const [employees, setEmployees] = useState([])
   const [assigneeIds, setAssigneeIds] = useState([])
@@ -422,34 +622,25 @@ export default function WorkRequestDetailModal({
     detail,
   ])
 
-  const canEditAnyFillershipSection = useMemo(() => {
-    if (!hasLayout || !layout) return false
-    return (layout.sections || []).some((section) => {
-      const filledBy = normalizeFilledBy(section.filledBy)
-      if (filledBy === 'any') return canEditFilledBy(filledBy, formActors)
-      return canEditFilledBy(filledBy, formActors)
+  const displayLayout = useMemo(
+    () => incomingDisplayLayout(layout, catalogFields),
+    [layout, catalogFields],
+  )
+  const hasFormImages = useMemo(() => {
+    const catalogById = new Map((catalogFields || []).map((row) => [String(row.id), row]))
+    return (displayLayout?.fields || []).some((field) => {
+      const parsed = parseLayoutId(field.id)
+      const catalog = parsed.kind === 'catalog' ? catalogById.get(String(parsed.value)) : null
+      return isImageLayoutField(field, catalog, parsed)
     })
-  }, [hasLayout, layout, formActors])
+  }, [displayLayout, catalogFields])
+  const jobNature = jobNatureDisplay(detail, layout, catalogFields, extras.values)
+  const qrValue = equipment?.qr_code || equipment?.code || ''
 
-  const saveLayoutExtras = useCallback(async () => {
-    if (!requestId || !hasLayout) return
-    setExtrasError(null)
-    const groupErrors = validateRepeatableGroups(layout, extras.values, { actors: formActors })
-    if (groupErrors.length) {
-      setExtrasError(groupErrors[0])
-      return
-    }
-    setExtrasSaving(true)
-    try {
-      await extras.save(requestId, extras.values)
-      await reload?.()
-      onUpdated?.()
-    } catch (err) {
-      setExtrasError(err.message || 'Could not save form fields')
-    } finally {
-      setExtrasSaving(false)
-    }
-  }, [requestId, hasLayout, layout, extras, formActors, reload, onUpdated])
+  useEffect(() => {
+    if (!detail?.id || extras.loading || !hasLayout || !layout) return
+    extras.setValues((prev) => seedWorkRequestFormValues(layout, catalogFields, prev, detail) || prev)
+  }, [detail, extras.loading, extras.setValues, hasLayout, layout, catalogFields])
 
   return (
     <div className="wr-detail-overlay" onClick={handleBackdropClick} role="presentation">
@@ -462,7 +653,7 @@ export default function WorkRequestDetailModal({
       >
         <header className="wr-detail-sheet__header">
           <div className="wr-detail-sheet__header-main">
-            <PageBack onClick={onClose} />
+            <PageBack onClick={onClose} label="Back to Work Requests" />
             <div>
               <p className="wr-detail-sheet__eyebrow">Work request</p>
               <h2 id="wr-detail-title" className="wr-detail-sheet__title">
@@ -482,7 +673,7 @@ export default function WorkRequestDetailModal({
           {error && <div className="wo-alert wo-alert--error">{error}</div>}
 
           {detail && (
-            <div className="wr-detail-layout">
+            <div className="wr-detail-board">
               <div className="wr-detail-main">
                 <div className="wr-detail-meta">
                   <MetaItem label="Status">
@@ -496,7 +687,7 @@ export default function WorkRequestDetailModal({
                   <MetaItem label="Request type">
                     {(detail.request_type || '').replace(/_/g, ' ')}
                   </MetaItem>
-                  <MetaItem label="Job nature">{detail.job_nature || detail.job_nature_label || '—'}</MetaItem>
+                  <MetaItem label="Job nature">{jobNature}</MetaItem>
                   <MetaItem label="Order from">{detail.order_from?.name || '—'}</MetaItem>
                   <MetaItem label="Order to">{detail.order_to?.name || '—'}</MetaItem>
                   {equipment && (
@@ -547,109 +738,89 @@ export default function WorkRequestDetailModal({
                   )}
                 </div>
 
-                {(hierarchy.length > 0 || equipment) && (
-                  <section className="wo-received-detail__section">
-                    <h3>Equipment &amp; asset</h3>
-                    <dl className="wo-received-detail__fields">
-                      {hierarchy.length > 0 ? hierarchy
-                        .filter((step, i, list) => {
-                          const name = String(step.field_name || '').trim().toLowerCase()
-                          if (!name) return false
-                          return list.findIndex((item) => String(item.field_name || '').trim().toLowerCase() === name) === i
-                        })
-                        .map((step, i) => (
-                        <div key={`${step.field_id || step.field_name}-${i}`} className="wo-received-detail__field">
-                          <dt>{step.field_name}</dt>
-                          <dd>{step.value || '—'}</dd>
-                        </div>
-                      )) : (
-                        <>
-                          {equipment?.area_name && (
-                            <div className="wo-received-detail__field">
-                              <dt>Area</dt>
-                              <dd>{equipment.area_name}</dd>
+                  {(hierarchy.length > 0 || equipment) && (
+                    <section className="wr-form-section">
+                      <div className="wr-form-section__head">
+                        <h3 className="wr-form-section__title">Equipment &amp; Asset Information</h3>
+                      </div>
+                      <div className="wr-detail-equip wr-form-section__body">
+                        <dl className="wo-received-detail__fields">
+                          {hierarchy.length > 0 ? hierarchy
+                            .filter((step, i, list) => {
+                              const name = String(step.field_name || '').trim().toLowerCase()
+                              if (!name) return false
+                              return list.findIndex((item) => String(item.field_name || '').trim().toLowerCase() === name) === i
+                            })
+                            .map((step, i) => (
+                            <div key={`${step.field_id || step.field_name}-${i}`} className="wo-received-detail__field">
+                              <dt>{step.field_name}</dt>
+                              <dd>{step.value || '—'}</dd>
                             </div>
+                          )) : (
+                            <>
+                              {equipment?.area_name && (
+                                <div className="wo-received-detail__field">
+                                  <dt>Area</dt>
+                                  <dd>{equipment.area_name}</dd>
+                                </div>
+                              )}
+                              <div className="wo-received-detail__field">
+                                <dt>Equipment</dt>
+                                <dd>{[equipment?.name, equipment?.code].filter(Boolean).join(' · ') || '—'}</dd>
+                              </div>
+                            </>
                           )}
-                          <div className="wo-received-detail__field">
-                            <dt>Equipment</dt>
-                            <dd>{[equipment?.name, equipment?.code].filter(Boolean).join(' · ') || '—'}</dd>
-                          </div>
-                        </>
+                        </dl>
+                        {qrValue ? (
+                          <EquipmentQrCode
+                            value={qrValue}
+                            caption={{ label: 'QR code', value: equipment?.code || equipment?.name || qrValue }}
+                            fileName={equipment?.code || equipment?.name || 'equipment-qr'}
+                          />
+                        ) : null}
+                      </div>
+                    </section>
+                  )}
+
+                  {hasLayout ? (
+                    <>
+                      {extras.loading && (
+                        <div className="wo-received-detail__status">Loading form fields…</div>
                       )}
-                    </dl>
-                  </section>
-                )}
+                      <OrderedFormLayout
+                        formId="work_request.create"
+                        layout={displayLayout}
+                        catalogLookup={catalogFields}
+                        catalogValues={extras.values}
+                        onCatalogChange={extras.setFieldValue}
+                        masterValues={extras.values}
+                        onMasterChange={extras.setFieldValue}
+                        disabled
+                        actors={formActors}
+                        renderField={() => null}
+                      />
+                    </>
+                  ) : layoutFields.length > 0 && (
+                    <section className="wr-form-section">
+                      <div className="wr-form-section__head">
+                        <h3 className="wr-form-section__title">Form fields</h3>
+                      </div>
+                      <dl className="wo-received-detail__fields wr-form-section__body">
+                        {layoutFields.map((field) => (
+                          <div key={field.id} className="wo-received-detail__field">
+                            <dt>{field.label}</dt>
+                            <dd style={{ whiteSpace: 'pre-wrap' }}>{field.value || '—'}</dd>
+                          </div>
+                        ))}
+                      </dl>
+                    </section>
+                  )}
 
-                {hasLayout ? (
-                  <section className="wo-received-detail__section">
-                    <h3>Form layout</h3>
-                    {(extrasError || extras.loading) && (
-                      <div className={extrasError ? 'wo-alert wo-alert--error' : 'wo-received-detail__status'}>
-                        {extrasError || 'Loading form fields…'}
-                      </div>
-                    )}
-                    <OrderedFormLayout
-                      formId="work_request.create"
-                      layout={layout}
-                      catalogLookup={catalogFields}
-                      catalogValues={extras.values}
-                      onCatalogChange={extras.setFieldValue}
-                      masterValues={extras.values}
-                      onMasterChange={extras.setFieldValue}
-                      disabled={extrasSaving}
-                      actors={formActors}
-                      renderField={() => null}
-                    />
-                    {canEditAnyFillershipSection && (
-                      <div className="wr-assign-block" style={{ marginTop: 12 }}>
-                        <button
-                          type="button"
-                          className="company-btn company-btn--primary"
-                          onClick={saveLayoutExtras}
-                          disabled={extrasSaving || extras.loading}
-                        >
-                          {extrasSaving ? 'Saving…' : 'Save form fields'}
-                        </button>
-                      </div>
-                    )}
-                  </section>
-                ) : layoutFields.length > 0 && (
-                  <section className="wo-received-detail__section">
-                    <h3>Form fields</h3>
-                    <dl className="wo-received-detail__fields">
-                      {layoutFields.map((field) => (
-                        <div key={field.id} className="wo-received-detail__field">
-                          <dt>{field.label}</dt>
-                          <dd style={{ whiteSpace: 'pre-wrap' }}>{field.value || '—'}</dd>
-                        </div>
-                      ))}
-                    </dl>
-                  </section>
-                )}
-
-                <section className="wo-received-detail__section">
-                  <h3>Details</h3>
-                  <dl className="wo-received-detail__fields">
-                    <div className="wo-received-detail__field wo-received-detail__field--full">
-                      <dt>Short description</dt>
-                      <dd>{detail.short_description || '—'}</dd>
-                    </div>
-                    <div className="wo-received-detail__field wo-received-detail__field--full">
-                      <dt>Problem description</dt>
-                      <dd style={{ whiteSpace: 'pre-wrap' }}>{detail.problem_description || '—'}</dd>
-                    </div>
-                    <div className="wo-received-detail__field wo-received-detail__field--full">
-                      <dt>Remarks</dt>
-                      <dd style={{ whiteSpace: 'pre-wrap' }}>{detail.remarks || '—'}</dd>
-                    </div>
-                    {technicians.length > 0 && (
-                      <div className="wo-received-detail__field wo-received-detail__field--full">
-                        <dt>Assigned technicians</dt>
-                        <dd>{technicians.map((t) => t.name).join(', ')}</dd>
-                      </div>
-                    )}
-                  </dl>
-                </section>
+              {technicians.length > 0 && (
+                <p className="wr-detail-technicians">
+                  Assigned technicians: {technicians.map((t) => t.name).join(', ')}
+                </p>
+              )}
 
                 <WorkRequestChecklistPanel detail={detail} />
 
@@ -667,7 +838,9 @@ export default function WorkRequestDetailModal({
                   </section>
                 )}
 
-                <WorkRequestAttachments attachments={detail.attachments} />
+                {!hasFormImages && (
+                  <WorkRequestAttachments attachments={detail.attachments} />
+                )}
 
                 {actionError && (
                   <div className="wo-alert wo-alert--error" role="alert">{actionError}</div>
@@ -716,33 +889,32 @@ export default function WorkRequestDetailModal({
                 )}
 
                 {showActions && (
-                  <section className="wo-received-detail__section wo-assignment-actions">
-                    <h3>Actions</h3>
+                  <section className="wr-detail-actions">
                     {mode !== 'approve' && mode !== 'info' && (
-                      <div className="wr-actions">
+                      <div className="wr-actions wr-actions--bar">
                         <button
                           type="button"
                           className="company-btn company-btn--primary"
                           onClick={() => setMode(mode === 'approve' ? null : 'approve')}
                           disabled={acting || mode === 'reject'}
                         >
-                          Approve &amp; assign
+                          Approve &amp; Assign
                         </button>
                         <button
                           type="button"
-                          className="company-btn company-btn--secondary"
+                          className="company-btn wr-actions__info"
+                          onClick={() => setMode('info')}
+                          disabled={acting || mode === 'reject'}
+                        >
+                          Request More Info
+                        </button>
+                        <button
+                          type="button"
+                          className="company-btn wr-actions__reject"
                           onClick={() => setMode('reject')}
                           disabled={acting || mode === 'reject'}
                         >
                           Reject
-                        </button>
-                        <button
-                          type="button"
-                          className="company-btn company-btn--secondary"
-                          onClick={() => setMode('info')}
-                          disabled={acting || mode === 'reject'}
-                        >
-                          Request more info
                         </button>
                       </div>
                     )}
@@ -894,7 +1066,6 @@ export default function WorkRequestDetailModal({
                   </section>
                 )}
               </div>
-
               <aside className="wr-detail-timeline" aria-label="Timeline">
                 <h3 className="wr-detail-timeline__title">Timeline</h3>
                 <RecordTimeline events={detail.timeline} />

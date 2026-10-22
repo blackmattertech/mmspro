@@ -80,6 +80,27 @@
   line-height: 1.4;
 }
 
+.equipment-scanner__actions {
+  display: flex;
+  justify-content: center;
+  padding: 0 16px;
+}
+
+.equipment-scanner__photo {
+  height: 40px;
+  padding: 0 16px;
+  color: #fff;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 8px;
+  font: inherit;
+  font-weight: 600;
+}
+
+.equipment-scanner__photo:disabled {
+  opacity: 0.6;
+}
+
 .equipment-scanner__error {
   color: #fecaca;
 }

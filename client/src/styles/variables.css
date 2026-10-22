@@ -1,4 +1,8 @@
 :root {
+  --dialog-inset-left: 0px;
+  --sidebar-width: 260px;
+  --sidebar-collapsed-width: 72px;
+
   /* Primary */
   --color-primary: #E63946;
   --color-primary-dark: #E91342;

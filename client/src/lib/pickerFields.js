@@ -73,16 +73,25 @@ function equipmentFieldText(row, fieldId) {
   return storedText(match.value_text || match.value_json)
 }
 
+function mapText(map, fieldId) {
+  if (!map || typeof map !== 'object' || Array.isArray(map) || !fieldId) return ''
+  const bare = String(fieldId).replace(/^(catalog|field|custom|system):/, '')
+  const keys = [fieldId, bare, `catalog:${bare}`, `field:${bare}`, `custom:${bare}`]
+  for (const key of keys) {
+    const text = storedText(map[key])
+    if (text) return text
+  }
+  return ''
+}
+
 export function readCatalogText(row, column) {
   const id = column?.id || column
   if (!String(id).startsWith('field:') && !column?.fieldId) return ''
   const fieldId = column?.fieldId || String(id).slice('field:'.length)
   const name = column?.fieldName || column?.label || ''
-  const saved = row?.field_values && !Array.isArray(row.field_values)
-    ? storedText(row.field_values[fieldId])
-    : ''
+  const saved = mapText(row?.field_values, fieldId)
   if (saved) return saved
-  const formValue = storedText(row?.form_field_values?.[fieldId])
+  const formValue = mapText(row?.form_field_values, fieldId)
   if (formValue) return formValue
   const fromEquipment = equipmentFieldText(row, fieldId)
   if (fromEquipment) return fromEquipment

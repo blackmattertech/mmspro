@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import DateField from '../ui/DateField'
 import FilterableSelect from '../ui/FilterableSelect'
 import { fieldTypeLabel } from '../../lib/assetFieldTypes'
-import { validateWorkOrderFile } from '../../lib/workOrderAssets'
+import { getWorkOrderFileSignedUrl, validateWorkOrderFile } from '../../lib/workOrderAssets'
 import {
   createLocalFileItem,
   getFilePreviewSrc,
@@ -17,6 +17,39 @@ import SpellcheckInput from '../shared/SpellcheckInput'
 import FormLabel from '../shared/FormLabel'
 import { useTextFieldLimits } from '../../hooks/useTextFieldLimits'
 import { formFieldClassName, normalizeColSpan } from '../../lib/formLayoutIds'
+
+function useSignedPreviewMap(files) {
+  const [urls, setUrls] = useState({})
+  const pathKey = (files || []).map((file) => file?.path).filter(Boolean).join('|')
+
+  useEffect(() => {
+    if (!pathKey) {
+      setUrls({})
+      return undefined
+    }
+    let cancelled = false
+    const paths = pathKey.split('|')
+    ;(async () => {
+      const next = {}
+      await Promise.all(paths.map(async (path) => {
+        try {
+          const url = await getWorkOrderFileSignedUrl(path)
+          if (url) next[path] = url
+        } catch {
+          // signed URL is optional; the chip still shows the file name
+        }
+      }))
+      if (!cancelled) setUrls(next)
+    })()
+    return () => { cancelled = true }
+  }, [pathKey])
+
+  return urls
+}
+
+function previewSrcFor(item, signedUrls = {}) {
+  return getFilePreviewSrc(item) || (item?.path ? signedUrls[item.path] : null) || null
+}
 
 function wrapClass(field, extra = '') {
   const width = field?.colSpan == null ? null : normalizeColSpan(field.colSpan, 25)
@@ -50,6 +83,7 @@ function ImageFieldPreview({ field, value, onChange, disabled }) {
   const inputRef = useRef(null)
   const id = `wo-field-${field.id}`
   const files = getWorkOrderFiles(value)
+  const signedUrls = useSignedPreviewMap(files)
   const [fieldError, setFieldError] = useState(null)
   const [lightbox, setLightbox] = useState(null)
 
@@ -84,7 +118,7 @@ function ImageFieldPreview({ field, value, onChange, disabled }) {
   }
 
   const openLightbox = (item) => {
-    const src = item.previewUrl || item.url
+    const src = previewSrcFor(item, signedUrls)
     if (!src) return
     setLightbox({ key: item.id || item.path, src, alt: item.name || field.name })
   }
@@ -102,31 +136,36 @@ function ImageFieldPreview({ field, value, onChange, disabled }) {
       <div className="wo-field-upload__tiles">
         {files.map((item) => {
           const itemKey = item.id || item.path
-          const previewSrc = item.previewUrl || item.url
+          const previewSrc = previewSrcFor(item, signedUrls)
           return (
-            <div key={itemKey} className="wo-field-upload__tile wo-field-upload__tile--preview">
-              <button
-                type="button"
-                className="wo-field-upload__thumb-btn"
-                onClick={() => openLightbox(item)}
-                disabled={!previewSrc}
-                aria-label={`View ${item.name}`}
-              >
-                {previewSrc ? (
-                  <img src={previewSrc} alt={item.name} />
-                ) : (
-                  <span className="wo-field-upload__thumb-fallback" aria-hidden="true">IMG</span>
-                )}
-              </button>
-              {!disabled && (
+            <div key={itemKey} className="wo-field-upload__tile-wrap">
+              <div className="wo-field-upload__tile wo-field-upload__tile--preview">
                 <button
                   type="button"
-                  className="wo-field-upload__tile-remove"
-                  onClick={() => removeFile(itemKey)}
-                  aria-label={`Remove ${item.name}`}
+                  className="wo-field-upload__thumb-btn"
+                  onClick={() => openLightbox(item)}
+                  disabled={!previewSrc}
+                  aria-label={`View ${item.name}`}
                 >
-                  ×
+                  {previewSrc ? (
+                    <img src={previewSrc} alt={item.name} />
+                  ) : (
+                    <span className="wo-field-upload__thumb-fallback" aria-hidden="true">IMG</span>
+                  )}
                 </button>
+                {!disabled && (
+                  <button
+                    type="button"
+                    className="wo-field-upload__tile-remove"
+                    onClick={() => removeFile(itemKey)}
+                    aria-label={`Remove ${item.name}`}
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
+              {item.name && (
+                <span className="wo-field-upload__tile-name" title={item.name}>{item.name}</span>
               )}
             </div>
           )
@@ -147,7 +186,7 @@ function ImageFieldPreview({ field, value, onChange, disabled }) {
             <div className="wo-field-upload__add-label">
               <span className="wo-field-upload__add-icon" aria-hidden="true">+</span>
               <span className="wo-field-upload__add-text">
-                {files.length ? 'Add' : 'Upload'}
+                Add Image
               </span>
             </div>
           </div>
@@ -177,6 +216,7 @@ function FileFieldPreview({ field, value, onChange, disabled }) {
   const type = field.field_type
   const accept = type === 'image' ? IMAGE_ACCEPT : FILE_ACCEPT
   const files = getWorkOrderFiles(value)
+  const signedUrls = useSignedPreviewMap(files)
   const [fieldError, setFieldError] = useState(null)
   const [lightbox, setLightbox] = useState(null)
   const [expanded, setExpanded] = useState(false)
@@ -267,7 +307,7 @@ function FileFieldPreview({ field, value, onChange, disabled }) {
   }
 
   const openPreview = (item) => {
-    const src = getFilePreviewSrc(item)
+    const src = previewSrcFor(item, signedUrls)
     if (!src) return
     setLightbox({ key: item.id || item.path, src, alt: item.name || field.name })
   }
@@ -314,6 +354,7 @@ function FileFieldPreview({ field, value, onChange, disabled }) {
               <FileChip
                 key={`measure-${item.id || item.path}`}
                 item={item}
+                previewSrc={previewSrcFor(item, signedUrls)}
                 disabled
                 measuring
               />
@@ -328,6 +369,7 @@ function FileFieldPreview({ field, value, onChange, disabled }) {
               <FileChip
                 key={item.id || item.path}
                 item={item}
+                previewSrc={previewSrcFor(item, signedUrls)}
                 disabled={disabled}
                 onRemove={() => removeFile(item.id || item.path)}
                 onPreview={() => openPreview(item)}
@@ -369,8 +411,8 @@ function FileFieldPreview({ field, value, onChange, disabled }) {
   )
 }
 
-function FileChip({ item, disabled, onRemove, onPreview, measuring = false }) {
-  const previewSrc = getFilePreviewSrc(item)
+function FileChip({ item, previewSrc: previewSrcProp, disabled, onRemove, onPreview, measuring = false }) {
+  const previewSrc = previewSrcProp || getFilePreviewSrc(item)
   const isImage = Boolean(previewSrc) || isImageFileItem(item)
 
   return (

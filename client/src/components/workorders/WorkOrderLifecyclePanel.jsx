@@ -181,43 +181,58 @@ function parsePermitDetails(detail) {
   const types = Array.isArray(detail?.permit_types) ? detail.permit_types : []
   const raw = Array.isArray(detail?.permit_details) ? detail.permit_details : []
   const byType = new Map()
+  const rows = []
 
   for (const row of raw) {
     const type = String(row?.type || '').trim()
     if (!type || byType.has(type)) continue
-    byType.set(type, {
+    const next = {
       type,
       number: String(row?.number || ''),
       issue_at: row?.issue_at || '',
       expiry_at: row?.expiry_at || '',
-    })
+    }
+    byType.set(type, next)
+    rows.push(next)
   }
 
-  if (!byType.size && types.length) {
+  if (!rows.length && types.length) {
     const [first, ...rest] = types
-    byType.set(first, {
+    rows.push({
       type: first,
       number: detail?.permit_number || '',
       issue_at: detail?.permit_issue_at || '',
       expiry_at: detail?.permit_expiry_at || '',
     })
-    rest.forEach((type) => byType.set(type, emptyPermitDetail(type)))
+    rest.forEach((type) => {
+      if (byType.has(type)) return
+      const next = emptyPermitDetail(type)
+      byType.set(type, next)
+      rows.push(next)
+    })
   }
 
-  return types.map((type) => byType.get(type) || emptyPermitDetail(type))
+  for (const type of types) {
+    if (byType.has(type)) continue
+    const next = emptyPermitDetail(type)
+    byType.set(type, next)
+    rows.push(next)
+  }
+
+  return rows
 }
 
 function initialPermitDetails(detail) {
   const rows = parsePermitDetails(detail)
   if (Boolean(detail?.permit_required) && !rows.length) return [emptyPermitDetail('')]
-  return rows.slice(0, 1)
+  return rows
 }
 
 function formFromDetail(detail) {
   const dosDonts = parseDosDonts(detail?.dos_and_donts)
   return {
     permit_required: Boolean(detail?.permit_required),
-    permit_types: Array.isArray(detail?.permit_types) ? detail.permit_types.slice(0, 1) : [],
+    permit_types: Array.isArray(detail?.permit_types) ? detail.permit_types : [],
     permit_details: initialPermitDetails(detail),
     permit_number: detail?.permit_number || '',
     permit_issue_at: detail?.permit_issue_at || '',
@@ -334,7 +349,9 @@ export default function WorkOrderLifecyclePanel({ detail, onUpdated, canUpdate =
   }
 
   const permitTypeOptions = detail?.permit_type_options || Object.keys(PERMIT_LABELS)
-  const permitRow = (form.permit_details || [])[0] || emptyPermitDetail('')
+  const permitRows = form.permit_details?.length ? form.permit_details : [emptyPermitDetail('')]
+
+  const syncPermitTypes = (rows) => rows.map((row) => row.type).filter(Boolean)
 
   const setPermitRequired = (required) => {
     setForm((prev) => {
@@ -346,41 +363,53 @@ export default function WorkOrderLifecyclePanel({ detail, onUpdated, canUpdate =
           permit_details: [],
         }
       }
-      const current = (prev.permit_details || [])[0]
-      const row = current || emptyPermitDetail('')
+      const rows = (prev.permit_details || []).length
+        ? prev.permit_details
+        : [emptyPermitDetail('')]
       return {
         ...prev,
         permit_required: true,
-        permit_details: [row],
-        permit_types: row.type ? [row.type] : [],
+        permit_details: rows,
+        permit_types: syncPermitTypes(rows),
       }
     })
   }
 
-  const changePermitType = (nextType) => {
+  const addPermit = () => {
     setForm((prev) => {
-      const current = (prev.permit_details || [])[0] || emptyPermitDetail('')
-      const permit_details = [{ ...current, type: nextType }]
-      return {
-        ...prev,
-        permit_details,
-        permit_types: nextType ? [nextType] : [],
-      }
+      const rows = [...(prev.permit_details || []), emptyPermitDetail('')]
+      return { ...prev, permit_details: rows, permit_types: syncPermitTypes(rows) }
     })
   }
 
-  const updatePermitDetail = (key, value) => {
+  const removePermit = (index) => {
     setForm((prev) => {
-      const current = (prev.permit_details || [])[0] || emptyPermitDetail('')
-      return {
-        ...prev,
-        permit_details: [{ ...current, [key]: value }],
-      }
+      const next = (prev.permit_details || []).filter((_, i) => i !== index)
+      const rows = next.length ? next : [emptyPermitDetail('')]
+      return { ...prev, permit_details: rows, permit_types: syncPermitTypes(rows) }
     })
+  }
+
+  const changePermitType = (index, nextType) => {
+    setForm((prev) => {
+      const rows = (prev.permit_details || []).map((row, i) => (
+        i === index ? { ...row, type: nextType } : row
+      ))
+      return { ...prev, permit_details: rows, permit_types: syncPermitTypes(rows) }
+    })
+  }
+
+  const updatePermitDetail = (index, key, value) => {
+    setForm((prev) => ({
+      ...prev,
+      permit_details: (prev.permit_details || []).map((row, i) => (
+        i === index ? { ...row, [key]: value } : row
+      )),
+    }))
   }
 
   const buildPayload = (status) => {
-    const filledPermitDetails = (form.permit_details || []).filter((row) => row.type).slice(0, 1)
+    const filledPermitDetails = (form.permit_details || []).filter((row) => row.type)
     const payload = {
       status,
       permit_required: form.permit_required,
@@ -846,51 +875,79 @@ export default function WorkOrderLifecyclePanel({ detail, onUpdated, canUpdate =
               </div>
               {form.permit_required && (
                 <div className="wo-permit__entries">
-                  <div className="wo-permit__entry">
-                    <div className="wo-permit__row">
-                      <div className="wo-permit__cell wo-permit__cell--type">
-                        <span className="company-form__label">Permit type</span>
-                        <FilterableSelect
-                          value={permitRow.type}
-                          onChange={changePermitType}
-                          options={permitTypeOptions}
-                          getOptionValue={(type) => type}
-                          getOptionLabel={(type) => PERMIT_LABELS[type] || type}
-                          placeholder="Select permit type"
-                          className="company-form__input--select"
-                          aria-label="Permit type"
-                        />
+                  {permitRows.map((permitRow, index) => {
+                    const usedTypes = new Set(
+                      permitRows
+                        .map((row, rowIndex) => (rowIndex === index ? '' : row.type))
+                        .filter(Boolean),
+                    )
+                    const typeOptions = permitTypeOptions.filter(
+                      (type) => !usedTypes.has(type) || type === permitRow.type,
+                    )
+                    return (
+                      <div key={`permit-${index}`} className="wo-permit__entry">
+                        <div className="wo-permit__row">
+                          <div className="wo-permit__cell wo-permit__cell--type">
+                            <span className="company-form__label">Permit type</span>
+                            <FilterableSelect
+                              value={permitRow.type}
+                              onChange={(nextType) => changePermitType(index, nextType)}
+                              options={typeOptions}
+                              getOptionValue={(type) => type}
+                              getOptionLabel={(type) => PERMIT_LABELS[type] || type}
+                              placeholder="Select permit type"
+                              className="company-form__input--select"
+                              aria-label={`Permit type ${index + 1}`}
+                            />
+                          </div>
+                          {Boolean(permitRow.type) && (
+                            <>
+                              <label className="wo-permit__cell wo-permit__cell--number">
+                                <span className="company-form__label">Permit number</span>
+                                <input
+                                  className="company-form__input"
+                                  value={permitRow.number}
+                                  onChange={(e) => updatePermitDetail(index, 'number', e.target.value)}
+                                  placeholder="Enter permit number"
+                                  aria-label={`${PERMIT_LABELS[permitRow.type] || permitRow.type} permit number`}
+                                />
+                              </label>
+                              <label className="wo-permit__cell wo-permit__cell--date">
+                                <span className="company-form__label">Date</span>
+                                <DateField
+                                  value={permitRow.issue_at}
+                                  onChange={(v) => updatePermitDetail(index, 'issue_at', v)}
+                                />
+                              </label>
+                              <label className="wo-permit__cell wo-permit__cell--date">
+                                <span className="company-form__label">Expiry date</span>
+                                <DateField
+                                  value={permitRow.expiry_at}
+                                  onChange={(v) => updatePermitDetail(index, 'expiry_at', v)}
+                                />
+                              </label>
+                            </>
+                          )}
+                          {permitRows.length > 1 && (
+                            <div className="wo-permit__cell wo-permit__cell--actions">
+                              <button
+                                type="button"
+                                className="company-btn company-btn--ghost company-btn--compact"
+                                onClick={() => removePermit(index)}
+                              >
+                                Remove
+                              </button>
+                            </div>
+                          )}
+                        </div>
                       </div>
-                      {Boolean(permitRow.type) && (
-                        <>
-                          <label className="wo-permit__cell wo-permit__cell--number">
-                            <span className="company-form__label">Permit number</span>
-                            <input
-                              className="company-form__input"
-                              value={permitRow.number}
-                              onChange={(e) => updatePermitDetail('number', e.target.value)}
-                              placeholder="Enter permit number"
-                              aria-label={`${PERMIT_LABELS[permitRow.type] || permitRow.type} permit number`}
-                            />
-                          </label>
-                          <label className="wo-permit__cell wo-permit__cell--date">
-                            <span className="company-form__label">Date</span>
-                            <DateField
-                              value={permitRow.issue_at}
-                              onChange={(v) => updatePermitDetail('issue_at', v)}
-                            />
-                          </label>
-                          <label className="wo-permit__cell wo-permit__cell--date">
-                            <span className="company-form__label">Expiry date</span>
-                            <DateField
-                              value={permitRow.expiry_at}
-                              onChange={(v) => updatePermitDetail('expiry_at', v)}
-                            />
-                          </label>
-                        </>
-                      )}
-                    </div>
-                  </div>
+                    )
+                  })}
+                  {permitTypeOptions.some((type) => !permitRows.some((row) => row.type === type)) && (
+                    <button type="button" className="wo-permit__add" onClick={addPermit}>
+                      + Add permit
+                    </button>
+                  )}
                 </div>
               )}
             </div>

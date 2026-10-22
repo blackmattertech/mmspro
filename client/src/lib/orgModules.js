@@ -28,6 +28,7 @@ export const PRODUCT_MODULE_GROUPS = [
         'work_orders_manual',
       ] },
       { id: 'work_orders_scheduled', label: 'PM Schedule', permissionKeys: ['work_orders_scheduled'] },
+      { id: 'logbook', label: 'Logbook', permissionKeys: ['logbook'] },
       { id: 'tasks_followups', label: 'Tasks & Follow-ups', permissionKeys: ['tasks_followups'] },
       { id: 'warranty_manager', label: 'Warranty Manager', permissionKeys: ['warranty_manager'] },
       { id: 'reports', label: 'Reports', permissionKeys: [

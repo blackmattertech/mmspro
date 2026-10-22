@@ -5,6 +5,7 @@ import { usePermissions } from '../../hooks/usePermissions'
 import { getEquipment, updateEquipment } from '../../lib/api-equipment'
 import { orgPath } from '../../config/navigation'
 import EquipmentDetail from '../../components/equipment/EquipmentDetail'
+import MeterReadingModal from '../../components/logbook/MeterReadingModal'
 import '../../components/company/CompanyShared.css'
 
 export default function EquipmentScan() {
@@ -15,6 +16,7 @@ export default function EquipmentScan() {
   const [equipment, setEquipment] = useState(null)
   const [error, setError] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [addingReading, setAddingReading] = useState(false)
 
   useEffect(() => {
     if (!equipmentId) return undefined
@@ -36,7 +38,12 @@ export default function EquipmentScan() {
 
   const backTo = orgPath(org?.slug, 'masters/equipment')
   const query = equipment ? `equipment_id=${encodeURIComponent(equipment.id)}` : ''
+  const canLogReading = Boolean(equipment?.reading_required) && canCreate('logbook')
   const actions = equipment ? [
+    canLogReading && {
+      label: 'Add reading',
+      onClick: () => setAddingReading(true),
+    },
     (canCreate('work_request_create') || canCreate('work_request')) && {
       label: 'Create Work Request',
       to: `${orgPath(org?.slug, 'work-request/create')}?${query}`,
@@ -77,12 +84,36 @@ export default function EquipmentScan() {
             actions={actions.length ? (
               <div className="equipment-scan__actions">
                 {actions.map((action) => (
-                  <Link key={action.to} className="company-btn company-btn--primary" to={action.to}>
-                    {action.label}
-                  </Link>
+                  action.to ? (
+                    <Link key={action.to} className="company-btn company-btn--primary" to={action.to}>
+                      {action.label}
+                    </Link>
+                  ) : (
+                    <button key={action.label} type="button" className="company-btn company-btn--primary" onClick={action.onClick}>
+                      {action.label}
+                    </button>
+                  )
                 ))}
               </div>
             ) : null}
+          />
+        )}
+        {addingReading && equipment && (
+          <MeterReadingModal
+            equipment={equipment}
+            lastReading={equipment.last_meter_reading}
+            onClose={() => setAddingReading(false)}
+            onSaved={(saved) => {
+              setEquipment((current) => (current ? {
+                ...current,
+                last_meter_reading: saved.reading,
+                last_meter_reading_at: saved.reading_at,
+                last_meter_logged_by_name: saved.logged_by_name,
+                last_meter_logged_by_department: saved.logged_by_department,
+                last_meter_logged_by_designation: saved.logged_by_designation,
+              } : current))
+              setAddingReading(false)
+            }}
           />
         )}
       </div>

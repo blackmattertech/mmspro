@@ -3,6 +3,7 @@ import { verifyAuth } from '../../middleware/auth.js'
 import { requireOrgAccess, assertOrgOwnership } from '../../middleware/orgAccess.js'
 import {
   requireModulePermission,
+  requireAnyModulePermission,
   loadOrgPermissions,
 } from '../../middleware/modulePermission.js'
 import {
@@ -24,10 +25,16 @@ import {
 } from '../../lib/equipmentBulkService.js'
 import { attachFailedFileToResult } from '../../lib/importErrorWorkbook.js'
 import { parseListControls } from '../../lib/listQuery.js'
+import { listEquipmentPickerCatalog } from '../../lib/workRequestService.js'
 
 const router = Router()
 
 const canRead = requireModulePermission('equipment', 'read')
+const canReadPicker = requireAnyModulePermission([
+  ['equipment', 'read'],
+  ['work_orders_scheduled', 'read'],
+  ['work_orders', 'read'],
+])
 const canCreate = requireModulePermission('equipment', 'create')
 const canUpdate = requireModulePermission('equipment', 'update')
 const canDelete = requireModulePermission('equipment', 'delete')
@@ -41,6 +48,21 @@ function parsePagination(query) {
   const offset = Number.isFinite(rawOffset) ? Math.max(0, rawOffset) : 0
   return { limit, offset }
 }
+
+router.get('/catalog', canReadPicker, async (req, res) => {
+  try {
+    const locationId = resolveLocationFilter(req.orgPermissions, req.query.location_id)
+    const catalog = await listEquipmentPickerCatalog(req.userProfile.org_id, {
+      departmentId: req.query.department_id || null,
+      locationId,
+      search: req.query.search || null,
+      limit: Number(req.query.limit) || 200,
+    })
+    res.json(catalog)
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message })
+  }
+})
 
 router.get('/', canRead, async (req, res) => {
   try {

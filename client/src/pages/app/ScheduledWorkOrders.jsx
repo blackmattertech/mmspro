@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useOutletContext, useSearchParams } from 'react-router-dom'
 import {
   getScheduledWorkOrders,
@@ -29,6 +29,7 @@ import ReceivedWorkOrderDetailModal from '../../components/workorders/ReceivedWo
 import WorkOrdersTable from '../../components/workorders/WorkOrdersTable'
 import { getEquipment } from '../../lib/api-equipment'
 import PmPlansTable from '../../components/pm/PmPlansTable'
+import PmPlanModal from '../../components/pm/PmPlanModal'
 import PmActivityTypesModal from '../../components/pm/PmActivityTypesModal'
 import {
   useMasterBulkUpload,
@@ -194,6 +195,8 @@ export default function ScheduledWorkOrders() {
     onSuccess: () => loadPlans(),
     defaultFilename: 'pm-plans-template.xlsx',
   })
+  const bulkActionsRef = useRef({ handleDownloadTemplate, handleBulkFile })
+  bulkActionsRef.current = { handleDownloadTemplate, handleBulkFile }
 
   useEffect(() => {
     reloadMeta()
@@ -217,10 +220,10 @@ export default function ScheduledWorkOrders() {
         )}
         {canAdd && view === 'plans' && (
           <MasterBulkActions
-            onDownload={handleDownloadTemplate}
+            onDownload={() => bulkActionsRef.current.handleDownloadTemplate()}
             bulkBusy={bulkBusy}
             bulkInputRef={bulkInputRef}
-            onFileChange={handleBulkFile}
+            onFileChange={(event) => bulkActionsRef.current.handleBulkFile(event)}
             addLabel="+ PM Plan"
             onAdd={() => setPlanModal({})}
             title="Import PM plans"
@@ -233,7 +236,7 @@ export default function ScheduledWorkOrders() {
     )
     setToolbar(null, actions)
     return () => clearToolbar()
-  }, [view, canAdd, setToolbar, clearToolbar, bulkBusy, bulkError, bulkResult, handleDownloadTemplate, handleBulkFile])
+  }, [view, canAdd, setToolbar, clearToolbar, bulkBusy, bulkError, bulkResult])
 
   const filteredOrders = useMemo(
     () => applyWorkOrderFilters(orders, { search: '', locationFilter, advancedRules, locations }),

@@ -5,6 +5,49 @@
   height: auto;
 }
 
+.pm-modal .wr-asset-sections {
+  grid-column: 1 / -1;
+  width: 100%;
+  min-width: 0;
+}
+
+.pm-modal .wr-asset-sections .wr-asset-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  width: 100%;
+}
+
+.pm-modal .wr-asset-facts {
+  display: contents;
+}
+
+.pm-modal .wr-asset-facts__item {
+  min-width: 0;
+}
+
+.pm-modal .wr-asset-facts dt {
+  margin: 0 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #6b7280;
+}
+
+.pm-modal .wr-asset-facts dd {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #111827;
+}
+
+.pm-modal .wr-asset-qr {
+  display: block;
+  width: 96px;
+  height: 96px;
+  border: 1px solid #e1e4ea;
+  border-radius: 8px;
+  background: #fff;
+}
+
 .pm-steps {
   display: flex;
   align-items: center;

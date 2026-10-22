@@ -399,7 +399,7 @@
   top: 0;
   right: 0;
   bottom: 0;
-  left: 0;
+  left: var(--dialog-inset-left, 0px);
   z-index: 40;
   display: flex;
   align-items: safe center;
@@ -409,17 +409,8 @@
   background: rgba(15, 23, 42, 0.35);
 }
 
-.admin-shell .form-builder-editor {
-  left: 260px;
-}
-
-.admin-shell--sidebar-collapsed .form-builder-editor {
-  left: 72px;
-}
-
 @media (max-width: 1024px) {
-  .admin-shell .form-builder-editor,
-  .admin-shell--sidebar-collapsed .form-builder-editor {
+  .form-builder-editor {
     left: 0;
     padding: 12px;
   }

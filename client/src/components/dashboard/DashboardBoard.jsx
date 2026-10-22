@@ -426,7 +426,13 @@ function ExpiringItemList({ rows, pathFor }) {
   )
 }
 
-export default function DashboardBoard({ modules, charts, locationLabel }) {
+export default function DashboardBoard({
+  modules,
+  charts,
+  locationLabel,
+  onCreateWorkRequest = null,
+  onCreateWorkOrder = null,
+}) {
   const { org } = useOrg()
   const { displayName } = useProfile()
   const [rangeDays, setRangeDays] = useState(30)
@@ -521,29 +527,39 @@ export default function DashboardBoard({ modules, charts, locationLabel }) {
     return groups
   }, [woTrend, wrTrend])
 
+  const trendDelta = (item, fallback) => {
+    const trend = Number(item?.trendPercent)
+    if (!Number.isFinite(trend)) return { text: fallback, deltaTone: 'muted' }
+    return {
+      text: `${trend > 0 ? '+' : ''}${trend}%`,
+      deltaTone: trend > 0 ? 'up' : trend < 0 ? 'down' : 'muted',
+    }
+  }
+  const newRequests = (moduleKpi(modules, 'work_requests', 'submitted') || 0)
+    + (moduleKpi(modules, 'work_requests', 'draft') || 0)
   const cards = [
-    show('work_orders') ? {
-      label: 'Work Orders',
-      value: formatCount(moduleKpi(modules, 'work_orders', 'total')),
-      delta: headline('work_orders.total')?.trendPercent != null ? `${headline('work_orders.total').trendPercent}% vs last month` : rangeLabel,
-      icon: 'document',
+    show('work_requests') ? {
+      label: 'New Requests',
+      value: formatCount(newRequests),
+      ...trendDelta(headline('work_requests.total'), '0%'),
+      icon: 'clipboard',
       tone: 'green',
       color: '#22C55E',
-      series: (woTrend?.points || []).map(dayTotal),
+      series: (wrTrend?.points || []).map(dayTotal),
     } : null,
-    show('work_requests') ? {
-      label: 'Work Requests',
-      value: formatCount(moduleKpi(modules, 'work_requests', 'total')),
-      delta: headline('work_requests.total')?.trendPercent != null ? `${headline('work_requests.total').trendPercent}% vs last month` : rangeLabel,
-      icon: 'clipboard',
+    show('work_orders') ? {
+      label: 'In Progress',
+      value: formatCount(moduleKpi(modules, 'work_orders', 'in_progress')),
+      ...trendDelta(headline('work_orders.in_progress'), '0%'),
+      icon: 'chart',
       tone: 'blue',
       color: '#3B82F6',
-      series: (wrTrend?.points || []).map(dayTotal),
+      series: (woTrend?.points || []).map((point) => Number(point.values?.in_progress) || 0),
     } : null,
     show('pm') ? {
       label: 'PM Schedules',
       value: formatCount(moduleKpi(modules, 'pm', 'total')),
-      delta: `${formatCount(moduleKpi(modules, 'pm', 'active'))} active`,
+      ...trendDelta(headline('pm.total'), '0%'),
       icon: 'calendar',
       tone: 'violet',
       color: '#8B5CF6',
@@ -552,14 +568,15 @@ export default function DashboardBoard({ modules, charts, locationLabel }) {
     show('work_orders') ? {
       label: 'Overdue',
       value: formatCount(moduleKpi(modules, 'work_orders', 'overdue')),
-      delta: 'Needs attention',
-      deltaTone: 'muted',
+      ...trendDelta(headline('work_orders.overdue'), '0%'),
       icon: 'alert',
       tone: 'orange',
       color: '#F97316',
       series: (woTrend?.points || []).map((point) => Number(point.values?.overdue) || 0),
     } : null,
   ].filter(Boolean)
+  const createLabel = onCreateWorkRequest ? 'New Work Request' : (onCreateWorkOrder ? 'New Work Order' : '')
+  const onCreate = onCreateWorkRequest || onCreateWorkOrder || null
 
   const matchesSearch = (value) => !search || String(value || '').toLowerCase().includes(search)
   const overdueOrders = (board.overdue_orders || []).filter((order) => matchesSearch(`${order.wo_number} ${order.title} ${order.location_name}`))
@@ -581,8 +598,13 @@ export default function DashboardBoard({ modules, charts, locationLabel }) {
         <div className="sa-welcome">
           <div>
             <h1>Welcome back, {firstName}</h1>
-            <p>Here&apos;s what&apos;s happening in {locationLabel}.</p>
+            <p>Here&apos;s what&apos;s happening in your maintenance operations.</p>
           </div>
+          {onCreate ? (
+            <button type="button" className="co-command__create" onClick={onCreate}>
+              + {createLabel}
+            </button>
+          ) : null}
           <div className="co-command__tools">
             <label className="sa-search">
               <Glyph name="chart" />
@@ -623,13 +645,13 @@ export default function DashboardBoard({ modules, charts, locationLabel }) {
         {cards.length ? (
           <section className="sa-kpis" aria-label="Company totals">
             {cards.map((card) => (
-              <article key={card.label} className="sa-kpi">
+              <article key={card.label} className={`sa-kpi sa-kpi--${card.tone}`}>
                 <div className="sa-kpi__top">
                   <span className={`sa-kpi__icon sa-kpi__icon--${card.tone}`}><Glyph name={card.icon} /></span>
                   <div>
                     <p>{card.label}</p>
                     <strong>{card.value}</strong>
-                    <span className={card.deltaTone === 'muted' ? 'is-muted' : ''}>{card.delta}</span>
+                    <span className={card.deltaTone === 'down' ? 'is-warn' : card.deltaTone === 'up' ? 'is-up' : 'is-muted'}>{card.text}</span>
                   </div>
                 </div>
                 <Sparkline values={card.series} color={card.color} id={`co-spark-${card.tone}`} />

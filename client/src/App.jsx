@@ -17,6 +17,7 @@ const Company = lazyPage(() => import('./pages/app/Company'))
 const Assets = lazyPage(() => import('./pages/app/Assets'))
 const Equipment = lazyPage(() => import('./pages/app/Equipment'))
 const EquipmentScan = lazyPage(() => import('./pages/app/EquipmentScan'))
+const Logbook = lazyPage(() => import('./pages/app/Logbook'))
 const WorkOrdersRouteLayout = lazyPage(() => import('./components/workorders/WorkOrdersRouteLayout'))
 const PmScheduledRouteLayout = lazyPage(() => import('./components/workorders/PmScheduledRouteLayout'))
 const ManualWorkOrders = lazyPage(() => import('./pages/app/ManualWorkOrders'))
@@ -189,6 +190,7 @@ export default function App() {
               <Route path="masters/others/checklists" element={withModule('others', <OthersChecklists />)} />
               <Route path="masters/others/checklists/:checklistId" element={withModule('others', <OthersChecklistBuilder />)} />
               <Route path="masters/others/character-limits" element={withModule('others', <OthersCharacterLimits />)} />
+              <Route path="logbook" element={withModule('logbook', <Logbook />)} />
               <Route
                 path="work-orders/scheduled"
                 element={withModule('work_orders_scheduled', <PmScheduledRouteLayout />)}

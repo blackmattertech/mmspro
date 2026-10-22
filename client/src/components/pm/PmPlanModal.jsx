@@ -1,12 +1,13 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useBackdropClose } from '../../hooks/useBackdropClose'
 import { useDepartments } from '../../hooks/useDepartments'
 import { useLocations } from '../../hooks/useLocations'
-import { useAreas } from '../../hooks/useAreas'
 import { useEmployees } from '../../hooks/useEmployees'
 import { usePermissions } from '../../hooks/usePermissions'
 import { useProfile } from '../../hooks/useProfile'
-import { getEquipment, getEquipmentList } from '../../lib/api-equipment'
+import { getEquipment, getEquipmentCatalog } from '../../lib/api-equipment'
+import { getLatestMeterReading } from '../../lib/api-logbook'
+import { formatMeterLogger, formatMeterStamp, formatMeterValue } from '../../lib/meterReading'
 import { getChecklistTemplates, getPmActivityTypes } from '../../lib/api-pm'
 import { isMaintenanceDepartment } from '../../lib/departmentLocation'
 import { PM_PRIORITIES, PM_SCHEDULE_TYPES, PM_CALENDAR_UNITS, CALENDAR_SCHEDULE_TYPES, normalizeScheduleType, normalizeCalendarUnit } from '../../config/pm'
@@ -23,7 +24,8 @@ import OrderedFormLayout from '../forms/OrderedFormLayout'
 import ChecklistOptIn from '../forms/ChecklistOptIn'
 import { missingRequiredLayoutValues, splitBoundValues } from '../../lib/formFieldSources'
 import { masterId } from '../../lib/formLayoutIds'
-import { equipmentCatalogParents, prefillValuesForFields } from '../../lib/equipmentLayoutFields'
+import { catalogRowFromEquipmentDetail, equipmentCatalogParents, prefillValuesForFields } from '../../lib/equipmentLayoutFields'
+import WorkRequestAssetFields from '../workrequests/WorkRequestAssetFields'
 import { resolveFormActors, validateRepeatableGroups } from '../../lib/formFillership'
 import { useAuth } from '../../hooks/useAuth'
 import '../company/CompanyShared.css'
@@ -62,6 +64,21 @@ const EMPTY = {
   whichever_comes_first: true,
   checklist_template_id: '',
   technician_ids: [],
+}
+
+function pickerSections(sections) {
+  if ((sections || []).some((section) => (section.fields || []).length)) return sections
+  return [{
+    id: 'pm-asset',
+    name: 'Asset',
+    fields: [{
+      id: 'equipment-name',
+      name: 'Equipment name',
+      field_type: 'dropdown',
+      is_required: true,
+      sort_order: 0,
+    }],
+  }]
 }
 
 function formFromPlan(plan) {
@@ -103,17 +120,16 @@ export default function PmPlanModal({ plan, saving, onClose, onSave }) {
   const [error, setError] = useState(null)
   const [activityTypes, setActivityTypes] = useState([])
   const [checklists, setChecklists] = useState([])
-  const [equipment, setEquipment] = useState([])
+  const [catalogEquipment, setCatalogEquipment] = useState([])
+  const [assetSections, setAssetSections] = useState([])
+  const [assetFieldValues, setAssetFieldValues] = useState({})
+  const [catalogLoading, setCatalogLoading] = useState(false)
   const formRef = useRef(null)
   const handleBackdropClick = useBackdropClose(onClose)
   const { layout, catalogFields, isVisible, fieldClass, hasLayout } = useFormLayout('pm.plan')
   const extras = useFormFieldValues('pm.plan', plan?.id)
   const { departments } = useDepartments()
   const { locations } = useLocations()
-  const { areas } = useAreas({
-    locationId: form.location_id || undefined,
-    departmentId: form.department_id || undefined,
-  })
   const { employees } = useEmployees({
     locationId: form.location_id || undefined,
     forAssignment: true,
@@ -153,6 +169,7 @@ export default function PmPlanModal({ plan, saving, onClose, onSave }) {
     setForm(formFromPlan(plan))
     setStep(1)
     setError(null)
+    setAssetFieldValues({})
   }, [plan])
 
   const equipmentSeedKey = useRef('')
@@ -203,30 +220,88 @@ export default function PmPlanModal({ plan, saving, onClose, onSave }) {
     return () => { cancelled = true }
   }, [])
 
+  const selectedEquipmentRef = useRef(form.equipment_id)
+  selectedEquipmentRef.current = form.equipment_id
+  const catalogRef = useRef(catalogEquipment)
+  catalogRef.current = catalogEquipment
+  const qrLoadRef = useRef('')
+
   useEffect(() => {
+    if (!form.location_id && !form.department_id) {
+      setCatalogEquipment([])
+      setAssetSections([])
+      setCatalogLoading(false)
+      return undefined
+    }
     let cancelled = false
-    getEquipmentList({
+    qrLoadRef.current = ''
+    setCatalogLoading(true)
+    getEquipmentCatalog({
       departmentId: form.department_id || undefined,
       locationId: form.location_id || undefined,
-      areaId: form.area_id || undefined,
-      limit: 50,
-    }).then(async (rows) => {
+      limit: 200,
+    }).then(async (catalog) => {
       if (cancelled) return
-      let list = rows || []
-      if (form.equipment_id && !list.some((row) => row.id === form.equipment_id)) {
+      let list = catalog?.equipment || []
+      const selectedId = selectedEquipmentRef.current
+      if (selectedId && !list.some((row) => row.id === selectedId)) {
         try {
-          const detail = await getEquipment(form.equipment_id)
-          if (!cancelled && detail) list = [detail, ...list]
+          const detail = await getEquipment(selectedId)
+          const shaped = catalogRowFromEquipmentDetail(detail)
+          if (shaped) {
+            if (!shaped.area_name) shaped.area_name = detail?.areas?.name || detail?.area_name || null
+            if (!shaped.qr_code && detail?.qr_code) shaped.qr_code = detail.qr_code
+            list = [shaped, ...list]
+          }
         } catch {
-          // The saved id still submits even if the option label is missing.
+          // The saved id still submits even if the picker row is missing.
         }
       }
-      if (!cancelled) setEquipment(list)
+      if (cancelled) return
+      setCatalogEquipment(list)
+      setAssetSections(pickerSections(catalog?.sections))
     }).catch(() => {
-      if (!cancelled) setEquipment([])
+      if (!cancelled) {
+        setCatalogEquipment([])
+        setAssetSections(pickerSections([]))
+      }
+    }).finally(() => {
+      if (!cancelled) setCatalogLoading(false)
     })
     return () => { cancelled = true }
-  }, [form.department_id, form.location_id, form.area_id, form.equipment_id])
+  }, [form.department_id, form.location_id])
+
+  useEffect(() => {
+    const id = form.equipment_id
+    if (!id || catalogLoading) return undefined
+    const row = catalogEquipment.find((item) => item.id === id)
+    if (!row || row.qr_code || qrLoadRef.current === id) return undefined
+    qrLoadRef.current = id
+    let cancelled = false
+    getEquipment(id)
+      .then((detail) => {
+        if (cancelled || !detail?.qr_code) return
+        setCatalogEquipment((prev) => prev.map((item) => (
+          item.id === id ? { ...item, qr_code: detail.qr_code } : item
+        )))
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [form.equipment_id, catalogEquipment, catalogLoading])
+
+  const handleAssetValuesChange = useCallback((next) => {
+    setAssetFieldValues(next || {})
+  }, [])
+
+  const handleAssetEquipmentChange = useCallback((id) => {
+    const row = catalogRef.current.find((item) => item.id === id)
+    setForm((prev) => {
+      const nextId = id || ''
+      const nextArea = row?.area_id || (nextId ? prev.area_id : '')
+      if (prev.equipment_id === nextId && prev.area_id === nextArea) return prev
+      return { ...prev, equipment_id: nextId, area_id: nextArea }
+    })
+  }, [])
 
   const locationOptions = useMemo(
     () => (locations || []).filter((row) => row.is_active !== false),
@@ -279,6 +354,65 @@ export default function PmPlanModal({ plan, saving, onClose, onSave }) {
 
   const usesCalendar = CALENDAR_SCHEDULE_TYPES.has(form.schedule_type)
   const usesReading = form.schedule_type === 'reading' || form.schedule_type === 'both'
+  const [latestReading, setLatestReading] = useState(null)
+  const [latestLoading, setLatestLoading] = useState(false)
+  const filledReadingFor = useRef(null)
+
+  useEffect(() => {
+    filledReadingFor.current = null
+  }, [plan])
+
+  useEffect(() => {
+    if (!usesReading || !form.equipment_id) {
+      setLatestReading(null)
+      setLatestLoading(false)
+      return undefined
+    }
+    const equipmentId = form.equipment_id
+    const equipmentChanged = filledReadingFor.current != null && filledReadingFor.current !== equipmentId
+    let cancelled = false
+    setLatestLoading(true)
+    getLatestMeterReading(equipmentId)
+      .then((row) => {
+        if (cancelled) return
+        setLatestReading(row)
+        const nextValue = row?.reading == null || row.reading === '' ? '' : String(row.reading)
+        setForm((prev) => {
+          if (prev.equipment_id !== equipmentId) return prev
+          const hasValue = String(prev.last_reading ?? '') !== ''
+          if (hasValue && !equipmentChanged) return prev
+          if (String(prev.last_reading ?? '') === nextValue) return prev
+          return { ...prev, last_reading: nextValue }
+        })
+        filledReadingFor.current = equipmentId
+      })
+      .catch(() => {
+        if (!cancelled) setLatestReading(null)
+      })
+      .finally(() => {
+        if (!cancelled) setLatestLoading(false)
+      })
+    return () => { cancelled = true }
+  }, [usesReading, form.equipment_id])
+
+  const renderLatestReading = () => {
+    if (!form.equipment_id) {
+      return <p className="pm-section__hint">Select equipment to show the latest meter reading.</p>
+    }
+    if (latestLoading) {
+      return <p className="pm-section__hint">Loading the latest meter reading…</p>
+    }
+    if (latestReading?.reading == null) {
+      return <p className="pm-section__hint">No meter reading has been logged for this equipment yet.</p>
+    }
+    return (
+      <p className="pm-section__hint">
+        Latest meter reading: <strong>{formatMeterValue(latestReading.reading)}</strong>
+        {latestReading.reading_at ? ` · ${formatMeterStamp(latestReading.reading_at)}` : ''}
+        {formatMeterLogger(latestReading) ? ` · ${formatMeterLogger(latestReading)}` : ''}
+      </p>
+    )
+  }
 
   const technicians = useMemo(() => {
     const selected = new Set(form.technician_ids)
@@ -398,6 +532,28 @@ export default function PmPlanModal({ plan, saving, onClose, onSave }) {
       setError(err.message)
     }
   }
+
+  let assetPickerShown = false
+  const renderAssetPicker = (className = 'company-form__field company-form__field--full') => (
+    <div className={className} id="pm-field-equipment">
+      {!form.location_id && !form.department_id ? (
+        <p className="pm-section__hint">Select a plant to choose area and equipment.</p>
+      ) : (
+        <WorkRequestAssetFields
+          key={`${plan?.id || 'new'}:${form.location_id}:${form.department_id}`}
+          sections={pickerSections(assetSections)}
+          equipment={catalogEquipment}
+          fieldValues={assetFieldValues}
+          onFieldValuesChange={handleAssetValuesChange}
+          equipmentId={form.equipment_id}
+          onEquipmentIdChange={handleAssetEquipmentChange}
+          seedAreaId={form.area_id}
+          loading={catalogLoading}
+          disabled={saving}
+        />
+      )}
+    </div>
+  )
 
   return (
     <div
@@ -525,21 +681,10 @@ export default function PmPlanModal({ plan, saving, onClose, onSave }) {
                     </label>
                   )
                 }
-                if (key === 'area_id') {
-                  return (
-                    <label key={key} className={className}>
-                      <span className="company-form__label">Area</span>
-                      <FilterableSelect value={form.area_id} onChange={(id) => setField('area_id', id)} options={areas} getOptionValue={(row) => row.id} getOptionLabel={(row) => row.name} placeholder="Select area" />
-                    </label>
-                  )
-                }
-                if (key === 'equipment_id') {
-                  return (
-                    <label key={key} className={className}>
-                      <span className="company-form__label">Equipment</span>
-                      <FilterableSelect value={form.equipment_id} onChange={(id) => setField('equipment_id', id)} options={equipment} getOptionValue={(row) => row.id} getOptionLabel={(row) => row.code ? `${row.code} — ${row.name}` : row.name} placeholder="Select equipment" />
-                    </label>
-                  )
+                if (key === 'area_id' || key === 'equipment_id') {
+                  if (assetPickerShown) return null
+                  assetPickerShown = true
+                  return renderAssetPicker(className.includes('company-form__field--full') ? className : `${className} company-form__field--full`)
                 }
                 if (key === 'schedule') {
                   return (
@@ -578,6 +723,24 @@ export default function PmPlanModal({ plan, saving, onClose, onSave }) {
                 return null
               }}
             />
+          )}
+          {hasLayout && usesReading && (
+            <div className="pm-schedule-block">
+              <h4 className="pm-schedule-block__title">Meter reading</h4>
+              {renderLatestReading()}
+              <label className="company-form__field">
+                <span className="company-form__label">Last reading</span>
+                <input
+                  className="company-form__input"
+                  type="number"
+                  min="0"
+                  step="any"
+                  value={form.last_reading}
+                  onChange={(e) => setField('last_reading', e.target.value)}
+                  placeholder="From the logbook"
+                />
+              </label>
+            </div>
           )}
           {!hasLayout && step === 1 && (
           <>
@@ -682,32 +845,7 @@ export default function PmPlanModal({ plan, saving, onClose, onSave }) {
                 />
               </label>
               )}
-              {isVisible('area_id') && (
-              <label className={fieldClass('area_id')}>
-                <span className="company-form__label">Area</span>
-                <FilterableSelect
-                  value={form.area_id}
-                  onChange={(id) => setField('area_id', id)}
-                  options={areas}
-                  getOptionValue={(row) => row.id}
-                  getOptionLabel={(row) => row.name}
-                  placeholder="Select area"
-                />
-              </label>
-              )}
-              {isVisible('equipment_id') && (
-              <label className={fieldClass('equipment_id', 'company-form__field--full')} id="pm-field-equipment">
-                <span className="company-form__label">Equipment *</span>
-                <FilterableSelect
-                  value={form.equipment_id}
-                  onChange={(id) => setField('equipment_id', id)}
-                  options={equipment}
-                  getOptionValue={(row) => row.id}
-                  getOptionLabel={(row) => row.code ? `${row.code} — ${row.name}` : row.name}
-                  placeholder="Select equipment"
-                />
-              </label>
-              )}
+              {(isVisible('area_id') || isVisible('equipment_id')) && renderAssetPicker(fieldClass('equipment_id', 'company-form__field--full'))}
             </div>
           </section>
 
@@ -809,6 +947,7 @@ export default function PmPlanModal({ plan, saving, onClose, onSave }) {
             {usesReading && (
               <div className="pm-schedule-block">
                 <h4 className="pm-schedule-block__title">Reading interval</h4>
+                {renderLatestReading()}
                 <div className="company-form__grid company-form__grid--2">
                   <label className="company-form__field">
                     <span className="company-form__label">Last reading</span>

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { formatAssignees } from '../../lib/workOrderTableUtils'
 import { useBackdropClose } from '../../hooks/useBackdropClose'
 import { useWorkOrderDetail } from '../../hooks/useWorkOrderList'
@@ -10,7 +10,6 @@ import PageBack from '../shared/PageBack'
 import EditIcon from '../ui/EditIcon'
 import WorkOrderAssignmentActions from './WorkOrderAssignmentActions'
 import WorkOrderLifecyclePanel, { formatStatus } from './WorkOrderLifecyclePanel'
-import RecordTimeline from '../shared/RecordTimeline'
 import { progressPercentForStatus } from '../../lib/statusProgress'
 import '../shared/RecordDetailLayout.css'
 import '../dashboard/CreateWorkOrderModal.css'
@@ -119,6 +118,14 @@ export default function ReceivedWorkOrderDetailModal({
   const { detail, loading, error, reload } = useWorkOrderDetail(orderId, fetchWorkOrder)
   const [localDetail, setLocalDetail] = useState(null)
   const handleBackdropClick = useBackdropClose(onClose)
+
+  useEffect(() => {
+    const prev = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = prev
+    }
+  }, [])
   const { labelByKey: statusLabels } = useOrgStatusOptions('work_order', { includeInactive: true })
   const view = localDetail || detail
 
@@ -136,19 +143,23 @@ export default function ReceivedWorkOrderDetailModal({
   const sections = visibleDetailSections(view?.sections, view?.asset_hierarchy)
 
   return (
-    <div className="modal-overlay" onClick={handleBackdropClick} role="presentation">
+    <div className="wr-detail-overlay" onClick={handleBackdropClick} role="presentation">
       <div
-        className="modal wo-received-detail"
+        className="wr-detail-sheet wo-received-detail"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-labelledby="wo-received-detail-title"
+        aria-modal="true"
       >
-        <div className="modal__header">
-          <div className="modal__header-main">
-            <PageBack onClick={onClose} />
-            <h2 id="wo-received-detail-title" className="modal__title">
-              Work Order {view?.wo_number || ''}
-            </h2>
+        <header className="wr-detail-sheet__header">
+          <div className="wr-detail-sheet__header-main">
+            <PageBack onClick={onClose} label="Back to Work Orders" />
+            <div>
+              <p className="wr-detail-sheet__eyebrow">Work order</p>
+              <h2 id="wo-received-detail-title" className="wr-detail-sheet__title">
+                {view?.wo_number || (loading ? 'Loading…' : '—')}
+              </h2>
+            </div>
           </div>
           <div className="record-detail-layout__actions">
             {onEdit && view && (
@@ -162,17 +173,18 @@ export default function ReceivedWorkOrderDetailModal({
                 <EditIcon />
               </button>
             )}
-            <button type="button" className="modal__close" onClick={onClose} aria-label="Close">×</button>
+            <button type="button" className="wr-detail-sheet__close" onClick={onClose} aria-label="Close">
+              ×
+            </button>
           </div>
-        </div>
+        </header>
 
-        <div className="wo-received-detail__body">
+        <div className="wr-detail-sheet__body">
           {loading && !view && <p className="wo-received-detail__status">Loading...</p>}
           {error && <p className="wo-alert wo-alert--error">{error}</p>}
 
           {view && (
-            <div className="wr-detail-layout">
-              <div className="wr-detail-main">
+            <div className="wr-detail-main">
               <div className="wo-received-detail__meta">
                 <div>
                   <span className="wo-received-detail__label">Received</span>
@@ -247,20 +259,8 @@ export default function ReceivedWorkOrderDetailModal({
                   </dl>
                 </section>
               ))}
-              </div>
-
-              <aside className="wr-detail-timeline" aria-label="Timeline">
-                <h3 className="wr-detail-timeline__title">Timeline</h3>
-                <RecordTimeline events={view.timeline} />
-              </aside>
             </div>
           )}
-        </div>
-
-        <div className="modal__actions wo-received-detail__actions">
-          <button type="button" className="company-btn company-btn--secondary" onClick={onClose}>
-            Close
-          </button>
         </div>
       </div>
     </div>

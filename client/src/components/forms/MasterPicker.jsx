@@ -97,9 +97,12 @@ export default function MasterPicker({
 
   if (!source) return null
 
-  let rows = options
+  let rows = options || []
   if (sourceId === 'departments' && locationId) {
-    rows = options.filter((row) => row.all_locations || row.location_id === locationId)
+    rows = rows.filter((row) => row.all_locations || row.location_id === locationId)
+  }
+  if (value && !rows.some((row) => String(row.id) === String(value))) {
+    rows = [{ id: value, name: String(value) }, ...rows]
   }
 
   return <RemoteSelect options={blocked ? [] : rows} loading={!blocked && loading} {...common} />

@@ -588,6 +588,128 @@ export async function listFormFieldValues(orgId, formId, recordId) {
   return values
 }
 
+function normalizeLayoutLabel(value) {
+  return String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, '')
+}
+
+function labelsMatch(name, label) {
+  const left = normalizeLayoutLabel(name)
+  const right = normalizeLayoutLabel(label)
+  if (!left || !right) return false
+  return left === right || left === `${right}s` || right === `${left}s`
+}
+
+function storedLayoutText(raw) {
+  if (raw == null || raw === '') return ''
+  if (Array.isArray(raw)) return raw.map((item) => storedLayoutText(item)).filter(Boolean).join(', ')
+  if (typeof raw === 'object') {
+    if (raw.label != null && raw.label !== '') return storedLayoutText(raw.label)
+    if (raw.name != null && raw.name !== '') return storedLayoutText(raw.name)
+    if (raw.value_text != null && raw.value_text !== '') return storedLayoutText(raw.value_text)
+    if (Array.isArray(raw.values)) return raw.values.map((item) => storedLayoutText(item)).filter(Boolean).join(', ')
+    if (raw.value != null && typeof raw.value !== 'object') return storedLayoutText(raw.value)
+    return ''
+  }
+  return String(raw).trim()
+}
+
+function layoutValueForField(map, field) {
+  const id = String(field?.id || '')
+  const bare = id.replace(/^(catalog|field|custom|system):/, '')
+  const keys = [id, bare, bare ? `catalog:${bare}` : '', bare ? `field:${bare}` : ''].filter(Boolean)
+  for (const key of keys) {
+    const text = storedLayoutText(map[key])
+    if (text) return text
+  }
+  return ''
+}
+
+function hierarchyLabel(row, label) {
+  const items = Array.isArray(row?.asset_hierarchy) ? row.asset_hierarchy : []
+  const match = items.find((item) => labelsMatch(item?.field_name, label) && String(item?.value || '').trim())
+  return match ? String(match.value).trim() : ''
+}
+
+function layoutFieldText(layout, values, { bindKey, label }) {
+  const map = values && typeof values === 'object' ? values : {}
+  for (const field of layout?.fields || []) {
+    const name = String(field?.label || '').replace(/\*/g, '').trim()
+    const bound = String(field?.bindKey || '')
+    if (bound !== bindKey && !labelsMatch(name, label)) continue
+    const text = layoutValueForField(map, field)
+    if (text) return text
+  }
+  return ''
+}
+
+function workRequestValueMap(row) {
+  return {
+    ...(row?.form_field_values && typeof row.form_field_values === 'object' ? row.form_field_values : {}),
+    ...(row?.field_values && typeof row.field_values === 'object' && !Array.isArray(row.field_values) ? row.field_values : {}),
+  }
+}
+
+/** Custom form fields are stored beside the row. Copy them onto the columns the lists read. */
+export async function fillWorkRequestShortDescriptions(orgId, rows) {
+  const list = rows || []
+  const pending = list.filter((row) => row?.id && (
+    !String(row.short_description || '').trim()
+    || !String(row.job_nature || '').trim()
+  ))
+  if (!pending.length) return list
+  const [layout, catalogFields] = await Promise.all([
+    loadRuntimeFormLayout(orgId, 'work_request.create'),
+    loadOrgCatalogFields(orgId),
+  ])
+  const natureFields = (catalogFields || []).filter((field) => labelsMatch(field?.name, 'job nature'))
+  const descriptionUpdates = []
+  const natureUpdates = []
+  for (const row of pending) {
+    const values = workRequestValueMap(row)
+    if (!String(row.short_description || '').trim()) {
+      const text = layoutFieldText(layout, values, {
+        bindKey: 'short_description',
+        label: 'short description',
+      })
+      if (text) {
+        row.short_description = text
+        descriptionUpdates.push({ id: row.id, short_description: text })
+      }
+    }
+    if (!String(row.job_nature || '').trim()) {
+      let fromLayout = layoutFieldText(layout, values, {
+        bindKey: 'job_nature',
+        label: 'job nature',
+      })
+      if (!fromLayout) {
+        for (const field of natureFields) {
+          fromLayout = layoutValueForField(values, field)
+          if (fromLayout) break
+        }
+      }
+      const text = fromLayout || hierarchyLabel(row, 'job nature')
+      if (text) {
+        row.job_nature = text
+        row.job_nature_label = text
+        if (fromLayout) natureUpdates.push({ id: row.id, job_nature: text })
+      }
+    }
+  }
+  await Promise.all([
+    ...descriptionUpdates.map((item) => supabaseAdmin
+      .from('work_requests')
+      .update({ short_description: item.short_description })
+      .eq('org_id', orgId)
+      .eq('id', item.id)),
+    ...natureUpdates.map((item) => supabaseAdmin
+      .from('work_requests')
+      .update({ job_nature: item.job_nature })
+      .eq('org_id', orgId)
+      .eq('id', item.id)),
+  ])
+  return list
+}
+
 export async function upsertFormFieldValues(orgId, formId, recordId, values) {
   const entries = Object.entries(values || {}).map(([fieldId, value]) => ([
     String(fieldId),
@@ -633,6 +755,21 @@ export async function upsertFormFieldValues(orgId, formId, recordId, values) {
       .delete()
       .in('id', staleIds)
     if (error) throw error
+  }
+
+  if (formId === 'work_request.create' && recordId) {
+    const layout = await loadRuntimeFormLayout(orgId, formId)
+    const text = layoutFieldText(layout, values, {
+      bindKey: 'short_description',
+      label: 'short description',
+    })
+    if (text) {
+      await supabaseAdmin
+        .from('work_requests')
+        .update({ short_description: text })
+        .eq('org_id', orgId)
+        .eq('id', recordId)
+    }
   }
 
   return listFormFieldValues(orgId, formId, recordId)

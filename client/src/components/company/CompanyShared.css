@@ -1,5 +1,6 @@
 .company-page {
   min-height: 100vh;
+  min-height: 100dvh;
   max-width: 100%;
   min-width: 0;
   background: var(--color-off-white);
