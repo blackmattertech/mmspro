@@ -3,6 +3,7 @@ import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { NotificationsProvider } from '../hooks/useNotifications'
 import { ImportJobsProvider } from '../hooks/useImportJobs'
 import ImportJobsBanner from '../components/shared/ImportJobsBanner'
+import StartupPermissions from '../components/shared/StartupPermissions'
 import { useOrg } from '../hooks/useOrg'
 import Sidebar from '../components/layout/Sidebar'
 import MobileTopBar from '../components/layout/MobileTopBar'
@@ -107,6 +108,7 @@ export default function AppLayout() {
                 </Suspense>
               )}
               <ImportJobsBanner />
+              <StartupPermissions />
               <RouteErrorBoundary
                 fallback={(error, reset) => (
                   <ErrorFallback error={error} onRetry={reset} variant="app" />

@@ -180,10 +180,11 @@ export default function WorkRequestsLayout() {
     statusFilters,
     toggleStatus,
     visibleColumnIds,
+    columnDefs: requestColumns,
     bulkReloadToken,
   }), [
     listFilter, debouncedSearch, sortBy, columnFilters,
-    headerSort, statusFilters, visibleColumnIds, bulkReloadToken,
+    headerSort, statusFilters, visibleColumnIds, requestColumns, bulkReloadToken,
   ])
 
   const exportRows = async () => {

@@ -16,7 +16,22 @@ function prepareInlinePreview(video) {
   video.setAttribute('webkit-playsinline', 'true')
 }
 
+function cameraApi() {
+  const devices = typeof navigator !== 'undefined' ? navigator.mediaDevices : null
+  if (devices && typeof devices.getUserMedia === 'function') return devices
+  return null
+}
+
 async function openPreviewStream() {
+  const devices = cameraApi()
+  if (!devices) {
+    const secure = typeof window !== 'undefined' && window.isSecureContext
+    const err = new Error(secure
+      ? 'This browser cannot open the camera. Choose a photo of the QR code instead.'
+      : 'The camera is unavailable on this connection. Open the site with HTTPS, or choose a photo of the QR code.')
+    err.name = 'CameraUnavailableError'
+    throw err
+  }
   const attempts = [
     { audio: false, video: { facingMode: 'environment' } },
     { audio: false, video: true },
@@ -24,7 +39,7 @@ async function openPreviewStream() {
   let lastError = null
   for (const constraints of attempts) {
     try {
-      return await navigator.mediaDevices.getUserMedia(constraints)
+      return await devices.getUserMedia(constraints)
     } catch (err) {
       lastError = err
     }
@@ -34,13 +49,28 @@ async function openPreviewStream() {
 
 function cameraMessage(error) {
   const name = error?.name || ''
+  if (name === 'CameraUnavailableError') return error.message
   if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
     return 'Camera access was denied. Allow the camera to scan an equipment QR code.'
   }
   if (name === 'NotFoundError' || name === 'OverconstrainedError') {
     return 'No camera was found on this device.'
   }
+  if (/notfound/i.test(name) || /no .*qr/i.test(error?.message || '')) {
+    return 'No QR code was found in that photo.'
+  }
   return error?.message || 'Could not start the camera.'
+}
+
+async function decodeQrFile(file) {
+  const url = URL.createObjectURL(file)
+  try {
+    const reader = new BrowserQRCodeReader()
+    const result = await reader.decodeFromImageUrl(url)
+    return result.getText()
+  } finally {
+    URL.revokeObjectURL(url)
+  }
 }
 
 function stopStream(video) {
@@ -53,7 +83,30 @@ export default function EquipmentScanner({ onClose, onResult, notice }) {
   const onResultRef = useRef(onResult)
   const [error, setError] = useState(null)
   const [busy, setBusy] = useState(false)
+  const fileRef = useRef(null)
   onResultRef.current = onResult
+
+  const finishWithText = (text) => {
+    setBusy(true)
+    setError(null)
+    Promise.resolve(onResultRef.current(text)).catch(() => {
+      setBusy(false)
+    })
+  }
+
+  const onPhoto = async (event) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+    setBusy(true)
+    setError(null)
+    try {
+      finishWithText(await decodeQrFile(file))
+    } catch (err) {
+      setBusy(false)
+      setError(cameraMessage(err))
+    }
+  }
 
   useEffect(() => {
     const video = videoRef.current
@@ -69,10 +122,7 @@ export default function EquipmentScanner({ onClose, onResult, notice }) {
       stopped = true
       scanControls?.stop()
       stopStream(video)
-      setBusy(true)
-      Promise.resolve(onResultRef.current(result.getText())).catch(() => {
-        setBusy(false)
-      })
+      finishWithText(result.getText())
     }
 
     openPreviewStream()
@@ -120,6 +170,23 @@ export default function EquipmentScanner({ onClose, onResult, notice }) {
       <p className="equipment-scanner__hint">
         {busy ? 'Looking up equipment…' : 'Point the camera at an equipment QR code.'}
       </p>
+      <div className="equipment-scanner__actions">
+        <button
+          type="button"
+          className="equipment-scanner__photo"
+          onClick={() => fileRef.current?.click()}
+          disabled={busy}
+        >
+          Choose photo
+        </button>
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/*"
+          hidden
+          onChange={onPhoto}
+        />
+      </div>
       {(notice || error) && <p className="equipment-scanner__error" role="alert">{notice || error}</p>}
     </div>
   )

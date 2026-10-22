@@ -1,4 +1,5 @@
 import { createId } from './id'
+import { uploadWorkOrderFile } from './workOrderAssets'
 
 export function getWorkOrderFiles(value) {
   if (!value) return []
@@ -48,11 +49,60 @@ export function isImageFileItem(item) {
   return getAttachmentKind(item) === 'image'
 }
 
+function isUsablePreviewUrl(url) {
+  const src = String(url || '')
+  if (!src) return false
+  if (src.startsWith('blob:')) return false
+  return true
+}
+
 export function getFilePreviewSrc(item) {
   if (!item) return null
-  if (item.previewUrl) return item.previewUrl
-  if (isImageFileItem(item) && item.url) return item.url
+  if (item.previewUrl) {
+    if (item.file instanceof File) return item.previewUrl
+    if (isUsablePreviewUrl(item.previewUrl)) return item.previewUrl
+  }
+  if (isImageFileItem(item) && isUsablePreviewUrl(item.url)) return item.url
+  const path = String(item.path || item.url || '')
+  if (/^https?:\/\//i.test(path)) return path
   return null
+}
+
+export function filesNeedStoredPreview(value) {
+  const files = getWorkOrderFiles(value)
+  if (!files.length) return true
+  return files.every((file) => !file.path && !file.url && !(file.file instanceof File))
+}
+
+export async function persistFormFileValues(orgId, recordId, values, folder = 'form-fields') {
+  if (!orgId || !recordId || !values || typeof values !== 'object') return values
+  const next = { ...values }
+  let changed = false
+
+  for (const [fieldId, value] of Object.entries(values)) {
+    const files = getWorkOrderFiles(value)
+    if (!files.some((item) => item?.file instanceof File)) continue
+    const stored = []
+    for (const item of files) {
+      if (item?.file instanceof File) {
+        const kind = isImageFileItem(item) ? 'image' : 'file'
+        const uploaded = await uploadWorkOrderFile(orgId, `${folder}/${recordId}`, fieldId, item.file, kind)
+        stored.push({
+          path: uploaded.path,
+          name: uploaded.name || item.name || item.file.name,
+          size: uploaded.size ?? item.size ?? item.file.size,
+          type: uploaded.mime_type || item.type || item.file.type,
+          bucket: uploaded.bucket,
+        })
+        changed = true
+        continue
+      }
+      stored.push(item)
+    }
+    next[fieldId] = workOrderFilesValue(stored)
+  }
+
+  return changed ? next : values
 }
 
 export function revokeWorkOrderFilePreviews(value) {

@@ -317,6 +317,12 @@ export default function WorkRequestAssetFields({
     setAreaId(seedAreaId)
   }, [seedAreaId])
 
+  useEffect(() => {
+    if (!areaId || !areas.length) return
+    const match = areas.find((area) => area.id === areaId || area.ids?.includes(areaId))
+    if (match && match.id !== areaId) setAreaId(match.id)
+  }, [areas, areaId])
+
   const scopedEquipment = useMemo(
     () => filterEquipmentByArea(equipment, areaId),
     [equipment, areaId],

@@ -58,6 +58,7 @@ export default function TechnicianMultiSelect({
     matchWidth: true,
     maxHeight: 420,
     gap: 4,
+    placement: 'below',
   })
 
   const selectedEmployees = useMemo(

@@ -1,6 +1,15 @@
 import { apiFetch } from './api'
 import { listQueryParams, asListArray } from './listResponse'
 
+export function getEquipmentCatalog({ departmentId, locationId, search, limit = 200 } = {}) {
+  const qs = new URLSearchParams()
+  if (departmentId) qs.set('department_id', departmentId)
+  if (locationId) qs.set('location_id', locationId)
+  if (search) qs.set('search', search)
+  if (limit) qs.set('limit', String(limit))
+  return apiFetch(`/api/equipment/catalog?${qs}`)
+}
+
 export async function getEquipmentList(params = {}) {
   const data = await apiFetch(`/api/equipment${listQueryParams({
     location_id: params.locationId,

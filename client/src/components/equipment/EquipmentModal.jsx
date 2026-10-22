@@ -11,6 +11,7 @@ import { parseLayoutId } from '../../lib/formLayoutIds'
 import { resolveImageMime } from '../../lib/imageFiles'
 import { readFileAsDataUrl } from '../../config/warrantyDocuments'
 import DateField from '../ui/DateField'
+import GooToggle from '../ui/GooToggle'
 import FilterableSelect from '../ui/FilterableSelect'
 import SpellcheckInput from '../shared/SpellcheckInput'
 import EquipmentQrCode from './EquipmentQrCode'
@@ -163,6 +164,7 @@ export default function EquipmentModal({
   const [images, setImages] = useState({})
   const [locationId, setLocationId] = useState('')
   const [departmentId, setDepartmentId] = useState('')
+  const [readingRequired, setReadingRequired] = useState(false)
   const [locations, setLocations] = useState([])
   const [departments, setDepartments] = useState([])
   const { layout, loading: layoutLoading } = useFormLayout('equipment.create')
@@ -190,6 +192,7 @@ export default function EquipmentModal({
     setImages({})
     setLocationId(equipment?.location_id || '')
     setDepartmentId(equipment?.department_id || '')
+    setReadingRequired(equipment?.reading_required === true)
   }, [equipment, fieldDefs])
 
   useEffect(() => {
@@ -343,6 +346,7 @@ export default function EquipmentModal({
     }
     payload.location_id = locationId
     payload.department_id = departmentId
+    payload.reading_required = readingRequired
 
     try {
       await onSave(payload)
@@ -506,6 +510,18 @@ export default function EquipmentModal({
               ))}
             </div>
           ))}
+
+          <div className="company-form__field">
+            <span className="company-form__label">Reading required</span>
+            <GooToggle
+              checked={readingRequired}
+              onChange={setReadingRequired}
+              ariaLabel="Reading required"
+            />
+            <p className="company-form__hint">
+              When this is on, the equipment appears in Logbook so meter readings can be recorded.
+            </p>
+          </div>
 
           {error && <div className="company-alert">{error}</div>}
           <div className="company-modal__actions">

@@ -104,6 +104,8 @@
 --   100-warranty-document-lines.sql                  → 100-warranty-document-lines — Documents on each warranty line
 --   101-checklist-form-map.sql                       → 101-checklist-form-map — Map checklists to forms
 --   102-list-status-aggregates.sql                   → 102-list-status-aggregates — WR/WO status GROUP BY + list indexes
+--   103-equipment-meter-readings.sql                 → 103-equipment-meter-readings — Equipment meter logbook
+--   104-meter-reading-logger-role.sql                → 104-meter-reading-logger-role — Logger department and designation
 
 --
 -- OTHER:

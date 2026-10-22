@@ -6,6 +6,7 @@ import { qrFieldCaption } from '../../lib/equipmentQr'
 import { useFormLayout } from '../../hooks/useFormLayout'
 import { isAllowedImageFile, resolveImageMime } from '../../lib/imageFiles'
 import { readFileAsDataUrl } from '../../config/warrantyDocuments'
+import { formatMeterLogger, formatMeterStamp, formatMeterValue } from '../../lib/meterReading'
 import './EquipmentDetail.css'
 
 const HIDDEN_FIELD_NAMES = new Set([
@@ -81,7 +82,22 @@ function detailFacts(equipment) {
     { label: 'Department', value: equipment.departments?.name, icon: 'dept' },
     { label: 'Area', value: equipment.areas?.name },
     { label: 'Status', status: equipment.is_active === false ? 'inactive' : 'active' },
+    { label: 'Reading required', value: equipment.reading_required ? 'Yes' : 'No' },
   ]
+  if (equipment.reading_required || equipment.last_meter_reading != null) {
+    const parts = equipment.last_meter_reading == null
+      ? ['Not logged yet']
+      : [
+        formatMeterValue(equipment.last_meter_reading),
+        formatMeterStamp(equipment.last_meter_reading_at),
+        formatMeterLogger({
+          logged_by_name: equipment.last_meter_logged_by_name,
+          logged_by_department: equipment.last_meter_logged_by_department,
+          logged_by_designation: equipment.last_meter_logged_by_designation,
+        }),
+      ].filter(Boolean)
+    facts.push({ label: 'Last meter reading', value: parts.join(' · ') })
+  }
 
   for (const field of equipment.field_values || []) {
     const key = String(field.field_name || '').trim().toLowerCase()

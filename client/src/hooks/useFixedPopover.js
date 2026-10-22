@@ -8,7 +8,6 @@ function stylesEqual(a, b) {
   if (a === b) return true
   if (!a || !b) return false
   return a.top === b.top
-    && a.bottom === b.bottom
     && a.left === b.left
     && a.width === b.width
     && a.minWidth === b.minWidth
@@ -33,6 +32,7 @@ export function useFixedPopover({
   minWidth = 0,
   gap = 4,
   align = 'start',
+  placement = 'auto',
 } = {}) {
   const popoverRef = useRef(null)
   const [style, setStyle] = useState(null)
@@ -53,9 +53,13 @@ export function useFixedPopover({
     const estimatedHeight = Math.min(popover?.scrollHeight || maxHeight, maxHeight)
     const spaceBelow = viewportHeight - rect.bottom - MARGIN
     const spaceAbove = rect.top - MARGIN
-    const openAbove = spaceBelow < estimatedHeight + gap && spaceAbove > spaceBelow
+    const openAbove = placement === 'above' || (
+      placement !== 'below'
+      && spaceBelow < estimatedHeight + gap
+      && spaceAbove > spaceBelow
+    )
     const available = Math.max(0, (openAbove ? spaceAbove : spaceBelow) - gap)
-    const heightLimit = Math.min(maxHeight, Math.max(96, available))
+    let heightLimit = Math.min(maxHeight, Math.max(96, available))
 
     let left = align === 'end' ? rect.right - panelWidth : rect.left
     if (left + panelWidth > viewportWidth - MARGIN) {
@@ -63,10 +67,18 @@ export function useFixedPopover({
     }
     left = Math.max(MARGIN, left)
 
+    let top = rect.bottom + gap
+    if (openAbove) {
+      const bottomEdge = rect.top - gap
+      const room = Math.max(0, bottomEdge - MARGIN)
+      heightLimit = Math.min(maxHeight, room)
+      const used = Math.min(popover?.offsetHeight || heightLimit, heightLimit)
+      top = bottomEdge - used
+    }
+
     const next = {
       position: 'fixed',
-      top: openAbove ? undefined : rect.bottom + gap,
-      bottom: openAbove ? viewportHeight - rect.top + gap : undefined,
+      top,
       left,
       width: matchWidth ? panelWidth : undefined,
       minWidth: matchWidth ? undefined : (minWidth || undefined),
@@ -76,7 +88,7 @@ export function useFixedPopover({
     }
 
     setStyle((prev) => (stylesEqual(prev, next) ? prev : next))
-  }, [align, anchorRef, gap, matchWidth, maxHeight, minWidth])
+  }, [align, anchorRef, gap, matchWidth, maxHeight, minWidth, placement])
 
   useLayoutEffect(() => {
     if (!open) {

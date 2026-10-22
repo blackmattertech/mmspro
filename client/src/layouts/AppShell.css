@@ -12,6 +12,8 @@
   min-width: 0;
   min-height: 100vh;
   min-height: 100dvh;
+  background: var(--color-off-white);
+  overflow-x: clip;
   transition: margin-left 0.2s ease, width 0.2s ease, max-width 0.2s ease;
   box-sizing: border-box;
 }
@@ -34,7 +36,6 @@
 
 .app-shell {
   --app-notif-gutter: 88px;
-  overflow-x: clip;
   max-width: 100%;
 }
 

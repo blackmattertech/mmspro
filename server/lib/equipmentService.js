@@ -16,7 +16,10 @@ const ORG_ASSETS_BUCKET = 'org-assets'
 
 const EQUIPMENT_SELECT = `
   id, org_id, location_id, department_id, area_id,
-  name, code, qr_code, image_path, is_active, created_at, updated_at,
+  name, code, qr_code, image_path, is_active, reading_required,
+  last_meter_reading, last_meter_reading_at, last_meter_logged_by_name,
+  last_meter_logged_by_department, last_meter_logged_by_designation,
+  created_at, updated_at,
   org_locations(id, name, code),
   departments(id, name),
   areas(id, name, code)
@@ -628,6 +631,7 @@ export async function createEquipment(orgId, body, { fields: preloadedFields = n
       name: identity.name,
       code: identity.code,
       is_active: body.is_active !== undefined ? Boolean(body.is_active) : true,
+      reading_required: body.reading_required === true,
     })
     .select('id')
     .single()
@@ -677,6 +681,7 @@ export async function updateEquipment(orgId, id, body) {
     updates.code = identity.code
   }
   if (body.is_active !== undefined) updates.is_active = Boolean(body.is_active)
+  if (body.reading_required !== undefined) updates.reading_required = body.reading_required === true
 
   const locationId = body.location_id ?? existing.location_id
   const departmentId = body.department_id ?? existing.department_id

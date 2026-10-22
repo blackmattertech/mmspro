@@ -25,7 +25,13 @@ import {
 import { clipDynamicFieldValues, clipTrimmedToLimit, getTextFieldLimitsMap } from './textFieldLimits.js'
 import { isMissingDisabledModulesColumn, isProductModuleEnabled, normalizeDisabledModules } from './orgModules.js'
 import { loadModuleApprovals } from './moduleApprovals.js'
-import { loadRuntimeFormLayout, listFormFieldValues, loadOrgCatalogFields, attachFormFieldValueMaps } from './orgFormLayouts.js'
+import {
+  loadRuntimeFormLayout,
+  listFormFieldValues,
+  loadOrgCatalogFields,
+  attachFormFieldValueMaps,
+  fillWorkRequestShortDescriptions,
+} from './orgFormLayouts.js'
 import { shouldRequire, systemId, parseLayoutId } from './formLayoutIds.js'
 import { getMasterSource } from './formFieldSources.js'
 import { assertChecklistForForm, snapshotChecklistTemplate } from './checklistService.js'
@@ -475,32 +481,9 @@ async function areaIdsWithNames(orgId, names) {
     .map((row) => row.id)
 }
 
-export async function listEquipmentCatalogForDepartment(orgId, departmentId, { search = null, limit = 500, offset = 0 } = {}) {
-  const page = await listEquipment(orgId, {
-    departmentId,
-    search,
-    limit,
-    offset,
-  })
-  const equipment = [...(page.items || [])]
-  const seen = new Set(equipment.map((row) => row.id))
-  const areaNames = equipment.map((row) => row.areas?.name).filter(Boolean)
-  const sharedAreaIds = (await areaIdsWithNames(orgId, areaNames))
-    .filter((areaId) => !equipment.some((row) => row.area_id === areaId))
-  for (const areaId of sharedAreaIds) {
-    const extra = await listEquipment(orgId, { areaId, search, limit: 200 })
-    for (const row of extra.items || []) {
-      if (seen.has(row.id)) continue
-      seen.add(row.id)
-      equipment.push(row)
-    }
-  }
-
-  if (!equipment.length) {
-    return { equipment: [], has_assets: false, total: page.total || 0 }
-  }
-
-  const fields = await loadOrgFields(orgId)
+async function shapeEquipmentCatalog(orgId, equipment, fields = null) {
+  if (!equipment.length) return []
+  const orgFields = fields || await loadOrgFields(orgId)
   const ids = equipment.map((row) => row.id)
   const { data: valueRows, error } = await supabaseAdmin
     .from('equipment_values')
@@ -518,29 +501,101 @@ export async function listEquipmentCatalogForDepartment(orgId, departmentId, { s
     valuesByEquipment.get(row.equipment_id)[row.field_id] = readEquipmentValue(row)
   }
 
+  return equipment.map((row) => {
+    const raw = valuesByEquipment.get(row.id) || {}
+    const values = enrichEquipmentCatalogValues(orgFields, row, raw)
+    for (const item of row.field_values || []) {
+      if (item?.field_id && item.value_text) values[item.field_id] = item.value_text
+    }
+    return {
+      id: row.id,
+      name: row.name,
+      code: row.code,
+      location_id: row.location_id,
+      department_id: row.department_id,
+      area_id: row.area_id,
+      area_name: row.areas?.name ?? row.area_name ?? null,
+      location_name: row.org_locations?.name ?? row.location_name ?? null,
+      qr_code: row.qr_code || null,
+      image_signed_url: row.image_signed_url || null,
+      values,
+    }
+  })
+}
+
+export async function listEquipmentCatalogForDepartment(orgId, departmentId, {
+  search = null,
+  limit = 500,
+  offset = 0,
+  locationId = null,
+} = {}) {
+  const page = await listEquipment(orgId, {
+    departmentId,
+    locationId: locationId || null,
+    search,
+    limit,
+    offset,
+  })
+  const equipment = [...(page.items || [])]
+  const seen = new Set(equipment.map((row) => row.id))
+  const areaNames = equipment.map((row) => row.areas?.name).filter(Boolean)
+  const sharedAreaIds = (await areaIdsWithNames(orgId, areaNames))
+    .filter((areaId) => !equipment.some((row) => row.area_id === areaId))
+  for (const areaId of sharedAreaIds) {
+    const extra = await listEquipment(orgId, { areaId, locationId: locationId || null, search, limit: 200 })
+    for (const row of extra.items || []) {
+      if (seen.has(row.id)) continue
+      if (locationId && row.location_id && row.location_id !== locationId) continue
+      seen.add(row.id)
+      equipment.push(row)
+    }
+  }
+
+  if (!equipment.length) {
+    return { equipment: [], has_assets: false, total: page.total || 0 }
+  }
+
   return {
     has_assets: true,
-    equipment: equipment.map((row) => {
-      const raw = valuesByEquipment.get(row.id) || {}
-      const values = enrichEquipmentCatalogValues(fields, row, raw)
-      for (const item of row.field_values || []) {
-        if (item?.field_id && item.value_text) values[item.field_id] = item.value_text
-      }
-      return {
-        id: row.id,
-        name: row.name,
-        code: row.code,
-        location_id: row.location_id,
-        department_id: row.department_id,
-        area_id: row.area_id,
-        area_name: row.areas?.name ?? null,
-        location_name: row.org_locations?.name ?? null,
-        qr_code: row.qr_code || null,
-        image_signed_url: row.image_signed_url || null,
-        values,
-      }
-    }),
+    equipment: await shapeEquipmentCatalog(orgId, equipment),
     total: page.total || equipment.length,
+  }
+}
+
+/** Equipment picker catalog for PM plans: department and/or plant, plus asset field sections. */
+export async function listEquipmentPickerCatalog(orgId, {
+  departmentId = null,
+  locationId = null,
+  search = null,
+  limit = 200,
+} = {}) {
+  const fields = await loadOrgFields(orgId)
+  const sections = buildAssetFieldSections(fields)
+  if (!departmentId && !locationId) {
+    return { equipment: [], has_assets: false, total: 0, sections }
+  }
+
+  if (departmentId) {
+    const catalog = await listEquipmentCatalogForDepartment(orgId, departmentId, {
+      search,
+      limit,
+      locationId,
+    })
+    return { ...catalog, sections }
+  }
+
+  const page = await listEquipment(orgId, {
+    locationId,
+    search,
+    limit,
+    offset: 0,
+  })
+  const equipment = await shapeEquipmentCatalog(orgId, page.items || [], fields)
+  return {
+    has_assets: equipment.length > 0,
+    equipment,
+    total: page.total || equipment.length,
+    sections,
   }
 }
 
@@ -1575,7 +1630,7 @@ export async function listWorkRequestTechnicians(orgId, workRequestId) {
 const WR_LIST_SELECT = `
   id, org_id, request_number, status, request_type, request_date, created_at, updated_at,
   order_from_department_id, order_to_department_id, equipment_id, requested_by,
-  priority, short_description, problem_description, job_nature, is_breakdown, execution_status, manual_work_order_id, remarks,
+  priority, short_description, problem_description, job_nature, is_breakdown, execution_status, manual_work_order_id, remarks, form_field_values,
   asset_hierarchy,
   order_from:departments!work_requests_order_from_department_id_fkey(id, name, location_id, all_locations),
   order_to:departments!work_requests_order_to_department_id_fkey(id, name, location_id, all_locations),
@@ -1590,7 +1645,7 @@ const WR_SELECT = `
   order_from:departments!work_requests_order_from_department_id_fkey(id, name, location_id, all_locations),
   order_to:departments!work_requests_order_to_department_id_fkey(id, name, location_id, all_locations),
   equipment(
-    id, name, code, location_id, department_id, area_id,
+    id, name, code, qr_code, location_id, department_id, area_id,
     areas(id, name, code),
     departments(id, name),
     org_locations(id, name, code)
@@ -1920,10 +1975,13 @@ export async function listWorkRequests(orgId, filter, {
   ])
   if (error) throw error
 
-  const rows = await attachFormFieldValueMaps(
+  const rows = await fillWorkRequestShortDescriptions(
     orgId,
-    'work_request.create',
-    await enrichWorkRequests(data || [], { lean: true }),
+    await attachFormFieldValueMaps(
+      orgId,
+      'work_request.create',
+      await enrichWorkRequests(data || [], { lean: true }),
+    ),
   )
   return listEnvelope(rows, { total: count || 0, limit, offset, status_counts })
 }
@@ -1939,7 +1997,9 @@ export async function getWorkRequestById(orgId, id) {
   if (error) throw error
   if (!data) return null
   const enriched = await enrichWorkRequest(data)
-  return attachWorkRequestDetailFields(orgId, enriched)
+  const detailed = await attachWorkRequestDetailFields(orgId, enriched)
+  const [withShortDescription] = await fillWorkRequestShortDescriptions(orgId, [detailed])
+  return withShortDescription || detailed
 }
 
 function formatStoredFieldValue(value) {
@@ -2055,6 +2115,11 @@ async function attachWorkRequestDetailFields(orgId, row) {
     return aOrder - bOrder
   })
 
+  if (!String(row.job_nature || '').trim()) {
+    const fromLayout = layoutFieldRows.find((item) => /job\s*nature/i.test(String(item.label || '')))
+    if (fromLayout?.value) row.job_nature = fromLayout.value
+  }
+
   const equipment = row.equipment
     ? {
       ...row.equipment,
@@ -2070,6 +2135,10 @@ async function attachWorkRequestDetailFields(orgId, row) {
     asset_hierarchy: assetHierarchy,
     layout_fields: layoutFieldRows,
     breakdown_fields: breakdownFields,
+    field_values: {
+      ...(row.field_values || {}),
+      ...(layoutValues || {}),
+    },
   }
 }
 

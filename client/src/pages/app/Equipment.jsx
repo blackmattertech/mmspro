@@ -81,6 +81,7 @@ export default function Equipment() {
       { id: 'location', label: 'Location' },
       { id: 'department', label: 'Department' },
       { id: 'area', label: 'Area' },
+      { id: 'reading_required', label: 'Reading required' },
       { id: 'active', label: 'Active' },
       { id: 'created_at', label: 'Created', defaultVisible: false },
       { id: 'updated_at', label: 'Updated', defaultVisible: false },
@@ -273,6 +274,10 @@ export default function Equipment() {
 
   const handleToggle = async (row, isActive) => {
     await update(row.id, { is_active: isActive })
+  }
+
+  const handleReadingRequired = async (row, required) => {
+    await update(row.id, { reading_required: required })
   }
 
   if (permLoading) {
@@ -486,6 +491,21 @@ export default function Equipment() {
                             if (columnId === 'location') return <td key={columnId}>{equipmentLocationName(row) || '—'}</td>
                             if (columnId === 'department') return <td key={columnId}>{row.departments?.name || '—'}</td>
                             if (columnId === 'area') return <td key={columnId}>{row.areas?.name || '—'}</td>
+                            if (columnId === 'reading_required') {
+                              const required = row.reading_required === true
+                              return (
+                                <td key={columnId} onClick={stopTableRowClick}>
+                                  {canUpdate('equipment') ? (
+                                    <GooToggle
+                                      checked={required}
+                                      disabled={saving}
+                                      onChange={(checked) => handleReadingRequired(row, checked)}
+                                      ariaLabel={`${required ? 'Stop requiring' : 'Require'} meter readings for ${row.name}`}
+                                    />
+                                  ) : (required ? 'Yes' : 'No')}
+                                </td>
+                              )
+                            }
                             if (columnId === 'active') {
                               return (
                                 <td key={columnId} onClick={stopTableRowClick}>

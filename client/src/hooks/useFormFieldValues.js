@@ -3,7 +3,7 @@ import { getFormFieldValues, saveFormFieldValues } from '../lib/api-form-layouts
 
 export function useFormFieldValues(formId, recordId) {
   const [values, setValues] = useState({})
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(() => Boolean(formId && recordId))
 
   const load = useCallback(async () => {
     if (!formId || !recordId) {

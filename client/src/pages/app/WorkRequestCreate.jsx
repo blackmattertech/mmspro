@@ -24,7 +24,7 @@ import {
 } from '../../lib/workRequestBreakdownFields'
 import { departmentsForEmployeeLocation } from '../../lib/departmentLocation'
 import { uploadWorkOrderFile } from '../../lib/workOrderAssets'
-import { revokeWorkOrderFilePreviews } from '../../lib/workOrderFileValues'
+import { persistFormFileValues, revokeWorkOrderFilePreviews } from '../../lib/workOrderFileValues'
 import { createId } from '../../lib/id'
 import '../../components/company/CompanyShared.css'
 import '../../components/assets/AssetsFields.css'
@@ -643,7 +643,10 @@ export default function WorkRequestCreate() {
           request_type: requestType || native.request_type || 'inter_department',
           checklist_template_id: checklistOn ? (checklistId || null) : null,
         })
-        if (created?.id) await extras.save(created.id, extraValues)
+        if (created?.id) {
+          const uploadedExtras = await persistFormFileValues(org.id, created.id, extraValues, 'work-requests')
+          await extras.save(created.id, uploadedExtras)
+        }
         if (org?.slug) {
           const message = saveAs === 'draft'
             ? 'Work request saved as draft.'

@@ -412,6 +412,13 @@ const icons = {
       <path d="M12 16v4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
     </svg>
   ),
+  logbook: (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M8 3.75h9.25A1.75 1.75 0 0 1 19 5.5v13.75A1.75 1.75 0 0 1 17.25 21H8" stroke="currentColor" strokeWidth="1.6" />
+      <path d="M7.5 3.75h-.75A1.75 1.75 0 0 0 5 5.5v13.75A1.75 1.75 0 0 0 6.75 21H8" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
+      <path d="M9 8.5h7M9 12h7M9 15.5h4.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
+  ),
   plans: (
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <rect x="4" y="5" width="16" height="15" rx="2" stroke="currentColor" strokeWidth="1.6" />

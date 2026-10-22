@@ -13,6 +13,7 @@ export default function WorkRequestListPage({ filter, emptyHint }) {
     statusFilters = [],
     toggleStatus,
     visibleColumnIds,
+    columnDefs,
     bulkReloadToken = 0,
   } = useOutletContext() || {}
 
@@ -30,6 +31,7 @@ export default function WorkRequestListPage({ filter, emptyHint }) {
       statusFilters={statusFilters}
       toggleStatus={toggleStatus}
       visibleColumnIds={visibleColumnIds}
+      columnDefs={columnDefs}
       bulkReloadToken={bulkReloadToken}
     />
   )

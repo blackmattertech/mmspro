@@ -1,15 +1,36 @@
 /**
- * Centered dialogs — overlays cover the viewport; cards size to their content.
+ * Centered dialogs in the main pane — overlays never cover the sidebar.
  */
+
+html:has(.app-shell),
+html:has(.admin-shell) {
+  --dialog-inset-left: var(--sidebar-width, 260px);
+}
+
+html:has(.app-shell--sidebar-collapsed),
+html:has(.admin-shell--sidebar-collapsed) {
+  --dialog-inset-left: var(--sidebar-collapsed-width, 72px);
+}
+
+@media (max-width: 1024px) {
+  html:has(.app-shell),
+  html:has(.admin-shell),
+  html:has(.app-shell--sidebar-collapsed),
+  html:has(.admin-shell--sidebar-collapsed) {
+    --dialog-inset-left: 0px;
+  }
+}
 
 html body .modal-overlay,
 html body .company-modal-overlay,
 html body .admin-modal-overlay,
-html body .advanced-filter-overlay {
+html body .advanced-filter-overlay,
+html body .limit-exceeded-overlay {
   position: fixed;
-  inset: 0;
-  left: 0 !important;
+  top: 0;
   right: 0;
+  bottom: 0;
+  left: var(--dialog-inset-left, 0px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -42,7 +63,6 @@ html body .modal.company-modal--popup-wide,
 html body .company-modal.pm-modal,
 html body .company-modal.pm-modal--wide,
 html body .advanced-filter__dialog,
-html body .modal.wo-received-detail,
 html body .modal.wo-settings-modal,
 html body .assign-employees-modal,
 html body .profile-modal {
@@ -51,10 +71,11 @@ html body .profile-modal {
 }
 
 html body .asset-layout-modal,
-html body .org-configure-modal {
+html body .org-configure-modal,
+html body .task-meta-settings-modal {
   width: min(1080px, 100%);
   max-width: min(1080px, 100%);
-  height: min(86dvh, 840px);
+  height: auto;
   max-height: min(86dvh, 840px);
 }
 
@@ -108,7 +129,9 @@ html body .advanced-filter__grid {
   html body .modal-overlay,
   html body .company-modal-overlay,
   html body .admin-modal-overlay,
-  html body .advanced-filter-overlay {
+  html body .advanced-filter-overlay,
+  html body .limit-exceeded-overlay {
+    left: 0;
     padding: 12px;
     padding-bottom: max(12px, env(safe-area-inset-bottom, 0px));
     align-items: center;
@@ -129,12 +152,12 @@ html body .advanced-filter__grid {
   html body .company-modal.pm-modal,
   html body .company-modal.pm-modal--wide,
   html body .advanced-filter__dialog,
-  html body .modal.wo-received-detail,
   html body .modal.wo-settings-modal,
   html body .assign-employees-modal,
   html body .profile-modal,
   html body .asset-layout-modal,
-  html body .org-configure-modal {
+  html body .org-configure-modal,
+  html body .task-meta-settings-modal {
     width: 100%;
     max-width: 100%;
   }

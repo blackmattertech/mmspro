@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useOrg } from '../../hooks/useOrg'
 import { useAuth } from '../../hooks/useAuth'
@@ -153,15 +153,18 @@ export default function ManualWorkOrderCreate() {
     }
   }, [checklistId, checklistOn, extras, navigate, org?.slug, submit, isEdit, hasLayout, layout, formActors])
 
+  const toolbarActionsRef = useRef({ goBack, openSettings, handleSubmit, resetValues })
+  toolbarActionsRef.current = { goBack, openSettings, handleSubmit, resetValues }
+
   useEffect(() => {
     const toolbarLeft = (
       <>
-        <PageBack onClick={goBack} className="page-back--inline" />
+        <PageBack onClick={() => toolbarActionsRef.current.goBack()} className="page-back--inline" />
         {canManage && (
           <button
             type="button"
             className="wo-page__settings-btn"
-            onClick={openSettings}
+            onClick={() => toolbarActionsRef.current.openSettings()}
             aria-label="Form field settings"
             title="Form field settings"
           >
@@ -171,7 +174,7 @@ export default function ManualWorkOrderCreate() {
         <button
           type="button"
           className="company-btn company-btn--secondary"
-          onClick={() => handleSubmit('draft')}
+          onClick={() => toolbarActionsRef.current.handleSubmit('draft')}
           disabled={saving || !canUseForm}
         >
           {saving ? 'Saving...' : isEdit ? 'Save Draft' : 'Save as Draft'}
@@ -180,7 +183,7 @@ export default function ManualWorkOrderCreate() {
           <button
             type="button"
             className="company-btn company-btn--secondary"
-            onClick={resetValues}
+            onClick={() => toolbarActionsRef.current.resetValues()}
             disabled={saving}
           >
             Reset
@@ -193,7 +196,7 @@ export default function ManualWorkOrderCreate() {
       <button
         type="button"
         className="company-btn company-btn--primary"
-        onClick={() => handleSubmit('created')}
+        onClick={() => toolbarActionsRef.current.handleSubmit('created')}
         disabled={saving}
       >
         {saving
@@ -211,11 +214,7 @@ export default function ManualWorkOrderCreate() {
     canUseForm,
     clearToolbar,
     existingStatus,
-    goBack,
-    handleSubmit,
     isEdit,
-    openSettings,
-    resetValues,
     saving,
     setToolbar,
   ])

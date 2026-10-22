@@ -130,6 +130,7 @@ export function PermissionsProvider({ children }) {
         ['work_orders_manual', 'work-orders/manual'],
         ['work_orders', 'work-orders'],
         ['work_orders_scheduled', 'work-orders/scheduled'],
+        ['logbook', 'logbook'],
         ['calendar', 'calendar'],
         ['warranty_manager', 'warranty-manager'],
         ['tasks_followups', 'tasks-and-followups'],

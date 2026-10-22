@@ -95,9 +95,21 @@ function techniciansLabel(row) {
   return techs.map((tech) => tech.name).join(', ')
 }
 
+function labeledHierarchy(row, label) {
+  const key = String(label || '').toLowerCase().replace(/[^a-z0-9]+/g, '')
+  if (!key) return ''
+  const items = Array.isArray(row?.asset_hierarchy) ? row.asset_hierarchy : []
+  const match = items.find((item) => {
+    const name = String(item?.field_name || '').toLowerCase().replace(/[^a-z0-9]+/g, '')
+    return (name === key || name === `${key}s` || key === `${name}s`) && String(item?.value || '').trim()
+  })
+  return match ? String(match.value).trim() : ''
+}
+
 const WorkRequestTableRow = memo(function WorkRequestTableRow({
   row,
   columns,
+  columnById,
   statusLabels,
   orgSlug,
   selected,
@@ -118,8 +130,8 @@ const WorkRequestTableRow = memo(function WorkRequestTableRow({
       aria-label={`View work request ${wrNumberLabel(row)}`}
     >
       {columns.map((columnId) => (
-        <td key={columnId} className={COLUMN_CELL_CLASS[columnId] || 'wr-table__cell'}>
-          {renderCell(row, columnId, statusLabels, orgSlug)}
+        <td key={columnId} className={cellClassName(columnId)}>
+          {renderCell(row, columnId, statusLabels, orgSlug, columnById?.get(columnId))}
         </td>
       ))}
     </tr>
@@ -135,13 +147,28 @@ const COLUMN_CELL_CLASS = {
   priority: 'wr-table__cell wr-table__cell--priority',
   status: 'wr-table__cell wr-table__cell--status',
   breakdown: 'wr-table__cell wr-table__cell--short',
-  job_nature: 'wr-table__cell wr-table__cell--short',
+  job_nature: 'wr-table__cell wr-table__cell--nature',
   requester: 'wr-table__cell wr-table__cell--person',
   equipment: 'wr-table__cell wr-table__cell--dept',
   remarks: 'wr-table__cell wr-table__cell--text',
   assigned: 'wr-table__cell wr-table__cell--text',
   work_order: 'wr-table__cell wr-table__cell--short',
   request_date: 'wr-table__cell wr-table__cell--date',
+}
+
+function cellClassName(columnId) {
+  if (COLUMN_CELL_CLASS[columnId]) return COLUMN_CELL_CLASS[columnId]
+  if (String(columnId).startsWith('field:')) return 'wr-table__cell wr-table__cell--field'
+  return 'wr-table__cell'
+}
+
+function showText(value) {
+  const text = value && value !== '—' ? value : '—'
+  return (
+    <span className="wr-table__full" title={text !== '—' ? text : undefined}>
+      {text}
+    </span>
+  )
 }
 
 function clampText(value, className = 'wr-table__clamp') {
@@ -153,7 +180,7 @@ function clampText(value, className = 'wr-table__clamp') {
   )
 }
 
-function renderCell(row, columnId, statusLabels = null, orgSlug = '') {
+function renderCell(row, columnId, statusLabels = null, orgSlug = '', column = null) {
   switch (columnId) {
     case 'wr_number':
       return (
@@ -187,7 +214,7 @@ function renderCell(row, columnId, statusLabels = null, orgSlug = '') {
     case 'breakdown':
       return row.is_breakdown_label || (row.is_breakdown ? 'Yes' : 'No')
     case 'job_nature':
-      return row.job_nature || row.job_nature_label || '—'
+      return showText(row.job_nature || row.job_nature_label || labeledHierarchy(row, 'job nature'))
     case 'requester':
       return <RequesterCell row={row} />
     case 'equipment':
@@ -222,7 +249,7 @@ function renderCell(row, columnId, statusLabels = null, orgSlug = '') {
     case 'updated_at':
       return clampText(formatDate(row[columnId]), 'wr-table__ellipsis')
     default:
-      return clampText(readCatalogText(row, { id: columnId }) || '—')
+      return showText(readCatalogText(row, column || { id: columnId }))
   }
 }
 
@@ -243,6 +270,7 @@ export default function WorkRequestsTable({
   statusFilters = [],
   toggleStatus,
   visibleColumnIds = DEFAULT_VISIBLE,
+  columnDefs = WORK_REQUEST_COLUMNS,
   bulkReloadToken = 0,
 }) {
   const location = useLocation()
@@ -298,6 +326,10 @@ export default function WorkRequestsTable({
   const filtered = requests
 
   const columns = visibleColumnIds?.length ? visibleColumnIds : DEFAULT_VISIBLE
+  const columnById = useMemo(
+    () => new Map((columnDefs?.length ? columnDefs : WORK_REQUEST_COLUMNS).map((col) => [col.id, col])),
+    [columnDefs],
+  )
 
   if (loading) {
     return <div className="company-loading">Loading...</div>
@@ -336,13 +368,13 @@ export default function WorkRequestsTable({
               <thead>
                 <tr>
                   {columns.map((columnId) => {
-                    const col = WORK_REQUEST_COLUMNS.find((item) => item.id === columnId)
+                    const col = columnById.get(columnId)
                     return (
                       <TableColumnHead
                         key={columnId}
                         columnId={columnId}
                         label={col?.label || columnId}
-                        className={COLUMN_CELL_CLASS[columnId] || 'wr-table__cell'}
+                        className={cellClassName(columnId)}
                         sort={headerSort}
                         onSort={setHeaderSort}
                         filterValue={columnFilters[columnId] || ''}
@@ -359,6 +391,7 @@ export default function WorkRequestsTable({
                     key={row.id}
                     row={row}
                     columns={columns}
+                    columnById={columnById}
                     statusLabels={statusLabels}
                     orgSlug={org?.slug}
                     selected={selectedId === row.id}

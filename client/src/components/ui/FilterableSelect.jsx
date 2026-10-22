@@ -89,6 +89,9 @@ export default function FilterableSelect({
 
   const selectedValue = value === null || value === undefined ? '' : String(value)
   const selected = normalized.find((o) => o.value === selectedValue)
+    || (selectedValue
+      ? { value: selectedValue, label: selectedValue, searchText: selectedValue, option: selectedValue }
+      : null)
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()

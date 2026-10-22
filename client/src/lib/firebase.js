@@ -143,11 +143,16 @@ async function activeVapidKey() {
 }
 
 export const requestNotificationPermission = async () => {
+  if (typeof Notification === 'undefined') return null
+  // Ask before service-worker setup. Browsers drop the prompt if it is not
+  // started in the same tap that triggered this call.
+  const permission = Notification.permission === 'granted'
+    ? 'granted'
+    : await Notification.requestPermission()
+  if (permission !== 'granted') return null
+
   const messagingInstance = await initMessaging()
   if (!messagingInstance) return null
-
-  const permission = await Notification.requestPermission()
-  if (permission !== 'granted') return null
 
   const registration = await navigator.serviceWorker.ready
   const { getToken } = await import('firebase/messaging')

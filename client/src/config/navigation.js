@@ -49,6 +49,13 @@ const APP_SEGMENTS = [
     moduleKey: 'work_orders_scheduled',
   },
   {
+    id: 'logbook',
+    label: 'Logbook',
+    segment: 'logbook',
+    icon: 'logbook',
+    moduleKey: 'logbook',
+  },
+  {
     id: 'tasks-followups',
     label: 'Tasks & Follow-ups',
     segment: 'tasks-and-followups',
@@ -123,6 +130,7 @@ export function moduleKeyForPath(pathname, orgSlug) {
   if (rest.startsWith('work-orders/received')) return 'work_orders_received'
   if (rest.startsWith('work-orders/assigned')) return 'work_orders_assigned'
   if (rest.startsWith('work-orders/scheduled')) return 'work_orders_scheduled'
+  if (rest.startsWith('logbook')) return 'logbook'
   if (rest.startsWith('work-orders/manual')) return 'work_orders_manual'
   if (rest.startsWith('work-orders')) return 'work_orders'
   if (rest.startsWith('calendar')) return 'calendar'
