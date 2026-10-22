@@ -24,6 +24,8 @@
   align-items: center;
   gap: 10px;
   margin-left: auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .asset-layout-modal {

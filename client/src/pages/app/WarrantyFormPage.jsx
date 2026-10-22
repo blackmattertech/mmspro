@@ -3,9 +3,13 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { useOrg } from '../../hooks/useOrg'
 import { usePermissions } from '../../hooks/usePermissions'
 import { orgPath } from '../../config/navigation'
-import { getWarranty, createWarranty, updateWarranty, getWarrantiesTemplate, bulkUploadWarranties } from '../../lib/api-warranties'
-import { syncWarrantyDocuments } from '../../lib/warrantyDocumentSync'
+import { getWarranty, createWarranty, updateWarranty, getWarrantiesTemplate, bulkUploadWarranties, previewWarrantyImport } from '../../lib/api-warranties'
+import WarrantyBulkNote from '../../components/warranty/WarrantyBulkNote'
+import { collectWarrantyDocuments, syncWarrantyDocuments } from '../../lib/warrantyDocumentSync'
 import { useVendors } from '../../hooks/useVendors'
+import { useFormFieldValues } from '../../hooks/useFormFieldValues'
+import { useFormLayout } from '../../hooks/useFormLayout'
+import { splitBoundValues } from '../../lib/formFieldSources'
 import PageBack from '../../components/shared/PageBack'
 import WarrantyForm, {
   EMPTY_WARRANTY_FORM,
@@ -19,6 +23,23 @@ import {
 import '../../components/company/CompanyShared.css'
 import '../../components/warranty/WarrantyManager.css'
 
+function warrantySavePayload(values) {
+  return {
+    ...values,
+    documents: undefined,
+    removedDocumentIds: undefined,
+    items: (values.items || []).map((item) => {
+      const { documents, removedDocumentIds, ...fields } = item
+      return {
+        ...fields,
+        keep_line: (documents || []).length > 0,
+        warranty_period_months: fields.warranty_period_months
+          || computeWarrantyPeriodMonths(fields.warranty_start, fields.warranty_end),
+      }
+    }),
+  }
+}
+
 export default function WarrantyFormPage() {
   const { warrantyId } = useParams()
   const navigate = useNavigate()
@@ -29,6 +50,8 @@ export default function WarrantyFormPage() {
     ? canUpdate('warranty_manager')
     : canCreate('warranty_manager')
   const { items: vendors, loading: vendorsLoading, create: createVendor, saving: vendorCreateSaving } = useVendors()
+  const extras = useFormFieldValues('warranty.warranty', warrantyId)
+  const { layout } = useFormLayout('warranty.warranty')
 
   const [loading, setLoading] = useState(isEdit)
   const [saving, setSaving] = useState(false)
@@ -44,11 +67,15 @@ export default function WarrantyFormPage() {
     bulkBusy,
     bulkError,
     bulkResult,
+    bulkPreview,
     handleDownloadTemplate,
     handleBulkFile,
+    confirmBulkImport,
+    cancelBulkPreview,
   } = useMasterBulkUpload({
     downloadTemplate: getWarrantiesTemplate,
     upload: bulkUploadWarranties,
+    previewUpload: previewWarrantyImport,
     defaultFilename: 'warranties-template.xlsx',
   })
 
@@ -84,21 +111,19 @@ export default function WarrantyFormPage() {
     event.preventDefault()
     if (!canSave) return
 
-    const payload = {
-      ...values,
-      warranty_period_months: values.warranty_period_months
-        || computeWarrantyPeriodMonths(values.warranty_start, values.warranty_end),
-    }
-    const { documents, removedDocumentIds, ...warrantyPayload } = payload
+    const warrantyPayload = warrantySavePayload(values)
+    const { documents, removedDocumentIds } = collectWarrantyDocuments(values)
+    const { native, extras: extraValues } = splitBoundValues('warranty.warranty', extras.values, layout)
 
     setSaving(true)
     setError(null)
     try {
       const saved = isEdit
-        ? await updateWarranty(warrantyId, warrantyPayload)
-        : await createWarranty(warrantyPayload)
+        ? await updateWarranty(warrantyId, { ...warrantyPayload, vendor_id: warrantyPayload.vendor_id || native.vendor_id || null })
+        : await createWarranty({ ...warrantyPayload, vendor_id: warrantyPayload.vendor_id || native.vendor_id || null })
 
       await syncWarrantyDocuments(saved.id, documents, removedDocumentIds)
+      await extras.save(saved.id, extraValues)
       goBack()
     } catch (err) {
       setError(err.message)
@@ -117,26 +142,26 @@ export default function WarrantyFormPage() {
 
   const handleAddSimilar = async () => {
     if (!canSave) return
-    const { documents, removedDocumentIds, ...warrantyPayload } = {
-      ...values,
-      warranty_period_months: values.warranty_period_months
-        || computeWarrantyPeriodMonths(values.warranty_start, values.warranty_end),
-    }
+    const warrantyPayload = warrantySavePayload(values)
+    const { documents, removedDocumentIds } = collectWarrantyDocuments(values)
     setSaving(true)
     setError(null)
     try {
       const saved = await createWarranty(warrantyPayload)
       await syncWarrantyDocuments(saved.id, documents, removedDocumentIds)
-      setSimilarSnapshot({
+      await extras.save(saved.id)
+      const cleared = {
         ...values,
         documents: [],
         removedDocumentIds: [],
-      })
-      setValues({
-        ...values,
-        documents: [],
-        removedDocumentIds: [],
-      })
+        items: (values.items || []).map((item) => ({
+          ...item,
+          documents: [],
+          removedDocumentIds: [],
+        })),
+      }
+      setSimilarSnapshot(cleared)
+      setValues(cleared)
     } catch (err) {
       setError(err.message)
     } finally {
@@ -161,7 +186,7 @@ export default function WarrantyFormPage() {
             <PageBack onClick={goBack} label="Warranty Manager" />
             <h1 className="company-page__title">{pageTitle}</h1>
             <p className="company-page__subtitle">
-              Record purchase details, warranty period, vendor contacts, and product line items.
+              Register a warranty and keep every document, date, and vendor detail in one place.
             </p>
           </div>
           {!isEdit && canCreate('warranty_manager') && (
@@ -171,21 +196,24 @@ export default function WarrantyFormPage() {
                 bulkBusy={bulkBusy}
                 bulkInputRef={bulkInputRef}
                 onFileChange={handleBulkFile}
-                title="Bulk upload warranties"
+                title="Import warranties"
+                description={<WarrantyBulkNote />}
                 noun="warranty"
                 bulkError={bulkError}
                 bulkResult={bulkResult}
+                bulkPreview={bulkPreview}
+                onConfirmImport={confirmBulkImport}
+                onCancelPreview={cancelBulkPreview}
               />
             </div>
           )}
         </div>
       </header>
 
-      <div className="company-page__content">
-        <div className="company-panel">
+      <div className="company-page__content warranty-create-page">
           {error && <div className="company-alert" role="alert">{error}</div>}
           {similarSnapshot && !isEdit && (
-            <div className="company-readonly-note" role="status">
+            <div className="company-alert company-alert--success" role="status">
               Record saved. Form kept for a similar entry — update details and submit again.
             </div>
           )}
@@ -197,13 +225,15 @@ export default function WarrantyFormPage() {
             saving={saving}
             canSave={canSave}
             onClear={handleClear}
+            onCancel={goBack}
             onAddSimilar={!isEdit ? handleAddSimilar : null}
             vendors={vendors}
             vendorsLoading={vendorsLoading}
             onCreateVendor={createVendor}
             vendorCreateSaving={vendorCreateSaving}
+            extraValues={extras.values}
+            onExtraChange={extras.setFieldValue}
           />
-        </div>
       </div>
     </div>
   )

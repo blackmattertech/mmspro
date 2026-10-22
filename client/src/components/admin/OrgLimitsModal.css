@@ -1,5 +1,16 @@
-.admin-modal--wide {
-  width: 100%;
+.admin-modal.admin-modal--popup {
+  width: min(560px, 100%);
+  max-width: 560px;
+  height: auto;
+  max-height: min(90vh, 900px);
+}
+
+.admin-modal--popup .admin-modal__actions {
+  position: sticky;
+  bottom: 0;
+  margin-top: 8px;
+  padding-top: 16px;
+  background: var(--color-white);
 }
 
 .org-limits-modal__subtitle {

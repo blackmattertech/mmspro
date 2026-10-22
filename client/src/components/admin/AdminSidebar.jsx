@@ -1,5 +1,4 @@
-import { useMemo } from 'react'
-import { NavLink } from 'react-router-dom'
+import { Link, NavLink } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
 import { ADMIN_NAV_ITEMS, getAdminShortcutOptions } from '../../config/adminNavigation'
 import { ADMIN_QUICK_ACCESS_SCOPE } from '../../hooks/useQuickAccess'
@@ -10,9 +9,10 @@ import SidebarUserFooter from '../layout/SidebarUserFooter'
 import '../layout/Sidebar.css'
 import './AdminSidebar.css'
 
+const ADMIN_SHORTCUTS = getAdminShortcutOptions()
+
 export default function AdminSidebar({ collapsed = false, onToggle, mobileOpen = false, onMobileClose }) {
   const { signOut } = useAuth()
-  const quickAccessOptions = useMemo(() => getAdminShortcutOptions(), [])
   const visualCollapsed = collapsed && !mobileOpen
 
   const handleNavClick = (event) => {
@@ -30,7 +30,7 @@ export default function AdminSidebar({ collapsed = false, onToggle, mobileOpen =
         {!visualCollapsed && (
           <div className="sidebar__brand-text">
             <span className="sidebar__brand-name">MMS PRO</span>
-            <span className="sidebar__brand-tag">Admin Panel</span>
+            <span className="sidebar__brand-tag">Super Admin Panel</span>
           </div>
         )}
         <button
@@ -75,11 +75,31 @@ export default function AdminSidebar({ collapsed = false, onToggle, mobileOpen =
       </nav>
 
       <div className="sidebar__footer">
+        {!visualCollapsed && (
+          <div className="admin-sidebar__status">
+            <p>System status</p>
+            <strong>
+              <span />
+              All systems operational
+            </strong>
+          </div>
+        )}
         <SidebarQuickAccess
           collapsed={visualCollapsed}
           scope={ADMIN_QUICK_ACCESS_SCOPE}
-          options={quickAccessOptions}
+          options={ADMIN_SHORTCUTS}
+          catalog={ADMIN_SHORTCUTS}
         />
+        <div className="admin-sidebar__actions">
+          {!visualCollapsed && <p>Quick actions</p>}
+          <Link to="/admin/organizations?new=1" className="admin-sidebar__add">
+            <span aria-hidden="true">+</span>
+            {!visualCollapsed && <span>Add Organization</span>}
+            {visualCollapsed && (
+              <span className="sidebar__tooltip" aria-hidden="true">Add Organization</span>
+            )}
+          </Link>
+        </div>
         <SidebarUserFooter
           collapsed={visualCollapsed}
           roleLabel="Super Admin"

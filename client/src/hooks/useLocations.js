@@ -1,11 +1,23 @@
 import { useState, useEffect, useCallback } from 'react'
 import { getLocations, createLocation, updateLocation, deleteLocation } from '../lib/api'
-import { fetchReferenceData, invalidateReferenceCache } from '../lib/referenceDataCache'
+import { fetchReferenceData, invalidateReferenceCache, peekCachedList, peekReferenceData, PICKER_LIMIT } from '../lib/referenceDataCache'
 
-export function useLocations({ forAssignment = false, search, limit = 200, offset = 0, enabled = true } = {}) {
-  const [locations, setLocations] = useState([])
-  const [total, setTotal] = useState(0)
-  const [loading, setLoading] = useState(true)
+export function useLocations({
+  forAssignment = false,
+  search,
+  limit = PICKER_LIMIT,
+  offset = 0,
+  enabled = true,
+  filters,
+  sort,
+  sortDir,
+} = {}) {
+  const initial = peekCachedList('locations', {
+    forAssignment, search, limit, offset, filters: JSON.stringify(filters || {}), sort, sortDir,
+  })
+  const [locations, setLocations] = useState(() => initial?.items || [])
+  const [total, setTotal] = useState(() => initial?.total || 0)
+  const [loading, setLoading] = useState(() => !initial)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
 
@@ -16,13 +28,14 @@ export function useLocations({ forAssignment = false, search, limit = 200, offse
       setLoading(false)
       return
     }
-    if (!silent) setLoading(true)
+    const cacheParams = { forAssignment, search, limit, offset, filters: JSON.stringify(filters || {}), sort, sortDir }
+    if (!silent && !peekReferenceData('locations', cacheParams)) setLoading(true)
     setError(null)
     try {
       const data = await fetchReferenceData(
         'locations',
-        { forAssignment, search, limit, offset },
-        () => getLocations({ forAssignment, search, limit, offset }),
+        cacheParams,
+        () => getLocations({ forAssignment, search, limit, offset, filters, sort, sortDir }),
         { force },
       )
       setLocations(data)
@@ -32,16 +45,20 @@ export function useLocations({ forAssignment = false, search, limit = 200, offse
     } finally {
       if (!silent) setLoading(false)
     }
-  }, [forAssignment, search, limit, offset, enabled])
+  }, [forAssignment, search, limit, offset, enabled, filters, sort, sortDir])
 
   useEffect(() => {
     load()
   }, [load])
 
-  const refreshAfterMutation = async () => {
+  const reload = useCallback(async (opts = {}) => {
     invalidateReferenceCache('locations')
     invalidateReferenceCache('departments')
-    await load({ silent: true, force: true })
+    await load({ silent: true, force: true, ...opts })
+  }, [load])
+
+  const refreshAfterMutation = async () => {
+    await reload()
   }
 
   const create = async (payload) => {
@@ -99,5 +116,5 @@ export function useLocations({ forAssignment = false, search, limit = 200, offse
     }
   }
 
-  return { locations, total, loading, saving, error, create, update, remove, toggleActive, reload: load }
+  return { locations, total, loading, saving, error, create, update, remove, toggleActive, reload }
 }

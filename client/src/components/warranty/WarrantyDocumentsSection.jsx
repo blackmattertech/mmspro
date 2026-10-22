@@ -1,4 +1,4 @@
-import { useRef } from 'react'
+import { useRef, useState } from 'react'
 import SpellcheckInput from '../shared/SpellcheckInput'
 import {
   WARRANTY_DOCUMENT_ACCEPT,
@@ -16,18 +16,18 @@ export default function WarrantyDocumentsSection({
   removedDocumentIds = [],
   onChange,
   disabled = false,
+  title = 'Documents',
+  compact = false,
 }) {
   const fileInputRef = useRef(null)
+  const [dragOver, setDragOver] = useState(false)
 
   const updateDocuments = (nextDocuments, nextRemoved = removedDocumentIds) => {
     onChange({ documents: nextDocuments, removedDocumentIds: nextRemoved })
   }
 
-  const handlePickFiles = async (event) => {
-    const files = Array.from(event.target.files || [])
-    event.target.value = ''
-    if (!files.length) return
-
+  const addFiles = async (files) => {
+    if (!files.length || disabled) return
     const next = [...documents]
     for (const file of files) {
       const data = await readFileAsDataUrl(file)
@@ -42,6 +42,18 @@ export default function WarrantyDocumentsSection({
       })
     }
     updateDocuments(next)
+  }
+
+  const handlePickFiles = async (event) => {
+    const files = Array.from(event.target.files || [])
+    event.target.value = ''
+    await addFiles(files)
+  }
+
+  const handleDrop = async (event) => {
+    event.preventDefault()
+    setDragOver(false)
+    await addFiles(Array.from(event.dataTransfer?.files || []))
   }
 
   const setDocumentLabel = (index, label) => {
@@ -61,9 +73,9 @@ export default function WarrantyDocumentsSection({
   }
 
   return (
-    <div className="warranty-form__documents">
-      <div className="warranty-form__items-header">
-        <h3 className="warranty-form__items-title">Documents</h3>
+    <div className={`warranty-docs${compact ? ' warranty-docs--compact' : ''}`}>
+      <div className="warranty-docs__head">
+        <h3 className="warranty-docs__title">{title}</h3>
         <input
           ref={fileInputRef}
           type="file"
@@ -75,74 +87,89 @@ export default function WarrantyDocumentsSection({
         />
       </div>
 
-      <div className="warranty-form__documents-grid">
-        {documents.map((doc, index) => {
-          const previewUrl = doc.preview_url || (
-            isWarrantyImageDocument(doc.content_type) ? doc.signed_url : null
-          )
+      <div
+        className={`warranty-docs__drop${dragOver ? ' is-over' : ''}`}
+        onDragEnter={(event) => {
+          event.preventDefault()
+          if (!disabled) setDragOver(true)
+        }}
+        onDragOver={(event) => {
+          event.preventDefault()
+          if (!disabled) setDragOver(true)
+        }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={handleDrop}
+      >
+        <span className="warranty-docs__cloud" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.6">
+            <path d="M7 18h10a4 4 0 0 0 .4-8 5.5 5.5 0 0 0-10.6-1.5A3.5 3.5 0 0 0 7 18Z" strokeLinejoin="round" />
+            <path d="M12 12v6M9.5 14.5 12 12l2.5 2.5" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </span>
+        <p>Drop product images or documents here</p>
+        <button
+          type="button"
+          className="warranty-docs__browse"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={disabled}
+        >
+          Browse files
+        </button>
+        <span className="warranty-docs__hint">PNG, JPG, PDF up to 25 MB each</span>
+      </div>
 
-          return (
-            <div key={doc.id || index} className="warranty-form__document-card">
-              <div className="warranty-form__document-preview">
-                {previewUrl ? (
-                  <img src={previewUrl} alt="" className="warranty-form__document-image" />
-                ) : (
-                  <div className="warranty-form__document-file">
-                    <span className="warranty-form__document-ext">
-                      {(doc.file_name || '').split('.').pop()?.toUpperCase() || 'FILE'}
-                    </span>
-                  </div>
-                )}
-              </div>
+      {documents.length > 0 && (
+        <ul className="warranty-docs__list">
+          {documents.map((doc, index) => {
+            const previewUrl = doc.preview_url || (
+              isWarrantyImageDocument(doc.content_type) ? doc.signed_url : null
+            )
+            const ext = (doc.file_name || '').split('.').pop()?.toUpperCase() || 'FILE'
 
-              <div className="warranty-form__document-meta">
-                <label className="company-form__field warranty-form__document-label-field">
-                  <span className="company-form__label">Label</span>
+            return (
+              <li key={doc.id || index} className="warranty-docs__file">
+                <div className="warranty-docs__thumb">
+                  {previewUrl ? (
+                    <img src={previewUrl} alt="" />
+                  ) : (
+                    <span>{ext.slice(0, 4)}</span>
+                  )}
+                </div>
+                <div className="warranty-docs__meta">
+                  <span className="warranty-docs__name" title={doc.file_name}>{doc.file_name || 'File'}</span>
                   <SpellcheckInput
                     type="text"
-                    className="company-form__input"
+                    className="company-form__input warranty-docs__label"
                     value={doc.label ?? ''}
-                    placeholder="e.g. Invoice"
+                    placeholder="Label"
                     disabled={disabled}
                     onChange={(e) => setDocumentLabel(index, e.target.value)}
                   />
-                </label>
-
-                {!doc.isPending && doc.signed_url && (
-                  <a
-                    href={doc.signed_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="warranty-form__document-link"
-                  >
-                    View file
-                  </a>
-                )}
-
+                  {!doc.isPending && doc.signed_url && (
+                    <a
+                      href={doc.signed_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="warranty-form__document-link"
+                    >
+                      View
+                    </a>
+                  )}
+                </div>
                 <button
                   type="button"
-                  className="warranty-form__remove-row"
+                  className="warranty-docs__remove"
                   onClick={() => removeDocument(index)}
                   disabled={disabled}
+                  aria-label={`Remove ${doc.file_name || 'file'}`}
                 >
-                  Remove
+                  ×
                 </button>
-              </div>
-            </div>
-          )
-        })}
-
-        <button
-          type="button"
-          className="warranty-form__document-add"
-          onClick={() => fileInputRef.current?.click()}
-          disabled={disabled}
-          aria-label="Upload document"
-          title="Upload document"
-        >
-          <span className="warranty-form__document-add-icon" aria-hidden="true">+</span>
-        </button>
-      </div>
+              </li>
+            )
+          })}
+        </ul>
+      )}
     </div>
   )
 }

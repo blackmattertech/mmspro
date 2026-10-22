@@ -9,12 +9,18 @@ export async function getEquipmentList(params = {}) {
     search: params.search,
     limit: params.limit ?? 50,
     offset: params.offset ?? 0,
+    filters: params.filters,
+    sort_by: params.sortBy,
   })}`)
   return asListArray(data)
 }
 
 export function getEquipment(id) {
   return apiFetch(`/api/equipment/${id}`)
+}
+
+export function lookupEquipment(code) {
+  return apiFetch(`/api/equipment/lookup?code=${encodeURIComponent(code)}`)
 }
 
 export function createEquipment(data) {

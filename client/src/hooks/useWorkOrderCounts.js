@@ -1,22 +1,27 @@
 import { useState, useEffect, useCallback } from 'react'
 import { getWorkOrderCounts } from '../lib/api-work-orders'
+import { peekReferenceData, seedReferenceData } from '../lib/referenceDataCache'
+
+const EMPTY_COUNTS = {
+  received: 0,
+  assigned: 0,
+  scheduled: 0,
+  manual: 0,
+}
 
 export function useWorkOrderCounts() {
-  const [counts, setCounts] = useState({
-    received: 0,
-    assigned: 0,
-    scheduled: 0,
-    manual: 0,
-  })
-  const [loading, setLoading] = useState(true)
+  const cached = peekReferenceData('tab-counts', { module: 'work_orders' })
+  const [counts, setCounts] = useState(cached || EMPTY_COUNTS)
+  const [loading, setLoading] = useState(!cached)
 
   const load = useCallback(async ({ silent = false } = {}) => {
-    if (!silent) setLoading(true)
+    if (!silent && !peekReferenceData('tab-counts', { module: 'work_orders' })) setLoading(true)
     try {
       const data = await getWorkOrderCounts()
       setCounts(data)
+      seedReferenceData('tab-counts', { module: 'work_orders' }, data)
     } catch {
-      setCounts({ received: 0, assigned: 0, scheduled: 0, manual: 0 })
+      setCounts(EMPTY_COUNTS)
     } finally {
       if (!silent) setLoading(false)
     }

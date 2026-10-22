@@ -1,3 +1,111 @@
+.admin-sidebar.sidebar {
+  background: #0b1220;
+}
+
 .admin-sidebar .sidebar__link--active {
-  background: rgba(230, 57, 70, 0.25);
+  background: #ff3b57;
+  color: #fff;
+  border-radius: 12px;
+  box-shadow: 0 8px 18px rgba(255, 59, 87, 0.28);
+}
+
+.admin-sidebar .sidebar__footer {
+  border-top: 0;
+  margin-top: auto;
+}
+
+.admin-sidebar .sidebar__user {
+  margin-top: 8px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.admin-sidebar .sidebar__avatar {
+  background: #ff3b57;
+}
+
+.admin-sidebar__status {
+  margin: 0 12px 12px;
+  padding: 14px;
+  border-radius: 14px;
+  background: #111827;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.admin-sidebar__status p {
+  margin: 0 0 8px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #9ca3af;
+}
+
+.admin-sidebar__status strong {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.admin-sidebar__status span {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #22c55e;
+  box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.15);
+}
+
+.admin-sidebar .sidebar-quick {
+  margin: 0 12px 12px;
+}
+
+.admin-sidebar.sidebar--collapsed .sidebar-quick {
+  margin: 0 0 12px;
+}
+
+.admin-sidebar__actions {
+  margin: 0 12px 4px;
+}
+
+.admin-sidebar__actions p {
+  margin: 0 0 8px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #9ca3af;
+}
+
+.admin-sidebar__add {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  height: 40px;
+  padding: 0 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  background: #111827;
+  color: #f9fafb;
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.admin-sidebar__add:hover {
+  background: #1f2937;
+}
+
+.sidebar--collapsed .admin-sidebar__add {
+  width: 40px;
+  margin: 0 auto;
+  padding: 0;
+}
+
+.sidebar--collapsed .admin-sidebar__actions {
+  margin: 0 0 4px;
 }

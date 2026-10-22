@@ -115,34 +115,110 @@ export async function getOrgUsage(orgId) {
   return { locations, departments, employees, logins }
 }
 
+/**
+ * Tally usage for many orgs with a few paged queries (not N×4 COUNTs).
+ * Prefer RPC when available for large tenants.
+ */
+async function tallyOrgIds(table, orgIds, { activeOnly = false } = {}) {
+  const map = Object.fromEntries(orgIds.map((id) => [id, 0]))
+  if (!orgIds.length) return map
+
+  const pageSize = 1000
+  let from = 0
+  for (;;) {
+    let query = supabaseAdmin
+      .from(table)
+      .select('org_id')
+      .in('org_id', orgIds)
+      .range(from, from + pageSize - 1)
+    if (activeOnly) query = query.eq('is_active', true)
+
+    const { data, error } = await query
+    if (error) throw error
+    const rows = data || []
+    for (const row of rows) {
+      if (row.org_id && map[row.org_id] != null) map[row.org_id] += 1
+    }
+    if (rows.length < pageSize) break
+    from += pageSize
+    if (from >= 200_000) break
+  }
+  return map
+}
+
+let bulkUsageRpcAvailable = true
+
+async function getBulkOrgUsageViaRpc(orgIds) {
+  const { data, error } = await supabaseAdmin.rpc('admin_org_usage_counts', {
+    p_org_ids: orgIds,
+  })
+  if (error) throw error
+  let parsed = data
+  if (typeof parsed === 'string') {
+    try {
+      parsed = JSON.parse(parsed)
+    } catch {
+      parsed = null
+    }
+  }
+  const usageByOrg = Object.fromEntries(
+    orgIds.map((id) => [id, { locations: 0, departments: 0, employees: 0, logins: 0 }]),
+  )
+  if (!parsed || typeof parsed !== 'object') return usageByOrg
+  for (const orgId of orgIds) {
+    const row = parsed[orgId]
+    if (!row) continue
+    usageByOrg[orgId] = {
+      locations: Number(row.locations) || 0,
+      departments: Number(row.departments) || 0,
+      employees: Number(row.employees) || 0,
+      logins: Number(row.logins) || 0,
+    }
+  }
+  return usageByOrg
+}
+
 export async function getBulkOrgUsage(orgIds) {
   const usageByOrg = Object.fromEntries(
-    orgIds.map((id) => [id, { locations: 0, departments: 0, employees: 0, logins: 0 }])
+    orgIds.map((id) => [id, { locations: 0, departments: 0, employees: 0, logins: 0 }]),
   )
-
   if (!orgIds.length) return usageByOrg
 
-  const [locations, departments, employees, profiles] = await Promise.all([
-    supabaseAdmin.from('org_locations').select('org_id').in('org_id', orgIds).eq('is_active', true),
-    supabaseAdmin.from('departments').select('org_id').in('org_id', orgIds).eq('is_active', true),
-    supabaseAdmin.from('org_employees').select('org_id').in('org_id', orgIds).eq('is_active', true),
-    supabaseAdmin.from('profiles').select('org_id').in('org_id', orgIds),
+  if (bulkUsageRpcAvailable) {
+    try {
+      return await getBulkOrgUsageViaRpc(orgIds)
+    } catch (err) {
+      const message = String(err?.message || err?.code || '')
+      if (/could not find the function|PGRST202|does not exist/i.test(message)) {
+        bulkUsageRpcAvailable = false
+      } else {
+        console.error('[getBulkOrgUsage] RPC failed, using tally fallback:', err.message)
+      }
+    }
+  }
+
+  const [locations, departments, employees, logins] = await Promise.all([
+    tallyOrgIds('org_locations', orgIds, { activeOnly: true }),
+    tallyOrgIds('departments', orgIds, { activeOnly: true }),
+    tallyOrgIds('org_employees', orgIds, { activeOnly: true }),
+    tallyOrgIds('profiles', orgIds),
   ])
 
-  for (const row of locations.data || []) {
-    usageByOrg[row.org_id].locations += 1
+  for (const orgId of orgIds) {
+    usageByOrg[orgId] = {
+      locations: locations[orgId] || 0,
+      departments: departments[orgId] || 0,
+      employees: employees[orgId] || 0,
+      logins: logins[orgId] || 0,
+    }
   }
-  for (const row of departments.data || []) {
-    usageByOrg[row.org_id].departments += 1
-  }
-  for (const row of employees.data || []) {
-    usageByOrg[row.org_id].employees += 1
-  }
-  for (const row of profiles.data || []) {
-    if (row.org_id) usageByOrg[row.org_id].logins += 1
-  }
-
   return usageByOrg
+}
+
+function attachLimitMeta(err, extra = {}) {
+  err.code = 'LIMIT_EXCEEDED'
+  Object.assign(err, extra)
+  return err
 }
 
 function limitError(label, usage, limit) {
@@ -150,7 +226,33 @@ function limitError(label, usage, limit) {
     `${label} limit reached (${usage}/${limit}). Contact your administrator to upgrade.`
   )
   err.status = 403
-  return err
+  return attachLimitMeta(err, { resource: label, usage, limit, overflow: 0 })
+}
+
+function bulkLimitError(label, { usage, limit, attempted }) {
+  const overflow = Math.min(
+    attempted,
+    Math.max(0, usage + attempted - limit),
+  )
+  const rowLabel = overflow === 1 ? 'row' : 'rows'
+  const err = new Error(
+    `Beyond the ${label.toLowerCase()} limit (${limit}). Please delete ${overflow} ${rowLabel} from the file and try again.`
+  )
+  err.status = 403
+  return attachLimitMeta(err, { resource: label, usage, limit, attempted, overflow })
+}
+
+export function httpErrorBody(err) {
+  const body = { error: err?.message || 'Request failed' }
+  if (err?.code === 'LIMIT_EXCEEDED') {
+    body.code = err.code
+    body.resource = err.resource
+    body.limit = err.limit
+    body.usage = err.usage
+    body.attempted = err.attempted
+    body.overflow = err.overflow
+  }
+  return body
 }
 
 export async function assertUnderLimit(orgId, resource) {
@@ -165,6 +267,22 @@ export async function assertUnderLimit(orgId, resource) {
   if (usage >= limit) {
     throw limitError(config.label, usage, limit)
   }
+}
+
+export async function assertBulkCreatesAllowed(orgId, resource, attemptedCreates) {
+  const attempted = Number(attemptedCreates) || 0
+  if (attempted <= 0) return
+
+  const config = RESOURCE_CONFIG[resource]
+  if (!config) throw new Error(`Unknown limit resource: ${resource}`)
+
+  const org = await fetchOrgLimits(orgId)
+  const limit = org[config.field]
+  if (limit == null) return
+
+  const usage = await countActiveRows(config.table, orgId)
+  if (usage + attempted <= limit) return
+  throw bulkLimitError(config.label, { usage, limit, attempted })
 }
 
 export async function assertUnderLimitIfReactivating(orgId, resource, wasActive, willBeActive) {

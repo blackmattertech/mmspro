@@ -8,6 +8,7 @@
     "dev": "npm run dev --prefix server & npm run dev --prefix client; wait",
     "dev:server": "npm run dev --prefix server",
     "dev:client": "npm run dev --prefix client",
+    "dev:landing": "npm run dev --prefix landing",
     "tunnel": "node scripts/dev-tunnel.mjs"
   },
   "dependencies": {

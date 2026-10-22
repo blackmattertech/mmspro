@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { getEmployees, createEmployee, updateEmployee, deleteEmployee } from '../lib/api-employees'
-import { fetchReferenceData, invalidateReferenceCache } from '../lib/referenceDataCache'
+import { fetchReferenceData, invalidateReferenceCache, peekCachedList, peekReferenceData, PICKER_LIMIT } from '../lib/referenceDataCache'
 
 export function useEmployees(filters = {}) {
   const {
@@ -8,13 +8,16 @@ export function useEmployees(filters = {}) {
     locationId,
     forAssignment = false,
     search,
-    limit = 200,
+    limit = PICKER_LIMIT,
     offset = 0,
     enabled = true,
+    listFilters,
   } = filters
-  const [employees, setEmployees] = useState([])
-  const [total, setTotal] = useState(0)
-  const [loading, setLoading] = useState(true)
+  const filterKey = JSON.stringify(listFilters || {})
+  const initial = peekCachedList('employees', { departmentId, locationId, forAssignment, search, limit, offset, filters: filterKey })
+  const [employees, setEmployees] = useState(() => initial?.items || [])
+  const [total, setTotal] = useState(() => initial?.total || 0)
+  const [loading, setLoading] = useState(() => !initial)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
 
@@ -25,13 +28,22 @@ export function useEmployees(filters = {}) {
       setLoading(false)
       return
     }
-    if (!silent) setLoading(true)
+    const cacheParams = { departmentId, locationId, forAssignment, search, limit, offset, filters: filterKey }
+    if (!silent && !peekReferenceData('employees', cacheParams)) setLoading(true)
     setError(null)
     try {
       const data = await fetchReferenceData(
         'employees',
-        { departmentId, locationId, forAssignment, search, limit, offset },
-        () => getEmployees({ departmentId, locationId, forAssignment, search, limit, offset }),
+        cacheParams,
+        () => getEmployees({
+          departmentId,
+          locationId,
+          forAssignment,
+          search,
+          limit,
+          offset,
+          filters: listFilters,
+        }),
         { force },
       )
       setEmployees(data)
@@ -41,15 +53,20 @@ export function useEmployees(filters = {}) {
     } finally {
       if (!silent) setLoading(false)
     }
-  }, [departmentId, locationId, forAssignment, search, limit, offset, enabled])
+  }, [departmentId, locationId, forAssignment, search, limit, offset, enabled, filterKey])
 
   useEffect(() => {
     load()
   }, [load])
 
-  const refreshAfterMutation = async () => {
+  const reload = useCallback(async (opts = {}) => {
     invalidateReferenceCache('employees')
-    await load({ silent: true, force: true })
+    invalidateReferenceCache('departments')
+    await load({ silent: true, force: true, ...opts })
+  }, [load])
+
+  const refreshAfterMutation = async () => {
+    await reload()
   }
 
   const create = async (payload) => {
@@ -107,5 +124,5 @@ export function useEmployees(filters = {}) {
     }
   }
 
-  return { employees, total, loading, saving, error, create, update, remove, toggleActive, reload: load }
+  return { employees, total, loading, saving, error, create, update, remove, toggleActive, reload }
 }

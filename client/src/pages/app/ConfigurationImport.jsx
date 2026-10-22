@@ -10,6 +10,7 @@ import NavIcon from '../../components/layout/NavIcon'
 import FilterableSelect from '../../components/ui/FilterableSelect'
 import TablePagination from '../../components/shared/TablePagination'
 import { IMPORT_TEMPLATES, IMPORT_PREVIEW_COLUMNS } from '../../config/importTemplates'
+import { ImportGroupList } from '../../components/company/ImportGroupList'
 import { downloadBase64File, readFileAsBase64 } from '../../lib/fileDownload'
 import './Company.css'
 import '../../components/company/CompanyShared.css'
@@ -29,7 +30,9 @@ function ImportPreviewTable({ templateId, preview }) {
           Imported records preview
         </h2>
         <p className="import-preview__subtitle">
-          Showing up to {preview.length} successfully imported row(s) from this file.
+          {templateId === 'warranties'
+            ? 'Purchases created from this file. Rows with the same vendor, PO number, and invoice number are one purchase.'
+            : `Showing up to ${preview.length} successfully imported row(s) from this file.`}
         </p>
       </div>
       <div className="company-table-wrap">
@@ -109,9 +112,14 @@ function ImportStatusPanel({ job, onDownloadFailed, onUploadAgain }) {
         <div className="import-status import-status--success" role="status">
           <p className="import-status__title">Import completed</p>
           <p className="import-status__meta">
-            <strong>{result.created}</strong> row(s) imported successfully from{' '}
-            <strong>{job.fileName}</strong>.
+            {result.summary || (
+              <>
+                <strong>{result.created}</strong> row(s) imported successfully from{' '}
+                <strong>{job.fileName}</strong>.
+              </>
+            )}
           </p>
+          {result.groups?.length > 0 && <ImportGroupList groups={result.groups} />}
           <div className="import-status__actions">
             <button type="button" className="company-btn company-btn--secondary" onClick={onUploadAgain}>
               Import another file
@@ -129,9 +137,14 @@ function ImportStatusPanel({ job, onDownloadFailed, onUploadAgain }) {
         <div className="import-status import-status--partial" role="status">
           <p className="import-status__title">Import completed with errors</p>
           <p className="import-status__meta">
-            <strong>{result.created}</strong> row(s) imported, <strong>{result.failed}</strong> failed.
-            Download the failed-rows file, fix issues, remove the Import errors column, and upload again.
+            {result.summary || (
+              <>
+                <strong>{result.created}</strong> row(s) imported, <strong>{result.failed}</strong> failed.
+                Download the failed-rows file, fix issues, remove the Import errors column, and upload again.
+              </>
+            )}
           </p>
+          {result.groups?.length > 0 && <ImportGroupList groups={result.groups} />}
           {result.errors?.length > 0 && (
             <ul className="import-status__errors">
               {result.errors.slice(0, 8).map((err) => (
@@ -175,11 +188,11 @@ function ImportStatusPanel({ job, onDownloadFailed, onUploadAgain }) {
         {result.created === 0 && result.failed === 0 ? 'Nothing to import' : 'Import failed'}
       </p>
       <p className="import-status__meta">
-        {result.created === 0 && result.failed === 0 ? (
-          <>The file had no data rows. Add rows on the Template sheet and try again.</>
+        {result.summary || (result.created === 0 && result.failed === 0 ? (
+          'The file had no data rows. Add rows on the Template sheet and try again.'
         ) : (
           <>No rows were imported. <strong>{result.failed}</strong> row(s) had errors.</>
-        )}
+        ))}
       </p>
       {result.errors?.length > 0 && (
         <ul className="import-status__errors">
@@ -252,6 +265,7 @@ export default function ConfigurationImport() {
   const [downloadBusy, setDownloadBusy] = useState(false)
   const [fileReading, setFileReading] = useState(false)
   const [uploadError, setUploadError] = useState(null)
+  const [stagedImport, setStagedImport] = useState(null)
 
   const latestJob = useMemo(
     () => jobs.find((job) => job.templateId === template?.id) || null,
@@ -263,6 +277,7 @@ export default function ConfigurationImport() {
   const handleTemplateChange = (nextId) => {
     setTemplateId(nextId)
     setUploadError(null)
+    setStagedImport(null)
     if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
@@ -287,6 +302,12 @@ export default function ConfigurationImport() {
     setFileReading(true)
     try {
       const base64 = await readFileAsBase64(file)
+      if (template.preview) {
+        const preview = await template.preview(base64)
+        setStagedImport({ base64, fileName: file.name, preview })
+        return
+      }
+      setStagedImport(null)
       await runImport({
         templateId: template.id,
         templateLabel: template.label,
@@ -307,7 +328,25 @@ export default function ConfigurationImport() {
 
   const handleUploadAgain = () => {
     setUploadError(null)
+    setStagedImport(null)
     fileInputRef.current?.click()
+  }
+
+  const handleConfirmStaged = async () => {
+    if (!template || !stagedImport) return
+    const { base64, fileName } = stagedImport
+    setStagedImport(null)
+    setUploadError(null)
+    try {
+      await runImport({
+        templateId: template.id,
+        templateLabel: template.label,
+        fileName,
+        upload: () => template.upload(base64),
+      })
+    } catch (err) {
+      setUploadError(err.message)
+    }
   }
 
   const backLink = useMemo(() => {
@@ -437,6 +476,42 @@ export default function ConfigurationImport() {
             </div>
 
             {uploadError && <div className="company-error">{uploadError}</div>}
+            {stagedImport && (
+              <div className="import-groups">
+                <p className="import-groups__heading">{stagedImport.preview.summary}</p>
+                <ImportGroupList groups={stagedImport.preview.groups} />
+                {stagedImport.preview.errors?.length > 0 && (
+                  <ul className="import-status__errors">
+                    {stagedImport.preview.errors.slice(0, 8).map((err) => (
+                      <li key={`${err.row}-${err.field}`}>
+                        Row {err.row}: {err.message}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                <div className="master-bulk-modal__confirm">
+                  <button
+                    type="button"
+                    className="company-btn company-btn--secondary"
+                    onClick={() => setStagedImport(null)}
+                    disabled={isRunning}
+                  >
+                    Back
+                  </button>
+                  <button
+                    type="button"
+                    className="company-btn company-btn--primary"
+                    onClick={handleConfirmStaged}
+                    disabled={
+                      isRunning
+                      || ((stagedImport.preview.created || 0) + (stagedImport.preview.updated || 0) === 0)
+                    }
+                  >
+                    Confirm import
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="import-page__results">
@@ -445,7 +520,7 @@ export default function ConfigurationImport() {
               onDownloadFailed={handleDownloadFailed}
               onUploadAgain={handleUploadAgain}
             />
-            {!latestJob && (
+            {!latestJob && !stagedImport && (
               <div className="import-page__placeholder">
                 <p>Status and a preview of imported rows will appear here after you upload a file.</p>
               </div>

@@ -16,12 +16,14 @@ import {
   createEquipment,
   updateEquipment,
   deleteEquipment,
+  findEquipmentByScan,
 } from '../../lib/equipmentService.js'
 import {
   buildEquipmentTemplate,
   bulkImportEquipment,
 } from '../../lib/equipmentBulkService.js'
 import { attachFailedFileToResult } from '../../lib/importErrorWorkbook.js'
+import { parseListControls } from '../../lib/listQuery.js'
 
 const router = Router()
 
@@ -44,11 +46,14 @@ router.get('/', canRead, async (req, res) => {
   try {
     const { limit, offset } = parsePagination(req.query)
     const locationId = resolveLocationFilter(req.orgPermissions, req.query.location_id)
+    const controls = parseListControls(req.query)
     const rows = await listEquipment(req.userProfile.org_id, {
       locationId,
       departmentId: req.query.department_id || null,
       areaId: req.query.area_id || null,
       search: req.query.search || null,
+      filters: controls.filters,
+      sortBy: req.query.sort_by || 'name_asc',
       limit,
       offset,
     })
@@ -90,6 +95,20 @@ router.post('/bulk', canCreate, async (req, res) => {
     res.json(payload)
   } catch (err) {
     res.status(err.status || 400).json({ error: err.message })
+  }
+})
+
+router.get('/lookup', canRead, async (req, res) => {
+  try {
+    const row = await findEquipmentByScan(req.userProfile.org_id, req.query.code)
+    if (!row) {
+      return res.status(404).json({ error: 'This code is not an equipment record in your organization.' })
+    }
+    assertLocationAccess(req.orgPermissions, row.location_id)
+    const detail = await getEquipmentDetail(req.userProfile.org_id, row.id)
+    res.json(detail)
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message })
   }
 })
 

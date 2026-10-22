@@ -25,6 +25,7 @@ export const PM_CALENDAR_UNITS = [
   'quarter',
   'half_yearly',
   'yearly',
+  'custom',
 ]
 
 /** Types that advance due dates from the calendar interval. */

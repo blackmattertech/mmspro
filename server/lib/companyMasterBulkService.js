@@ -6,6 +6,7 @@ import {
   validatePhoneE164,
 } from './contactValidation.js'
 import { ensureLocationMaintenanceDepartment } from './locationDefaults.js'
+import { assertBulkCreatesAllowed } from './orgLimits.js'
 
 const TEMPLATE_SHEET = 'Template'
 const VALID_VALUES_SHEET = 'Valid values'
@@ -174,11 +175,6 @@ async function loadOrgMasters(orgId) {
   }
 }
 
-function locationLabel(locations, department) {
-  if (department.all_locations) return 'All locations'
-  return locations.find((l) => l.id === department.location_id)?.name || ''
-}
-
 // ─── Locations ───────────────────────────────────────────────
 
 export async function buildLocationsTemplate() {
@@ -193,6 +189,7 @@ export async function bulkImportLocations(orgId, buffer) {
   const rows = readTemplateRows(workbook, LOCATION_COLUMNS)
   const results = { created: 0, failed: 0, errors: [], preview: [] }
   const MAX_PREVIEW = 250
+  await assertBulkCreatesAllowed(orgId, 'location', rows.length)
 
   for (const { rowNumber, rowValues } of rows) {
     try {
@@ -273,10 +270,7 @@ export async function buildDepartmentsTemplate(orgId) {
     },
     {
       header: 'Parent Department',
-      values: departments.map((d) => {
-        const loc = locationLabel(locations, d)
-        return loc ? `${d.name} — ${loc}` : d.name
-      }),
+      values: departments.map((d) => d.name),
     },
   ])
 }
@@ -288,6 +282,7 @@ export async function bulkImportDepartments(orgId, buffer) {
   const rows = readTemplateRows(workbook, DEPARTMENT_COLUMNS)
   const results = { created: 0, failed: 0, errors: [], preview: [] }
   const MAX_PREVIEW = 250
+  await assertBulkCreatesAllowed(orgId, 'department', rows.length)
 
   for (const { rowNumber, rowValues } of rows) {
     try {
@@ -381,10 +376,7 @@ export async function buildEmployeesTemplate(orgId) {
     },
     {
       header: 'Department',
-      values: departments.map((d) => {
-        const loc = locationLabel(locations, d)
-        return loc ? `${d.name} — ${loc}` : d.name
-      }),
+      values: departments.map((d) => d.name),
     },
     {
       header: 'Login Required',
@@ -488,6 +480,7 @@ export async function bulkImportEmployees(orgId, buffer) {
     }
   }
 
+  await assertBulkCreatesAllowed(orgId, 'employee', pending.length)
   await insertChunked('org_employees', pending, results, MAX_PREVIEW, 'Employee ID already exists')
 
   return results

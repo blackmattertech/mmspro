@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
-export const TABLE_PAGE_SIZE_OPTIONS = [10, 50, 100, 250]
+export const TABLE_PAGE_SIZE_OPTIONS = [10, 25, 50]
 
 export function useTablePagination(totalCount, { resetKey = '' } = {}) {
   const [pageSize, setPageSize] = useState(TABLE_PAGE_SIZE_OPTIONS[0])

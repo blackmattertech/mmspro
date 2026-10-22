@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useOrg } from '../../hooks/useOrg'
 import { useVendors } from '../../hooks/useVendors'
 import { useDebouncedValue } from '../../hooks/useDebouncedValue'
@@ -12,7 +12,7 @@ import TableColumnPicker from '../../components/shared/TableColumnPicker'
 import TableFilterToolbar from '../../components/shared/TableFilterToolbar'
 import { useTablePagination } from '../../hooks/useTablePagination'
 import { useTableColumnPrefs } from '../../hooks/useTableColumnPrefs'
-import { TABLE_SORT_OPTIONS, applyTableFilters } from '../../lib/tableFilters'
+import { TABLE_SORT_OPTIONS, applyTableFilters, compactFilters } from '../../lib/tableFilters'
 import { stopTableRowClick, tableRowClickProps } from '../../lib/clickableTableRow'
 import { orgPath } from '../../config/navigation'
 import { formatCityDisplay } from '../../lib/indiaLocations'
@@ -96,41 +96,41 @@ function renderVendorCell(row, columnId) {
 
 export default function Vendors() {
   const navigate = useNavigate()
+  const [params, setParams] = useSearchParams()
   const { org } = useOrg()
   const [search, setSearch] = useState('')
-  const [filterField, setFilterField] = useState('')
-  const [filterValue, setFilterValue] = useState('')
+  const [columnFilters, setColumnFilters] = useState({})
   const [sortBy, setSortBy] = useState('name_asc')
   const debouncedSearch = useDebouncedValue(search.trim())
+  const listFilters = useMemo(() => compactFilters(columnFilters), [columnFilters])
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState(null)
   const [listTotal, setListTotal] = useState(0)
-  const filterResetKey = `${debouncedSearch}|${filterField}|${filterValue}|${sortBy}`
+  const filterResetKey = `${debouncedSearch}|${JSON.stringify(columnFilters)}|${sortBy}`
   const pagination = useTablePagination(listTotal, { resetKey: filterResetKey })
 
   const filters = useMemo(() => ({
     search: debouncedSearch || undefined,
     limit: pagination.pageSize,
     offset: pagination.offset,
-  }), [debouncedSearch, pagination.pageSize, pagination.offset])
+    listFilters,
+  }), [debouncedSearch, pagination.pageSize, pagination.offset, listFilters])
   const { items, total, loading, saving, error, create, update, remove } = useVendors(filters)
   useEffect(() => { setListTotal(total) }, [total])
+  useEffect(() => {
+    if (params.get('create') !== '1') return
+    setEditing(null)
+    setModalOpen(true)
+    const next = new URLSearchParams(params)
+    next.delete('create')
+    setParams(next, { replace: true })
+  }, [params, setParams])
 
   const filteredItems = useMemo(() => applyTableFilters(items, {
-    fieldFilter: { field: filterField, value: filterValue },
-    fieldFilterGetters: {
-      vendor_code: (row) => row.vendor_code,
-      name: (row) => row.name,
-      contact_person: (row) => row.contact_person,
-      mobile: (row) => row.mobile,
-      email: (row) => row.email,
-      city: (row) => formatCityDisplay(row.city, row.state) || row.city,
-      gstin: (row) => row.gstin,
-    },
     sortBy,
     getName: (row) => row.name || row.vendor_code,
     getCreatedAt: (row) => row.created_at,
-  }), [items, filterField, filterValue, sortBy])
+  }), [items, sortBy])
 
   const pagedItems = filteredItems
   const {
@@ -139,6 +139,9 @@ export default function Vendors() {
     resetColumns: resetVendorColumns,
     columnDefs: vendorPickerColumns,
     visibleColumnIds: vendorVisibleColumnIds,
+    columnOrder: vendorColumnOrder,
+    reorderColumns: reorderVendorColumns,
+    moveColumn: moveVendorColumn,
   } = useTableColumnPrefs('masters-vendors', VENDOR_COLUMNS)
 
   const openCreate = () => {
@@ -157,9 +160,9 @@ export default function Vendors() {
   }
 
   const handleSave = async (payload) => {
-    if (editing?.id) await update(editing.id, payload)
-    else await create(payload)
+    const saved = editing?.id ? await update(editing.id, payload) : await create(payload)
     setModalOpen(false)
+    return saved
   }
 
   const handleDelete = async (row) => {
@@ -194,10 +197,8 @@ export default function Vendors() {
               }}
               filter={{
                 fields: VENDOR_FILTER_FIELDS,
-                field: filterField,
-                onFieldChange: setFilterField,
-                value: filterValue,
-                onValueChange: setFilterValue,
+                values: columnFilters,
+                onChange: setColumnFilters,
               }}
               sort={{ value: sortBy, onChange: setSortBy, options: TABLE_SORT_OPTIONS }}
               actions={(
@@ -210,7 +211,7 @@ export default function Vendors() {
                     <span className="equipment-bulk-btn__icon" aria-hidden="true">
                       <NavIcon name="upload" />
                     </span>
-                    Bulk upload
+                    Import
                   </button>
                   <button type="button" className="company-btn company-btn--primary" onClick={openCreate}>
                     + Add Vendor
@@ -221,8 +222,11 @@ export default function Vendors() {
                 <TableColumnPicker
                   columnDefs={vendorPickerColumns}
                   visibleColumnIds={vendorVisibleColumnIds}
+                  columnOrder={vendorColumnOrder}
                   onToggle={toggleVendorColumn}
                   onReset={resetVendorColumns}
+                  onReorder={reorderVendorColumns}
+                  onMove={moveVendorColumn}
                 />
               )}
             />

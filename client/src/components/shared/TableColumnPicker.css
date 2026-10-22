@@ -54,10 +54,11 @@
   border: 1px solid var(--color-light-gray-2);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-lg);
+  overflow: hidden;
 }
 
 .table-column-picker__menu--reorder {
-  width: min(320px, 88vw);
+  width: min(380px, 92vw);
 }
 
 .table-column-picker__menu-head {
@@ -99,6 +100,7 @@
   margin: 0;
   padding: 8px 0 0;
   overflow-y: auto;
+  flex: 1;
   min-height: 0;
 }
 
@@ -126,6 +128,7 @@
   color: var(--color-gray-blue);
   cursor: grab;
   user-select: none;
+  touch-action: none;
 }
 
 .table-column-picker__item--dragging .table-column-picker__grip {
@@ -151,7 +154,41 @@
 .table-column-picker__option input {
   width: 16px;
   height: 16px;
+  flex-shrink: 0;
   accent-color: var(--color-primary);
+}
+
+.table-column-picker__option span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.table-column-picker__moves {
+  display: inline-flex;
+  flex-shrink: 0;
+  gap: 4px;
+  padding-right: 10px;
+}
+
+.table-column-picker__move {
+  padding: 2px 6px;
+  font-size: 10px;
+  font-weight: 700;
+  font-family: inherit;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--color-gray-blue);
+  background: var(--color-off-white);
+  border: 1px solid var(--color-light-gray-1);
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+}
+
+.table-column-picker__move:hover {
+  color: var(--color-dark-navy);
+  border-color: var(--color-gray-blue);
 }
 
 .company-table-toolbar {

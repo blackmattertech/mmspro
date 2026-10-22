@@ -6,6 +6,7 @@ export async function getVendorsList(params = {}) {
     search: params.search,
     limit: params.limit ?? 50,
     offset: params.offset ?? 0,
+    filters: params.filters,
   })}`)
   return asListArray(data)
 }

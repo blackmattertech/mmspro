@@ -94,7 +94,7 @@ export async function buildVendorsTemplate() {
     },
     {
       header: 'Vendor ID format',
-      values: ['Ven-0001 (optional — leave blank to auto-generate)'],
+      values: ['Any text ID (optional — leave blank to auto-generate Ven-0001, …)'],
     },
     {
       header: 'Mobile format',

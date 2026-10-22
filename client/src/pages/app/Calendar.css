@@ -139,6 +139,39 @@
   background: #d42f3c;
 }
 
+.cal-toolbar__create {
+  position: relative;
+}
+
+.cal-toolbar__create-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 20;
+  min-width: 180px;
+  padding: 6px;
+  background: var(--color-white);
+  border: 1px solid var(--color-light-gray-1);
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(17, 24, 39, 0.12);
+}
+
+.cal-toolbar__create-item {
+  display: block;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+.cal-toolbar__create-item:hover {
+  background: var(--color-light-pink-2);
+}
+
 /* Filters */
 .cal-filters {
   display: flex;
@@ -259,10 +292,13 @@
 }
 
 .cal-task {
+  display: block;
   padding: 6px 8px;
   border-left: 3px solid;
   border-radius: 4px;
   cursor: pointer;
+  text-decoration: none;
+  color: inherit;
   transition: opacity 0.15s ease;
 }
 
@@ -336,6 +372,10 @@
 
 .cal-table tbody tr:hover {
   background: var(--color-off-white);
+}
+
+.cal-table__row--clickable {
+  cursor: pointer;
 }
 
 /* Priority badges */
@@ -474,9 +514,19 @@
   gap: 10px;
   padding-bottom: 14px;
   border-bottom: 1px solid var(--color-light-gray-1);
+  text-decoration: none;
+  color: inherit;
 }
 
-.cal-upcoming__item:last-child {
+a.cal-upcoming__item {
+  cursor: pointer;
+}
+
+a.cal-upcoming__item:hover .cal-upcoming__title {
+  text-decoration: underline;
+}
+
+.cal-upcoming > li:last-child .cal-upcoming__item {
   padding-bottom: 0;
   border-bottom: none;
 }

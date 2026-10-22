@@ -1,11 +1,11 @@
 import { useId } from 'react'
 import './GooToggle.css'
 
-export default function GooToggle({ checked, onChange, disabled = false, ariaLabel }) {
+export default function GooToggle({ checked, onChange, disabled = false, ariaLabel, className = '' }) {
   const filterId = `goo-${useId().replace(/:/g, '')}`
 
   return (
-    <div className="goo-toggle-container">
+    <div className={`goo-toggle-container${className ? ` ${className}` : ''}`}>
       <input
         type="checkbox"
         className="goo-toggle-input"

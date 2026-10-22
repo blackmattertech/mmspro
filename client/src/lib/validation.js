@@ -62,3 +62,23 @@ export function validateAddressFields({ postal_code, country, mobile, phone, req
 export function firstValidationError(errors) {
   return Object.values(errors).find(Boolean) || null
 }
+
+export function normalizeWebsite(value) {
+  const raw = String(value ?? '').trim()
+  if (!raw) return ''
+  if (/^https?:\/\//i.test(raw)) return raw
+  return `https://${raw}`
+}
+
+export function validateWebsite(value) {
+  const raw = String(value ?? '').trim()
+  if (!raw) return null
+  try {
+    const url = new URL(normalizeWebsite(raw))
+    if (!['http:', 'https:'].includes(url.protocol)) return 'Enter a valid website'
+    if (!url.hostname.includes('.')) return 'Enter a valid website'
+    return null
+  } catch {
+    return 'Enter a valid website'
+  }
+}

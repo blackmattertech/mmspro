@@ -8,7 +8,7 @@ import {
 } from 'react'
 import { createPortal } from 'react-dom'
 import { useFixedPopover } from '../../hooks/useFixedPopover'
-import '../company/CompanyShared.css'
+import './FilterableSelect.css'
 
 function normalizeOptions(options, getOptionValue, getOptionLabel, getOptionSearchLabel) {
   return (options || []).map((opt) => {
@@ -77,7 +77,9 @@ export default function FilterableSelect({
   })
 
   useEffect(() => {
-    onQueryChange?.(query)
+    if (!onQueryChange) return undefined
+    const id = window.setTimeout(() => onQueryChange(query), 300)
+    return () => window.clearTimeout(id)
   }, [query, onQueryChange])
 
   const normalized = useMemo(
@@ -220,7 +222,7 @@ export default function FilterableSelect({
         {showCreate ? (
           <li className="filterable-select__empty" role="presentation">
             <span className="filterable-select__empty-text">
-              {query.trim() ? 'No vendors found' : 'No vendors yet'}
+              {query.trim() ? 'No matches' : 'Nothing here yet'}
             </span>
             <button
               type="button"

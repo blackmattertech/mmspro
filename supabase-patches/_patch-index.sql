@@ -85,6 +85,25 @@
 
 --   76-pm-plan-overdue-status.sql                     → 76-pm-plan-overdue-status — Overdue status for PM plans
 --   77-report-schedules.sql                           → 77-report-schedules — Scheduled report email delivery
+--   78-department-code.sql                            → 78-department-code — Department codes
+--   79-org-disabled-modules.sql                       → 79-org-disabled-modules — Super Admin module entitlements
+--   80-org-form-layouts.sql                           → 80-org-form-layouts — Per-module Super Admin form layouts
+--   81-form-field-values-text-id.sql                   → 81-form-field-values-text-id — Master picker extras ids
+--   82-warranty-item-terms.sql                         → 82-warranty-item-terms — Per-line warranty purchase/PO/invoice dates
+--   83-performance-aggregations.sql                    → 83-performance-aggregations — Home dashboard + received WO + admin org usage RPCs
+--   84-platform-integrations.sql                      → 84-platform-integrations — Super Admin email, Firebase, Cashfree
+--   85-platform-plans.sql                             → 85-platform-plans — Super Admin time-bound plans
+--   86-platform-subscriptions.sql                     → 86-platform-subscriptions — Cashfree sandbox subscriptions
+--   87-subscription-signup.sql                       → 87-subscription-signup — Company details held until payment
+--   88-dashboard-chart-aggregates.sql                → 88-dashboard-chart-aggregates — Org dashboard chart and KPI aggregates
+--   93-module-approvals.sql                           → 93-module-approvals — Department head approval per module
+--   94-task-equipment-reference.sql                   → 94-task-equipment-reference — Equipment reference on tasks
+--   95-platform-form-defaults.sql                     → 95-platform-form-defaults — Default form per module for new companies
+--   96-equipment-optional-placement.sql               → 96-equipment-optional-placement — Equipment without built-in placement
+--   97-areas-optional-placement.sql                   → 97-areas-optional-placement — Areas from the equipment Area field
+--   100-warranty-document-lines.sql                  → 100-warranty-document-lines — Documents on each warranty line
+--   101-checklist-form-map.sql                       → 101-checklist-form-map — Map checklists to forms
+--   102-list-status-aggregates.sql                   → 102-list-status-aggregates — WR/WO status GROUP BY + list indexes
 
 --
 -- OTHER:

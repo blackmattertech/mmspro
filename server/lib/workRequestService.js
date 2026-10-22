@@ -4,12 +4,17 @@ import { loadOrgFields as loadAssetOrgFields } from './assetFieldService.js'
 import { listEquipment, getEquipmentDetail, deriveEquipmentIdentity, orderedParentFields } from './equipmentService.js'
 import { notifyUser, notifyEmployees, notifyByModule } from '../services/notifications.js'
 import { buildManualWorkOrderFormSchema } from './manualWorkOrderForm.js'
-import { applyIlikeSearch, listEnvelope } from './listQuery.js'
-import { fetchStatusCounts } from './statusCounts.js'
 import {
-  departmentFitsLocation,
-  isMaintenanceDepartment,
-} from './bulkMasterMatch.js'
+  applyIlikeSearch,
+  applyMappedFilters,
+  applyMappedSort,
+  applyStatusSelection,
+  ilikePattern,
+  listEnvelope,
+  restrictToIds,
+} from './listQuery.js'
+import { countExactStatuses, countStatusesViaRpc, rpcJson, isMissingRpcError } from './statusCounts.js'
+import { createTtlCache } from './ttlCache.js'
 import { loadTimelineActors } from './timelineActors.js'
 import {
   generateWorkOrderNumber,
@@ -18,6 +23,31 @@ import {
   mapRequestTypeToSource,
 } from './workOrderService.js'
 import { clipDynamicFieldValues, clipTrimmedToLimit, getTextFieldLimitsMap } from './textFieldLimits.js'
+import { isMissingDisabledModulesColumn, isProductModuleEnabled, normalizeDisabledModules } from './orgModules.js'
+import { loadModuleApprovals } from './moduleApprovals.js'
+import { loadRuntimeFormLayout, listFormFieldValues, loadOrgCatalogFields, attachFormFieldValueMaps } from './orgFormLayouts.js'
+import { shouldRequire, systemId, parseLayoutId } from './formLayoutIds.js'
+import { getMasterSource } from './formFieldSources.js'
+import { assertChecklistForForm, snapshotChecklistTemplate } from './checklistService.js'
+
+async function loadOrgDisabledModules(orgId) {
+  const { data, error } = await supabaseAdmin
+    .from('organizations')
+    .select('disabled_modules')
+    .eq('id', orgId)
+    .maybeSingle()
+  if (error && isMissingDisabledModulesColumn(error)) return []
+  if (error) throw error
+  return normalizeDisabledModules(data?.disabled_modules)
+}
+
+async function assertWorkOrdersEnabled(orgId) {
+  const disabledModules = await loadOrgDisabledModules(orgId)
+  if (isProductModuleEnabled(disabledModules, 'work_orders')) return
+  const err = new Error('Work Orders is not enabled for this organization.')
+  err.status = 400
+  throw err
+}
 
 export async function getEmployeeByProfile(orgId, profileId, { email = null } = {}) {
   if (!profileId && !email) return null
@@ -157,28 +187,54 @@ export async function buildAssetHierarchy(orgId, equipmentId) {
   const detail = await getEquipmentDetail(orgId, equipmentId)
   if (!detail) return []
 
-  const fields = await loadOrgFields(orgId)
-  const fieldById = new Map(fields.map((f) => [f.id, f]))
   const path = []
+  const seenNames = new Set()
 
-  for (const val of detail.values || []) {
-    const field = fieldById.get(val.field_id)
-    if (!field || field.kind === 'section') continue
-    const text = val.value_text
-      || (Array.isArray(val.value_json?.values) ? val.value_json.values.join(', ') : '')
+  const push = (fieldId, fieldName, value) => {
+    const name = String(fieldName || '').trim()
+    const text = String(value ?? '').trim()
+    if (!name || !text) return
+    const key = name.toLowerCase()
+    if (seenNames.has(key)) return
+    seenNames.add(key)
     path.push({
-      field_id: val.field_id,
-      field_name: field.name,
-      value: String(text || '').trim(),
+      field_id: fieldId || null,
+      field_name: name,
+      value: text,
     })
   }
 
+  const areaName = detail.areas?.name || detail.area_name || null
+  if (areaName) push('area', 'Area', areaName)
+
+  const deptName = detail.departments?.name || detail.department_name || null
+  if (deptName) push('department', 'Department', deptName)
+
+  const locationName = detail.org_locations?.name || detail.location_name || null
+  if (locationName) push('location', 'Location', locationName)
+
+  for (const item of detail.field_values || []) {
+    const text = item.value_text
+      || (Array.isArray(item.value_json?.values) ? item.value_json.values.join(', ') : '')
+      || ''
+    push(item.field_id, item.field_name, text)
+  }
+
+  // Fallback when field_values missing but raw values exist
+  if (!(detail.field_values || []).length) {
+    const fields = await loadOrgFields(orgId)
+    const fieldById = new Map(fields.map((f) => [f.id, f]))
+    for (const val of detail.values || []) {
+      const field = fieldById.get(val.field_id)
+      if (!field || field.kind === 'section') continue
+      const text = val.value_text
+        || (Array.isArray(val.value_json?.values) ? val.value_json.values.join(', ') : '')
+      push(val.field_id, field.name, text)
+    }
+  }
+
   if (detail.name || detail.code) {
-    path.push({
-      field_id: null,
-      field_name: 'Equipment',
-      value: [detail.name, detail.code].filter(Boolean).join(' · '),
-    })
+    push(null, 'Equipment', [detail.name, detail.code].filter(Boolean).join(' · '))
   }
 
   return path
@@ -400,14 +456,45 @@ function enrichEquipmentCatalogValues(fields, equipmentRow, valuesByFieldId) {
   return values
 }
 
-export async function listEquipmentCatalogForDepartment(orgId, departmentId, { search = null, limit = 100, offset = 0 } = {}) {
+async function areaIdsWithNames(orgId, names) {
+  const unique = [...new Set(names.map((name) => String(name || '').trim()).filter(Boolean))]
+  if (!unique.length) return []
+  const clauses = unique.map((name) => {
+    const safe = name.replace(/[%_,.()]/g, '')
+    return `name.ilike."${safe}"`
+  })
+  const { data, error } = await supabaseAdmin
+    .from('areas')
+    .select('id, name')
+    .eq('org_id', orgId)
+    .or(clauses.join(','))
+  if (error) throw error
+  const wanted = new Set(unique.map((name) => name.toLowerCase()))
+  return (data || [])
+    .filter((row) => wanted.has(String(row.name || '').trim().toLowerCase()))
+    .map((row) => row.id)
+}
+
+export async function listEquipmentCatalogForDepartment(orgId, departmentId, { search = null, limit = 500, offset = 0 } = {}) {
   const page = await listEquipment(orgId, {
     departmentId,
     search,
     limit,
     offset,
   })
-  const equipment = page.items || []
+  const equipment = [...(page.items || [])]
+  const seen = new Set(equipment.map((row) => row.id))
+  const areaNames = equipment.map((row) => row.areas?.name).filter(Boolean)
+  const sharedAreaIds = (await areaIdsWithNames(orgId, areaNames))
+    .filter((areaId) => !equipment.some((row) => row.area_id === areaId))
+  for (const areaId of sharedAreaIds) {
+    const extra = await listEquipment(orgId, { areaId, search, limit: 200 })
+    for (const row of extra.items || []) {
+      if (seen.has(row.id)) continue
+      seen.add(row.id)
+      equipment.push(row)
+    }
+  }
 
   if (!equipment.length) {
     return { equipment: [], has_assets: false, total: page.total || 0 }
@@ -436,6 +523,9 @@ export async function listEquipmentCatalogForDepartment(orgId, departmentId, { s
     equipment: equipment.map((row) => {
       const raw = valuesByEquipment.get(row.id) || {}
       const values = enrichEquipmentCatalogValues(fields, row, raw)
+      for (const item of row.field_values || []) {
+        if (item?.field_id && item.value_text) values[item.field_id] = item.value_text
+      }
       return {
         id: row.id,
         name: row.name,
@@ -444,6 +534,9 @@ export async function listEquipmentCatalogForDepartment(orgId, departmentId, { s
         department_id: row.department_id,
         area_id: row.area_id,
         area_name: row.areas?.name ?? null,
+        location_name: row.org_locations?.name ?? null,
+        qr_code: row.qr_code || null,
+        image_signed_url: row.image_signed_url || null,
         values,
       }
     }),
@@ -461,7 +554,7 @@ export async function getWorkRequestFormContext(orgId, profileId, email, { isOrg
     throw err
   }
 
-  const [departments, fromDeptResult, orgRowResult] = await Promise.all([
+  const [departments, fromDeptResult, moduleApprovals] = await Promise.all([
     loadDepartments(orgId, {
       locationId: orderFromSelectable ? null : (employee?.location_id || null),
     }),
@@ -472,15 +565,10 @@ export async function getWorkRequestFormContext(orgId, profileId, email, { isOrg
         .eq('id', employee.department_id)
         .maybeSingle()
       : Promise.resolve({ data: null, error: null }),
-    supabaseAdmin
-      .from('organizations')
-      .select('work_request_inter_approval_required')
-      .eq('id', orgId)
-      .maybeSingle(),
+    loadModuleApprovals(orgId),
   ])
 
   if (fromDeptResult.error) throw fromDeptResult.error
-  if (orgRowResult.error) throw orgRowResult.error
 
   const orgFields = await loadOrgFields(orgId)
   const assetSections = buildAssetFieldSections(orgFields)
@@ -499,7 +587,7 @@ export async function getWorkRequestFormContext(orgId, profileId, email, { isOrg
     order_from_department: fromDeptResult.data,
     order_from_selectable: orderFromSelectable,
     departments,
-    inter_department_approval_required: orgRowResult.data?.work_request_inter_approval_required !== false,
+    inter_department_approval_required: moduleApprovals.work_request !== false,
     asset_sections: assetSections,
     maintenance_form_schema: maintenanceFormSchema,
     job_nature_field: jobNatureField
@@ -609,18 +697,24 @@ export async function createWorkRequest(orgId, profileId, email, body, { isOrgAd
     throw err
   }
 
-  const requestType = body?.request_type
+  const layout = await loadRuntimeFormLayout(orgId, 'work_request.create')
+  const requireField = (key, whenNoLayout) => shouldRequire(layout, systemId(key), whenNoLayout)
+
+  let requestType = body?.request_type
   const validTypes = new Set(['inter_department', 'intra_department', 'user_self', 'manual'])
   if (!validTypes.has(requestType)) {
-    const err = new Error('Invalid request type.')
-    err.status = 400
-    throw err
+    if (requireField('request_type', true)) {
+      const err = new Error('Invalid request type.')
+      err.status = 400
+      throw err
+    }
+    requestType = 'inter_department'
   }
 
   let orderToId = body?.order_to_department_id || null
   let orderFromId = body?.order_from_department_id || employee?.department_id || null
 
-  if (!orderFromId && isOrgAdmin) {
+  if (!orderFromId && isOrgAdmin && requireField('order_from_department_id', true)) {
     const err = new Error('Order from department is required.')
     err.status = 400
     throw err
@@ -637,15 +731,26 @@ export async function createWorkRequest(orgId, profileId, email, body, { isOrgAd
   }
 
   if (!orderToId) {
-    const err = new Error('Order To department is required.')
+    if (requireField('order_to_department_id', true)) {
+      const err = new Error('Order To department is required.')
+      err.status = 400
+      throw err
+    }
+    orderToId = orderFromId
+  }
+  if (!orderFromId || !orderToId) {
+    const err = new Error('A department is required to save this request.')
     err.status = 400
     throw err
   }
 
   if (requestType === 'inter_department' && orderToId === orderFromId) {
-    const err = new Error('Inter-department requests must select a different Order To department.')
-    err.status = 400
-    throw err
+    if (requireField('order_to_department_id', true)) {
+      const err = new Error('Inter-department requests must select a different Order To department.')
+      err.status = 400
+      throw err
+    }
+    requestType = 'intra_department'
   }
 
   await assertDepartmentInOrg(orgId, orderToId, 'Order to department', {
@@ -668,48 +773,51 @@ export async function createWorkRequest(orgId, profileId, email, body, { isOrgAd
       await assertEquipmentInDepartment(orgId, equipmentId, orderToId)
     }
   } else {
-    if (!shortDescription) {
+    if (requireField('short_description', true) && !shortDescription) {
       const err = new Error('Short description is required.')
       err.status = 400
       throw err
     }
 
-    if (!problem) {
+    if (requireField('problem_description', true) && !problem) {
       const err = new Error('Problem description is required.')
       err.status = 400
       throw err
     }
+    if (!problem) problem = ''
 
     if (!['high', 'medium', 'low'].includes(priority)) {
-      const err = new Error('Priority is required.')
-      err.status = 400
-      throw err
+      if (requireField('priority', true)) {
+        const err = new Error('Priority is required.')
+        err.status = 400
+        throw err
+      }
+      priority = 'medium'
     }
 
-    if (!equipmentId) {
+    if (requireField('asset_picker', true) && !equipmentId) {
       const err = new Error('An asset / equipment selection is required.')
       err.status = 400
       throw err
     }
 
-    await assertEquipmentInDepartment(orgId, equipmentId, orderToId)
+    if (equipmentId) {
+      await assertEquipmentInDepartment(orgId, equipmentId, orderToId)
+    }
 
-    const equipmentList = await listEquipmentForDepartment(orgId, orderToId)
-    if (!equipmentList.length) {
-      const err = new Error('No assets are available for the selected department.')
-      err.status = 400
-      throw err
+    if (requireField('asset_picker', true)) {
+      const equipmentList = await listEquipmentForDepartment(orgId, orderToId)
+      if (!equipmentList.length) {
+        const err = new Error('No assets are available for the selected department.')
+        err.status = 400
+        throw err
+      }
     }
   }
 
-  const { data: orgRow } = await supabaseAdmin
-    .from('organizations')
-    .select('work_request_inter_approval_required')
-    .eq('id', orgId)
-    .maybeSingle()
-
-  const interApproval = orgRow?.work_request_inter_approval_required !== false
-  const status = isDraft ? 'draft' : resolveInitialStatus(requestType, interApproval)
+  const moduleApprovals = await loadModuleApprovals(orgId)
+  const approvalRequired = moduleApprovals.work_request !== false
+  const status = isDraft ? 'draft' : resolveInitialStatus(requestType, approvalRequired)
   const requestNumber = isDraft ? null : await generateWorkRequestNumber(orgId, orderToId)
   const assetHierarchy = equipmentId ? await buildAssetHierarchy(orgId, equipmentId) : []
   const now = new Date().toISOString()
@@ -730,12 +838,12 @@ export async function createWorkRequest(orgId, profileId, email, body, { isOrgAd
     err.status = 400
     throw err
   }
-  if (!isDraft && jobNatureField?.is_required && !jobNature) {
+  if (!isDraft && jobNatureField?.is_required && requireField('job_nature', true) && !jobNature) {
     const err = new Error('Job nature is required.')
     err.status = 400
     throw err
   }
-  if (!isDraft && !jobNature && jobNatureOptions.length) {
+  if (!isDraft && !jobNature && jobNatureOptions.length && requireField('job_nature', true)) {
     const err = new Error('Job nature is required.')
     err.status = 400
     throw err
@@ -744,32 +852,56 @@ export async function createWorkRequest(orgId, profileId, email, body, { isOrgAd
     ? isBreakdownJobNature(jobNature)
     : Boolean(body?.is_breakdown)
 
-  const { data: row, error } = await supabaseAdmin
+  let checklistTemplateId = null
+  let checklistSnapshot = {}
+  if (body?.checklist_template_id) {
+    const template = await assertChecklistForForm(orgId, body.checklist_template_id, 'work_request.create')
+    checklistTemplateId = template.id
+    checklistSnapshot = await snapshotChecklistTemplate(orgId, template.id) || {}
+  }
+
+  const insertPayload = {
+    org_id: orgId,
+    request_number: requestNumber,
+    request_type: requestType,
+    status,
+    request_date: now,
+    order_from_department_id: orderFromId,
+    order_to_department_id: orderToId,
+    equipment_id: equipmentId,
+    asset_hierarchy: assetHierarchy,
+    short_description: shortDescription,
+    problem_description: problem,
+    job_nature: jobNature,
+    is_breakdown: isBreakdown,
+    priority,
+    remarks: clipTrimmedToLimit(fieldLimits, 'remarks', body?.remarks),
+    attachments: Array.isArray(body?.attachments) ? body.attachments : [],
+    form_field_values: formFieldValues,
+    requested_by: profileId,
+    checklist_template_id: checklistTemplateId,
+    checklist_snapshot: checklistSnapshot,
+    checklist_values: {},
+    updated_at: now,
+  }
+  let { data: row, error } = await supabaseAdmin
     .from('work_requests')
-    .insert({
-      org_id: orgId,
-      request_number: requestNumber,
-      request_type: requestType,
-      status,
-      request_date: now,
-      order_from_department_id: orderFromId,
-      order_to_department_id: orderToId,
-      equipment_id: equipmentId,
-      asset_hierarchy: assetHierarchy,
-      short_description: shortDescription,
-      problem_description: problem,
-      job_nature: jobNature,
-      is_breakdown: isBreakdown,
-      priority,
-      remarks: clipTrimmedToLimit(fieldLimits, 'remarks', body?.remarks),
-      attachments: Array.isArray(body?.attachments) ? body.attachments : [],
-      form_field_values: formFieldValues,
-      requested_by: profileId,
-      updated_at: now,
-    })
+    .insert(insertPayload)
     .select('*')
     .single()
-
+  if (error && /checklist_/i.test(error.message || '')) {
+    if (checklistTemplateId) {
+      const err = new Error('Apply the module-actions database patch before attaching a work request checklist.')
+      err.status = 400
+      throw err
+    }
+    delete insertPayload.checklist_template_id
+    delete insertPayload.checklist_snapshot
+    delete insertPayload.checklist_values
+    const retry = await supabaseAdmin.from('work_requests').insert(insertPayload).select('*').single()
+    row = retry.data
+    error = retry.error
+  }
   if (error) throw error
 
   await addTimelineEvent(
@@ -799,6 +931,10 @@ export async function createWorkRequest(orgId, profileId, email, body, { isOrgAd
   // Spec: Intra / User Self / Manual (and Inter when approval disabled) auto-convert to WO
   if (!isDraft && status === 'submitted') {
     try {
+      const disabledModules = await loadOrgDisabledModules(orgId)
+      if (!isProductModuleEnabled(disabledModules, 'work_orders')) {
+        return enrichWorkRequest(row)
+      }
       const { updated, workOrder, woNumber } = await createLinkedWorkOrderFromRequest(
         orgId,
         profileId,
@@ -1062,6 +1198,8 @@ export async function approveWorkRequest(orgId, profileId, workRequestId, body) 
     }
   }
 
+  await assertWorkOrdersEnabled(orgId)
+
   if (!APPROVABLE_STATUSES.includes(wr.status)) {
     const err = new Error('This work request cannot be approved in its current status.')
     err.status = 400
@@ -1284,14 +1422,9 @@ export async function replyToWorkRequest(orgId, profileId, workRequestId, body) 
     ...extraAttachments,
   ]
 
-  const { data: orgRow } = await supabaseAdmin
-    .from('organizations')
-    .select('work_request_inter_approval_required')
-    .eq('id', orgId)
-    .maybeSingle()
-
-  const interApproval = orgRow?.work_request_inter_approval_required !== false
-  const nextStatus = resolveInitialStatus(wr.request_type, interApproval)
+  const moduleApprovals = await loadModuleApprovals(orgId)
+  const approvalRequired = moduleApprovals.work_request !== false
+  const nextStatus = resolveInitialStatus(wr.request_type, approvalRequired)
   const now = new Date().toISOString()
 
   const { data: updated, error: updateError } = await supabaseAdmin
@@ -1366,8 +1499,10 @@ export function assertWorkRequestAccessible(wr, { profileId, locationId } = {}) 
 
 const EMPTY_UUID = '00000000-0000-0000-0000-000000000000'
 
-async function applyWorkRequestLocationScope(query, orgId, locationId) {
-  if (!locationId) return query
+async function loadWorkRequestLocationIds(orgId, locationId) {
+  const key = `${orgId}:${locationId}`
+  const cached = wrLocationScopeCache.get(key)
+  if (cached) return cached
 
   const [{ data: departments, error: deptError }, { data: equipment, error: equipmentError }] = await Promise.all([
     supabaseAdmin
@@ -1385,8 +1520,18 @@ async function applyWorkRequestLocationScope(query, orgId, locationId) {
   if (deptError) throw deptError
   if (equipmentError) throw equipmentError
 
-  const departmentIds = (departments || []).map((row) => row.id)
-  const equipmentIds = (equipment || []).map((row) => row.id)
+  const value = {
+    departmentIds: (departments || []).map((row) => row.id),
+    equipmentIds: (equipment || []).map((row) => row.id),
+  }
+  wrLocationScopeCache.set(key, value)
+  return value
+}
+
+async function applyWorkRequestLocationScope(query, orgId, locationId) {
+  if (!locationId) return { query }
+
+  const { departmentIds, equipmentIds } = await loadWorkRequestLocationIds(orgId, locationId)
   const parts = []
   if (departmentIds.length) {
     const list = departmentIds.join(',')
@@ -1396,8 +1541,8 @@ async function applyWorkRequestLocationScope(query, orgId, locationId) {
   if (equipmentIds.length) {
     parts.push(`equipment_id.in.(${equipmentIds.join(',')})`)
   }
-  if (!parts.length) return query.eq('id', EMPTY_UUID)
-  return query.or(parts.join(','))
+  if (!parts.length) return { query: query.eq('id', EMPTY_UUID) }
+  return { query: query.or(parts.join(',')) }
 }
 
 export async function listWorkRequestTechnicians(orgId, workRequestId) {
@@ -1408,25 +1553,10 @@ export async function listWorkRequestTechnicians(orgId, workRequestId) {
     throw err
   }
 
-  const locationId = await resolveWorkRequestLocationId(orgId, wr)
-  const { data: departments, error: deptError } = await supabaseAdmin
-    .from('departments')
-    .select('id, name, code, location_id, all_locations, is_active')
-    .eq('org_id', orgId)
-    .eq('is_active', true)
+  const departmentId = wr.order_to_department_id || wr.order_to?.id || null
+  if (!departmentId) return []
 
-  if (deptError) throw deptError
-
-  const maintenanceIds = (departments || [])
-    .filter((department) => (
-      isMaintenanceDepartment(department)
-      && (!locationId || departmentFitsLocation(department, locationId))
-    ))
-    .map((department) => department.id)
-
-  if (!maintenanceIds.length) return []
-
-  let query = supabaseAdmin
+  const { data, error } = await supabaseAdmin
     .from('org_employees')
     .select(`
       id, name, emp_id, email, mobile, photo_url, department_id, location_id,
@@ -1435,12 +1565,9 @@ export async function listWorkRequestTechnicians(orgId, workRequestId) {
     `)
     .eq('org_id', orgId)
     .eq('is_active', true)
-    .in('department_id', maintenanceIds)
+    .eq('department_id', departmentId)
     .order('name')
 
-  if (locationId) query = query.eq('location_id', locationId)
-
-  const { data, error } = await query
   if (error) throw error
   return data || []
 }
@@ -1448,18 +1575,26 @@ export async function listWorkRequestTechnicians(orgId, workRequestId) {
 const WR_LIST_SELECT = `
   id, org_id, request_number, status, request_type, request_date, created_at, updated_at,
   order_from_department_id, order_to_department_id, equipment_id, requested_by,
-  priority, short_description, job_nature, is_breakdown, execution_status, manual_work_order_id,
+  priority, short_description, problem_description, job_nature, is_breakdown, execution_status, manual_work_order_id, remarks,
+  asset_hierarchy,
   order_from:departments!work_requests_order_from_department_id_fkey(id, name, location_id, all_locations),
   order_to:departments!work_requests_order_to_department_id_fkey(id, name, location_id, all_locations),
   equipment(id, name, code),
   requester:profiles!work_requests_requested_by_fkey(id, full_name, email)
 `
 
+const wrLocationScopeCache = createTtlCache({ ttlMs: 60_000, maxEntries: 200 })
+
 const WR_SELECT = `
   *,
   order_from:departments!work_requests_order_from_department_id_fkey(id, name, location_id, all_locations),
   order_to:departments!work_requests_order_to_department_id_fkey(id, name, location_id, all_locations),
-  equipment(id, name, code, location_id, department_id, area_id),
+  equipment(
+    id, name, code, location_id, department_id, area_id,
+    areas(id, name, code),
+    departments(id, name),
+    org_locations(id, name, code)
+  ),
   requester:profiles!work_requests_requested_by_fkey(id, full_name, email),
   approver:profiles!work_requests_approved_by_fkey(id, full_name, email)
 `
@@ -1564,6 +1699,145 @@ async function enrichWorkRequests(rows, { lean = false } = {}) {
   })
 }
 
+const WR_TEXT_FILTERS = {
+  wr_number: 'request_number',
+  request_number: 'request_number',
+  type: 'request_type',
+  problem: 'short_description',
+  description: 'short_description',
+  priority: 'priority',
+  status: 'status',
+  job_nature: 'job_nature',
+  remarks: 'remarks',
+}
+
+const WR_RANGE_FILTERS = {
+  request_date_from: (query, value) => query.gte('request_date', value),
+  request_date_to: (query, value) => query.lte('request_date', `${value}T23:59:59.999`),
+}
+
+const WR_SORT_COLUMNS = {
+  ...WR_TEXT_FILTERS,
+  request_date: 'request_date',
+}
+
+const WR_RELATION_FILTERS = new Set([
+  'from', 'order_from', 'to', 'order_to', 'equipment', 'requester', 'work_order', 'assigned',
+])
+
+async function lookupOrgIds(table, orgId, column, value) {
+  const pattern = ilikePattern(value)
+  if (!pattern) return []
+  const { data, error } = await supabaseAdmin
+    .from(table)
+    .select('id')
+    .eq('org_id', orgId)
+    .ilike(column, pattern)
+    .limit(300)
+  if (error) throw error
+  return (data || []).map((row) => row.id)
+}
+
+async function applyWorkRequestRelationFilters(query, orgId, filters = {}) {
+  let next = query
+  const from = filters.from || filters.order_from
+  if (from) next = restrictToIds(next, 'order_from_department_id', await lookupOrgIds('departments', orgId, 'name', from))
+  const to = filters.to || filters.order_to
+  if (to) next = restrictToIds(next, 'order_to_department_id', await lookupOrgIds('departments', orgId, 'name', to))
+  if (filters.equipment) {
+    next = restrictToIds(next, 'equipment_id', await lookupOrgIds('equipment', orgId, 'name', filters.equipment))
+  }
+  if (filters.requester) {
+    const pattern = ilikePattern(filters.requester)
+    if (pattern) {
+      const { data, error } = await supabaseAdmin
+        .from('profiles')
+        .select('id')
+        .eq('org_id', orgId)
+        .or(`full_name.ilike.${pattern},email.ilike.${pattern}`)
+        .limit(300)
+      if (error) throw error
+      next = restrictToIds(next, 'requested_by', (data || []).map((row) => row.id))
+    }
+  }
+  if (filters.work_order) {
+    next = restrictToIds(next, 'manual_work_order_id', await lookupOrgIds('manual_work_orders', orgId, 'wo_number', filters.work_order))
+  }
+  if (filters.assigned) {
+    const employeeIds = await lookupOrgIds('org_employees', orgId, 'name', filters.assigned)
+    if (!employeeIds.length) {
+      next = restrictToIds(next, 'manual_work_order_id', [])
+    } else {
+      const { data, error } = await supabaseAdmin
+        .from('manual_work_order_assignees')
+        .select('work_order_id')
+        .eq('org_id', orgId)
+        .in('employee_id', employeeIds)
+        .limit(500)
+      if (error) throw error
+      next = restrictToIds(next, 'manual_work_order_id', (data || []).map((row) => row.work_order_id))
+    }
+  }
+  return { query: next }
+}
+
+function textOnlyFilters(filters = {}) {
+  return Object.fromEntries(
+    Object.entries(filters).filter(([key]) => !WR_RELATION_FILTERS.has(key)),
+  )
+}
+
+async function scopeWorkRequestQuery(query, orgId, filter, { profileId, departmentId, locationId, search }) {
+  let next = query
+  if (filter === 'my' && profileId) next = next.eq('requested_by', profileId)
+  else if (filter === 'outgoing' && departmentId) next = next.eq('order_from_department_id', departmentId)
+  else if (filter === 'incoming' && departmentId) next = next.eq('order_to_department_id', departmentId)
+  if (filter !== 'my') {
+    const scoped = await applyWorkRequestLocationScope(next, orgId, locationId)
+    next = scoped.query
+  }
+  return { query: applyIlikeSearch(next, search, ['request_number', 'short_description', 'status']) }
+}
+
+export async function countWorkRequestTabs(orgId, {
+  profileId,
+  departmentId,
+  locationId = null,
+} = {}) {
+  try {
+    const payload = await rpcJson('count_work_request_tabs', {
+      p_org_id: orgId,
+      p_profile_id: profileId || null,
+      p_department_id: departmentId || null,
+      p_location_id: locationId || null,
+    })
+    if (payload && typeof payload === 'object' && !Array.isArray(payload)) {
+      return {
+        my: Number(payload.my) || 0,
+        incoming: Number(payload.incoming) || 0,
+        outgoing: Number(payload.outgoing) || 0,
+        all: Number(payload.all) || 0,
+      }
+    }
+  } catch (err) {
+    if (!isMissingRpcError(err)) throw err
+  }
+
+  const tabs = ['my', 'incoming', 'outgoing', 'all']
+  const entries = await Promise.all(tabs.map(async (filter) => {
+    let query = supabaseAdmin
+      .from('work_requests')
+      .select('id', { count: 'exact', head: true })
+      .eq('org_id', orgId)
+      .neq('status', 'draft')
+    query = (await scopeWorkRequestQuery(query, orgId, filter, { profileId, departmentId, locationId })).query
+    const { count, error } = await query
+    if (error) throw error
+    return [filter, count || 0]
+  }))
+  return Object.fromEntries(entries)
+}
+
 export async function listWorkRequests(orgId, filter, {
   profileId,
   departmentId,
@@ -1571,45 +1845,86 @@ export async function listWorkRequests(orgId, filter, {
   search = null,
   limit = 50,
   offset = 0,
+  filters = {},
+  statuses = [],
+  excludeStatuses = [],
+  sort = '',
+  sortDir = 'desc',
 } = {}) {
   let query = supabaseAdmin
     .from('work_requests')
     .select(WR_LIST_SELECT, { count: 'exact' })
     .eq('org_id', orgId)
-    .order('request_date', { ascending: false })
-    .range(offset, offset + limit - 1)
 
-  let countQuery = supabaseAdmin
-    .from('work_requests')
-    .select('status')
-    .eq('org_id', orgId)
+  query = (await scopeWorkRequestQuery(query, orgId, filter, {
+    profileId, departmentId, locationId, search,
+  })).query
+  query = applyMappedFilters(query, textOnlyFilters(filters), { ...WR_TEXT_FILTERS, ...WR_RANGE_FILTERS })
+  query = (await applyWorkRequestRelationFilters(query, orgId, filters)).query
+  query = applyStatusSelection(query, {
+    statuses,
+    excludeStatuses,
+    defaultExclude: ['draft'],
+  })
+  query = applyMappedSort(query, sort, sortDir, WR_SORT_COLUMNS, (sorted) => (
+    sorted.order('request_date', { ascending: false })
+  ))
+  query = query.range(offset, offset + limit - 1)
 
-  if (filter === 'my' && profileId) {
-    query = query.eq('requested_by', profileId)
-    countQuery = countQuery.eq('requested_by', profileId)
-  } else if (filter === 'outgoing' && departmentId) {
-    query = query.eq('order_from_department_id', departmentId)
-    countQuery = countQuery.eq('order_from_department_id', departmentId)
-  } else if (filter === 'incoming' && departmentId) {
-    query = query.eq('order_to_department_id', departmentId)
-    countQuery = countQuery.eq('order_to_department_id', departmentId)
-  }
-
-  if (filter !== 'my') {
-    query = await applyWorkRequestLocationScope(query, orgId, locationId)
-    countQuery = await applyWorkRequestLocationScope(countQuery, orgId, locationId)
-  }
-
-  query = applyIlikeSearch(query, search, ['request_number', 'short_description', 'status'])
-  countQuery = applyIlikeSearch(countQuery, search, ['request_number', 'short_description', 'status'])
+  const WR_LIST_STATUSES = [
+    'draft',
+    'submitted',
+    'pending_approval',
+    'need_info',
+    'info_provided',
+    'approved',
+    'rejected',
+    'cancelled',
+    'converted',
+  ]
 
   const [{ data, error, count }, status_counts] = await Promise.all([
     query,
-    fetchStatusCounts(countQuery),
+    countStatusesViaRpc(
+      'count_work_request_statuses',
+      {
+        p_org_id: orgId,
+        p_filter: filter || 'all',
+        p_profile_id: profileId || null,
+        p_department_id: departmentId || null,
+        p_location_id: locationId || null,
+        p_search: search ? String(search).trim() || null : null,
+      },
+      () => countExactStatuses(
+        () => {
+          let q = supabaseAdmin
+            .from('work_requests')
+            .select('id', { count: 'exact', head: true })
+            .eq('org_id', orgId)
+          if (filter === 'my' && profileId) q = q.eq('requested_by', profileId)
+          else if (filter === 'outgoing' && departmentId) q = q.eq('order_from_department_id', departmentId)
+          else if (filter === 'incoming' && departmentId) q = q.eq('order_to_department_id', departmentId)
+          return (async () => {
+            if (filter !== 'my') {
+              const scoped = await applyWorkRequestLocationScope(q, orgId, locationId)
+              q = scoped.query
+            }
+            return {
+              query: applyIlikeSearch(q, search, ['request_number', 'short_description', 'status']),
+            }
+          })()
+        },
+        WR_LIST_STATUSES,
+      ),
+    ),
   ])
   if (error) throw error
 
-  const rows = await enrichWorkRequests(data || [], { lean: true })
+  const rows = await attachFormFieldValueMaps(
+    orgId,
+    'work_request.create',
+    await enrichWorkRequests(data || [], { lean: true }),
+  )
   return listEnvelope(rows, { total: count || 0, limit, offset, status_counts })
 }
 
@@ -1623,5 +1938,162 @@ export async function getWorkRequestById(orgId, id) {
 
   if (error) throw error
   if (!data) return null
-  return enrichWorkRequest(data)
+  const enriched = await enrichWorkRequest(data)
+  return attachWorkRequestDetailFields(orgId, enriched)
+}
+
+function formatStoredFieldValue(value) {
+  if (value == null || value === '') return ''
+  if (Array.isArray(value)) return value.map((item) => String(item ?? '').trim()).filter(Boolean).join(', ')
+  if (typeof value === 'object') {
+    if (value.label != null) return String(value.label)
+    if (value.name != null) return String(value.name)
+    if (Array.isArray(value.values)) {
+      return value.values.map((item) => String(item ?? '').trim()).filter(Boolean).join(', ')
+    }
+    try {
+      return JSON.stringify(value)
+    } catch {
+      return String(value)
+    }
+  }
+  return String(value)
+}
+
+async function attachWorkRequestDetailFields(orgId, row) {
+  if (!row) return null
+
+  let assetHierarchy = Array.isArray(row.asset_hierarchy) ? [...row.asset_hierarchy] : []
+  if (row.equipment_id) {
+    try {
+      const live = await buildAssetHierarchy(orgId, row.equipment_id)
+      if (live.length) assetHierarchy = live
+    } catch {
+      // keep stored hierarchy
+    }
+  }
+
+  const [layout, catalogFields, layoutValues] = await Promise.all([
+    loadRuntimeFormLayout(orgId, 'work_request.create'),
+    loadOrgCatalogFields(orgId),
+    listFormFieldValues(orgId, 'work_request.create', row.id),
+  ])
+
+  const catalogById = new Map((catalogFields || []).map((item) => [String(item.id), item]))
+  const layoutFieldRows = []
+  const skipBindKeys = new Set([
+    'request_type',
+    'order_from_department_id',
+    'order_to_department_id',
+    'equipment_id',
+    'area_id',
+  ])
+
+  for (const field of layout?.fields || []) {
+    const parsed = parseLayoutId(field.id)
+    if (parsed.kind === 'system') continue
+    if (field.bindKey && skipBindKeys.has(field.bindKey)) continue
+    if (field.masterSource === 'equipment' || field.masterSource === 'areas' || field.masterSource === 'departments') {
+      continue
+    }
+    if (parsed.kind === 'master' && ['equipment', 'areas', 'departments', 'locations'].includes(parsed.value)) {
+      continue
+    }
+
+    const catalog = parsed.kind === 'catalog' ? catalogById.get(parsed.value) : null
+    if (catalog?.field_source === 'equipment') continue
+    const rawKey = parsed.kind === 'catalog' ? parsed.value : field.id
+    const stored = layoutValues[rawKey] ?? layoutValues[field.id] ?? layoutValues[catalogIdSafe(field.id)]
+    const display = formatStoredFieldValue(stored)
+    if (!display) continue
+
+    const master = getMasterSource(field.masterSource || (parsed.kind === 'master' ? parsed.value : ''))
+    layoutFieldRows.push({
+      id: field.id,
+      label: field.label || catalog?.name || master?.label || parsed.value,
+      value: display,
+    })
+  }
+
+  // Also include any saved values not covered by layout (legacy / removed fields)
+  const usedKeys = new Set()
+  for (const field of layout?.fields || []) {
+    const parsed = parseLayoutId(field.id)
+    usedKeys.add(field.id)
+    if (parsed.kind === 'catalog') usedKeys.add(parsed.value)
+  }
+  for (const [fieldId, stored] of Object.entries(layoutValues || {})) {
+    if (usedKeys.has(fieldId)) continue
+    const catalog = catalogById.get(String(fieldId))
+    if (catalog?.field_source === 'equipment') continue
+    const display = formatStoredFieldValue(stored)
+    if (!display) continue
+    layoutFieldRows.push({
+      id: fieldId,
+      label: catalog?.name || fieldId,
+      value: display,
+    })
+  }
+
+  const breakdownValues = row.form_field_values && typeof row.form_field_values === 'object'
+    ? row.form_field_values
+    : {}
+  const breakdownFields = []
+  for (const [fieldId, stored] of Object.entries(breakdownValues)) {
+    const display = formatStoredFieldValue(stored)
+    if (!display) continue
+    const catalog = catalogById.get(String(fieldId))
+    breakdownFields.push({
+      id: fieldId,
+      label: catalog?.name || fieldId,
+      value: display,
+    })
+  }
+  breakdownFields.sort((a, b) => {
+    const aOrder = catalogById.get(String(a.id))?.sort_order ?? 9999
+    const bOrder = catalogById.get(String(b.id))?.sort_order ?? 9999
+    return aOrder - bOrder
+  })
+
+  const equipment = row.equipment
+    ? {
+      ...row.equipment,
+      area_name: row.equipment.areas?.name || row.equipment.area_name || null,
+      department_name: row.equipment.departments?.name || null,
+      location_name: row.equipment.org_locations?.name || null,
+    }
+    : null
+
+  return {
+    ...row,
+    equipment,
+    asset_hierarchy: assetHierarchy,
+    layout_fields: layoutFieldRows,
+    breakdown_fields: breakdownFields,
+  }
+}
+
+function catalogIdSafe(id) {
+  const value = String(id || '')
+  return value.startsWith('catalog:') ? value.slice('catalog:'.length) : value
+}
+
+export async function saveWorkRequestChecklist(orgId, requestId, values = {}) {
+  const request = await getWorkRequestById(orgId, requestId)
+  const fields = request.checklist_snapshot?.fields || []
+  if (!fields.length) {
+    const err = new Error('This work request has no checklist.')
+    err.status = 400
+    throw err
+  }
+  const next = values && typeof values === 'object' ? values : {}
+  const { data, error } = await supabaseAdmin
+    .from('work_requests')
+    .update({ checklist_values: next, updated_at: new Date().toISOString() })
+    .eq('org_id', orgId)
+    .eq('id', requestId)
+    .select('id, checklist_values')
+    .single()
+  if (error) throw error
+  return data
 }

@@ -67,20 +67,30 @@ export function fieldsForWorkRequestSection(fields) {
 }
 
 export function distinctAreasFromEquipment(equipment) {
-  const byId = new Map()
+  const byName = new Map()
   for (const row of equipment || []) {
-    if (!row.area_id) continue
-    const name = row.area_name || row.areas?.name || 'Area'
-    byId.set(row.area_id, name)
+    const name = String(row.area_name || row.areas?.name || '').trim()
+    if (!row.area_id || !name) continue
+    const key = name.toLowerCase()
+    const existing = byName.get(key)
+    if (!existing) {
+      byName.set(key, { id: row.area_id, name, ids: [row.area_id] })
+      continue
+    }
+    if (!existing.ids.includes(row.area_id)) existing.ids.push(row.area_id)
   }
-  return [...byId.entries()]
-    .map(([id, name]) => ({ id, name }))
-    .sort((a, b) => a.name.localeCompare(b.name))
+  return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name))
 }
 
 export function filterEquipmentByArea(equipment, areaId) {
   if (!areaId) return equipment || []
-  return (equipment || []).filter((row) => row.area_id === areaId)
+  const selected = (equipment || []).find((row) => row.area_id === areaId)
+  const name = String(selected?.area_name || selected?.areas?.name || '').trim().toLowerCase()
+  return (equipment || []).filter((row) => {
+    if (row.area_id === areaId) return true
+    if (!name) return false
+    return String(row.area_name || row.areas?.name || '').trim().toLowerCase() === name
+  })
 }
 
 export function capacityOptionsForSelection(equipment, fieldValues, allFields, capacityField) {
@@ -140,11 +150,23 @@ export function fieldValuesFromEquipment(row, allFields) {
   return next
 }
 
+export const BLANK_EQUIPMENT_TYPE = '__blank__'
+
 function valueMatches(selected, equipmentValue) {
   const a = normalizeValue(selected).toLowerCase()
   const b = normalizeValue(equipmentValue).toLowerCase()
+  if (a === BLANK_EQUIPMENT_TYPE) return !b
   if (!a) return true
   return a === b
+}
+
+export function equipmentTypeChoices(equipment, typeField, allFields) {
+  if (!typeField) return []
+  const values = distinctFieldValues(equipment, typeField.id, allFields)
+  return [
+    { value: BLANK_EQUIPMENT_TYPE, label: 'Blank' },
+    ...values.map((value) => ({ value, label: value })),
+  ]
 }
 
 /** Equipment rows matching all filled hierarchy field values. */
@@ -182,21 +204,38 @@ export function distinctFieldValues(equipment, fieldId, allFields = null) {
   return out.sort((a, b) => a.localeCompare(b))
 }
 
+function cascadeFieldValues(fieldValues, allFields, excludeFieldId) {
+  const next = {}
+  for (const field of allFields || []) {
+    if (field.id === excludeFieldId) continue
+    if (!isEquipmentCascadeRole(getEquipmentFieldRole(field))) continue
+    const selected = fieldValues?.[field.id]
+    if (!normalizeValue(selected)) continue
+    next[field.id] = selected
+  }
+  return next
+}
+
+export function equipmentMatchingSelectors(equipment, fieldValues, allFields, excludeFieldId = null) {
+  return filterEquipmentByValues(
+    equipment,
+    cascadeFieldValues(fieldValues, allFields, excludeFieldId),
+    { allFields },
+  )
+}
+
 export function optionsForAssetField(field, equipment, fieldValues, allFields) {
-  const pool = filterEquipmentByValues(equipment, fieldValues, {
-    excludeFieldId: field.id,
-    allFields,
-  })
+  const pool = equipmentMatchingSelectors(equipment, fieldValues, allFields, field.id)
   const fromData = distinctFieldValues(pool, field.id, allFields)
 
   if (fromData.length) {
-    const configured = field.dropdown_options || []
-    if (configured.length) {
-      const allowed = new Set(fromData.map((v) => v.toLowerCase()))
-      const ordered = configured.filter((opt) => allowed.has(String(opt).trim().toLowerCase()))
-      return ordered.length ? ordered : fromData
-    }
-    return fromData
+    const configured = (field.dropdown_options || []).map((opt) => String(opt).trim()).filter(Boolean)
+    if (!configured.length) return fromData
+    const allowed = new Set(fromData.map((value) => value.toLowerCase()))
+    const ordered = configured.filter((opt) => allowed.has(opt.toLowerCase()))
+    const seen = new Set(ordered.map((opt) => opt.toLowerCase()))
+    const extras = fromData.filter((value) => !seen.has(value.toLowerCase()))
+    return [...ordered, ...extras]
   }
 
   if (isEquipmentCascadeRole(getEquipmentFieldRole(field))) {

@@ -1,10 +1,11 @@
 import { supabase } from './supabase'
 import { createId } from './id'
+import { resolveImageMime } from './imageFiles'
 
 export const WORK_ORDER_ASSETS_BUCKET = 'work-order-assets'
 const MAX_BYTES = 10 * 1024 * 1024
 
-const IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif'])
+const IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/svg+xml'])
 
 const FILE_TYPES = new Set([
   ...IMAGE_TYPES,
@@ -18,7 +19,7 @@ const FILE_TYPES = new Set([
   'application/x-zip-compressed',
 ])
 
-const FILE_NAME_RE = /\.(jpe?g|png|gif|webp|pdf|docx?|xlsx?|zip)$/i
+const FILE_NAME_RE = /\.(jpe?g|png|gif|webp|svg|pdf|docx?|xlsx?|zip)$/i
 
 function sanitizeFileName(name) {
   return String(name || 'file')
@@ -34,14 +35,14 @@ export function validateWorkOrderFile(file, fieldType) {
   const name = String(file.name || '')
   const typeOk = allowed.has(file.type) || (
     fieldType === 'image'
-      ? /\.(jpe?g|png|gif|webp)$/i.test(name)
+      ? /\.(jpe?g|png|gif|webp|svg)$/i.test(name)
       : FILE_NAME_RE.test(name)
   )
   if (!typeOk) {
     if (fieldType === 'image') {
-      return 'Image must be JPEG, PNG, WebP, or GIF'
+      return 'Image must be JPEG, PNG, WebP, GIF, or SVG'
     }
-    return 'File type not supported. Use PDF, DOC, DOCX, XLS, XLSX, ZIP, JPG, or PNG'
+    return 'File type not supported. Use PDF, DOC, DOCX, XLS, XLSX, ZIP, JPG, PNG, or SVG'
   }
 
   if (file.size > MAX_BYTES) {
@@ -67,14 +68,14 @@ export async function uploadWorkOrderFile(orgId, workOrderId, fieldId, file, fie
 
   const { error } = await supabase.storage
     .from(WORK_ORDER_ASSETS_BUCKET)
-    .upload(path, file, { upsert: false, contentType: file.type })
+    .upload(path, file, { upsert: false, contentType: resolveImageMime(file) || file.type })
 
   if (error) throw new Error(error.message)
 
   return {
     path,
     name: file.name,
-    mime_type: file.type,
+    mime_type: resolveImageMime(file) || file.type,
     size: file.size,
     bucket: WORK_ORDER_ASSETS_BUCKET,
   }

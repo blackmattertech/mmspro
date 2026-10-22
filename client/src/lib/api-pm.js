@@ -1,4 +1,4 @@
-import { apiFetch } from './api'
+import { apiFetch, apiFetchBlob } from './api'
 import { asListArray, listQueryParams } from './listResponse'
 
 function pmFetch(path, options) {
@@ -21,8 +21,12 @@ export function deletePmActivityType(id) {
   return pmFetch(`/activity-types/${id}`, { method: 'DELETE' })
 }
 
-export function getChecklistTemplates({ includeInactive = false } = {}) {
-  return pmFetch(`/checklists${listQueryParams({ include_inactive: includeInactive ? '1' : undefined })}`)
+export function getChecklistTemplates({ includeInactive = false, moduleKey, formId } = {}) {
+  return pmFetch(`/checklists${listQueryParams({
+    include_inactive: includeInactive ? '1' : undefined,
+    module_key: moduleKey || undefined,
+    form_id: formId || undefined,
+  })}`)
 }
 
 export function getChecklistTemplate(id) {
@@ -91,12 +95,17 @@ export function reorderChecklistSections(templateId, sectionIds) {
   })
 }
 
+export function getPmTabCounts() {
+  return pmFetch('/tab-counts')
+}
+
 export async function getPmPlans(params = {}) {
   const data = await pmFetch(`/plans${listQueryParams({
     status: params.status,
     search: params.search,
     limit: params.limit ?? 100,
     offset: params.offset ?? 0,
+    filters: params.filters,
   })}`)
   return asListArray(data)
 }
@@ -123,6 +132,16 @@ export function duplicatePmPlan(id) {
 
 export function generatePmWorkOrder(id) {
   return pmFetch(`/plans/${id}/generate`, { method: 'POST' })
+}
+
+export function exportPmPlans(params = {}) {
+  return apiFetchBlob(`/api/pm/plans${listQueryParams({
+    search: params.search,
+    filters: params.filters,
+    exportCsv: true,
+    limit: 5000,
+    offset: 0,
+  })}`)
 }
 
 export function getPmPlansTemplate() {

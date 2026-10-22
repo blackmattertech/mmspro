@@ -6,6 +6,13 @@ export async function getWarrantiesList(params = {}) {
     search: params.search,
     limit: params.limit ?? 50,
     offset: params.offset ?? 0,
+    filters: params.filters,
+    warranty_status: params.warranty_status,
+    expiring_mode: params.expiring_mode,
+    expiring_min_days: params.expiring_min_days,
+    expiring_max_days: params.expiring_max_days,
+    expiring_date_from: params.expiring_date_from,
+    expiring_date_to: params.expiring_date_to,
   })}`)
   return asListArray(data)
 }
@@ -20,6 +27,13 @@ export function createWarranty(data) {
 
 export function getWarrantiesTemplate() {
   return apiFetch('/api/warranties/template')
+}
+
+export function previewWarrantyImport(base64Data) {
+  return apiFetch('/api/warranties/import', {
+    method: 'POST',
+    body: JSON.stringify({ data: base64Data, dry_run: true }),
+  })
 }
 
 export function bulkUploadWarranties(base64Data) {
@@ -44,10 +58,10 @@ export function uploadWarrantyDocument(warrantyId, data) {
   })
 }
 
-export function updateWarrantyDocumentLabel(warrantyId, documentId, label) {
+export function updateWarrantyDocument(warrantyId, documentId, data) {
   return apiFetch(`/api/warranties/${warrantyId}/documents/${documentId}`, {
     method: 'PATCH',
-    body: JSON.stringify({ label }),
+    body: JSON.stringify(data),
   })
 }
 

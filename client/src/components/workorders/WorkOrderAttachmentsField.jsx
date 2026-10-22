@@ -26,7 +26,7 @@ export default function WorkOrderAttachmentsField({
   onRemoveFile,
   readOnly = false,
   disabled = false,
-  accept = 'image/*,.pdf,.doc,.docx,.xls,.xlsx',
+  accept = 'image/*,.svg,.pdf,.doc,.docx,.xls,.xlsx',
   addLabel = 'Add photos or files',
 }) {
   const inputRef = useRef(null)

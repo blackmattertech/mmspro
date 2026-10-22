@@ -16,9 +16,18 @@ import ImageLightbox from '../shared/ImageLightbox'
 import SpellcheckInput from '../shared/SpellcheckInput'
 import FormLabel from '../shared/FormLabel'
 import { useTextFieldLimits } from '../../hooks/useTextFieldLimits'
+import { formFieldClassName, normalizeColSpan } from '../../lib/formLayoutIds'
 
-const FILE_ACCEPT = '.pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png'
-const IMAGE_ACCEPT = 'image/jpeg,image/png,image/webp,image/gif'
+function wrapClass(field, extra = '') {
+  const width = field?.colSpan == null ? null : normalizeColSpan(field.colSpan, 25)
+  const extras = width != null && width < 100
+    ? String(extra).replace(/company-form__field--full/g, '').trim()
+    : extra
+  return formFieldClassName(field, extras)
+}
+
+const FILE_ACCEPT = '.pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.svg'
+const IMAGE_ACCEPT = 'image/jpeg,image/png,image/webp,image/gif,image/svg+xml,.svg'
 const IMAGE_TILE_SIZE = 96
 const FILE_ICON_SRC = assetUrl('Assets/icons/file-outline.svg')
 const VIEW_MORE_BTN_WIDTH = 104
@@ -82,7 +91,7 @@ function ImageFieldPreview({ field, value, onChange, disabled }) {
 
   return (
     <div
-      className="company-form__field wo-field-upload wo-field-upload--image"
+      className={wrapClass(field, 'wo-field-upload wo-field-upload--image')}
       style={{ '--wo-image-tile-size': `${IMAGE_TILE_SIZE}px` }}
     >
       <label className="company-form__label" htmlFor={id}>
@@ -146,7 +155,7 @@ function ImageFieldPreview({ field, value, onChange, disabled }) {
       </div>
 
       <p className="wo-field-upload__hint wo-field-upload__hint--below">
-        JPEG, PNG, WebP, GIF · max 10 MB each · click image to view full size
+        JPEG, PNG, WebP, GIF, SVG · max 10 MB each · click image to view full size
       </p>
 
       {fieldError && <span className="wo-field-upload__error">{fieldError}</span>}
@@ -267,7 +276,7 @@ function FileFieldPreview({ field, value, onChange, disabled }) {
   const shownFiles = expanded ? files : files.slice(0, collapsedVisible)
 
   return (
-    <div className="company-form__field wo-field-upload">
+    <div className={wrapClass(field, 'wo-field-upload')}>
       <label className="company-form__label" htmlFor={id}>
         {field.is_required ? `${field.name} *` : field.name}
         <span className="wo-field-type-hint"> ({fieldTypeLabel(type)})</span>
@@ -290,7 +299,7 @@ function FileFieldPreview({ field, value, onChange, disabled }) {
               : <>Drop files here or <strong>browse</strong></>}
           </span>
           <span className="wo-field-upload__hint">
-            {type === 'image' ? 'JPEG, PNG, WebP, GIF' : 'PDF, DOC, DOCX, XLS, XLSX, JPG, PNG'} · max 10 MB each · multiple allowed
+            {type === 'image' ? 'JPEG, PNG, WebP, GIF, SVG' : 'PDF, DOC, DOCX, XLS, XLSX, JPG, PNG, SVG'} · max 10 MB each · multiple allowed
           </span>
         </div>
       </div>
@@ -411,7 +420,7 @@ export default function WorkOrderFieldInput({ field, value, onChange, disabled }
 
   if (type === 'textarea') {
     return (
-      <div className="company-form__field company-form__field--full">
+      <div className={wrapClass(field, 'company-form__field--full')}>
         <FormLabel htmlFor={id} limit={limit}>{label}</FormLabel>
         <SpellcheckInput
           multiline
@@ -430,7 +439,7 @@ export default function WorkOrderFieldInput({ field, value, onChange, disabled }
   if (type === 'dropdown' || (isPermitRequiredField(field) && optionValues.length)) {
     const selected = singleOptionValue(value)
     return (
-      <div className="company-form__field">
+      <div className={wrapClass(field)}>
         <label className="company-form__label" htmlFor={id}>{label}</label>
         <FilterableSelect
           id={id}
@@ -450,7 +459,7 @@ export default function WorkOrderFieldInput({ field, value, onChange, disabled }
 
   if (type === 'radio') {
     return (
-      <div className="company-form__field">
+      <div className={wrapClass(field)}>
         <span className="company-form__label">{label}</span>
         <div className="asset-field-dependency__options" role="radiogroup" aria-label={field.name}>
           {optionValues.map((opt) => (
@@ -485,7 +494,7 @@ export default function WorkOrderFieldInput({ field, value, onChange, disabled }
       }
 
       return (
-        <div className="company-form__field">
+        <div className={wrapClass(field)}>
           <span className="company-form__label">{label}</span>
           <div className="asset-field-dependency__options" role="group" aria-label={field.name}>
             {optionValues.map((opt) => (
@@ -505,7 +514,7 @@ export default function WorkOrderFieldInput({ field, value, onChange, disabled }
     }
 
     return (
-      <div className="company-form__field wo-field-checkbox">
+      <div className={wrapClass(field, 'wo-field-checkbox')}>
         <label className="wo-field-checkbox__label">
           <input
             id={id}
@@ -522,7 +531,7 @@ export default function WorkOrderFieldInput({ field, value, onChange, disabled }
 
   if (type === 'date') {
     return (
-      <div className="company-form__field">
+      <div className={wrapClass(field)}>
         <label className="company-form__label" htmlFor={id}>{label}</label>
         <DateField
           id={id}
@@ -536,7 +545,7 @@ export default function WorkOrderFieldInput({ field, value, onChange, disabled }
 
   if (type === 'datetime') {
     return (
-      <div className="company-form__field">
+      <div className={wrapClass(field)}>
         <label className="company-form__label" htmlFor={id}>{label}</label>
         <DateField
           id={id}
@@ -551,7 +560,7 @@ export default function WorkOrderFieldInput({ field, value, onChange, disabled }
 
   if (type === 'number') {
     return (
-      <div className="company-form__field">
+      <div className={wrapClass(field)}>
         <label className="company-form__label" htmlFor={id}>{label}</label>
         <input
           id={id}
@@ -587,7 +596,7 @@ export default function WorkOrderFieldInput({ field, value, onChange, disabled }
   }
 
   return (
-    <div className="company-form__field">
+    <div className={wrapClass(field)}>
       <FormLabel htmlFor={id} limit={limit}>{label}</FormLabel>
       <SpellcheckInput
         id={id}

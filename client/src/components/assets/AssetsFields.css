@@ -1,43 +1,66 @@
 .asset-field-tabs {
   display: flex;
+  align-items: center;
   gap: 8px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  min-width: 0;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
 }
 
-@media (max-width: 640px) {
-  .asset-field-tabs {
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-  }
-
-  .asset-field-tabs__btn {
-    flex-shrink: 0;
-  }
+.asset-field-tabs::-webkit-scrollbar {
+  display: none;
 }
 
 .asset-field-tabs__btn {
-  padding: 8px 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 34px;
+  padding: 0 16px;
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 600;
+  line-height: 1;
   font-family: inherit;
-  color: var(--color-gray-blue);
-  background: var(--color-light-gray-1);
-  border: none;
+  color: var(--color-primary);
+  background: var(--color-white);
+  border: 1px solid var(--color-light-gray-2);
   border-radius: var(--radius-pill);
+  box-shadow: 0 1px 2px rgba(17, 24, 39, 0.06);
   cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease;
+  flex-shrink: 0;
+  white-space: nowrap;
+  transition: background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .asset-field-tabs__btn:hover {
-  color: var(--color-dark-navy);
-  background: #e8eaed;
+  color: var(--color-primary-dark);
+  background: var(--color-white);
+  border-color: #d1d5db;
+  box-shadow: 0 2px 6px rgba(17, 24, 39, 0.1);
 }
 
-.asset-field-tabs__btn--active {
+.asset-field-tabs__btn--active,
+.asset-field-tabs__btn--active:hover {
   color: var(--color-white);
   background: var(--color-primary);
+  border-color: var(--color-primary);
+  box-shadow: none;
   font-weight: 600;
+}
+
+.company-panel > .company-panel__toolbar {
+  flex-wrap: nowrap;
+  align-items: center;
+}
+
+.asset-field-toolbar__actions .company-btn {
+  height: 34px;
+  padding: 0 16px;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
 }
 
 .asset-field-filters {
@@ -46,6 +69,50 @@
   gap: 16px;
   flex-wrap: wrap;
   margin-bottom: 20px;
+}
+
+.asset-fields-panel--compact {
+  padding: 16px 20px 20px;
+}
+
+.asset-fields-panel--compact .asset-field-filters {
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.asset-fields-panel--compact .asset-field-filters__search {
+  width: 280px;
+  min-width: 180px;
+}
+
+.asset-fields-panel--compact .company-panel__count {
+  margin: 0;
+  white-space: nowrap;
+}
+
+.asset-field-filters__add {
+  margin-left: auto;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+@media (max-width: 720px) {
+  .asset-fields-panel--compact .asset-field-filters {
+    flex-wrap: wrap;
+  }
+
+  .asset-field-filters__add {
+    margin-left: 0;
+    width: 100%;
+    display: flex;
+    justify-content: flex-end;
+  }
 }
 
 .asset-field-filters__search-group {
@@ -131,7 +198,9 @@
 
 .asset-field-toggle-row {
   display: flex;
-  gap: 24px;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 24px 40px;
   margin-bottom: 8px;
 }
 
@@ -140,15 +209,14 @@
 }
 
 .asset-field-toggle-item {
-  flex: 1;
+  flex: 0 1 auto;
   min-width: 0;
 }
 
 .asset-field-toggle-item__head {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  gap: 10px;
   margin-bottom: 6px;
 }
 
@@ -160,7 +228,7 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  min-width: 0;
+  flex-shrink: 0;
 }
 
 .asset-field-info {
@@ -336,8 +404,7 @@
 
 @media (max-width: 560px) {
   .asset-field-toggle-row {
-    flex-direction: column;
-    gap: 16px;
+    gap: 16px 24px;
   }
 
   .asset-field-dependency__grid {
@@ -471,3 +538,17 @@
 .asset-field-row--drop-target td {
   box-shadow: inset 0 2px 0 0 var(--color-primary, #c62828);
 }
+
+.asset-field-modal .company-modal__form {
+  min-height: 0;
+}
+
+.asset-field-modal .company-modal__actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  margin-top: 8px;
+  padding-top: 16px;
+  background: var(--color-white);
+}
+

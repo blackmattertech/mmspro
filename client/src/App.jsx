@@ -1,9 +1,10 @@
-import { Suspense } from 'react'
+import { Suspense, useEffect } from 'react'
 import { WORK_REQUEST_MODULE_KEYS, REPORT_MODULE_KEYS } from './lib/accessModules'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { lazyPage } from './lib/lazyPage'
-import { AuthProvider } from './hooks/useAuth'
+import { AuthProvider, useAuth } from './hooks/useAuth'
 import { OrgProvider } from './hooks/useOrg'
+import { PermissionsProvider } from './hooks/usePermissions'
 import { ProtectedRoute, OrgRoute, AdminRoute, ModuleRoute } from './components/shared/ProtectedRoute'
 import { LegacyAppRedirect, RootRedirect } from './components/shared/OrgRedirect'
 const AppLayout = lazyPage(() => import('./layouts/AppLayout'))
@@ -15,6 +16,7 @@ const Calendar = lazyPage(() => import('./pages/app/Calendar'))
 const Company = lazyPage(() => import('./pages/app/Company'))
 const Assets = lazyPage(() => import('./pages/app/Assets'))
 const Equipment = lazyPage(() => import('./pages/app/Equipment'))
+const EquipmentScan = lazyPage(() => import('./pages/app/EquipmentScan'))
 const WorkOrdersRouteLayout = lazyPage(() => import('./components/workorders/WorkOrdersRouteLayout'))
 const PmScheduledRouteLayout = lazyPage(() => import('./components/workorders/PmScheduledRouteLayout'))
 const ManualWorkOrders = lazyPage(() => import('./pages/app/ManualWorkOrders'))
@@ -23,6 +25,8 @@ const ReceivedWorkOrders = lazyPage(() => import('./pages/app/ReceivedWorkOrders
 const AssignedWorkOrders = lazyPage(() => import('./pages/app/AssignedWorkOrders'))
 const ScheduledWorkOrders = lazyPage(() => import('./pages/app/ScheduledWorkOrders'))
 const PlaceholderPage = lazyPage(() => import('./pages/app/PlaceholderPage'))
+const OrgSettings = lazyPage(() => import('./pages/app/OrgSettings'))
+const Approvals = lazyPage(() => import('./pages/app/Approvals'))
 const ReportPage = lazyPage(() => import('./pages/app/reports/ReportPage'))
 const TasksRouteLayout = lazyPage(() => import('./components/tasks/TasksRouteLayout'))
 const TasksManager = lazyPage(() => import('./pages/app/TasksManager'))
@@ -45,11 +49,15 @@ const WorkRequestListPage = lazyPage(() => import('./pages/app/WorkRequestListPa
 const WorkRequestsRouteLayout = lazyPage(() => import('./components/workrequests/WorkRequestsRouteLayout'))
 const RolesAccess = lazyPage(() => import('./pages/app/RolesAccess'))
 const OrgHomeRedirect = lazyPage(() => import('./components/shared/OrgHomeRedirect'))
+const OrgUnavailable = lazyPage(() => import('./pages/app/OrgUnavailable'))
 const AdminDashboard = lazyPage(() => import('./pages/admin/Dashboard'))
 const Organizations = lazyPage(() => import('./pages/admin/Organizations'))
 const AdminOrgAssets = lazyPage(() => import('./pages/admin/AdminOrgAssets'))
 const AdminOrgEquipment = lazyPage(() => import('./pages/admin/AdminOrgEquipment'))
-const Users = lazyPage(() => import('./pages/admin/Users'))
+const AdminUsers = lazyPage(() => import('./pages/admin/Users'))
+const AdminIntegrations = lazyPage(() => import('./pages/admin/Integrations'))
+const AdminPlans = lazyPage(() => import('./pages/admin/Plans'))
+const AdminReports = lazyPage(() => import('./pages/admin/Reports'))
 
 const masterRoutes = ['order', 'activity']
 const companyPageModules = ['company', 'locations', 'departments', 'work_centers', 'employees']
@@ -59,6 +67,17 @@ const workOrderModules = [
   'work_orders_assigned',
   'work_orders_manual',
 ]
+
+function PrefetchAuthenticatedShell() {
+  const { user } = useAuth()
+  useEffect(() => {
+    if (!user) return
+    import('./layouts/AppLayout')
+    import('./layouts/AdminLayout')
+    import('./pages/app/Dashboard')
+  }, [user])
+  return null
+}
 
 export default function App() {
   const withSuspense = (element) => (
@@ -79,6 +98,8 @@ export default function App() {
   return (
     <AuthProvider>
       <OrgProvider>
+        <PermissionsProvider>
+        <PrefetchAuthenticatedShell />
         <BrowserRouter future={{ v7_relativeSplatPath: true }}>
           <Routes>
             <Route path="/login" element={withSuspense(<Login />)} />
@@ -92,56 +113,57 @@ export default function App() {
               <Route path="organizations" element={withSuspense(<Organizations />)} />
               <Route path="organizations/:orgId/assets" element={withSuspense(<AdminOrgAssets />)} />
               <Route path="organizations/:orgId/equipment" element={withSuspense(<AdminOrgEquipment />)} />
-              <Route path="users" element={withSuspense(<Users />)} />
+              <Route path="users" element={withSuspense(<AdminUsers />)} />
+              <Route path="integrations" element={withSuspense(<AdminIntegrations />)} />
+              <Route path="plans" element={withSuspense(<AdminPlans />)} />
+              <Route path="reports" element={withSuspense(<AdminReports />)} />
             </Route>
 
             <Route path="/:orgSlug" element={<OrgRoute>{withSuspense(<AppLayout />)}</OrgRoute>}>
               <Route index element={withSuspense(<OrgHomeRedirect />)} />
+              <Route path="unavailable" element={withSuspense(<OrgUnavailable />)} />
               <Route path="dashboard" element={withModule('dashboard', <Dashboard />)} />
               <Route
                 path="work-request"
                 element={withModule([...WORK_REQUEST_MODULE_KEYS, 'work_request'], <WorkRequestsRouteLayout />)}
               >
                 <Route index element={<Navigate to="create" replace />} />
-                <Route
-                  path="create"
-                  element={withModule(['work_request_create', 'work_request'], <WorkRequestCreate />)}
-                />
+                <Route path="create" element={withSuspense(<WorkRequestCreate />)} />
                 <Route
                   path="my"
-                  element={withModule(['work_request_my', 'work_request'], (
+                  element={withSuspense(
                     <WorkRequestListPage
                       filter="my"
                       emptyHint="Work requests you submitted appear here."
-                    />
-                  ))}
+                    />,
+                  )}
                 />
                 <Route
                   path="incoming"
-                  element={withModule(['work_request_incoming', 'work_request'], (
+                  element={withSuspense(
                     <WorkRequestListPage
                       filter="incoming"
                       emptyHint="Requests routed to your department appear here."
-                    />
-                  ))}
+                    />,
+                  )}
                 />
                 <Route
                   path="outgoing"
-                  element={withModule(['work_request_outgoing', 'work_request'], (
+                  element={withSuspense(
                     <WorkRequestListPage
                       filter="outgoing"
                       emptyHint="Requests your department sent to others appear here."
-                    />
-                  ))}
+                    />,
+                  )}
                 />
                 <Route
                   path="all"
-                  element={withModule(['work_request_all', 'work_request'], (
+                  element={withSuspense(
                     <WorkRequestListPage
                       filter="all"
                       emptyHint="No work requests in this organization yet."
-                    />
-                  ))}
+                    />,
+                  )}
                 />
               </Route>
               <Route path="calendar" element={withModule('calendar', <Calendar />)} />
@@ -150,22 +172,23 @@ export default function App() {
               <Route path="warranty-manager/:warrantyId/edit" element={withModule('warranty_manager', <WarrantyFormPage />)} />
               <Route path="warranty-manager/:warrantyId" element={withModule('warranty_manager', <WarrantyDetailPage />)} />
               <Route path="tasks-and-followups" element={withModule('tasks_followups', <TasksRouteLayout />)}>
-                <Route index element={withModule('tasks_followups', <TasksManager />)} />
-                <Route path="create" element={withModule('tasks_followups', <TaskFormPage />)} />
-                <Route path=":taskId/edit" element={withModule('tasks_followups', <TaskFormPage />)} />
-                <Route path=":taskId" element={withModule('tasks_followups', <TaskDetailPage />)} />
+                <Route index element={withSuspense(<TasksManager />)} />
+                <Route path="create" element={withSuspense(<TaskFormPage />)} />
+                <Route path=":taskId/edit" element={withSuspense(<TaskFormPage />)} />
+                <Route path=":taskId" element={withSuspense(<TaskDetailPage />)} />
               </Route>
               <Route path="masters/company" element={withModule(companyPageModules, <Company />)} />
               <Route path="masters/assets" element={withModule('assets', <Assets />)} />
               <Route path="masters/equipment" element={withModule(['equipment', 'areas'], <Equipment />)} />
-              <Route path="masters/vendors" element={withSuspense(<Vendors />)} />
-              <Route path="masters/vendors/:vendorId" element={withSuspense(<VendorDetailPage />)} />
-              <Route path="masters/others" element={withSuspense(<Others />)} />
-              <Route path="masters/others/status" element={withSuspense(<OthersStatusTypes />)} />
-              <Route path="masters/others/status/:entityType" element={withSuspense(<OthersStatusManage />)} />
-              <Route path="masters/others/checklists" element={withSuspense(<OthersChecklists />)} />
-              <Route path="masters/others/checklists/:checklistId" element={withSuspense(<OthersChecklistBuilder />)} />
-              <Route path="masters/others/character-limits" element={withSuspense(<OthersCharacterLimits />)} />
+              <Route path="scan/equipment/:equipmentId" element={withSuspense(<EquipmentScan />)} />
+              <Route path="masters/vendors" element={withModule('vendors', <Vendors />)} />
+              <Route path="masters/vendors/:vendorId" element={withModule('vendors', <VendorDetailPage />)} />
+              <Route path="masters/others" element={withModule('others', <Others />)} />
+              <Route path="masters/others/status" element={withModule('others', <OthersStatusTypes />)} />
+              <Route path="masters/others/status/:entityType" element={withModule('others', <OthersStatusManage />)} />
+              <Route path="masters/others/checklists" element={withModule('others', <OthersChecklists />)} />
+              <Route path="masters/others/checklists/:checklistId" element={withModule('others', <OthersChecklistBuilder />)} />
+              <Route path="masters/others/character-limits" element={withModule('others', <OthersCharacterLimits />)} />
               <Route
                 path="work-orders/scheduled"
                 element={withModule('work_orders_scheduled', <PmScheduledRouteLayout />)}
@@ -174,11 +197,11 @@ export default function App() {
               </Route>
               <Route path="work-orders" element={withModule(workOrderModules, <WorkOrdersRouteLayout />)}>
                 <Route index element={<Navigate to="received" replace />} />
-                <Route path="received" element={withModule('work_orders_received', <ReceivedWorkOrders />)} />
-                <Route path="assigned" element={withModule('work_orders_assigned', <AssignedWorkOrders />)} />
-                <Route path="manual" element={withModule('work_orders_manual', <ManualWorkOrders />)} />
-                <Route path="manual/create" element={withModule('work_orders_manual', <ManualWorkOrderCreate />)} />
-                <Route path="manual/:workOrderId/edit" element={withModule('work_orders_manual', <ManualWorkOrderCreate />)} />
+                <Route path="received" element={withSuspense(<ReceivedWorkOrders />)} />
+                <Route path="assigned" element={withSuspense(<AssignedWorkOrders />)} />
+                <Route path="manual" element={withSuspense(<ManualWorkOrders />)} />
+                <Route path="manual/create" element={withSuspense(<ManualWorkOrderCreate />)} />
+                <Route path="manual/:workOrderId/edit" element={withSuspense(<ManualWorkOrderCreate />)} />
               </Route>
               <Route
                 path="reports"
@@ -200,12 +223,16 @@ export default function App() {
                 element={withModule('roles_access', <RolesAccess />)}
               />
               <Route
+                path="configuration/approvals"
+                element={withModule('settings', <Approvals />)}
+              />
+              <Route
                 path="configuration/settings"
-                element={withModule('settings', <PlaceholderPage title="settings" />)}
+                element={withModule('settings', <OrgSettings />)}
               />
               <Route
                 path="configuration/import"
-                element={withSuspense(<ConfigurationImport />)}
+                element={withModule('settings', <ConfigurationImport />)}
               />
               <Route
                 path="configuration/export"
@@ -217,6 +244,7 @@ export default function App() {
             <Route path="*" element={<Navigate to="/login" replace />} />
           </Routes>
         </BrowserRouter>
+        </PermissionsProvider>
       </OrgProvider>
     </AuthProvider>
   )

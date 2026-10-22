@@ -19,6 +19,12 @@ import {
   isActiveOnlyUpdate,
   isDropdownValuesOnlyUpdate,
 } from '../../lib/assetFieldService.js'
+import {
+  buildChildrenTemplate,
+  bulkImportChildren,
+} from '../../lib/assetFieldBulkService.js'
+import { attachFailedFileToResult } from '../../lib/importErrorWorkbook.js'
+import { bufferFromBase64Upload, excelFilePayload } from '../../lib/excelTemplate.js'
 
 const router = Router()
 
@@ -47,6 +53,32 @@ router.get('/fields', canReadAssets, async (req, res) => {
     res.json(fields)
   } catch (err) {
     res.status(500).json({ error: err.message })
+  }
+})
+
+function requireManageAssetChildren(req, res, next) {
+  if (!canManageAssetChildren(req)) {
+    return res.status(403).json({ error: 'You do not have permission to manage child values' })
+  }
+  next()
+}
+
+router.get('/fields/template/children', canUpdateAssets, requireManageAssetChildren, async (req, res) => {
+  try {
+    const buffer = await buildChildrenTemplate(req.userProfile.org_id)
+    res.json(excelFilePayload('child-values-template.xlsx', buffer))
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message })
+  }
+})
+
+router.post('/fields/bulk/children', canUpdateAssets, requireManageAssetChildren, async (req, res) => {
+  try {
+    const buffer = bufferFromBase64Upload(req.body?.data)
+    const result = await bulkImportChildren(req.userProfile.org_id, buffer)
+    res.json(await attachFailedFileToResult(result, buffer, 'child-values-import-failed-rows.xlsx'))
+  } catch (err) {
+    res.status(err.status || 400).json({ error: err.message })
   }
 })
 

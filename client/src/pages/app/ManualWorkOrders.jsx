@@ -12,13 +12,14 @@ import { useDebouncedValue } from '../../hooks/useDebouncedValue'
 import { useTablePagination } from '../../hooks/useTablePagination'
 import { useOpenQueryId } from '../../hooks/useOpenQueryId'
 import { applyWorkOrderFilters } from '../../lib/workOrderFilters'
+import { buildServerListParams } from '../../lib/serverListParams'
 import { orgPath } from '../../config/navigation'
 import ReceivedWorkOrderDetailModal from '../../components/workorders/ReceivedWorkOrderDetailModal'
 import WorkOrdersTable from '../../components/workorders/WorkOrdersTable'
 import '../../components/company/CompanyShared.css'
 import '../../components/workorders/WorkOrdersPage.css'
 
-const MANUAL_COLUMNS = ['wo_number', 'summary', 'assignees', 'creator', 'created_at', 'status', 'progress']
+const MANUAL_COLUMNS = ['wo_number', 'summary', 'work_request', 'assignees', 'creator', 'created_at', 'status', 'priority', 'progress']
 
 export default function ManualWorkOrders() {
   const location = useLocation()
@@ -29,19 +30,29 @@ export default function ManualWorkOrders() {
   const canRemove = canDelete('work_orders_manual') || canDelete('work_orders')
   const [selectedId, setSelectedId, closeSelected] = useOpenQueryId()
   const [actionError, setActionError] = useState(null)
-  const { search, locationFilter, sortBy, advancedRules, fieldFilter, locations, bulkReloadToken = 0 } = useOutletContext()
+  const {
+    search, locationFilter, sortBy, advancedRules, fieldFilter, locations, bulkReloadToken = 0,
+    columnFilters = {}, setColumnFilter, headerSort = null, setHeaderSort,
+    statusFilters = [], toggleStatus,
+  } = useOutletContext()
   const debouncedSearch = useDebouncedValue(search)
   const [listTotal, setListTotal] = useState(0)
   const pagination = useTablePagination(listTotal, {
-    resetKey: `${debouncedSearch}|${locationFilter}|${fieldFilter?.field}|${fieldFilter?.value}|${sortBy}`,
+    resetKey: `${debouncedSearch}|${locationFilter}|${JSON.stringify(columnFilters)}|${fieldFilter?.field}|${fieldFilter?.value}|${sortBy}|${headerSort?.id || ''}|${statusFilters.join(',')}`,
   })
   const fetchManualOrders = useCallback(
-    () => getManualWorkOrders({
+    () => getManualWorkOrders(buildServerListParams({
       search: debouncedSearch,
       limit: pagination.pageSize,
       offset: pagination.offset,
-    }),
-    [debouncedSearch, pagination.pageSize, pagination.offset, bulkReloadToken],
+      columnFilters,
+      fieldFilter,
+      statusFilters,
+      headerSort,
+      sortBy,
+      excludeDraft: true,
+    })),
+    [debouncedSearch, pagination.pageSize, pagination.offset, bulkReloadToken, columnFilters, fieldFilter, statusFilters, headerSort, sortBy],
   )
   const { orders, total, statusCounts, loading, error, reload } = useWorkOrderList(fetchManualOrders)
   useEffect(() => { setListTotal(total) }, [total])
@@ -50,11 +61,9 @@ export default function ManualWorkOrders() {
   const filteredOrders = useMemo(() => applyWorkOrderFilters(orders, {
     search: '',
     locationFilter,
-    sortBy,
     advancedRules,
-    fieldFilter,
     locations,
-  }), [orders, locationFilter, sortBy, advancedRules, fieldFilter, locations])
+  }), [orders, locationFilter, advancedRules, locations])
 
   const handleEdit = useCallback((order) => {
     if (!org?.slug || !order?.id) return
@@ -105,6 +114,12 @@ export default function ManualWorkOrders() {
         canEdit={canEdit}
         canDelete={canRemove}
         paginationResetKey={`${search}|${locationFilter}|${fieldFilter?.field}|${fieldFilter?.value}|${sortBy}`}
+        headerSort={headerSort}
+        onHeaderSort={setHeaderSort}
+        columnFilters={columnFilters}
+        onColumnFilter={setColumnFilter}
+        statusFilters={statusFilters}
+        onToggleStatus={toggleStatus}
       />
 
       {selectedId && (

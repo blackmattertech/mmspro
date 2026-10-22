@@ -1,7 +1,8 @@
-import { useRef, useState } from 'react'
+import { useRef, useState, useEffect } from 'react'
 import { useBackdropClose } from '../../hooks/useBackdropClose'
 import NavIcon from '../layout/NavIcon'
 import PageBack from '../shared/PageBack'
+import { ImportGroupList } from './ImportGroupList'
 
 /**
  * Shared bulk template download + xlsx upload helpers for company masters.
@@ -9,13 +10,17 @@ import PageBack from '../shared/PageBack'
 export function useMasterBulkUpload({
   downloadTemplate,
   upload,
+  previewUpload,
   onSuccess,
+  onError,
   defaultFilename = 'template.xlsx',
 }) {
   const bulkInputRef = useRef(null)
   const [bulkBusy, setBulkBusy] = useState(false)
   const [bulkError, setBulkError] = useState(null)
   const [bulkResult, setBulkResult] = useState(null)
+  const [bulkPreview, setBulkPreview] = useState(null)
+  const [pendingFile, setPendingFile] = useState(null)
 
   const handleDownloadTemplate = async () => {
     setBulkError(null)
@@ -51,10 +56,18 @@ export function useMasterBulkUpload({
         reader.readAsDataURL(file)
       })
       const base64 = String(dataUrl).split(',').pop()
+      if (previewUpload) {
+        const preview = await previewUpload(base64)
+        setPendingFile(base64)
+        setBulkPreview(preview)
+        setBulkResult(null)
+        return
+      }
       const result = await upload(base64)
       setBulkResult(result)
       await onSuccess?.(result)
     } catch (err) {
+      if (onError?.(err)) return
       setBulkError(err.message)
     } finally {
       setBulkBusy(false)
@@ -62,14 +75,40 @@ export function useMasterBulkUpload({
     }
   }
 
+  const confirmBulkImport = async () => {
+    if (!pendingFile) return
+    setBulkBusy(true)
+    setBulkError(null)
+    try {
+      const result = await upload(pendingFile)
+      setBulkResult(result)
+      setBulkPreview(null)
+      setPendingFile(null)
+      await onSuccess?.(result)
+    } catch (err) {
+      if (onError?.(err)) return
+      setBulkError(err.message)
+    } finally {
+      setBulkBusy(false)
+    }
+  }
+
+  const cancelBulkPreview = () => {
+    setBulkPreview(null)
+    setPendingFile(null)
+  }
+
   return {
     bulkInputRef,
     bulkBusy,
     bulkError,
     bulkResult,
+    bulkPreview,
     setBulkResult,
     handleDownloadTemplate,
     handleBulkFile,
+    confirmBulkImport,
+    cancelBulkPreview,
   }
 }
 
@@ -80,15 +119,25 @@ export function MasterBulkActions({
   onFileChange,
   addLabel,
   onAdd,
-  title = 'Bulk upload',
+  title = 'Import',
   description = 'Download the sample Excel file, replace the example row with your records (or add more rows below), then upload the completed .xlsx file.',
   bulkError,
   bulkResult,
+  bulkPreview = null,
+  onConfirmImport,
+  onCancelPreview,
   noun = 'record',
+  closeSignal = false,
+  actionLabel = 'Import',
+  showToolbarDownload = false,
 }) {
   const [open, setOpen] = useState(false)
   const [downloading, setDownloading] = useState(false)
   const handleBackdropClick = useBackdropClose(() => setOpen(false))
+
+  useEffect(() => {
+    if (closeSignal) setOpen(false)
+  }, [closeSignal])
 
   const handleDownload = async () => {
     setDownloading(true)
@@ -103,17 +152,19 @@ export function MasterBulkActions({
 
   return (
     <>
-      <button
-        type="button"
-        className="company-btn company-btn--secondary equipment-bulk-btn"
-        onClick={handleDownload}
-        disabled={bulkBusy || downloading}
-      >
-        <span className="equipment-bulk-btn__icon" aria-hidden="true">
-          <NavIcon name="download" />
-        </span>
-        {downloading ? 'Preparing…' : 'Download sample'}
-      </button>
+      {showToolbarDownload && (
+        <button
+          type="button"
+          className="company-btn company-btn--secondary equipment-bulk-btn"
+          onClick={handleDownload}
+          disabled={bulkBusy || downloading}
+        >
+          <span className="equipment-bulk-btn__icon" aria-hidden="true">
+            <NavIcon name="download" />
+          </span>
+          {downloading ? 'Preparing…' : 'Download sample'}
+        </button>
+      )}
       <button
         type="button"
         className="company-btn company-btn--secondary equipment-bulk-btn"
@@ -122,7 +173,7 @@ export function MasterBulkActions({
         <span className="equipment-bulk-btn__icon" aria-hidden="true">
           <NavIcon name="upload" />
         </span>
-        Upload
+        {actionLabel}
       </button>
       {onAdd && (
         <button type="button" className="company-btn company-btn--primary" onClick={onAdd}>
@@ -159,7 +210,7 @@ export function MasterBulkActions({
             </div>
 
             <div className="company-modal__form master-bulk-modal__body">
-              <p className="master-bulk-modal__desc">{description}</p>
+              <div className="master-bulk-modal__desc">{description}</div>
 
               <div className="master-bulk-modal__actions">
                 <button
@@ -197,8 +248,42 @@ export function MasterBulkActions({
 
               <p className="master-bulk-modal__hint">Accepted format: .xlsx</p>
 
+              {bulkPreview && (
+                <div className="import-groups">
+                  <p className="import-groups__heading">{bulkPreview.summary}</p>
+                  <ImportGroupList groups={bulkPreview.groups} />
+                  {bulkPreview.errors?.length > 0 && (
+                    <ul className="equipment-bulk-errors">
+                      {bulkPreview.errors.slice(0, 8).map((err) => (
+                        <li key={`${err.row}-${err.field}`}>
+                          Row {err.row}: {err.message}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  <div className="master-bulk-modal__confirm">
+                    <button
+                      type="button"
+                      className="company-btn company-btn--secondary"
+                      onClick={onCancelPreview}
+                      disabled={bulkBusy}
+                    >
+                      Back
+                    </button>
+                    <button
+                      type="button"
+                      className="company-btn company-btn--primary"
+                      onClick={onConfirmImport}
+                      disabled={bulkBusy || ((bulkPreview.created || 0) + (bulkPreview.updated || 0) === 0)}
+                    >
+                      {bulkBusy ? 'Importing…' : 'Confirm import'}
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {bulkError && <div className="company-error">{bulkError}</div>}
-              <MasterBulkResult result={bulkResult} noun={noun} />
+              <MasterBulkResult result={bulkPreview ? null : bulkResult} noun={noun} />
             </div>
           </div>
         </div>
@@ -220,8 +305,9 @@ export function MasterBulkResult({ result, noun }) {
   if (failed) parts.push(`${failed} row(s) failed`)
   return (
     <div className={`company-alert ${tone}`}>
-      <strong>{parts[0]}</strong>
-      {parts.length > 1 ? `, ${parts.slice(1).join(', ')}.` : '.'}
+      <strong>{result.summary || parts[0]}</strong>
+      {!result.summary && (parts.length > 1 ? `, ${parts.slice(1).join(', ')}.` : '.')}
+      {result.groups?.length > 0 && <ImportGroupList groups={result.groups} />}
       {result.errors?.length > 0 && (
         <ul className="equipment-bulk-errors">
           {result.errors.slice(0, 10).map((err) => (

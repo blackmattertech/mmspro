@@ -1,15 +1,21 @@
 import { supabaseAdmin } from '../services/supabase.js'
 import { profileCache } from '../lib/requestCache.js'
+import { ACCOUNT_ROLES } from '../lib/accountRoles.js'
+
+function allowsWithoutOrg(profile) {
+  return profile?.role === ACCOUNT_ROLES.SUPER_ADMIN
+}
 
 /**
  * Attaches req.userProfile (with org_id + role) to every request.
  * Always run this after verifyAuth.
+ * Super Admins may have no org_id (platform /admin panel).
  */
 export const requireOrgAccess = async (req, res, next) => {
   const userId = req.user.id
   const cached = profileCache.get(userId)
   if (cached) {
-    if (!cached.org_id) {
+    if (!cached.org_id && !allowsWithoutOrg(cached)) {
       return res.status(403).json({ error: 'No org access' })
     }
     req.userProfile = cached
@@ -22,7 +28,11 @@ export const requireOrgAccess = async (req, res, next) => {
     .eq('id', userId)
     .single()
 
-  if (error || !profile?.org_id) {
+  if (error || !profile) {
+    return res.status(403).json({ error: 'No org access' })
+  }
+
+  if (!profile.org_id && !allowsWithoutOrg(profile)) {
     return res.status(403).json({ error: 'No org access' })
   }
 

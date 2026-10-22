@@ -3,7 +3,6 @@ import { verifyAuth } from '../../middleware/auth.js'
 import { requireOrgAccess, assertOrgOwnership } from '../../middleware/orgAccess.js'
 import { supabaseAdmin } from '../../services/supabase.js'
 import {
-  ACCESS_MODULES,
   ACCESS_MODULE_GROUPS,
   emptyPermissions,
   normalizePermissionsInput,
@@ -14,6 +13,7 @@ import {
   permissionMap,
   employeeInAssignScope,
 } from '../../lib/orgPermissions.js'
+import { filterAccessGroupsByEntitlements, normalizeDisabledModules } from '../../lib/orgModules.js'
 import { getSignedUrl } from '../../lib/signedUrlCache.js'
 import { invalidatePermissionsCache } from '../../lib/requestCache.js'
 
@@ -253,9 +253,17 @@ function canAssignEmployeesToRole(role, capability, userId) {
   return Boolean(capability.can_assign_approval && role?.has_approval)
 }
 
-router.get('/modules', (_req, res) => {
-  res.set('Cache-Control', 'private, max-age=60')
-  res.json({ groups: ACCESS_MODULE_GROUPS, modules: ACCESS_MODULES })
+router.get('/modules', async (req, res) => {
+  try {
+    const session = await resolveSessionPermissions(req.userProfile)
+    const disabledModules = normalizeDisabledModules(session?.disabled_modules)
+    const groups = filterAccessGroupsByEntitlements(ACCESS_MODULE_GROUPS, disabledModules)
+    const modules = groups.flatMap((group) => group.modules)
+    res.set('Cache-Control', 'private, no-store')
+    res.json({ groups, modules })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
 })
 
 router.get('/me', async (req, res) => {

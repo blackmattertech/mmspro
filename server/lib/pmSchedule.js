@@ -47,10 +47,49 @@ export function computeNextDueDate(plan, fromDate) {
       next = new Date(base)
       next.setDate(next.getDate() + every)
       break
-    case 'week':
-      next = new Date(base)
-      next.setDate(next.getDate() + every * 7)
+    case 'week': {
+      const weekdays = Array.isArray(plan.weekdays)
+        ? plan.weekdays.map(Number).filter((day) => day >= 0 && day <= 6)
+        : []
+      if (weekdays.length) {
+        const wanted = new Set(weekdays)
+        next = null
+        const span = every * 7
+        for (let i = 1; i <= span; i += 1) {
+          const candidate = new Date(base)
+          candidate.setDate(base.getDate() + i)
+          if (!wanted.has(candidate.getDay())) continue
+          if (every <= 1 || i > (every - 1) * 7) {
+            next = candidate
+            break
+          }
+        }
+        if (!next) {
+          next = new Date(base)
+          next.setDate(next.getDate() + every * 7)
+        }
+      } else {
+        next = new Date(base)
+        next.setDate(next.getDate() + every * 7)
+      }
       break
+    }
+    case 'custom': {
+      const step = Math.max(1, Number(plan.custom_interval) || every)
+      const customUnit = plan.custom_unit || 'day'
+      if (customUnit === 'week') {
+        next = new Date(base)
+        next.setDate(next.getDate() + step * 7)
+      } else if (customUnit === 'month') {
+        next = addMonths(base, step)
+      } else if (customUnit === 'year') {
+        next = addMonths(base, step * 12)
+      } else {
+        next = new Date(base)
+        next.setDate(next.getDate() + step)
+      }
+      break
+    }
     case 'month':
       next = addMonths(base, every)
       break
@@ -68,7 +107,7 @@ export function computeNextDueDate(plan, fromDate) {
   }
 
   // Legacy schedule_type values without calendar_unit still supported via unit mapping above.
-  if (plan.end_date) {
+  if (plan.end_date && !plan.never_ends) {
     const end = toDateOnly(plan.end_date)
     if (end && next > end) return null
   }
@@ -83,7 +122,7 @@ export function initialDueDate(plan) {
 export function generateOnOrBefore(plan, now = new Date()) {
   const due = toDateOnly(plan.next_due_at)
   if (!due) return false
-  if (plan.end_date) {
+  if (plan.end_date && !plan.never_ends) {
     const end = toDateOnly(plan.end_date)
     if (end && due > end) return false
   }

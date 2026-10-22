@@ -48,6 +48,7 @@ export function DepartmentDetailContent({ department }) {
           <DetailField label="Code" value={department.code} />
           <DetailField label="Name" value={department.name} />
           <DetailField label="Location" value={formatDepartmentLocation(department)} />
+          <DetailField label="Headcount" value={String(department.headcount ?? 0)} />
           <DetailField label="Description" value={department.description} fullWidth />
           <DetailField label="Status" value={department.is_active === false ? 'Inactive' : 'Active'} />
         </DetailGrid>
@@ -397,25 +398,6 @@ export function WorkCenterDetailContent({ workCenter }) {
           <DetailField label="Location" value={workCenter.org_locations?.name || 'All locations'} />
           <DetailField label="Description" value={workCenter.description} fullWidth />
           <DetailField label="Status" value={workCenter.is_active === false ? 'Inactive' : 'Active'} />
-        </DetailGrid>
-      </DetailSection>
-    </DetailView>
-  )
-}
-
-export function EquipmentDetailContent({ equipment }) {
-  if (!equipment) return null
-
-  return (
-    <DetailView>
-      <DetailSection title="Equipment">
-        <DetailGrid>
-          <DetailField label="Name" value={equipment.name} />
-          <DetailField label="Code" value={equipment.code} />
-          <DetailField label="Location" value={equipment.org_locations?.name || equipment.locations?.name} />
-          <DetailField label="Department" value={equipment.departments?.name} />
-          <DetailField label="Area" value={equipment.areas?.name} />
-          <DetailField label="Status" value={equipment.is_active === false ? 'Inactive' : 'Active'} />
         </DetailGrid>
       </DetailSection>
     </DetailView>

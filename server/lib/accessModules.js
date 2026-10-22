@@ -81,7 +81,7 @@ export const ACCESS_MODULE_GROUPS = [
     id: 'masters',
     label: 'Masters',
     modules: [
-      { key: 'assets', label: 'Assets', actions: ['create', 'read', 'update', 'delete'] },
+      { key: 'assets', label: 'Fields', actions: ['create', 'read', 'update', 'delete'] },
       { key: 'areas', label: 'Areas', actions: ['create', 'read', 'update', 'delete'] },
       { key: 'equipment', label: 'Equipment', actions: ['create', 'read', 'update', 'delete'] },
     ],

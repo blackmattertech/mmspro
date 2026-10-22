@@ -1,0 +1,48 @@
+.approval-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-width: 760px;
+  background: var(--color-white);
+  border: 1px solid var(--color-light-gray-1);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+
+.approval-list__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 18px;
+  border-top: 1px solid var(--color-light-gray-1);
+}
+
+.approval-list__row:first-child {
+  border-top: none;
+}
+
+.approval-list__copy {
+  min-width: 0;
+}
+
+.approval-list__label {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-dark-navy);
+}
+
+.approval-list__hint {
+  display: block;
+  margin-top: 4px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--color-gray-blue);
+}
+
+.approval-list__row .goo-toggle-container {
+  height: 1.45em;
+  flex-shrink: 0;
+}

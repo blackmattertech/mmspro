@@ -6,6 +6,12 @@ export default function WorkRequestListPage({ filter, emptyHint }) {
     search = '',
     fieldFilter = { field: '', value: '' },
     sortBy = 'newest',
+    columnFilters = {},
+    setColumnFilter,
+    headerSort = null,
+    setHeaderSort,
+    statusFilters = [],
+    toggleStatus,
     visibleColumnIds,
     bulkReloadToken = 0,
   } = useOutletContext() || {}
@@ -17,6 +23,12 @@ export default function WorkRequestListPage({ filter, emptyHint }) {
       search={search}
       fieldFilter={fieldFilter}
       sortBy={sortBy}
+      columnFilters={columnFilters}
+      setColumnFilter={setColumnFilter}
+      headerSort={headerSort}
+      setHeaderSort={setHeaderSort}
+      statusFilters={statusFilters}
+      toggleStatus={toggleStatus}
       visibleColumnIds={visibleColumnIds}
       bulkReloadToken={bulkReloadToken}
     />

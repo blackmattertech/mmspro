@@ -1,11 +1,13 @@
 import { Router } from 'express'
+import { supabaseAdmin } from '../../services/supabase.js'
 import { verifyAuth } from '../../middleware/auth.js'
 import { requireOrgAccess } from '../../middleware/orgAccess.js'
 import {
   requireAnyModulePermission,
   loadOrgPermissions,
 } from '../../middleware/modulePermission.js'
-import { listEnvelope } from '../../lib/listQuery.js'
+import { listEnvelope, parseListControls, sendCsv } from '../../lib/listQuery.js'
+import { withCatalogColumns } from '../../lib/csvExportColumns.js'
 import {
   listActivityTypes,
   createActivityType,
@@ -74,6 +76,31 @@ function sendError(res, err) {
   res.status(status).json({ error: err.message })
 }
 
+const PM_PLAN_CSV_COLUMNS = [
+  { label: 'Plan #', value: (row) => row.plan_number || '' },
+  { label: 'Name', value: (row) => row.name || '' },
+  { label: 'Department', value: (row) => row.department?.name || '' },
+  { label: 'Activity', value: (row) => row.activity_type?.name || '' },
+  { label: 'Work center', value: (row) => row.work_center || '' },
+  { label: 'Priority', value: (row) => row.priority || '' },
+  { label: 'Plant / Facility', value: (row) => row.location?.name || '' },
+  { label: 'Area', value: (row) => row.area?.name || '' },
+  { label: 'Equipment', value: (row) => {
+    const name = row.equipment?.name
+    const code = row.equipment?.code
+    if (code && name) return `${code} — ${name}`
+    return name || code || ''
+  } },
+  { label: 'Schedule type', value: (row) => row.schedule_type || '' },
+  { label: 'Start date', value: (row) => (row.start_date ? String(row.start_date).slice(0, 10) : '') },
+  { label: 'End date', value: (row) => (row.end_date ? String(row.end_date).slice(0, 10) : '') },
+  { label: 'Next due', value: (row) => (row.next_due_at ? String(row.next_due_at).slice(0, 10) : '') },
+  { label: 'Technicians', value: (row) => (row.technicians || []).map((person) => person.name).filter(Boolean).join(', ') },
+  { label: 'Checklist', value: (row) => row.checklist_template?.name || '' },
+  { label: 'Status', value: (row) => row.status || '' },
+  { label: 'Created', value: (row) => (row.created_at ? String(row.created_at).slice(0, 10) : '') },
+]
+
 router.get('/activity-types', canRead, async (req, res) => {
   try {
     const rows = await listActivityTypes(req.userProfile.org_id, {
@@ -116,6 +143,8 @@ router.get('/checklists', canRead, async (req, res) => {
   try {
     const rows = await listChecklistTemplates(req.userProfile.org_id, {
       includeInactive: req.query.include_inactive === '1',
+      moduleKey: req.query.module_key || null,
+      formId: req.query.form_id || null,
     })
     res.json(rows)
   } catch (err) {
@@ -282,15 +311,42 @@ router.put('/checklists/:id/sections/reorder', canUpdate, async (req, res) => {
   }
 })
 
-router.get('/plans', canRead, async (req, res) => {
-  const { limit, offset } = parsePagination(req.query)
+router.get('/tab-counts', canRead, async (req, res) => {
+  const orgId = req.userProfile.org_id
   try {
-    const result = await listPmPlans(req.userProfile.org_id, {
+    const [plans, orders] = await Promise.all([
+      supabaseAdmin.from('pm_plans').select('id', { count: 'exact', head: true }).eq('org_id', orgId),
+      supabaseAdmin.from('manual_work_orders').select('id', { count: 'exact', head: true }).eq('org_id', orgId).eq('source_type', 'preventive_maintenance').neq('status', 'draft'),
+    ])
+    if (plans.error) throw plans.error
+    if (orders.error) throw orders.error
+    res.json({ plans: plans.count || 0, orders: orders.count || 0 })
+  } catch (err) {
+    sendError(res, err)
+  }
+})
+
+router.get('/plans', canRead, async (req, res) => {
+  const controls = parseListControls(req.query)
+  const page = controls.exportCsv ? { limit: 5000, offset: 0 } : parsePagination(req.query)
+  try {
+    const orgId = req.userProfile.org_id
+    const result = await listPmPlans(orgId, {
       status: req.query.status,
       search: req.query.search,
-      limit,
-      offset,
+      filters: controls.filters,
+      limit: page.limit,
+      offset: page.offset,
     })
+    if (controls.exportCsv) {
+      sendCsv(
+        res,
+        'pm-plans.csv',
+        result.items,
+        await withCatalogColumns(orgId, PM_PLAN_CSV_COLUMNS, { source: 'pm.plan' }),
+      )
+      return
+    }
     res.json(listEnvelope(result.items, result))
   } catch (err) {
     sendError(res, err)

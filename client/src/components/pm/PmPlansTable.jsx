@@ -14,6 +14,7 @@ import TrashIcon from '../ui/TrashIcon'
 import { PM_PLAN_COLUMNS, PM_PLAN_DEFAULT_COLUMN_IDS } from './pmPlanColumns'
 import StatusCountBar from '../shared/StatusCountBar'
 import { colorByStatus, tallyStatusCounts } from '../../lib/statusCounts'
+import { readCatalogText } from '../../lib/pickerFields'
 import { useOrgStatusOptions } from '../../hooks/useOrgStatusOptions'
 import '../shared/StatusCountBar.css'
 
@@ -131,7 +132,7 @@ export default function PmPlansTable({
       case 'created_at':
         return formatDate(plan.created_at)
       default:
-        return '—'
+        return readCatalogText(plan, { id: columnId }) || '—'
     }
   }, [])
 

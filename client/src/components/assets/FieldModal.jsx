@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useBackdropClose } from '../../hooks/useBackdropClose'
 import { useOrg } from '../../hooks/useOrg'
 import PageBack from '../shared/PageBack'
@@ -509,9 +510,19 @@ export default function FieldModal({
     setIconError(null)
   }
 
-  return (
-    <div className="company-modal-overlay" onMouseDown={handleBackdropClick} role="presentation">
-      <div className="company-modal company-modal--wide" onClick={(e) => e.stopPropagation()} role="dialog" aria-labelledby="field-modal-title">
+  return createPortal(
+    <div
+      className="company-modal-overlay company-modal-overlay--popup company-modal-overlay--nested"
+      onMouseDown={handleBackdropClick}
+      role="presentation"
+    >
+      <div
+        className="company-modal company-modal--popup asset-field-modal"
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="field-modal-title"
+      >
         <div className="company-modal__header">
           <div className="modal__header-main">
             <PageBack onClick={onClose} className="page-back--header" />
@@ -996,6 +1007,7 @@ export default function FieldModal({
           </div>
         </form>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }

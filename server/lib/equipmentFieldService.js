@@ -8,6 +8,66 @@ import {
   deleteAssetField,
   reorderAssetSections,
 } from './assetFieldService.js'
+import { invalidateOrgFormCaches, getSavedFormLayout, saveOrgFormLayout } from './orgFormLayouts.js'
+import { catalogId, defaultColSpanForType } from './formLayoutIds.js'
+
+const EQUIPMENT_CREATE_FORM = 'equipment.create'
+
+function layoutWithCatalogField(layout, field) {
+  const next = JSON.parse(JSON.stringify(layout))
+  const fieldLayoutId = catalogId(field.id)
+  next.sections = Array.isArray(next.sections) ? next.sections : []
+  next.fields = Array.isArray(next.fields) ? next.fields : []
+  const sectionLayoutId = field.section_id ? catalogId(field.section_id) : (next.sections[0]?.id || null)
+  if (sectionLayoutId && !next.sections.some((section) => section.id === sectionLayoutId)) {
+    next.sections.push({ id: sectionLayoutId, order: next.sections.length })
+  }
+  if (!next.fields.some((item) => item.id === fieldLayoutId)) {
+    const sectionId = sectionLayoutId || next.sections[0]?.id
+    const orders = next.fields
+      .filter((item) => item.sectionId === sectionId)
+      .map((item) => item.order ?? 0)
+    next.fields.push({
+      id: fieldLayoutId,
+      sectionId,
+      order: orders.length ? Math.max(...orders) + 1 : 0,
+      colSpan: defaultColSpanForType(field.field_type),
+    })
+  }
+  return next
+}
+
+function layoutWithoutCatalogField(layout, fieldId) {
+  const layoutId = catalogId(fieldId)
+  const next = JSON.parse(JSON.stringify(layout))
+  next.fields = (next.fields || []).filter((field) => field.id !== layoutId)
+  next.groups = (next.groups || []).map((group) => ({
+    ...group,
+    childFields: (group.childFields || []).filter((field) => field.id !== layoutId),
+  }))
+  if (next.qrFieldId === layoutId) delete next.qrFieldId
+  return next
+}
+
+function layoutReferencesCatalogField(layout, fieldId) {
+  const layoutId = catalogId(fieldId)
+  return (layout.fields || []).some((field) => field.id === layoutId)
+    || layout.qrFieldId === layoutId
+    || (layout.groups || []).some((group) => (group.childFields || []).some((field) => field.id === layoutId))
+}
+
+async function appendFieldToSavedEquipmentForm(orgId, field) {
+  if (!field?.id || field.kind === 'section') return
+  const saved = await getSavedFormLayout(orgId, EQUIPMENT_CREATE_FORM)
+  if (!saved?.layout) return
+  await saveOrgFormLayout(orgId, EQUIPMENT_CREATE_FORM, layoutWithCatalogField(saved.layout, field))
+}
+
+async function removeFieldFromSavedEquipmentForm(orgId, fieldId) {
+  const saved = await getSavedFormLayout(orgId, EQUIPMENT_CREATE_FORM)
+  if (!saved?.layout || !layoutReferencesCatalogField(saved.layout, fieldId)) return
+  await saveOrgFormLayout(orgId, EQUIPMENT_CREATE_FORM, layoutWithoutCatalogField(saved.layout, fieldId))
+}
 
 const FIELD_TYPES = new Set([
   'text', 'textarea', 'number', 'date', 'datetime', 'image', 'file', 'checkbox', 'dropdown', 'radio',
@@ -282,6 +342,43 @@ async function validateFieldDependency(allFields, {
   }
 }
 
+const EQUIPMENT_DETAILS_SECTION = 'Details'
+
+async function ensureEquipmentDetailsSection(orgId) {
+  const { data: existing, error: readError } = await supabaseAdmin
+    .from('asset_fields')
+    .select('id')
+    .eq('org_id', orgId)
+    .eq('kind', 'section')
+    .eq('name', EQUIPMENT_DETAILS_SECTION)
+    .limit(1)
+    .maybeSingle()
+  if (readError) throw readError
+  if (existing?.id) return existing.id
+
+  const { data: created, error } = await supabaseAdmin
+    .from('asset_fields')
+    .insert({
+      org_id: orgId,
+      name: EQUIPMENT_DETAILS_SECTION,
+      kind: 'section',
+      sort_order: 0,
+      is_active: true,
+    })
+    .select('id')
+    .single()
+  if (error) throw error
+  return created.id
+}
+
+function nextParentSortOrder(fields) {
+  const orders = (fields || [])
+    .filter((field) => field.kind === 'parent')
+    .map((field) => field.sort_order ?? 0)
+  if (!orders.length) return 0
+  return Math.max(...orders) + 1
+}
+
 function normalizeSortOrder(value) {
   if (value === undefined || value === null || value === '') return 0
   const sortOrder = Number(value)
@@ -309,9 +406,12 @@ export async function validateFieldPayload(orgId, payload, { existingId = null, 
     sectionId = null
     fieldType = null
   } else {
-    if (!sectionId) throw new Error('Section is required for a parent field')
-    const section = allFields.find((f) => f.id === sectionId && f.kind === 'section')
-    if (!section) throw new Error('Invalid section')
+    if (!sectionId) {
+      sectionId = await ensureEquipmentDetailsSection(orgId)
+    } else {
+      const section = allFields.find((f) => f.id === sectionId && f.kind === 'section')
+      if (!section) throw new Error('Invalid section')
+    }
     if (!fieldType || !FIELD_TYPES.has(fieldType)) {
       throw new Error('Field type is required')
     }
@@ -354,13 +454,17 @@ export async function validateFieldPayload(orgId, payload, { existingId = null, 
     }
   }
 
+  const sortOrder = payload.sort_order === undefined && !existingId
+    ? nextParentSortOrder(allFields)
+    : normalizeSortOrder(payload.sort_order)
+
   return {
     name,
     kind,
     section_id: sectionId,
     parent_id: parentId,
     field_type: fieldType,
-    sort_order: normalizeSortOrder(payload.sort_order),
+    sort_order: sortOrder,
     is_active: payload.is_active !== undefined ? Boolean(payload.is_active) : true,
     is_required: kind === 'parent' ? Boolean(payload.is_required) : false,
     icon_path: kind === 'section' && payload.icon_path !== undefined ? payload.icon_path : undefined,
@@ -453,7 +557,10 @@ export async function createEquipmentField(orgId, body) {
     await syncDropdownChildren(orgId, id, dropdownOptions)
   }
 
-  return getFieldById(orgId, id)
+  invalidateOrgFormCaches(orgId)
+  const created = await getFieldById(orgId, id)
+  await appendFieldToSavedEquipmentForm(orgId, created)
+  return created
 }
 
 export async function updateEquipmentFieldActive(orgId, id, isActive) {
@@ -560,6 +667,7 @@ export async function updateEquipmentFieldSchema(orgId, id, body) {
     }
   }
 
+  invalidateOrgFormCaches(orgId)
   return getFieldById(orgId, id)
 }
 
@@ -591,6 +699,8 @@ export async function deleteEquipmentField(orgId, id) {
     await clearDropdownChildren(orgId, existing.id)
   }
 
+  await removeFieldFromSavedEquipmentForm(orgId, existing.id)
+
   const { error } = await supabaseAdmin
     .from('equipment_fields')
     .delete()
@@ -598,6 +708,7 @@ export async function deleteEquipmentField(orgId, id) {
     .eq('org_id', orgId)
 
   if (error) throw error
+  invalidateOrgFormCaches(orgId)
   return { id, deleted: true }
 }
 

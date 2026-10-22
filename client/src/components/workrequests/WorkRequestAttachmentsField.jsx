@@ -11,7 +11,7 @@ const PAPERCLIP_ICON = 'https://ik.imagekit.io/w2lf8dznx/icons/paperclip-outline
 const PDF_ICON = 'https://ik.imagekit.io/w2lf8dznx/icons/file-pdf-outline.svg'
 const ZIP_ICON = 'https://ik.imagekit.io/w2lf8dznx/icons/file-zip-outline.svg'
 
-export const WR_ATTACHMENT_ACCEPT = 'image/*,.pdf,.doc,.docx,.xls,.xlsx,.zip'
+export const WR_ATTACHMENT_ACCEPT = 'image/*,.svg,.pdf,.doc,.docx,.xls,.xlsx,.zip'
 
 function kindIcon(kind) {
   if (kind === 'pdf') return PDF_ICON

@@ -1,22 +1,37 @@
 import { useState, useEffect, useCallback } from 'react'
 import { getDepartments, createDepartment, updateDepartment, deleteDepartment } from '../lib/api'
-import { fetchReferenceData, invalidateReferenceCache } from '../lib/referenceDataCache'
+import { fetchReferenceData, invalidateReferenceCache, peekCachedList, peekReferenceData, PICKER_LIMIT } from '../lib/referenceDataCache'
 
-export function useDepartments(locationFilter = '', { search, limit = 200, offset = 0 } = {}) {
-  const [departments, setDepartments] = useState([])
-  const [total, setTotal] = useState(0)
-  const [loading, setLoading] = useState(true)
+export function useDepartments(locationFilter = '', {
+  search,
+  limit = PICKER_LIMIT,
+  offset = 0,
+  enabled = true,
+  filters,
+} = {}) {
+  const filterKey = JSON.stringify(filters || {})
+  const initial = peekCachedList('departments', { locationFilter, search, limit, offset, filters: filterKey })
+  const [departments, setDepartments] = useState(() => initial?.items || [])
+  const [total, setTotal] = useState(() => initial?.total || 0)
+  const [loading, setLoading] = useState(() => !initial)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
 
   const load = useCallback(async ({ silent = false, force = false } = {}) => {
-    if (!silent) setLoading(true)
+    if (!enabled) {
+      setDepartments([])
+      setTotal(0)
+      setLoading(false)
+      return
+    }
+    const cacheParams = { locationFilter, search, limit, offset, filters: filterKey }
+    if (!silent && !peekReferenceData('departments', cacheParams)) setLoading(true)
     setError(null)
     try {
       const data = await fetchReferenceData(
         'departments',
-        { locationFilter, search, limit, offset },
-        () => getDepartments(locationFilter || undefined, { search, limit, offset }),
+        cacheParams,
+        () => getDepartments(locationFilter || undefined, { search, limit, offset, filters }),
         { force },
       )
       setDepartments(data)
@@ -26,15 +41,19 @@ export function useDepartments(locationFilter = '', { search, limit = 200, offse
     } finally {
       if (!silent) setLoading(false)
     }
-  }, [locationFilter, search, limit, offset])
+  }, [locationFilter, search, limit, offset, enabled, filterKey])
 
   useEffect(() => {
     load()
   }, [load])
 
-  const refreshAfterMutation = async () => {
+  const reload = useCallback(async (opts = {}) => {
     invalidateReferenceCache('departments')
-    await load({ silent: true, force: true })
+    await load({ silent: true, force: true, ...opts })
+  }, [load])
+
+  const refreshAfterMutation = async () => {
+    await reload()
   }
 
   const create = async (payload) => {
@@ -92,5 +111,5 @@ export function useDepartments(locationFilter = '', { search, limit = 200, offse
     }
   }
 
-  return { departments, total, loading, saving, error, create, update, remove, toggleActive, reload: load }
+  return { departments, total, loading, saving, error, create, update, remove, toggleActive, reload }
 }

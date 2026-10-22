@@ -1,19 +1,31 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect, useCallback } from 'react'
 import { useLocations } from './useLocations'
+import { getCalendarEvents } from '../lib/api-calendar'
+import { SOURCE_LABELS } from '../data/calendarDemo'
 
 const PRIORITY_LABELS = {
   high: 'High',
   medium: 'Medium',
   low: 'Low',
   followup: 'Follow-up',
+  ...SOURCE_LABELS,
 }
-
-const EMPTY_TASKS = []
 
 function startOfToday() {
   const d = new Date()
   d.setHours(0, 0, 0, 0)
   return d
+}
+
+function pad(n) {
+  return String(n).padStart(2, '0')
+}
+
+function monthRange(year, month) {
+  const from = `${year}-${pad(month + 1)}-01`
+  const lastDay = new Date(year, month + 1, 0).getDate()
+  const to = `${year}-${pad(month + 1)}-${pad(lastDay)}`
+  return { from, to }
 }
 
 export function useCalendar() {
@@ -26,6 +38,9 @@ export function useCalendar() {
   const [quickFilter, setQuickFilter] = useState('all')
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
+  const [events, setEvents] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
 
   const { locations } = useLocations()
   const locationOptions = useMemo(
@@ -36,32 +51,66 @@ export function useCalendar() {
   const year = viewDate.getFullYear()
   const month = viewDate.getMonth()
 
-  const filteredTasks = useMemo(() => {
-    let tasks = [...EMPTY_TASKS]
-
-    if (plantFilter !== 'all') {
-      const locationName = locationOptions.find((p) => p.id === plantFilter)?.name
-      if (locationName) tasks = tasks.filter((t) => t.plant === locationName || t.location_id === plantFilter)
+  const loadRange = useMemo(() => {
+    const monthBounds = monthRange(year, month)
+    return {
+      from: dateFrom || monthBounds.from,
+      to: dateTo || monthBounds.to,
     }
+  }, [year, month, dateFrom, dateTo])
 
-    if (logFilter === 'logs') {
-      tasks = tasks.filter((t) => t.type === 'log')
-    } else if (logFilter === 'followups') {
-      tasks = tasks.filter((t) => t.type === 'followup')
+  const reload = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const data = await getCalendarEvents({
+        from: loadRange.from,
+        to: loadRange.to,
+        locationId: plantFilter !== 'all' ? plantFilter : undefined,
+      })
+      setEvents(data?.events || [])
+    } catch (err) {
+      setEvents([])
+      setError(err.message)
+    } finally {
+      setLoading(false)
+    }
+  }, [loadRange.from, loadRange.to, plantFilter])
+
+  useEffect(() => {
+    reload()
+  }, [reload])
+
+  const filteredTasks = useMemo(() => {
+    let tasks = [...events]
+
+    if (logFilter !== 'all') {
+      tasks = tasks.filter((t) => t.source === logFilter || t.type === logFilter)
     }
 
     if (quickFilter === 'assigned') {
       tasks = tasks.filter((t) => t.assigned_to_me)
     } else if (quickFilter !== 'all') {
-      tasks = tasks.filter((t) => t.priority === quickFilter)
+      tasks = tasks.filter((t) => (
+        t.source === quickFilter
+        || t.type === quickFilter
+        || t.priority === quickFilter
+      ))
+    }
+
+    if (dateFrom) {
+      tasks = tasks.filter((t) => String(t.date).slice(0, 10) >= dateFrom)
+    }
+    if (dateTo) {
+      tasks = tasks.filter((t) => String(t.date).slice(0, 10) <= dateTo)
     }
 
     return tasks
-  }, [plantFilter, logFilter, quickFilter, locationOptions])
+  }, [events, logFilter, quickFilter, dateFrom, dateTo])
 
   const monthTasks = useMemo(
     () => filteredTasks.filter((t) => {
-      const d = new Date(t.date)
+      const d = new Date(`${String(t.date).slice(0, 10)}T12:00:00`)
       return d.getFullYear() === year && d.getMonth() === month
     }),
     [filteredTasks, year, month],
@@ -70,7 +119,7 @@ export function useCalendar() {
   const tasksByDate = useMemo(() => {
     const map = {}
     monthTasks.forEach((task) => {
-      const day = new Date(task.date).getDate()
+      const day = new Date(`${String(task.date).slice(0, 10)}T12:00:00`).getDate()
       if (!map[day]) map[day] = []
       map[day].push(task)
     })
@@ -78,40 +127,46 @@ export function useCalendar() {
   }, [monthTasks])
 
   const summary = useMemo(() => {
-    const counts = { high: 0, medium: 0, low: 0, followup: 0 }
+    const counts = {
+      task: 0,
+      work_order: 0,
+      work_request: 0,
+      pm_plan: 0,
+      warranty: 0,
+    }
     filteredTasks.forEach((t) => {
-      counts[t.priority] = (counts[t.priority] || 0) + 1
+      const key = t.source || t.type
+      if (key in counts) counts[key] += 1
     })
     const total = filteredTasks.length
-    return {
-      total,
-      segments: [
-        { priority: 'high', count: counts.high, percent: total ? Math.round((counts.high / total) * 100) : 0, label: 'High' },
-        { priority: 'medium', count: counts.medium, percent: total ? Math.round((counts.medium / total) * 100) : 0, label: 'Medium' },
-        { priority: 'low', count: counts.low, percent: total ? Math.round((counts.low / total) * 100) : 0, label: 'Low' },
-        { priority: 'followup', count: counts.followup, percent: total ? Math.round((counts.followup / total) * 100) : 0, label: 'Follow-up' },
-      ],
-    }
+    const segments = [
+      { priority: 'task', count: counts.task, percent: total ? Math.round((counts.task / total) * 100) : 0, label: 'Tasks' },
+      { priority: 'work_order', count: counts.work_order, percent: total ? Math.round((counts.work_order / total) * 100) : 0, label: 'Work orders' },
+      { priority: 'work_request', count: counts.work_request, percent: total ? Math.round((counts.work_request / total) * 100) : 0, label: 'Work requests' },
+      { priority: 'pm_plan', count: counts.pm_plan, percent: total ? Math.round((counts.pm_plan / total) * 100) : 0, label: 'PM schedules' },
+      { priority: 'warranty', count: counts.warranty, percent: total ? Math.round((counts.warranty / total) * 100) : 0, label: 'Warranties' },
+    ]
+    return { total, segments }
   }, [filteredTasks])
 
   const quickFilterCounts = useMemo(() => ({
     all: filteredTasks.length,
     assigned: filteredTasks.filter((t) => t.assigned_to_me).length,
-    high: filteredTasks.filter((t) => t.priority === 'high').length,
-    medium: filteredTasks.filter((t) => t.priority === 'medium').length,
-    low: filteredTasks.filter((t) => t.priority === 'low').length,
-    followup: filteredTasks.filter((t) => t.priority === 'followup').length,
+    task: filteredTasks.filter((t) => t.source === 'task').length,
+    work_order: filteredTasks.filter((t) => t.source === 'work_order').length,
+    work_request: filteredTasks.filter((t) => t.source === 'work_request').length,
+    pm_plan: filteredTasks.filter((t) => t.source === 'pm_plan').length,
   }), [filteredTasks])
 
   const upcomingTasks = useMemo(() => {
     const now = startOfToday()
     return filteredTasks
-      .filter((t) => new Date(t.date) >= now)
-      .sort((a, b) => new Date(a.date) - new Date(b.date))
+      .filter((t) => new Date(`${String(t.date).slice(0, 10)}T12:00:00`) >= now)
+      .sort((a, b) => String(a.date).localeCompare(String(b.date)))
       .slice(0, 8)
       .map((t) => ({
         ...t,
-        date: new Date(t.date).toLocaleDateString(undefined, {
+        date: new Date(`${String(t.date).slice(0, 10)}T12:00:00`).toLocaleDateString(undefined, {
           month: 'short',
           day: 'numeric',
           year: 'numeric',
@@ -141,6 +196,9 @@ export function useCalendar() {
     summary,
     quickFilterCounts,
     priorityLabels: PRIORITY_LABELS,
+    loading,
+    error,
+    reload,
     viewDate,
     year,
     month,

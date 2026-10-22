@@ -14,7 +14,7 @@ import { getWorkRequestsTemplate, bulkUploadWorkRequests } from '../lib/api-work
 import { getWorkOrdersTemplate, bulkUploadWorkOrders } from '../lib/api-work-orders'
 import { getPmPlansTemplate, bulkUploadPmPlans } from '../lib/api-pm'
 import { getTasksTemplate, bulkUploadTasks } from '../lib/api-tasks'
-import { getWarrantiesTemplate, bulkUploadWarranties } from '../lib/api-warranties'
+import { getWarrantiesTemplate, bulkUploadWarranties, previewWarrantyImport } from '../lib/api-warranties'
 
 /** @typedef {'locations' | 'departments' | 'employees' | 'areas' | 'equipment' | 'vendors' | 'work_requests' | 'work_orders' | 'pm_plans' | 'tasks' | 'warranties'} ImportTemplateId */
 
@@ -102,9 +102,10 @@ export const IMPORT_PREVIEW_COLUMNS = {
     { key: 'visibility', label: 'Visibility' },
   ],
   warranties: [
-    { key: 'name', label: 'S.No' },
-    { key: 'make', label: 'Make' },
     { key: 'vendor', label: 'Vendor' },
+    { key: 'reference', label: 'PO / Invoice' },
+    { key: 'items', label: 'Items' },
+    { key: 'action', label: 'Result' },
   ],
 }
 
@@ -180,7 +181,7 @@ export const IMPORT_TEMPLATES = [
     moduleKey: 'equipment',
     instructions: [
       'Download the Excel template — columns match your organization’s equipment fields.',
-      'Fill Location, Department, and Area using exact values from the Valid values sheet.',
+      'Location and Department must match the Valid values sheet. Area accepts any name: an existing area is reused, and a new name is created for that location and department and appears on the Areas tab.',
       'Complete any other required columns for each equipment row.',
       'Upload the .xlsx file. Each valid row creates one equipment record.',
       'For failed rows, download the failed-rows file, correct data using the Import errors column, delete that column, and re-upload.',
@@ -193,11 +194,10 @@ export const IMPORT_TEMPLATES = [
     id: 'vendors',
     label: 'Vendor Master',
     description: 'Bulk create vendor records with contact, address, taxation, and bank details.',
-    moduleKey: 'settings',
-    showWithoutPermission: true,
+    moduleKey: 'vendors',
     instructions: [
       'Download the Vendor Master Excel template.',
-      'On the Template sheet, enter one vendor per row. Vendor Name is required; Vendor ID is optional (auto-generated as Ven-0001, Ven-0002, … when left blank).',
+      'On the Template sheet, enter one vendor per row. Vendor Name is required; Vendor ID is optional (any text; leave blank to auto-generate Ven-0001, Ven-0002, …).',
       'Use City and State values from the Valid values sheet. Enter the city name only in the City column (e.g. Mumbai); State is filled separately.',
       'PAN, mobile, email, pincode, and IFSC are validated on upload. GSTIN is stored as entered.',
       'Save as .xlsx and upload here. If any rows fail, download the failed-rows file, fix the Import errors column, remove that column, and re-upload.',
@@ -266,14 +266,17 @@ export const IMPORT_TEMPLATES = [
   {
     id: 'warranties',
     label: 'Warranty Manager',
-    description: 'Bulk create warranty records from a sample Excel file.',
+    description: 'One item per row. Items sharing the same vendor, PO number, and invoice number are grouped into one purchase/warranty record.',
     moduleKey: 'warranty_manager',
     instructions: [
-      'Download the Warranties sample Excel file. Product lines are child columns (Item 1, Item 2, Item 3).',
-      'Fill purchase and warranty dates, vendor, and at least one item product name.',
-      'Upload the completed .xlsx file from this page or Warranty Manager.',
+      'Download the sample file. Each row is one product. Do not use Item 1, Item 2, or Item 3 columns.',
+      'Repeat the vendor, contact, PO number, and invoice number on every item row. Those rows become one purchase.',
+      'Example: PO-001 | INV-001 | VFD Panel, then PO-001 | INV-001 | HMI, then PO-001 | INV-001 | PLC creates 1 purchase with 3 items.',
+      'A different invoice on the same PO is a separate purchase. Vendor, product name, PO number, and invoice number are required.',
+      'Upload the file to preview the purchases, then confirm the import.',
     ],
     downloadTemplate: getWarrantiesTemplate,
+    preview: previewWarrantyImport,
     upload: bulkUploadWarranties,
     failedFilename: 'warranties-import-failed-rows.xlsx',
   },

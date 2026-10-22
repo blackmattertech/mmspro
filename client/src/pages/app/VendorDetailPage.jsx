@@ -6,6 +6,7 @@ import { getVendor, updateVendor } from '../../lib/api-vendors'
 import RecordDetailLayout from '../../components/shared/RecordDetailLayout'
 import VendorModal from '../../components/vendors/VendorModal'
 import { VendorDetailContent } from '../../components/vendors/VendorDetailContent'
+import EditIcon from '../../components/ui/EditIcon'
 import '../../components/company/CompanyShared.css'
 
 export default function VendorDetailPage() {
@@ -49,6 +50,7 @@ export default function VendorDetailPage() {
       const updated = await updateVendor(vendorId, payload)
       setVendor(updated)
       setEditOpen(false)
+      return updated
     } catch (err) {
       setError(err.message)
       throw err
@@ -67,8 +69,14 @@ export default function VendorDetailPage() {
         loading={loading}
         error={error}
         actions={(
-          <button type="button" className="company-btn company-btn--primary" onClick={() => setEditOpen(true)}>
-            Edit
+          <button
+            type="button"
+            className="company-btn company-btn--secondary company-btn--compact company-btn--icon"
+            onClick={() => setEditOpen(true)}
+            aria-label={`Edit ${vendor?.name || 'vendor'}`}
+            title="Edit"
+          >
+            <EditIcon />
           </button>
         )}
       >

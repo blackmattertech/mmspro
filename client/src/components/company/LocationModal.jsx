@@ -172,13 +172,13 @@ export default function LocationModal({
               <SpellcheckInput className="company-form__input" value={form.country} onChange={(e) => setForm({ ...form, country: e.target.value })} />
             </label>
           </div>
-          <div className="company-employee-photo__login">
-            <span className="company-employee-photo__login-label">Primary location</span>
+          <div className="location-primary">
             <GooToggle
               checked={form.is_primary}
               onChange={(checked) => setForm({ ...form, is_primary: checked })}
               ariaLabel="Primary location"
             />
+            <span className="location-primary__label">Primary location</span>
           </div>
           {location ? (
             <EmployeeSelect

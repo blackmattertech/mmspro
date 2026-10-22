@@ -1,4 +1,4 @@
-import { fcm, isFirebaseAdminConfigured } from './firebase.js'
+import { getFirebaseMessaging, isFirebaseAdminConfigured } from './firebase.js'
 import { supabaseAdmin } from './supabase.js'
 import { runInBackground } from '../lib/jobQueue.js'
 import { fallbackInboxUrl, resolveInboxUrl } from '../lib/notificationInboxUrl.js'
@@ -140,7 +140,7 @@ async function loadEmailActor(orgId, actorId) {
 }
 
 async function sendWorkNotificationEmail(userId, { title, body, data = {}, url = '/' }, hint = {}) {
-  if (!isEmailConfigured || !shouldEmailNotification(data)) return null
+  if (!(await isEmailConfigured()) || !shouldEmailNotification(data)) return null
   const recipient = await resolveNotificationRecipient(userId, hint)
   if (!recipient?.email) return null
   let actor = null
@@ -162,6 +162,7 @@ async function sendWorkNotificationEmail(userId, { title, body, data = {}, url =
 }
 
 async function sendPush(userId, { title, body, data = {}, url = '/', notificationId }) {
+  const fcm = await getFirebaseMessaging()
   if (!fcm) return null
 
   const { data: rows } = await supabaseAdmin

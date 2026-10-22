@@ -12,6 +12,10 @@ function qs(params = {}) {
   return suffix ? `?${suffix}` : ''
 }
 
+export function getTaskTabCounts() {
+  return apiFetch('/api/tasks/tab-counts')
+}
+
 export async function getTasksList(params = {}) {
   const data = await apiFetch(`/api/tasks${qs(params)}`)
   return asListArray(data)

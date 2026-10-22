@@ -7,6 +7,7 @@ import { getWorkOrderFileSignedUrl } from '../../lib/workOrderAssets'
 import { getStoredWorkOrderFiles } from '../../lib/workOrderFileValues'
 import { useOrgStatusOptions } from '../../hooks/useOrgStatusOptions'
 import PageBack from '../shared/PageBack'
+import EditIcon from '../ui/EditIcon'
 import WorkOrderAssignmentActions from './WorkOrderAssignmentActions'
 import WorkOrderLifecyclePanel, { formatStatus } from './WorkOrderLifecyclePanel'
 import RecordTimeline from '../shared/RecordTimeline'
@@ -151,8 +152,14 @@ export default function ReceivedWorkOrderDetailModal({
           </div>
           <div className="record-detail-layout__actions">
             {onEdit && view && (
-              <button type="button" className="company-btn company-btn--primary" onClick={() => onEdit(view)}>
-                Edit
+              <button
+                type="button"
+                className="company-btn company-btn--secondary company-btn--compact company-btn--icon"
+                onClick={() => onEdit(view)}
+                aria-label={`Edit ${view.wo_number || 'work order'}`}
+                title="Edit"
+              >
+                <EditIcon />
               </button>
             )}
             <button type="button" className="modal__close" onClick={onClose} aria-label="Close">×</button>

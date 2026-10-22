@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { supabaseAdmin } from '../services/supabase.js'
 import { getSignedUrl } from './signedUrlCache.js'
+import { invalidateOrgFormCaches } from './orgFormLayouts.js'
 
 const FIELD_TYPES = new Set([
   'text', 'textarea', 'number', 'date', 'datetime', 'image', 'file', 'checkbox', 'dropdown', 'radio',
@@ -434,6 +435,7 @@ export async function createAssetField(orgId, body) {
     await syncDropdownChildren(orgId, id, dropdownOptions)
   }
 
+  invalidateOrgFormCaches(orgId)
   return getFieldById(orgId, id)
 }
 
@@ -451,6 +453,7 @@ export async function updateAssetFieldActive(orgId, id, isActive) {
     .eq('id', id)
     .eq('org_id', orgId)
   if (error) throw error
+  invalidateOrgFormCaches(orgId)
   return getFieldById(orgId, id)
 }
 
@@ -466,6 +469,7 @@ export async function updateAssetFieldDropdownValues(orgId, id, dropdownOptions)
 
   await assertDropdownOptionsRemovable(orgId, id, options)
   await syncDropdownChildren(orgId, id, options)
+  invalidateOrgFormCaches(orgId)
   return getFieldById(orgId, id)
 }
 
@@ -533,6 +537,7 @@ export async function updateAssetFieldSchema(orgId, id, body) {
     }
   }
 
+  invalidateOrgFormCaches(orgId)
   return getFieldById(orgId, id)
 }
 

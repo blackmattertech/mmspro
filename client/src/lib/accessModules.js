@@ -81,7 +81,7 @@ export const ACCESS_MODULE_GROUPS = [
     id: 'masters',
     label: 'Masters',
     modules: [
-      { key: 'assets', label: 'Assets', actions: ['create', 'read', 'update', 'delete'] },
+      { key: 'assets', label: 'Fields', actions: ['create', 'read', 'update', 'delete'] },
       { key: 'areas', label: 'Areas', actions: ['create', 'read', 'update', 'delete'] },
       { key: 'equipment', label: 'Equipment', actions: ['create', 'read', 'update', 'delete'] },
     ],
@@ -280,9 +280,9 @@ export function toggleGroupModules(group, permissions, checked) {
   })
 }
 
-export function isActionColumnChecked(permissions, action) {
+export function isActionColumnChecked(permissions, action, modules = ACCESS_MODULES) {
   const key = `can_${action}`
-  const applicable = ACCESS_MODULES.filter((mod) => mod.actions.includes(action))
+  const applicable = modules.filter((mod) => mod.actions.includes(action))
   if (!applicable.length) return false
   return applicable.every((mod) => {
     const row = permissions.find((p) => p.module_key === mod.key)
@@ -290,9 +290,11 @@ export function isActionColumnChecked(permissions, action) {
   })
 }
 
-export function toggleActionColumn(permissions, action, checked) {
+export function toggleActionColumn(permissions, action, checked, modules = ACCESS_MODULES) {
+  const allowed = new Set(modules.map((mod) => mod.key))
   return permissions.map((row) => {
-    const mod = ACCESS_MODULES.find((m) => m.key === row.module_key)
+    if (!allowed.has(row.module_key)) return row
+    const mod = modules.find((m) => m.key === row.module_key)
     if (!mod?.actions.includes(action)) return row
     return { ...row, [`can_${action}`]: checked }
   })

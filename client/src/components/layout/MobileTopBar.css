@@ -43,6 +43,7 @@
   }
 
   .mobile-topbar__title {
+    flex: 1;
     min-width: 0;
     font-size: 16px;
     font-weight: 700;
@@ -51,5 +52,29 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+
+  .mobile-topbar__scan {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    margin-left: auto;
+    color: var(--color-dark-navy);
+    background: var(--color-off-white);
+    border: 1px solid var(--color-light-gray-2);
+    border-radius: var(--radius-sm);
+    flex-shrink: 0;
+  }
+
+  .mobile-topbar__scan:hover,
+  .mobile-topbar__scan:focus-visible {
+    color: var(--color-primary);
+    border-color: var(--color-primary);
+  }
+
+  .app-shell .mobile-topbar:has(.mobile-topbar__scan) {
+    padding-right: 112px;
   }
 }

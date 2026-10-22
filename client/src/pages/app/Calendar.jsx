@@ -1,4 +1,3 @@
-import { useDashboard } from '../../hooks/useDashboard'
 import { useCalendar } from '../../hooks/useCalendar'
 import CalendarHeader, { CalendarToolbar } from '../../components/calendar/CalendarHeader'
 import { CalendarFilters, CalendarGrid, CalendarTable } from '../../components/calendar/CalendarGrid'
@@ -6,7 +5,6 @@ import { QuickFilters, UpcomingTasksPanel, TaskSummaryPanel } from '../../compon
 import './Calendar.css'
 
 export default function Calendar() {
-  const { createWorkOrder } = useDashboard()
   const {
     plants,
     workCenters,
@@ -37,6 +35,8 @@ export default function Calendar() {
     goToToday,
     goToPrevMonth,
     goToNextMonth,
+    loading,
+    error,
   } = useCalendar()
 
   const plantOptions = plants || []
@@ -52,7 +52,6 @@ export default function Calendar() {
         dateTo={dateTo}
         onDateFromChange={setDateFrom}
         onDateToChange={setDateTo}
-        onCreateTask={createWorkOrder}
       />
 
       <div className="calendar-page__body">
@@ -64,8 +63,6 @@ export default function Calendar() {
             onToday={goToToday}
             onPrevMonth={goToPrevMonth}
             onNextMonth={goToNextMonth}
-            onCreateTask={createWorkOrder}
-            plants={plantOptions}
           />
 
           <div className="calendar-page__card">
@@ -80,7 +77,12 @@ export default function Calendar() {
               workCenters={workCenterOptions}
             />
 
-            {viewMode === 'calendar' ? (
+            {error && (
+              <div className="wo-alert wo-alert--error" role="alert">{error}</div>
+            )}
+            {loading ? (
+              <div className="company-loading">Loading calendar…</div>
+            ) : viewMode === 'calendar' ? (
               <CalendarGrid
                 year={year}
                 month={month}

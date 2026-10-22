@@ -25,13 +25,38 @@ import profileRoutes from './routes/api/profile.js'
 import rolesRoutes from './routes/api/roles.js'
 import internalRoutes from './routes/api/internal.js'
 import reportsRoutes from './routes/api/reports.js'
+import formLayoutsRoutes from './routes/api/formLayouts.js'
+import dashboardRoutes from './routes/api/dashboard.js'
+import calendarRoutes from './routes/api/calendar.js'
+import integrationPublicRoutes from './routes/api/integrationsPublic.js'
+import publicPlanRoutes from './routes/api/publicPlans.js'
+import recordRoutes from './routes/api/records.js'
 
 const app = express()
 const isDev = process.env.NODE_ENV !== 'production'
 const allowedOrigins = getCorsOrigins()
-const DEV_PORTS = new Set(['5173', '4173', '3000'])
+const DEV_PORTS = new Set(['5173', '5174', '4173', '3000'])
 
 app.use(compression())
+
+const TIMED_API_PREFIXES = [
+  '/api/session',
+  '/api/work-requests',
+  '/api/work-orders',
+  '/api/dashboard/summary',
+]
+
+app.use((req, res, next) => {
+  const path = req.originalUrl.split('?')[0]
+  if (!TIMED_API_PREFIXES.some((prefix) => path === prefix || path.startsWith(`${prefix}/`))) {
+    return next()
+  }
+  const started = Date.now()
+  res.on('finish', () => {
+    console.log(`[timing] ${req.method} ${path} ${res.statusCode} ${Date.now() - started}ms`)
+  })
+  next()
+})
 
 function isDevTunnelHost(hostname) {
   return (
@@ -102,8 +127,14 @@ app.use('/api/text-field-limits', textFieldLimitsRoutes)
 app.use('/api/tasks', tasksRoutes)
 app.use('/api/profile', profileRoutes)
 app.use('/api/reports', reportsRoutes)
+app.use('/api/form-layouts', formLayoutsRoutes)
+app.use('/api/dashboard', dashboardRoutes)
+app.use('/api/calendar', calendarRoutes)
+app.use('/api/integrations', integrationPublicRoutes)
+app.use('/api/public/plans', publicPlanRoutes)
 app.use('/api', apiRoutes)
 app.use('/api/notifications', notificationRoutes)
+app.use('/api/records', recordRoutes)
 app.use('/admin-api', adminRoutes)
 
 app.get('/health', (_req, res) => res.json({ status: 'ok' }))

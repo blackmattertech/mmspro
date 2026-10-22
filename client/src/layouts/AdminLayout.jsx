@@ -55,7 +55,7 @@ export default function AdminLayout() {
             <ErrorFallback error={error} onRetry={reset} variant="admin" />
           )}
         >
-          <Outlet key={location.pathname} />
+          <Outlet />
         </RouteErrorBoundary>
       </div>
     </div>

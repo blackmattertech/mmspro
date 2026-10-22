@@ -131,7 +131,7 @@ export async function bulkImportPmPlans(orgId, profileId, buffer) {
       whichever_comes_first: whichever == null ? undefined : whichever === 'true',
       checklist_template_id: checklist?.id || null,
       technician_ids: technicians.map((row) => row.id),
-    })
+    }, { lean: true })
 
     return {
       name: created.plan_number || created.name,

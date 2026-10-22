@@ -1,15 +1,19 @@
-import { TASK_TYPE_COLORS, TASK_TYPE_BG } from '../../data/calendarDemo'
+import { Link, useNavigate } from 'react-router-dom'
+import { EVENT_SOURCE_COLORS, EVENT_SOURCE_BG, SOURCE_FILTERS, SOURCE_LABELS, LEGEND_ITEMS, eventColorKey } from '../../data/calendarDemo'
 import { buildCalendarGrid } from '../../hooks/useCalendar'
+import { useOrg } from '../../hooks/useOrg'
+import { usePermissions } from '../../hooks/usePermissions'
+import { calendarEventPath } from '../../lib/calendarEventPath'
+import { tableRowClickProps } from '../../lib/clickableTableRow'
 import FilterableSelect from '../ui/FilterableSelect'
 
-const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
-
-const PRIORITY_LABELS = {
-  high: 'High',
-  medium: 'Medium',
-  low: 'Low',
-  followup: 'Follow-up',
+function useEventPath(task) {
+  const { org } = useOrg()
+  const { canRead } = usePermissions()
+  return calendarEventPath(org?.slug, task, canRead)
 }
+
+const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
 export function CalendarFilters({
   logFilter,
@@ -28,11 +32,7 @@ export function CalendarFilters({
           inputClassName="cal-filters__select"
           value={logFilter}
           onChange={onLogFilterChange}
-          options={[
-            { value: 'all', label: 'All Logs' },
-            { value: 'logs', label: 'Logs Only' },
-            { value: 'followups', label: 'Follow-ups Only' },
-          ]}
+          options={SOURCE_FILTERS}
           getOptionValue={(opt) => opt.value}
           getOptionLabel={(opt) => opt.label}
           allowEmpty={false}
@@ -64,16 +64,11 @@ export function CalendarFilters({
       </div>
 
       <div className="cal-legend">
-        {[
-          { key: 'high', label: 'High' },
-          { key: 'medium', label: 'Medium' },
-          { key: 'low', label: 'Low' },
-          { key: 'followup', label: 'Follow-up' },
-        ].map((item) => (
+        {LEGEND_ITEMS.map((item) => (
           <span key={item.key} className="cal-legend__item">
             <span
               className="cal-legend__dot"
-              style={{ background: TASK_TYPE_COLORS[item.key] }}
+              style={{ background: EVENT_SOURCE_COLORS[item.key] }}
             />
             {item.label}
           </span>
@@ -84,24 +79,37 @@ export function CalendarFilters({
 }
 
 function TaskCard({ task }) {
-  return (
-    <div
-      className="cal-task"
-      style={{
-        background: TASK_TYPE_BG[task.priority],
-        borderLeftColor: TASK_TYPE_COLORS[task.priority],
-      }}
-    >
+  const colorKey = eventColorKey(task)
+  const to = useEventPath(task)
+  const label = `${SOURCE_LABELS[task.source] || 'Item'}: ${task.title}`
+  const body = (
+    <>
       <span className="cal-task__title">{task.title}</span>
       <span className="cal-task__plant">{task.plant}</span>
       <span className="cal-task__priority">
         <span
           className="cal-task__dot"
-          style={{ background: TASK_TYPE_COLORS[task.priority] }}
+          style={{ background: EVENT_SOURCE_COLORS[colorKey] || EVENT_SOURCE_COLORS.task }}
         />
-        {PRIORITY_LABELS[task.priority]}
+        {SOURCE_LABELS[task.source] || task.status_label || 'Item'}
       </span>
-    </div>
+    </>
+  )
+  const style = {
+    background: EVENT_SOURCE_BG[colorKey] || EVENT_SOURCE_BG.task,
+    borderLeftColor: EVENT_SOURCE_COLORS[colorKey] || EVENT_SOURCE_COLORS.task,
+  }
+  if (!to) {
+    return (
+      <div className="cal-task" style={style} title={label}>
+        {body}
+      </div>
+    )
+  }
+  return (
+    <Link className="cal-task" style={style} title={label} to={to}>
+      {body}
+    </Link>
   )
 }
 
@@ -141,6 +149,34 @@ export function CalendarGrid({ year, month, tasksByDate, todayDay = 28 }) {
   )
 }
 
+function CalendarTableRow({ task, priorityLabels }) {
+  const to = useEventPath(task)
+  const navigate = useNavigate()
+  const clickable = to
+    ? tableRowClickProps({
+      onOpen: () => navigate(to),
+      label: `Open ${task.title}`,
+      className: 'cal-table__row--clickable',
+    })
+    : {}
+
+  return (
+    <tr {...clickable}>
+      <td>{new Date(`${String(task.date).slice(0, 10)}T12:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</td>
+      <td>{task.title}</td>
+      <td>{task.plant}</td>
+      <td>{SOURCE_LABELS[task.source] || task.type || '—'}</td>
+      <td>
+        {task.priority ? (
+          <span className={`priority-badge priority-badge--${task.priority === 'followup' ? 'followup' : task.priority}`}>
+            {priorityLabels[task.priority] || task.priority}
+          </span>
+        ) : '—'}
+      </td>
+    </tr>
+  )
+}
+
 export function CalendarTable({ tasks, priorityLabels }) {
   return (
     <div className="cal-table-wrap">
@@ -148,30 +184,20 @@ export function CalendarTable({ tasks, priorityLabels }) {
         <thead>
           <tr>
             <th>Date</th>
-            <th>Task</th>
+            <th>Item</th>
             <th>Location</th>
-            <th>Priority</th>
             <th>Type</th>
+            <th>Priority</th>
           </tr>
         </thead>
         <tbody>
           {!tasks?.length ? (
             <tr>
-              <td colSpan={5} className="cal-table__empty">No tasks for this period.</td>
+              <td colSpan={5} className="cal-table__empty">No scheduled items for this period.</td>
             </tr>
           ) : (
             tasks.map((task) => (
-              <tr key={task.id}>
-                <td>{new Date(task.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</td>
-                <td>{task.title}</td>
-                <td>{task.plant}</td>
-                <td>
-                  <span className={`priority-badge priority-badge--${task.priority === 'followup' ? 'followup' : task.priority}`}>
-                    {priorityLabels[task.priority]}
-                  </span>
-                </td>
-                <td>{task.type === 'followup' ? 'Follow-up' : 'Log'}</td>
-              </tr>
+              <CalendarTableRow key={task.id} task={task} priorityLabels={priorityLabels} />
             ))
           )}
         </tbody>

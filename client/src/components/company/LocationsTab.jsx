@@ -5,7 +5,7 @@ import { useOrgLimits } from '../../hooks/useOrgLimits'
 import { useLimitExceeded } from '../../hooks/useLimitExceeded'
 import { useDebouncedValue } from '../../hooks/useDebouncedValue'
 import { isLimitError } from '../../lib/limitErrors'
-import { getLocationsTemplate, bulkUploadLocations, deleteLocation } from '../../lib/api'
+import { getLocationsTemplate, bulkUploadLocations, deleteLocation, exportLocations, downloadBlobFile } from '../../lib/api'
 import { invalidateReferenceCache } from '../../lib/referenceDataCache'
 import GooToggle from '../ui/GooToggle'
 import TrashIcon from '../ui/TrashIcon'
@@ -15,7 +15,10 @@ import LocationHeadCell from './LocationHeadCell'
 import LimitExceededCard from '../shared/LimitExceededCard'
 import TablePagination from '../shared/TablePagination'
 import TableColumnPicker from '../shared/TableColumnPicker'
+import { DynamicPickerCells, DynamicPickerHeaders } from '../shared/DynamicPickerCells'
 import TableFilterToolbar from '../shared/TableFilterToolbar'
+import { AdvancedFilterMenu, ExportCsvButton, TableColumnHead } from '../shared/ListTableChrome'
+import '../shared/ListTableChrome.css'
 import { useTablePagination } from '../../hooks/useTablePagination'
 import { useTableColumnPrefs } from '../../hooks/useTableColumnPrefs'
 import { TABLE_SORT_OPTIONS, applyTableFilters } from '../../lib/tableFilters'
@@ -32,32 +35,29 @@ import '../shared/TableFilterToolbar.css'
 import '../workorders/WorkOrdersPage.css'
 import './CompanyShared.css'
 
-const LOCATION_FILTER_FIELDS = [
-  { value: 'name', label: 'Name' },
-  { value: 'code', label: 'Code' },
-  { value: 'city', label: 'City' },
-  { value: 'country', label: 'Country' },
-  { value: 'status', label: 'Status', placeholder: 'active or inactive' },
-]
-
 export default function LocationsTab({ canManage }) {
   const [search, setSearch] = useState('')
-  const [filterField, setFilterField] = useState('')
-  const [filterValue, setFilterValue] = useState('')
   const [sortBy, setSortBy] = useState('name_asc')
+  const [columnFilters, setColumnFilters] = useState({})
+  const [headerSort, setHeaderSort] = useState(null)
+  const [exporting, setExporting] = useState(false)
   const debouncedSearch = useDebouncedValue(search.trim())
   const [listTotal, setListTotal] = useState(0)
-  const filterResetKey = `${debouncedSearch}|${filterField}|${filterValue}|${sortBy}`
+  const filterResetKey = `${debouncedSearch}|${sortBy}|${JSON.stringify(columnFilters)}|${headerSort?.id || ''}|${headerSort?.dir || ''}`
   const pagination = useTablePagination(listTotal, { resetKey: filterResetKey })
+  const locationFilters = columnFilters
   const { locations, total, loading, saving, error, create, update, remove, toggleActive, reload } = useLocations({
     search: debouncedSearch,
     limit: pagination.pageSize,
     offset: pagination.offset,
+    filters: locationFilters,
+    sort: headerSort?.id || '',
+    sortDir: headerSort?.dir || '',
   })
   useEffect(() => { setListTotal(total) }, [total])
   const { employees } = useEmployees()
   const { isResourceAtLimit, reload: reloadLimits } = useOrgLimits()
-  const { visible: limitVisible, resource: limitResource, trigger: triggerLimit, tryHandleLimitError, dismiss: dismissLimit } = useLimitExceeded()
+  const { visible: limitVisible, resource: limitResource, overflow: limitOverflow, trigger: triggerLimit, tryHandleLimitError, dismiss: dismissLimit } = useLimitExceeded()
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState(null)
   const [viewing, setViewing] = useState(null)
@@ -77,22 +77,15 @@ export default function LocationsTab({ canManage }) {
       await reload?.({ silent: true })
       await reloadLimits()
     },
+    onError: (err) => tryHandleLimitError(err, 'Location'),
     defaultFilename: 'locations-template.xlsx',
   })
 
   const filteredLocations = useMemo(() => applyTableFilters(locations, {
-    fieldFilter: { field: filterField, value: filterValue },
-    fieldFilterGetters: {
-      name: (loc) => loc.name,
-      code: (loc) => loc.code,
-      city: (loc) => loc.city,
-      country: (loc) => loc.country,
-      status: (loc) => (loc.is_active === false ? 'inactive' : 'active'),
-    },
     sortBy,
     getName: (loc) => loc.name,
     getCreatedAt: (loc) => loc.created_at,
-  }), [locations, filterField, filterValue, sortBy])
+  }), [locations, sortBy])
 
   const atLocationLimit = isResourceAtLimit('locations', 'location_limit')
   const pagedLocations = filteredLocations
@@ -118,6 +111,12 @@ export default function LocationsTab({ canManage }) {
       { id: 'country', label: 'Country' },
       { id: 'location_head', label: 'Location head' },
       { id: 'primary', label: 'Primary' },
+      { id: 'address_line1', label: 'Address line 1', defaultVisible: false },
+      { id: 'address_line2', label: 'Address line 2', defaultVisible: false },
+      { id: 'state', label: 'State', defaultVisible: false },
+      { id: 'postal_code', label: 'Postal code', defaultVisible: false },
+      { id: 'created_at', label: 'Created', defaultVisible: false },
+      { id: 'updated_at', label: 'Updated', defaultVisible: false },
     ]
     if (canManage) {
       cols.push({ id: 'active', label: 'Active' })
@@ -129,6 +128,9 @@ export default function LocationsTab({ canManage }) {
     isVisible: isLocationColumnVisible,
     toggleColumn: toggleLocationColumn,
     resetColumns: resetLocationColumns,
+    columnOrder: locationColumnOrder,
+    reorderColumns: reorderLocationColumns,
+    moveColumn: moveLocationColumn,
     columnDefs: locationPickerColumns,
     visibleColumnIds: locationVisibleColumnIds,
   } = useTableColumnPrefs('company-locations', locationColumnDefs)
@@ -250,47 +252,76 @@ export default function LocationsTab({ canManage }) {
             placeholder: 'Search locations...',
             ariaLabel: 'Search locations',
           }}
-          filter={{
-            fields: LOCATION_FILTER_FIELDS,
-            field: filterField,
-            onFieldChange: setFilterField,
-            value: filterValue,
-            onValueChange: setFilterValue,
-          }}
-          sort={{ value: sortBy, onChange: setSortBy, options: TABLE_SORT_OPTIONS }}
-          actions={canManage && (
-            <>
-              {selected.size > 0 && (
-              <button
-                type="button"
-                className="company-btn company-btn--danger"
-                disabled={bulkDeleting || saving}
-                onClick={handleBulkDelete}
-              >
-                <TrashIcon />
-                {bulkDeleting ? 'Deleting...' : `Delete (${selected.size})`}
-              </button>
-              )}
-              <MasterBulkActions
-              onDownload={handleDownloadTemplate}
-              bulkBusy={bulkBusy}
-              bulkInputRef={bulkInputRef}
-              onFileChange={handleBulkFile}
-              addLabel="+ Add Location"
-              onAdd={openCreate}
-              title="Bulk upload locations"
-              bulkError={bulkError}
-              bulkResult={bulkResult}
-              noun="location"
+          sort={{ value: sortBy, onChange: (value) => { setSortBy(value); setHeaderSort(null) }, options: TABLE_SORT_OPTIONS }}
+          filterSlot={(
+            <AdvancedFilterMenu
+              fields={[
+                ...locationPickerColumns.filter((col) => col.id !== 'actions').map((col) => ({ id: col.id, label: col.label })),
+                { id: 'status', label: 'Status', type: 'select', emptyLabel: 'All Status', options: [
+                  { value: 'active', label: 'Active' },
+                  { value: 'inactive', label: 'Inactive' },
+                ] },
+              ]}
+              values={columnFilters}
+              onChange={setColumnFilters}
             />
+          )}
+          actions={(
+            <>
+              <ExportCsvButton
+                busy={exporting}
+                onClick={async () => {
+                  setExporting(true)
+                  try {
+                    const file = await exportLocations({
+                      search: debouncedSearch,
+                      filters: locationFilters,
+                      sort: headerSort?.id || '',
+                      sortDir: headerSort?.dir || '',
+                    })
+                    downloadBlobFile(file)
+                  } finally {
+                    setExporting(false)
+                  }
+                }}
+              />
+              {canManage && selected.size > 0 && (
+                <button
+                  type="button"
+                  className="company-btn company-btn--danger"
+                  disabled={bulkDeleting || saving}
+                  onClick={handleBulkDelete}
+                >
+                  <TrashIcon />
+                  {bulkDeleting ? 'Deleting...' : `Delete (${selected.size})`}
+                </button>
+              )}
+              {canManage && (
+                <MasterBulkActions
+                  onDownload={handleDownloadTemplate}
+                  bulkBusy={bulkBusy}
+                  bulkInputRef={bulkInputRef}
+                  onFileChange={handleBulkFile}
+                  addLabel="+ Add Location"
+                  onAdd={openCreate}
+                  title="Import locations"
+                  bulkError={bulkError}
+                  bulkResult={bulkResult}
+                  noun="location"
+                  closeSignal={limitVisible}
+                />
+              )}
             </>
           )}
           columnPicker={(
             <TableColumnPicker
               columnDefs={locationPickerColumns}
               visibleColumnIds={locationVisibleColumnIds}
+              columnOrder={locationColumnOrder}
               onToggle={toggleLocationColumn}
               onReset={resetLocationColumns}
+              onReorder={reorderLocationColumns}
+              onMove={moveLocationColumn}
             />
           )}
         />
@@ -325,12 +356,25 @@ export default function LocationsTab({ canManage }) {
                     />
                   </th>
                 )}
-                {isLocationColumnVisible('name') && <th>Name</th>}
-                {isLocationColumnVisible('code') && <th>Code</th>}
-                {isLocationColumnVisible('city') && <th>City</th>}
-                {isLocationColumnVisible('country') && <th>Country</th>}
+                {isLocationColumnVisible('name') && (
+                  <TableColumnHead columnId="name" label="Name" sort={headerSort} onSort={setHeaderSort} filterValue={columnFilters.name || ''} onFilter={(id, value) => setColumnFilters((prev) => ({ ...prev, [id]: value }))} />
+                )}
+                {isLocationColumnVisible('code') && (
+                  <TableColumnHead columnId="code" label="Code" sort={headerSort} onSort={setHeaderSort} filterValue={columnFilters.code || ''} onFilter={(id, value) => setColumnFilters((prev) => ({ ...prev, [id]: value }))} />
+                )}
+                {isLocationColumnVisible('city') && (
+                  <TableColumnHead columnId="city" label="City" sort={headerSort} onSort={setHeaderSort} filterValue={columnFilters.city || ''} onFilter={(id, value) => setColumnFilters((prev) => ({ ...prev, [id]: value }))} />
+                )}
+                {isLocationColumnVisible('country') && (
+                  <TableColumnHead columnId="country" label="Country" sort={headerSort} onSort={setHeaderSort} filterValue={columnFilters.country || ''} onFilter={(id, value) => setColumnFilters((prev) => ({ ...prev, [id]: value }))} />
+                )}
                 {isLocationColumnVisible('location_head') && <th>Location head</th>}
                 {isLocationColumnVisible('primary') && <th>Primary</th>}
+                <DynamicPickerHeaders
+                  visibleColumnIds={locationVisibleColumnIds}
+                  columnDefs={locationPickerColumns}
+                  handledIds={['name', 'code', 'city', 'country', 'location_head', 'primary', 'active', 'actions']}
+                />
                 {canManage && isLocationColumnVisible('active') && <th>Active</th>}
                 {canManage && isLocationColumnVisible('actions') && <th>Actions</th>}
               </tr>
@@ -381,6 +425,12 @@ export default function LocationsTab({ canManage }) {
                         ) : '—'}
                       </td>
                     )}
+                    <DynamicPickerCells
+                      visibleColumnIds={locationVisibleColumnIds}
+                      columnDefs={locationPickerColumns}
+                      row={loc}
+                      handledIds={['name', 'code', 'city', 'country', 'location_head', 'primary', 'active', 'actions']}
+                    />
                     {canManage && isLocationColumnVisible('active') && (
                       <td onClick={stopTableRowClick}>
                         <GooToggle
@@ -453,7 +503,7 @@ export default function LocationsTab({ canManage }) {
       )}
 
       {limitVisible && (
-        <LimitExceededCard resource={limitResource} onClose={dismissLimit} />
+        <LimitExceededCard resource={limitResource} overflow={limitOverflow} onClose={dismissLimit} />
       )}
     </div>
   )

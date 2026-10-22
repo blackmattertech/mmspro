@@ -5,6 +5,8 @@ import { useOrg } from '../../hooks/useOrg'
 import { usePermissions } from '../../hooks/usePermissions'
 import { isCompanyAdmin, canManageOrg } from '../../lib/accountRoles'
 import { orgPath } from '../../config/navigation'
+import { CHECKLIST_FORMS, formIdsFromChecklist } from '../../lib/checklistForms'
+import { isProductModuleEnabled } from '../../lib/orgModules'
 import {
   CHECKLIST_FIELD_PRESETS,
   OPTION_CHECKLIST_FIELD_TYPES,
@@ -75,7 +77,7 @@ export default function OthersChecklistBuilder() {
   )
 
   const [template, setTemplate] = useState(null)
-  const [form, setForm] = useState({ name: '', description: '', is_active: true })
+  const [form, setForm] = useState({ name: '', description: '', is_active: true, form_ids: ['pm.plan'] })
   const [sections, setSections] = useState([])
   const [selectedSectionId, setSelectedSectionId] = useState(null)
   const [loading, setLoading] = useState(!isNew)
@@ -87,6 +89,28 @@ export default function OthersChecklistBuilder() {
   const [editingFieldId, setEditingFieldId] = useState(null)
 
   const backTo = org?.slug ? orgPath(org.slug, 'masters/others/checklists') : '#'
+  const availableForms = useMemo(() => (
+    CHECKLIST_FORMS.filter((item) => isProductModuleEnabled(org?.disabled_modules, item.moduleId))
+  ), [org?.disabled_modules])
+
+  const toggleForm = (formId) => {
+    setForm((current) => {
+      const selected = current.form_ids.includes(formId)
+      const form_ids = selected
+        ? current.form_ids.filter((id) => id !== formId)
+        : [...current.form_ids, formId]
+      return { ...current, form_ids }
+    })
+  }
+
+  useEffect(() => {
+    if (!isNew || !availableForms.length) return
+    setForm((current) => {
+      const allowed = new Set(availableForms.map((item) => item.formId))
+      if (current.form_ids.some((id) => allowed.has(id))) return current
+      return { ...current, form_ids: [availableForms[0].formId] }
+    })
+  }, [isNew, availableForms])
 
   const applyDetail = useCallback((detail) => {
     setTemplate(detail)
@@ -94,6 +118,7 @@ export default function OthersChecklistBuilder() {
       name: detail?.name || '',
       description: detail?.description || '',
       is_active: detail?.is_active !== false,
+      form_ids: formIdsFromChecklist(detail),
     })
     const nextSections = detail?.sections || []
     setSections(nextSections)
@@ -143,6 +168,9 @@ export default function OthersChecklistBuilder() {
     if (!name) {
       throw new Error('Checklist name is required.')
     }
+    if (!form.form_ids.length) {
+      throw new Error('Choose at least one form for this checklist.')
+    }
     setSaving(true)
     try {
       if (template?.id) {
@@ -150,6 +178,7 @@ export default function OthersChecklistBuilder() {
           name,
           description: form.description.trim() || null,
           is_active: form.is_active,
+          form_ids: form.form_ids,
         })
         applyDetail({ ...updated, sections })
         return updated
@@ -158,6 +187,7 @@ export default function OthersChecklistBuilder() {
         name,
         description: form.description.trim() || null,
         is_active: form.is_active,
+        form_ids: form.form_ids,
       })
       applyDetail(created)
       if (org?.slug) {
@@ -364,6 +394,26 @@ export default function OthersChecklistBuilder() {
       <div className="checklist-builder">
         <aside className="checklist-builder__sidebar">
           <form className="checklist-builder__meta" onSubmit={handleSaveMeta}>
+            <fieldset className="checklist-builder__forms">
+              <legend className="company-form__label">Show on forms *</legend>
+              <p className="checklist-builder__forms-hint">
+                People filling a selected form can add this checklist.
+              </p>
+              {availableForms.map((item) => (
+                <label key={item.formId} className="checklist-builder__form-option">
+                  <input
+                    type="checkbox"
+                    checked={form.form_ids.includes(item.formId)}
+                    onChange={() => toggleForm(item.formId)}
+                    disabled={!canManage || saving}
+                  />
+                  <span>{item.label}</span>
+                </label>
+              ))}
+              {!availableForms.length && (
+                <p className="checklist-builder__forms-hint">No forms are enabled for this company.</p>
+              )}
+            </fieldset>
             <label className="company-form__field">
               <span className="company-form__label">Checklist title *</span>
               <SpellcheckInput
@@ -502,8 +552,8 @@ export default function OthersChecklistBuilder() {
                     </span>
                     {canManage && (
                       <span className="checklist-builder__item-actions">
-                        <button type="button" className="company-btn company-btn--secondary company-btn--compact" onClick={() => startEditField(field)} disabled={busy}>
-                          Edit
+                        <button type="button" className="company-btn company-btn--secondary company-btn--compact company-btn--icon" onClick={() => startEditField(field)} disabled={busy} aria-label={`Edit ${field.name}`} title="Edit">
+                          <EditIcon />
                         </button>
                         <button type="button" className="company-btn company-btn--secondary company-btn--compact" onClick={() => moveField(index, -1)} disabled={busy || index === 0}>
                           ↑

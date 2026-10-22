@@ -15,11 +15,34 @@ import {
   assertUnderLimitIfReactivating,
   assertLoginSlotAvailable,
   getOrgLimitsSummary,
+  httpErrorBody,
 } from '../../lib/orgLimits.js'
 import { getScopedLocationId, hasModulePermission, resolveLocationFilter, assertLocationAccess, coerceScopedLocationId } from '../../lib/orgPermissions.js'
+import {
+  APPROVAL_MODULE_IDS,
+  isMissingModuleApprovalsColumn,
+  loadModuleApprovals,
+  mergeModuleApprovals,
+  normalizeModuleApprovals,
+} from '../../lib/moduleApprovals.js'
 import { getSignedUrl, getSignedUrls } from '../../lib/signedUrlCache.js'
 import { ensureLocationMaintenanceDepartment } from '../../lib/locationDefaults.js'
-import { applyIlikeSearch, listEnvelope } from '../../lib/listQuery.js'
+import {
+  applyIlikeSearch,
+  applyMappedFilters,
+  applyMappedSort,
+  listEnvelope,
+  parseListControls,
+  sanitizeSearch,
+  sendCsv,
+} from '../../lib/listQuery.js'
+import {
+  applyActiveStatusTextFilter,
+  idsByIlike,
+  labelMatches,
+  NO_MATCH_ID,
+  restrictToIds,
+} from '../../lib/relationFilters.js'
 import { buildAreasTemplate, bulkImportAreas } from '../../lib/areaBulkService.js'
 import {
   buildLocationsTemplate,
@@ -47,6 +70,14 @@ const canReadCompany = requireAnyModulePermission([
   ['work_orders', 'read'],
 ])
 const canUpdateCompany = requireModulePermission('company', 'update')
+const canReadSettings = requireAnyModulePermission([
+  ['settings', 'read'],
+  ['company', 'read'],
+])
+const canUpdateSettings = requireAnyModulePermission([
+  ['settings', 'update'],
+  ['company', 'update'],
+])
 
 const canReadLocations = requireAnyModulePermission([
   ['locations', 'read'],
@@ -165,6 +196,157 @@ router.get('/', canReadCompany, async (req, res) => {
   const withLogo = await attachLogoSignedUrl(data)
   const { limits, usage } = await getOrgLimitsSummary(req.userProfile.org_id)
   res.json({ ...withLogo, limits, usage })
+})
+
+function settingsPayload(row, moduleApprovals, { warrantyFallback = false } = {}) {
+  return {
+    work_request_inter_approval_required: moduleApprovals.work_request !== false,
+    warranty_expiry_lead_days: warrantyFallback ? 7 : (Number(row?.warranty_expiry_lead_days) || 7),
+    module_approvals: moduleApprovals,
+  }
+}
+
+router.get('/settings', canReadSettings, async (req, res) => {
+  const orgId = req.userProfile.org_id
+  const { data, error } = await supabaseAdmin
+    .from('organizations')
+    .select('work_request_inter_approval_required, warranty_expiry_lead_days, module_approvals')
+    .eq('id', orgId)
+    .single()
+
+  if (error && isMissingModuleApprovalsColumn(error)) {
+    const retry = await supabaseAdmin
+      .from('organizations')
+      .select('work_request_inter_approval_required, warranty_expiry_lead_days')
+      .eq('id', orgId)
+      .single()
+    if (retry.error && /warranty_expiry_lead_days/i.test(retry.error.message || '')) {
+      const legacy = await supabaseAdmin
+        .from('organizations')
+        .select('work_request_inter_approval_required')
+        .eq('id', orgId)
+        .single()
+      if (legacy.error) return res.status(500).json({ error: legacy.error.message })
+      return res.json(settingsPayload(legacy.data, normalizeModuleApprovals({}, {
+        workRequestFallback: legacy.data.work_request_inter_approval_required !== false,
+      }), { warrantyFallback: true }))
+    }
+    if (retry.error) return res.status(500).json({ error: retry.error.message })
+    return res.json(settingsPayload(retry.data, normalizeModuleApprovals({}, {
+      workRequestFallback: retry.data.work_request_inter_approval_required !== false,
+    })))
+  }
+
+  if (error && /warranty_expiry_lead_days/i.test(error.message || '')) {
+    const retry = await supabaseAdmin
+      .from('organizations')
+      .select('work_request_inter_approval_required, module_approvals')
+      .eq('id', orgId)
+      .single()
+    if (retry.error) return res.status(500).json({ error: retry.error.message })
+    return res.json(settingsPayload(retry.data, normalizeModuleApprovals(retry.data.module_approvals, {
+      workRequestFallback: retry.data.work_request_inter_approval_required !== false,
+    }), { warrantyFallback: true }))
+  }
+
+  if (error) return res.status(500).json({ error: error.message })
+  res.json(settingsPayload(data, normalizeModuleApprovals(data.module_approvals, {
+    workRequestFallback: data.work_request_inter_approval_required !== false,
+  })))
+})
+
+router.patch('/settings', canUpdateSettings, async (req, res) => {
+  const orgId = req.userProfile.org_id
+  const updates = { updated_at: new Date().toISOString() }
+  let mergedApprovals = null
+
+  if (req.body.module_approvals !== undefined) {
+    if (!req.body.module_approvals || typeof req.body.module_approvals !== 'object' || Array.isArray(req.body.module_approvals)) {
+      return res.status(400).json({ error: 'module_approvals must be an object of module flags.' })
+    }
+    const unknown = Object.keys(req.body.module_approvals).filter((key) => !APPROVAL_MODULE_IDS.includes(key))
+    if (unknown.length) {
+      return res.status(400).json({ error: `Unknown approval module: ${unknown[0]}` })
+    }
+    const current = await loadModuleApprovals(orgId)
+    mergedApprovals = mergeModuleApprovals(current, req.body.module_approvals)
+    updates.module_approvals = mergedApprovals
+    updates.work_request_inter_approval_required = mergedApprovals.work_request !== false
+  }
+
+  if (req.body.work_request_inter_approval_required !== undefined) {
+    const required = Boolean(req.body.work_request_inter_approval_required)
+    updates.work_request_inter_approval_required = required
+    const current = mergedApprovals || await loadModuleApprovals(orgId)
+    mergedApprovals = mergeModuleApprovals(current, { work_request: required })
+    updates.module_approvals = mergedApprovals
+  }
+
+  if (req.body.warranty_expiry_lead_days !== undefined) {
+    const days = Number(req.body.warranty_expiry_lead_days)
+    if (!Number.isFinite(days) || days < 1 || days > 365) {
+      return res.status(400).json({ error: 'Warranty lead days must be between 1 and 365.' })
+    }
+    updates.warranty_expiry_lead_days = days
+  }
+
+  if (Object.keys(updates).length === 1) {
+    return res.status(400).json({ error: 'No valid fields to update' })
+  }
+
+  let { data, error } = await supabaseAdmin
+    .from('organizations')
+    .update(updates)
+    .eq('id', orgId)
+    .select('work_request_inter_approval_required, warranty_expiry_lead_days, module_approvals')
+    .single()
+
+  if (error && isMissingModuleApprovalsColumn(error)) {
+    const requested = req.body.module_approvals && typeof req.body.module_approvals === 'object'
+      ? req.body.module_approvals
+      : {}
+    const needsColumn = APPROVAL_MODULE_IDS.some((id) => (
+      id !== 'work_request' && typeof requested[id] === 'boolean'
+    ))
+    if (needsColumn) {
+      return res.status(400).json({
+        error: 'Apply database patch 93-module-approvals.sql before saving approvals for this module.',
+      })
+    }
+    delete updates.module_approvals
+    const retry = await supabaseAdmin
+      .from('organizations')
+      .update(updates)
+      .eq('id', orgId)
+      .select('work_request_inter_approval_required, warranty_expiry_lead_days')
+      .single()
+    data = retry.data
+    error = retry.error
+    if (error && /warranty_expiry_lead_days/i.test(error.message || '')) {
+      delete updates.warranty_expiry_lead_days
+      const legacy = await supabaseAdmin
+        .from('organizations')
+        .update(updates)
+        .eq('id', orgId)
+        .select('work_request_inter_approval_required')
+        .single()
+      if (legacy.error) return res.status(500).json({ error: legacy.error.message })
+      const approvals = normalizeModuleApprovals({}, {
+        workRequestFallback: legacy.data.work_request_inter_approval_required !== false,
+      })
+      return res.json(settingsPayload(legacy.data, approvals, { warrantyFallback: true }))
+    }
+    if (error) return res.status(500).json({ error: error.message })
+    const approvals = normalizeModuleApprovals({}, {
+      workRequestFallback: data.work_request_inter_approval_required !== false,
+    })
+    return res.json(settingsPayload(data, approvals))
+  }
+
+  if (error) return res.status(500).json({ error: error.message })
+  res.json(settingsPayload(data, normalizeModuleApprovals(data.module_approvals, {
+    workRequestFallback: data.work_request_inter_approval_required !== false,
+  })))
 })
 
 router.patch('/', canUpdateCompany, async (req, res) => {
@@ -324,13 +506,13 @@ async function validateLocationHead(orgId, locationId, headEmployeeId) {
 
 router.get('/locations', canReadLocations, async (req, res) => {
   const { limit, offset } = parsePagination(req.query, { defaultLimit: 50, maxLimit: 200 })
+  const controls = parseListControls(req.query)
+  const pageLimit = controls.exportCsv ? 5000 : limit
+  const pageOffset = controls.exportCsv ? 0 : offset
   let query = supabaseAdmin
     .from('org_locations')
     .select(LOCATION_SELECT, { count: 'exact' })
     .eq('org_id', req.userProfile.org_id)
-    .order('is_primary', { ascending: false })
-    .order('name')
-    .range(offset, offset + limit - 1)
 
   const scopedLocationId = getScopedLocationId(req.orgPermissions)
   const forAssignment = req.query.for_assignment === '1'
@@ -339,11 +521,49 @@ router.get('/locations', canReadLocations, async (req, res) => {
     query = query.eq('id', scopedLocationId)
   }
   query = applyIlikeSearch(query, req.query.search, ['name', 'code', 'city'])
+  query = applyMappedFilters(query, controls.filters, {
+    name: 'name',
+    code: 'code',
+    city: 'city',
+    country: 'country',
+    state: 'state',
+    status: (next, value) => {
+      const text = value.toLowerCase()
+      if (text.startsWith('in')) return next.eq('is_active', false)
+      if (text.startsWith('ac')) return next.eq('is_active', true)
+      return next
+    },
+  })
+  query = applyMappedSort(query, controls.sort, controls.sortDir, {
+    name: 'name',
+    code: 'code',
+    city: 'city',
+    country: 'country',
+  }, (sorted) => sorted.order('is_primary', { ascending: false }).order('name'))
+  query = query.range(pageOffset, pageOffset + pageLimit - 1)
 
   const { data, error, count } = await query
 
   if (error) return res.status(500).json({ error: error.message })
   const withHeads = await attachLocationHeadsFromRoles(req.userProfile.org_id, data || [])
+  if (controls.exportCsv) {
+    sendCsv(res, 'locations.csv', withHeads, [
+      { label: 'Name', value: (row) => row.name },
+      { label: 'Code', value: (row) => row.code },
+      { label: 'City', value: (row) => row.city },
+      { label: 'Country', value: (row) => row.country },
+      { label: 'Location head', value: (row) => (row.location_heads || []).map((head) => head.name).filter(Boolean).join(', ') || row.head_employee?.name || '' },
+      { label: 'Primary', value: (row) => (row.is_primary ? 'Yes' : 'No') },
+      { label: 'Address line 1', value: (row) => row.address_line1 },
+      { label: 'Address line 2', value: (row) => row.address_line2 },
+      { label: 'State', value: (row) => row.state },
+      { label: 'Postal code', value: (row) => row.postal_code },
+      { label: 'Created', value: (row) => row.created_at },
+      { label: 'Updated', value: (row) => row.updated_at },
+      { label: 'Status', value: (row) => (row.is_active === false ? 'Inactive' : 'Active') },
+    ])
+    return
+  }
   res.json(listEnvelope(withHeads, { total: count || 0, limit, offset }))
 })
 
@@ -536,30 +756,212 @@ router.delete('/locations/:id', canDeleteLocations, assertOrgOwnership('org_loca
 // ── Departments ──
 
 const DEPARTMENT_SELECT = `
-  id, org_id, name, description, location_id, parent_id, all_locations, is_active, created_at, updated_at,
+  id, org_id, name, code, description, location_id, parent_id, all_locations, is_active, created_at, updated_at,
   org_locations!location_id ( id, name, code )
 `
 
+async function attachDepartmentHeadcounts(orgId, departments) {
+  const list = (Array.isArray(departments) ? departments : [departments]).filter(Boolean)
+  if (!list.length) return departments
+
+  const { data, error } = await supabaseAdmin
+    .from('org_employees')
+    .select('department_id')
+    .eq('org_id', orgId)
+    .in('department_id', list.map((row) => row.id))
+
+  if (error) throw error
+
+  const counts = new Map()
+  for (const row of data || []) {
+    if (!row.department_id) continue
+    counts.set(row.department_id, (counts.get(row.department_id) || 0) + 1)
+  }
+
+  const enriched = list.map((dept) => ({
+    ...dept,
+    headcount: counts.get(dept.id) || 0,
+  }))
+  return Array.isArray(departments) ? enriched : enriched[0]
+}
+
+async function departmentIdsMatchingHeadcount(orgId, value, locationFilter) {
+  const term = String(value || '').trim()
+  if (!term) return null
+  let deptQuery = supabaseAdmin.from('departments').select('id').eq('org_id', orgId)
+  if (locationFilter) {
+    deptQuery = deptQuery.or(`location_id.eq.${locationFilter},all_locations.eq.true`)
+  }
+  const { data: depts, error } = await deptQuery
+  if (error) throw error
+  const ids = (depts || []).map((row) => row.id)
+  if (!ids.length) return []
+  const { data: employees, error: empError } = await supabaseAdmin
+    .from('org_employees')
+    .select('department_id')
+    .eq('org_id', orgId)
+    .in('department_id', ids)
+  if (empError) throw empError
+  const counts = new Map()
+  for (const row of employees || []) {
+    if (!row.department_id) continue
+    counts.set(row.department_id, (counts.get(row.department_id) || 0) + 1)
+  }
+  return ids.filter((id) => String(counts.get(id) || 0).includes(term))
+}
+
+async function applyDepartmentListFilters(query, filters, orgId, locationFilter) {
+  const rest = { ...(filters || {}) }
+  if (rest.location) {
+    const ids = await idsByIlike('org_locations', orgId, 'name', rest.location)
+    const parts = []
+    if (ids.length) parts.push(`location_id.in.(${ids.join(',')})`)
+    if (labelMatches(rest.location, 'All locations')) parts.push('all_locations.eq.true')
+    query = parts.length ? query.or(parts.join(',')) : query.eq('id', NO_MATCH_ID)
+    delete rest.location
+  }
+  if (String(rest.headcount ?? '').trim()) {
+    const ids = await departmentIdsMatchingHeadcount(orgId, rest.headcount, locationFilter)
+    query = restrictToIds(query, 'id', ids)
+    delete rest.headcount
+  }
+  if (rest.status) {
+    query = applyActiveStatusTextFilter(query, rest.status)
+    delete rest.status
+  }
+  return { query, filters: rest }
+}
+
+async function applyAreaListFilters(query, filters, orgId) {
+  const rest = { ...(filters || {}) }
+  if (rest.location) {
+    query = restrictToIds(query, 'location_id', await idsByIlike('org_locations', orgId, 'name', rest.location))
+    delete rest.location
+  }
+  if (rest.department) {
+    query = restrictToIds(query, 'department_id', await idsByIlike('departments', orgId, 'name', rest.department))
+    delete rest.department
+  }
+  if (rest.status) {
+    query = applyActiveStatusTextFilter(query, rest.status)
+    delete rest.status
+  }
+  return { query, filters: rest }
+}
+
+async function applyWorkCenterListFilters(query, filters, orgId) {
+  const rest = { ...(filters || {}) }
+  if (rest.location) {
+    const ids = await idsByIlike('org_locations', orgId, 'name', rest.location)
+    const parts = []
+    if (ids.length) parts.push(`location_id.in.(${ids.join(',')})`)
+    if (labelMatches(rest.location, 'All locations')) parts.push('location_id.is.null')
+    query = parts.length ? query.or(parts.join(',')) : query.eq('id', NO_MATCH_ID)
+    delete rest.location
+  }
+  if (rest.status) {
+    query = applyActiveStatusTextFilter(query, rest.status)
+    delete rest.status
+  }
+  return { query, filters: rest }
+}
+
+async function applyEmployeeListFilters(query, filters, orgId) {
+  const rest = { ...(filters || {}) }
+  if (rest.department) {
+    query = restrictToIds(query, 'department_id', await idsByIlike('departments', orgId, 'name', rest.department))
+    delete rest.department
+  }
+  if (rest.location) {
+    query = restrictToIds(query, 'location_id', await idsByIlike('org_locations', orgId, 'name', rest.location))
+    delete rest.location
+  }
+  if (rest.role) {
+    query = restrictToIds(query, 'access_role_id', await idsByIlike('org_access_roles', orgId, 'name', rest.role))
+    delete rest.role
+  }
+  if (rest.manager) {
+    query = restrictToIds(query, 'manager_id', await idsByIlike('org_employees', orgId, 'name', rest.manager))
+    delete rest.manager
+  }
+  if (rest.email) {
+    const pattern = `%${sanitizeSearch(rest.email)}%`
+    const { data, error } = await supabaseAdmin
+      .from('org_employee_emails')
+      .select('employee_id')
+      .eq('org_id', orgId)
+      .ilike('email', pattern)
+    if (error) throw error
+    const extra = [...new Set((data || []).map((row) => row.employee_id).filter(Boolean))]
+    const parts = [`email.ilike.${pattern}`]
+    if (extra.length) parts.push(`id.in.(${extra.join(',')})`)
+    query = query.or(parts.join(','))
+    delete rest.email
+  }
+  if (rest.status) {
+    query = applyActiveStatusTextFilter(query, rest.status)
+    delete rest.status
+  }
+  return { query, filters: rest }
+}
+
 router.get('/departments', canReadDepartments, async (req, res) => {
   const { limit, offset } = parsePagination(req.query, { defaultLimit: 50, maxLimit: 200 })
+  const controls = parseListControls(req.query)
+  const pageLimit = controls.exportCsv ? 5000 : limit
+  const pageOffset = controls.exportCsv ? 0 : offset
   let query = supabaseAdmin
     .from('departments')
     .select(DEPARTMENT_SELECT, { count: 'exact' })
     .eq('org_id', req.userProfile.org_id)
-    .order('name')
-    .range(offset, offset + limit - 1)
 
   const scopedLocationId = getScopedLocationId(req.orgPermissions)
   const locationFilter = req.query.location_id || scopedLocationId
   if (locationFilter) {
     query = query.or(`location_id.eq.${locationFilter},all_locations.eq.true`)
   }
-  query = applyIlikeSearch(query, req.query.search, ['name'])
+  query = applyIlikeSearch(query, req.query.search, ['name', 'code'])
+  const departmentFilters = await applyDepartmentListFilters(
+    query,
+    controls.filters,
+    req.userProfile.org_id,
+    locationFilter,
+  )
+  query = applyMappedFilters(departmentFilters.query, departmentFilters.filters, {
+    name: 'name',
+    code: 'code',
+    description: 'description',
+  })
+  query = applyMappedSort(query, controls.sort, controls.sortDir, {
+    name: 'name',
+    code: 'code',
+    description: 'description',
+  }, (sorted) => sorted.order('name'))
+  query = query.range(pageOffset, pageOffset + pageLimit - 1)
 
   const { data, error, count } = await query
 
   if (error) return res.status(500).json({ error: error.message })
-  res.json(listEnvelope(data || [], { total: count || 0, limit, offset }))
+  try {
+    const withHeadcounts = await attachDepartmentHeadcounts(req.userProfile.org_id, data || [])
+    if (controls.exportCsv) {
+      sendCsv(res, 'departments.csv', withHeadcounts, [
+        { label: 'Code', value: (row) => row.code },
+        { label: 'Name', value: (row) => row.name },
+        { label: 'Location', value: (row) => row.org_locations?.name || '' },
+        { label: 'Headcount', value: (row) => row.headcount },
+        { label: 'Description', value: (row) => row.description },
+        { label: 'All locations', value: (row) => (row.all_locations ? 'Yes' : 'No') },
+        { label: 'Created', value: (row) => row.created_at },
+        { label: 'Updated', value: (row) => row.updated_at },
+        { label: 'Status', value: (row) => (row.is_active === false ? 'Inactive' : 'Active') },
+      ])
+      return
+    }
+    res.json(listEnvelope(withHeadcounts, { total: count || 0, limit, offset }))
+  } catch (err) {
+    return res.status(500).json({ error: err.message })
+  }
 })
 
 router.post('/departments', canCreateDepartments, async (req, res) => {
@@ -624,7 +1026,7 @@ router.post('/departments', canCreateDepartments, async (req, res) => {
     return res.status(500).json({ error: error.message })
   }
 
-  res.status(201).json(data)
+  res.status(201).json({ ...data, headcount: 0 })
 })
 
 router.patch('/departments/:id', canUpdateDepartments, assertOrgOwnership('departments'), async (req, res) => {
@@ -715,7 +1117,11 @@ router.patch('/departments/:id', canUpdateDepartments, assertOrgOwnership('depar
     return res.status(500).json({ error: error.message })
   }
 
-  res.json(data)
+  try {
+    res.json(await attachDepartmentHeadcounts(orgId, data))
+  } catch (err) {
+    return res.status(500).json({ error: err.message })
+  }
 })
 
 router.delete('/departments/:id', canDeleteDepartments, assertOrgOwnership('departments'), async (req, res) => {
@@ -779,9 +1185,52 @@ const EMPLOYEE_LIST_SELECT = `
   manager_id, photo_url, access_role_id, login_required, created_at, updated_at,
   departments!department_id ( id, name ),
   org_locations!location_id ( id, name, code ),
+  org_employee_emails ( id, email ),
   manager:manager_id ( id, emp_id, name, photo_url ),
   access_role:access_role_id ( id, name )
 `
+
+async function applyEmployeeListSearch(query, term, orgId) {
+  const q = sanitizeSearch(term)
+  if (!q) return { query }
+
+  const like = `%${q}%`
+  const [departments, locations, roles, extraEmails, managers] = await Promise.all([
+    supabaseAdmin.from('departments').select('id').eq('org_id', orgId).ilike('name', like),
+    supabaseAdmin.from('org_locations').select('id').eq('org_id', orgId).or(`name.ilike.${like},code.ilike.${like}`),
+    supabaseAdmin.from('org_access_roles').select('id').eq('org_id', orgId).ilike('name', like),
+    supabaseAdmin.from('org_employee_emails').select('employee_id').eq('org_id', orgId).ilike('email', like),
+    supabaseAdmin.from('org_employees').select('id').eq('org_id', orgId).or(`name.ilike.${like},emp_id.ilike.${like}`),
+  ])
+
+  const ids = (result, key = 'id') => (
+    result?.error ? [] : (result.data || []).map((row) => row[key]).filter(Boolean)
+  )
+
+  const parts = [
+    `name.ilike.${like}`,
+    `emp_id.ilike.${like}`,
+    `email.ilike.${like}`,
+    `mobile.ilike.${like}`,
+  ]
+  const departmentIds = ids(departments)
+  const locationIds = ids(locations)
+  const roleIds = ids(roles)
+  const extraEmployeeIds = [...new Set(ids(extraEmails, 'employee_id'))]
+  const managerIds = ids(managers)
+
+  if (departmentIds.length) parts.push(`department_id.in.(${departmentIds.join(',')})`)
+  if (locationIds.length) parts.push(`location_id.in.(${locationIds.join(',')})`)
+  if (roleIds.length) parts.push(`access_role_id.in.(${roleIds.join(',')})`)
+  if (extraEmployeeIds.length) parts.push(`id.in.(${extraEmployeeIds.join(',')})`)
+  if (managerIds.length) parts.push(`manager_id.in.(${managerIds.join(',')})`)
+
+  const normalized = q.toLowerCase()
+  if (normalized === 'inactive') parts.push('is_active.eq.false')
+  else if (normalized === 'active') parts.push('is_active.eq.true')
+
+  return { query: query.or(parts.join(',')) }
+}
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
@@ -1082,12 +1531,13 @@ async function validateEmployeeRefs(orgId, refs) {
 
 router.get('/employees', canListEmployees, async (req, res) => {
   const { limit, offset } = parsePagination(req.query, { defaultLimit: 50, maxLimit: 200 })
+  const controls = parseListControls(req.query)
+  const pageLimit = controls.exportCsv ? 5000 : limit
+  const pageOffset = controls.exportCsv ? 0 : offset
   let query = supabaseAdmin
     .from('org_employees')
     .select(EMPLOYEE_LIST_SELECT, { count: 'exact' })
     .eq('org_id', req.userProfile.org_id)
-    .order('name')
-    .range(offset, offset + limit - 1)
 
   if (req.query.department_id) query = query.eq('department_id', req.query.department_id)
 
@@ -1099,11 +1549,40 @@ router.get('/employees', canListEmployees, async (req, res) => {
   } else if (req.query.location_id) {
     query = query.eq('location_id', req.query.location_id)
   }
-  query = applyIlikeSearch(query, req.query.search, ['name', 'emp_id', 'email', 'mobile'])
+  query = (await applyEmployeeListSearch(query, req.query.search, req.userProfile.org_id)).query
+  const employeeFilters = await applyEmployeeListFilters(query, controls.filters, req.userProfile.org_id)
+  query = applyMappedFilters(employeeFilters.query, employeeFilters.filters, {
+    name: 'name',
+    emp_id: 'emp_id',
+    email: 'email',
+    mobile: 'mobile',
+  })
+  query = applyMappedSort(query, controls.sort, controls.sortDir, {
+    name: 'name',
+    emp_id: 'emp_id',
+    email: 'email',
+  }, (sorted) => sorted.order('name'))
+  query = query.range(pageOffset, pageOffset + pageLimit - 1)
 
   const { data, error, count } = await query
 
   if (error) return res.status(500).json({ error: error.message })
+  if (controls.exportCsv) {
+    sendCsv(res, 'employees.csv', data || [], [
+      { label: 'Emp ID', value: (row) => row.emp_id },
+      { label: 'Employee Name', value: (row) => row.name },
+      { label: 'Role', value: (row) => row.access_role?.name || '' },
+      { label: 'Location', value: (row) => row.org_locations?.name || '' },
+      { label: 'Mobile', value: (row) => row.mobile },
+      { label: 'Email(s)', value: (row) => [row.email, ...(row.org_employee_emails || []).map((item) => item.email)].filter(Boolean).join(', ') },
+      { label: 'Department', value: (row) => row.departments?.name || '' },
+      { label: 'Manager', value: (row) => row.manager?.name || '' },
+      { label: 'Created', value: (row) => row.created_at },
+      { label: 'Updated', value: (row) => row.updated_at },
+      { label: 'Status', value: (row) => (row.is_active === false ? 'Inactive' : 'Active') },
+    ])
+    return
+  }
   res.json(listEnvelope(data || [], { total: count || 0, limit, offset }))
 })
 
@@ -1464,20 +1943,40 @@ const AREA_SELECT = `
 
 router.get('/areas', canReadAreas, async (req, res) => {
   const { limit, offset } = parsePagination(req.query, { defaultLimit: 50, maxLimit: 200 })
+  const controls = parseListControls(req.query)
+  const pageLimit = controls.exportCsv ? 5000 : limit
+  const pageOffset = controls.exportCsv ? 0 : offset
   let query = supabaseAdmin
     .from('areas')
     .select(AREA_SELECT, { count: 'exact' })
     .eq('org_id', req.userProfile.org_id)
-    .order('name')
-    .range(offset, offset + limit - 1)
 
   const locationFilter = resolveLocationFilter(req.orgPermissions, req.query.location_id)
   if (locationFilter) query = query.eq('location_id', locationFilter)
   if (req.query.department_id) query = query.eq('department_id', req.query.department_id)
   query = applyIlikeSearch(query, req.query.search, ['name', 'code'])
+  const areaFilters = await applyAreaListFilters(query, controls.filters, req.userProfile.org_id)
+  query = applyMappedFilters(areaFilters.query, areaFilters.filters, { name: 'name', code: 'code' })
+  query = applyMappedSort(query, controls.sort, controls.sortDir, {
+    name: 'name',
+    code: 'code',
+  }, (sorted) => sorted.order('name'))
+  query = query.range(pageOffset, pageOffset + pageLimit - 1)
 
   const { data, error, count } = await query
   if (error) return res.status(500).json({ error: error.message })
+  if (controls.exportCsv) {
+    sendCsv(res, 'areas.csv', data || [], [
+      { label: 'Name', value: (row) => row.name },
+      { label: 'Code', value: (row) => row.code },
+      { label: 'Location', value: (row) => row.org_locations?.name || '' },
+      { label: 'Department', value: (row) => row.departments?.name || '' },
+      { label: 'Created', value: (row) => row.created_at },
+      { label: 'Updated', value: (row) => row.updated_at },
+      { label: 'Status', value: (row) => (row.is_active === false ? 'Inactive' : 'Active') },
+    ])
+    return
+  }
   res.json(listEnvelope(data || [], { total: count || 0, limit, offset }))
 })
 
@@ -1544,7 +2043,7 @@ router.post('/locations/bulk', canCreateLocations, async (req, res) => {
     const payload = await attachFailedFileToResult(result, buffer, 'locations-import-failed-rows.xlsx')
     res.json(payload)
   } catch (err) {
-    res.status(err.status || 400).json({ error: err.message })
+    res.status(err.status || 400).json(httpErrorBody(err))
   }
 })
 
@@ -1576,7 +2075,7 @@ router.post('/departments/bulk', canCreateDepartments, async (req, res) => {
     const payload = await attachFailedFileToResult(result, buffer, 'departments-import-failed-rows.xlsx')
     res.json(payload)
   } catch (err) {
-    res.status(err.status || 400).json({ error: err.message })
+    res.status(err.status || 400).json(httpErrorBody(err))
   }
 })
 
@@ -1608,7 +2107,7 @@ router.post('/employees/bulk', canCreateEmployees, async (req, res) => {
     const payload = await attachFailedFileToResult(result, buffer, 'employees-import-failed-rows.xlsx')
     res.json(payload)
   } catch (err) {
-    res.status(err.status || 400).json({ error: err.message })
+    res.status(err.status || 400).json(httpErrorBody(err))
   }
 })
 
@@ -1795,12 +2294,13 @@ const WORK_CENTER_SELECT = `
 
 router.get('/work-centers', canReadWorkCenters, async (req, res) => {
   const { limit, offset } = parsePagination(req.query, { defaultLimit: 50, maxLimit: 200 })
+  const controls = parseListControls(req.query)
+  const pageLimit = controls.exportCsv ? 5000 : limit
+  const pageOffset = controls.exportCsv ? 0 : offset
   let query = supabaseAdmin
     .from('work_centers')
     .select(WORK_CENTER_SELECT, { count: 'exact' })
     .eq('org_id', req.userProfile.org_id)
-    .order('name')
-    .range(offset, offset + limit - 1)
 
   const scopedLocationId = getScopedLocationId(req.orgPermissions)
   const locationFilter = req.query.location_id || scopedLocationId
@@ -1808,9 +2308,33 @@ router.get('/work-centers', canReadWorkCenters, async (req, res) => {
     query = query.or(`location_id.eq.${locationFilter},location_id.is.null`)
   }
   query = applyIlikeSearch(query, req.query.search, ['name', 'code', 'description'])
+  const workCenterFilters = await applyWorkCenterListFilters(query, controls.filters, req.userProfile.org_id)
+  query = applyMappedFilters(workCenterFilters.query, workCenterFilters.filters, {
+    name: 'name',
+    code: 'code',
+    description: 'description',
+  })
+  query = applyMappedSort(query, controls.sort, controls.sortDir, {
+    name: 'name',
+    code: 'code',
+    description: 'description',
+  }, (sorted) => sorted.order('name'))
+  query = query.range(pageOffset, pageOffset + pageLimit - 1)
 
   const { data, error, count } = await query
   if (error) return res.status(500).json({ error: error.message })
+  if (controls.exportCsv) {
+    sendCsv(res, 'work-centers.csv', data || [], [
+      { label: 'Name', value: (row) => row.name },
+      { label: 'Code', value: (row) => row.code },
+      { label: 'Location', value: (row) => row.org_locations?.name || '' },
+      { label: 'Description', value: (row) => row.description },
+      { label: 'Created', value: (row) => row.created_at },
+      { label: 'Updated', value: (row) => row.updated_at },
+      { label: 'Status', value: (row) => (row.is_active === false ? 'Inactive' : 'Active') },
+    ])
+    return
+  }
   res.json(listEnvelope(data || [], { total: count || 0, limit, offset }))
 })
 

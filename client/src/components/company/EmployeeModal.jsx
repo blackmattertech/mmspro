@@ -12,10 +12,12 @@ import SpellcheckInput from '../shared/SpellcheckInput'
 import FilterableSelect from '../ui/FilterableSelect'
 import ImageCropModal from '../shared/ImageCropModal'
 import {
+  departmentManagerScopeIds,
   departmentsForEmployeeLocation,
 } from '../../lib/departmentLocation'
 import { validatePhoneE164 } from '../../lib/validation'
 import { isLocationHeadEmployee } from '../../lib/employeeRoles'
+import { IMAGE_ACCEPT, isSvgFile, resolveImageMime } from '../../lib/imageFiles'
 import './CompanyShared.css'
 
 const EMPTY = {
@@ -81,10 +83,14 @@ export default function EmployeeModal({
   const activeLocations = locations.filter((l) => l.is_active !== false)
   const activeDepartments = departments.filter((d) => d.is_active !== false)
   const activeEmployees = employees.filter((e) => e.is_active !== false)
+  const managerDepartmentIds = useMemo(
+    () => departmentManagerScopeIds(departments, form.department_id),
+    [departments, form.department_id],
+  )
   const managerOptions = activeEmployees.filter((e) =>
     e.id !== employee?.id
     && (!form.location_id || e.location_id === form.location_id)
-    && (!form.department_id || e.department_id === form.department_id),
+    && (!form.department_id || managerDepartmentIds.has(e.department_id)),
   )
 
   const departmentsForLocation = useMemo(
@@ -213,6 +219,16 @@ export default function EmployeeModal({
     }
 
     setError(null)
+    if (isSvgFile(file)) {
+      const svgFile = file.type === 'image/svg+xml'
+        ? file
+        : new File([file], file.name, { type: resolveImageMime(file) })
+      if (photoPreview?.startsWith('blob:')) URL.revokeObjectURL(photoPreview)
+      setPhotoFile(svgFile)
+      setPhotoPreview(URL.createObjectURL(svgFile))
+      setRemovePhoto(false)
+      return
+    }
     setCropSource({
       url: URL.createObjectURL(file),
       fileName: file.name,
@@ -386,7 +402,7 @@ export default function EmployeeModal({
                   <input
                     ref={photoInputRef}
                     type="file"
-                    accept="image/jpeg,image/png,image/webp,image/gif"
+                    accept={IMAGE_ACCEPT}
                     className="company-logo__input"
                     onChange={handlePhotoChange}
                   />
@@ -406,7 +422,7 @@ export default function EmployeeModal({
                       Remove
                     </button>
                   )}
-                  <p className="company-logo__hint">JPEG, PNG, WebP or GIF. Max 5 MB.</p>
+                  <p className="company-logo__hint">JPEG, PNG, WebP, GIF, or SVG. Max 5 MB.</p>
                 </div>
               </div>
               <div className="company-employee-photo__login">

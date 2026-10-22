@@ -1,20 +1,21 @@
 import { supabase } from './supabase'
+import { isAllowedImageFile, resolveImageMime } from './imageFiles'
 
 export const USER_ASSETS_BUCKET = 'user-assets'
 const MAX_BYTES = 5 * 1024 * 1024
-const ALLOWED_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif'])
 
 const EXT_BY_TYPE = {
   'image/jpeg': 'jpg',
   'image/png': 'png',
   'image/webp': 'webp',
   'image/gif': 'gif',
+  'image/svg+xml': 'svg',
 }
 
 export function validateAvatarFile(file) {
   if (!file) return 'No file selected'
-  if (!ALLOWED_TYPES.has(file.type)) {
-    return 'Photo must be JPEG, PNG, WebP, or GIF'
+  if (!isAllowedImageFile(file)) {
+    return 'Photo must be JPEG, PNG, WebP, GIF, or SVG'
   }
   if (file.size > MAX_BYTES) {
     return 'Photo must be 5 MB or smaller'
@@ -33,11 +34,12 @@ export async function uploadUserAvatar(userId, file) {
   const validationError = validateAvatarFile(file)
   if (validationError) throw new Error(validationError)
 
-  const path = avatarStoragePath(userId, file.type)
+  const contentType = resolveImageMime(file)
+  const path = avatarStoragePath(userId, contentType)
 
   const { error } = await supabase.storage
     .from(USER_ASSETS_BUCKET)
-    .upload(path, file, { upsert: true, contentType: file.type })
+    .upload(path, file, { upsert: true, contentType })
 
   if (error) throw new Error(error.message)
   return path

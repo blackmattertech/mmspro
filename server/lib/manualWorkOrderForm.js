@@ -1,7 +1,11 @@
 import { supabaseAdmin } from '../services/supabase.js'
 import { getSignedUrl } from '../lib/signedUrlCache.js'
+import { applyFormLayout } from './applyFormLayout.js'
+import { layoutHasField, systemId } from './formLayoutIds.js'
+import { loadRuntimeFormLayout } from './orgFormLayouts.js'
 
 const OPTION_FIELD_TYPES = new Set(['dropdown', 'radio', 'checkbox'])
+const WO_FORM_ID = 'work_orders.manual'
 
 async function loadOrgWorkOrderFields(orgId) {
   const [assetResult, equipmentResult] = await Promise.all([
@@ -75,16 +79,14 @@ function isFieldVisible(field, settingsMap) {
   return true
 }
 
-function buildFormSchema(fields, settingsMap) {
+function buildActiveSchema(fields) {
   const enriched = enrichWorkOrderFields(fields)
   const byId = new Map(enriched.map((row) => [row.id, row]))
   const sections = enriched
-    .filter((f) => f.kind === 'section')
-    .filter((f) => isFieldVisible(f, settingsMap))
+    .filter((f) => f.kind === 'section' && f.is_active !== false)
     .map((section) => {
       const parents = enriched
-        .filter((f) => f.kind === 'parent' && f.section_id === section.id)
-        .filter((f) => isFieldVisible(f, settingsMap))
+        .filter((f) => f.kind === 'parent' && f.section_id === section.id && f.is_active !== false)
         .map((parent) => ({
           id: parent.id,
           name: parent.name,
@@ -118,6 +120,72 @@ function buildFormSchema(fields, settingsMap) {
   return { sections }
 }
 
+function applySettings(schema, settingsMap) {
+  return {
+    ...schema,
+    sections: (schema.sections || [])
+      .map((section) => ({
+        ...section,
+        fields: (section.fields || []).filter((field) => isFieldVisible(field, settingsMap)),
+      }))
+      .filter((section) => section.fields.length > 0),
+  }
+}
+
+export function buildWorkOrderFormSchema(fields, settingsMap, layout = null) {
+  if (!layout) {
+    const enriched = enrichWorkOrderFields(fields)
+    const byId = new Map(enriched.map((row) => [row.id, row]))
+    const sections = enriched
+      .filter((f) => f.kind === 'section')
+      .filter((f) => isFieldVisible(f, settingsMap))
+      .map((section) => {
+        const parents = enriched
+          .filter((f) => f.kind === 'parent' && f.section_id === section.id)
+          .filter((f) => isFieldVisible(f, settingsMap))
+          .map((parent) => ({
+            id: parent.id,
+            name: parent.name,
+            field_type: parent.field_type,
+            field_source: parent.field_source || 'asset',
+            sort_order: parent.sort_order,
+            is_visible: true,
+            is_required: Boolean(parent.is_required),
+            dropdown_options: parent.dropdown_options || [],
+            depends_on_parent_id: parent.depends_on_parent_id || null,
+            depends_on_option: parent.depends_on_option || null,
+            depends_on_parent_name: parent.depends_on_parent_id
+              ? (byId.get(parent.depends_on_parent_id)?.name || null)
+              : null,
+            depends_on_section_name: parent.section_name || null,
+          }))
+          .sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name))
+
+        return {
+          id: section.id,
+          name: section.name,
+          sort_order: section.sort_order,
+          is_visible: true,
+          icon_path: section.icon_path || null,
+          fields: parents,
+        }
+      })
+      .filter((section) => section.fields.length > 0)
+      .sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name))
+
+    return { sections, show_assignment: true }
+  }
+
+  const applied = applyFormLayout(buildActiveSchema(fields), layout, {
+    catalogFields: enrichWorkOrderFields(fields),
+  })
+  const visible = applySettings(applied, settingsMap)
+  return {
+    ...visible,
+    show_assignment: layoutHasField(layout, systemId('assignment')),
+  }
+}
+
 async function attachSectionIconUrls(schema) {
   const sections = await Promise.all((schema.sections || []).map(async (section) => {
     if (!section.icon_path) return section
@@ -125,13 +193,16 @@ async function attachSectionIconUrls(schema) {
     if (!signedUrl) return section
     return { ...section, icon_signed_url: signedUrl }
   }))
-  return { sections }
+  return { ...schema, sections }
 }
 
 export async function buildManualWorkOrderFormSchema(orgId) {
-  const [fields, settingsMap] = await Promise.all([
+  const [fields, settingsMap, layout] = await Promise.all([
     loadOrgWorkOrderFields(orgId),
     loadFieldSettings(orgId),
+    loadRuntimeFormLayout(orgId, WO_FORM_ID),
   ])
-  return attachSectionIconUrls(buildFormSchema(fields, settingsMap))
+  return attachSectionIconUrls(buildWorkOrderFormSchema(fields, settingsMap, layout))
 }
+
+export { loadOrgWorkOrderFields, loadFieldSettings, WO_FORM_ID }

@@ -9,16 +9,20 @@ import EditIcon from '../../components/ui/EditIcon'
 import TrashIcon from '../../components/ui/TrashIcon'
 import TablePagination from '../../components/shared/TablePagination'
 import TableColumnPicker from '../../components/shared/TableColumnPicker'
+import RecordPdfButton from '../../components/shared/RecordPdfButton'
 import TableFilterToolbar from '../../components/shared/TableFilterToolbar'
 import { useTablePagination } from '../../hooks/useTablePagination'
 import { useTableColumnPrefs } from '../../hooks/useTableColumnPrefs'
-import { TABLE_SORT_OPTIONS, applyTableFilters } from '../../lib/tableFilters'
+import { useCatalogFields } from '../../hooks/useCatalogFields'
+import { mergePickerColumns, readCatalogText } from '../../lib/pickerFields'
+import { TABLE_SORT_OPTIONS, applyTableFilters, compactFilters } from '../../lib/tableFilters'
 import { stopTableRowClick, tableRowClickProps } from '../../lib/clickableTableRow'
-import { getWarrantiesTemplate, bulkUploadWarranties } from '../../lib/api-warranties'
+import { getWarrantiesTemplate, bulkUploadWarranties, previewWarrantyImport } from '../../lib/api-warranties'
 import {
   useMasterBulkUpload,
   MasterBulkActions,
 } from '../../components/company/MasterBulkUpload'
+import WarrantyBulkNote from '../../components/warranty/WarrantyBulkNote'
 import '../../components/shared/TableColumnPicker.css'
 import '../../components/shared/TableFilterToolbar.css'
 import WarrantyExpiringFilter from '../../components/warranty/WarrantyExpiringFilter'
@@ -66,7 +70,11 @@ const WARRANTY_FILTER_FIELDS = [
   { value: 'invoice_number', label: 'Invoice Number' },
   { value: 'contact_name', label: 'Contact' },
   { value: 'products', label: 'Products' },
-  { value: 'status', label: 'Status', placeholder: 'active, expired, or expiring' },
+  { value: 'status', label: 'Status', type: 'select', emptyLabel: 'All Status', options: [
+    { value: 'active', label: 'Active' },
+    { value: 'expired', label: 'Expired' },
+    { value: 'expiring soon', label: 'Expiring soon' },
+  ] },
 ]
 
 function resolveWarrantyStatusFilter(field, value) {
@@ -186,7 +194,7 @@ function renderWarrantyCell(row, columnId) {
     case 'updated_at':
       return formatDateTime(row.updated_at)
     default:
-      return '—'
+      return readCatalogText(row, { id: columnId }) || '—'
   }
 }
 
@@ -196,22 +204,65 @@ export default function WarrantyManager() {
   const { canCreate, canUpdate, canDelete } = usePermissions()
   const canManage = canCreate('warranty_manager') || canUpdate('warranty_manager') || canDelete('warranty_manager')
   const [search, setSearch] = useState('')
-  const [filterField, setFilterField] = useState('')
-  const [filterValue, setFilterValue] = useState('')
+  const [columnFilters, setColumnFilters] = useState({})
   const [expiringFilterDraft, setExpiringFilterDraft] = useState(DEFAULT_WARRANTY_EXPIRING_FILTER)
   const [expiringFilterApplied, setExpiringFilterApplied] = useState(DEFAULT_WARRANTY_EXPIRING_FILTER)
   const [expiringPanelOpen, setExpiringPanelOpen] = useState(false)
   const [sortBy, setSortBy] = useState('newest')
   const debouncedSearch = useDebouncedValue(search.trim())
+  const warrantyStatusFilter = useMemo(
+    () => resolveWarrantyStatusFilter(columnFilters.status ? 'status' : '', columnFilters.status || ''),
+    [columnFilters.status],
+  )
+  const applyStatusFilter = warrantyStatusFilter !== 'all' && !(
+    warrantyStatusFilter === 'expiring_soon' && expiringPanelOpen
+  )
   const [listTotal, setListTotal] = useState(0)
-  const filterResetKey = `${debouncedSearch}|${filterField}|${filterValue}|${sortBy}`
+  const filterResetKey = [
+    debouncedSearch,
+    JSON.stringify(columnFilters),
+    sortBy,
+    applyStatusFilter ? warrantyStatusFilter : '',
+    expiringFilterApplied.mode,
+    expiringFilterApplied.minDays,
+    expiringFilterApplied.maxDays,
+    expiringFilterApplied.dateFrom,
+    expiringFilterApplied.dateTo,
+  ].join('|')
   const pagination = useTablePagination(listTotal, { resetKey: filterResetKey })
 
   const filters = useMemo(() => ({
     search: debouncedSearch || undefined,
     limit: pagination.pageSize,
     offset: pagination.offset,
-  }), [debouncedSearch, pagination.pageSize, pagination.offset])
+    filters: compactFilters(Object.fromEntries(
+      Object.entries(columnFilters).filter(([key]) => key !== 'status'),
+    )),
+    warranty_status: applyStatusFilter ? warrantyStatusFilter : undefined,
+    expiring_mode: applyStatusFilter && warrantyStatusFilter === 'expiring_soon'
+      ? expiringFilterApplied.mode
+      : undefined,
+    expiring_min_days: applyStatusFilter && warrantyStatusFilter === 'expiring_soon'
+      ? expiringFilterApplied.minDays
+      : undefined,
+    expiring_max_days: applyStatusFilter && warrantyStatusFilter === 'expiring_soon'
+      ? expiringFilterApplied.maxDays
+      : undefined,
+    expiring_date_from: applyStatusFilter && warrantyStatusFilter === 'expiring_soon'
+      ? expiringFilterApplied.dateFrom
+      : undefined,
+    expiring_date_to: applyStatusFilter && warrantyStatusFilter === 'expiring_soon'
+      ? expiringFilterApplied.dateTo
+      : undefined,
+  }), [
+    debouncedSearch,
+    pagination.pageSize,
+    pagination.offset,
+    columnFilters,
+    applyStatusFilter,
+    warrantyStatusFilter,
+    expiringFilterApplied,
+  ])
   const { items, total, statusCounts, loading, saving, error, remove, reload } = useWarranties(filters)
   useEffect(() => { setListTotal(total) }, [total])
   const {
@@ -219,34 +270,22 @@ export default function WarrantyManager() {
     bulkBusy,
     bulkError,
     bulkResult,
+    bulkPreview,
     handleDownloadTemplate,
     handleBulkFile,
+    confirmBulkImport,
+    cancelBulkPreview,
   } = useMasterBulkUpload({
     downloadTemplate: getWarrantiesTemplate,
     upload: bulkUploadWarranties,
+    previewUpload: previewWarrantyImport,
     onSuccess: () => reload({ silent: true }),
     defaultFilename: 'warranties-template.xlsx',
   })
 
-  const warrantyStatusFilter = useMemo(
-    () => resolveWarrantyStatusFilter(filterField, filterValue),
-    [filterField, filterValue],
-  )
-  const isStatusFieldFilter = filterField === 'status'
-
-  const handleFilterFieldChange = (value) => {
-    setFilterField(value)
-    if (value !== 'status') {
-      setExpiringPanelOpen(false)
-      setExpiringFilterDraft(DEFAULT_WARRANTY_EXPIRING_FILTER)
-      setExpiringFilterApplied(DEFAULT_WARRANTY_EXPIRING_FILTER)
-    }
-  }
-
-  const handleFilterValueChange = (value) => {
-    setFilterValue(value)
-    if (filterField !== 'status') return
-    const nextStatus = resolveWarrantyStatusFilter('status', value)
+  const handleWarrantyFilters = (next) => {
+    setColumnFilters(next)
+    const nextStatus = resolveWarrantyStatusFilter('status', next.status || '')
     if (nextStatus === 'expiring_soon') {
       setExpiringFilterDraft({ ...expiringFilterApplied })
       setExpiringPanelOpen(true)
@@ -258,36 +297,27 @@ export default function WarrantyManager() {
   }
 
   const filteredItems = useMemo(() => applyTableFilters(items, {
-    fieldFilter: isStatusFieldFilter ? undefined : { field: filterField, value: filterValue },
-    fieldFilterGetters: {
-      serial_number: (row) => row.serial_number,
-      make: (row) => row.make,
-      vendor: (row) => row.vendor,
-      po_number: (row) => row.po_number,
-      invoice_number: (row) => row.invoice_number,
-      contact_name: (row) => row.contact_name,
-      products: (row) => joinItemField(row, 'product_name'),
-    },
-    warrantyStatusFilter: warrantyStatusFilter === 'expiring_soon' && expiringPanelOpen
-      ? 'all'
-      : warrantyStatusFilter,
-    warrantyExpiringFilter: expiringFilterApplied,
     sortBy,
     getName: (row) => row.make || row.vendor || row.po_number || joinItemField(row, 'product_name'),
     getCreatedAt: (row) => row.purchase_date || row.created_at,
-  }), [items, isStatusFieldFilter, filterField, filterValue, warrantyStatusFilter, expiringPanelOpen, expiringFilterApplied, sortBy])
+  }), [items, sortBy])
 
   const pagedItems = filteredItems
 
-  const columnDefs = useMemo(() => (
-    canManage ? WARRANTY_COLUMNS : WARRANTY_COLUMNS.filter((col) => col.id !== 'actions')
-  ), [canManage])
+  const catalogFields = useCatalogFields()
+  const columnDefs = useMemo(() => mergePickerColumns(
+    canManage ? WARRANTY_COLUMNS : WARRANTY_COLUMNS.filter((col) => col.id !== 'actions'),
+    catalogFields,
+  ), [canManage, catalogFields])
 
   const {
     toggleColumn,
     resetColumns,
     columnDefs: pickerColumns,
     visibleColumnIds,
+    columnOrder,
+    reorderColumns,
+    moveColumn,
   } = useTableColumnPrefs('warranty-manager', columnDefs)
 
   const openCreate = () => {
@@ -335,10 +365,8 @@ export default function WarrantyManager() {
               }}
               filter={{
                 fields: WARRANTY_FILTER_FIELDS,
-                field: filterField,
-                onFieldChange: handleFilterFieldChange,
-                value: filterValue,
-                onValueChange: handleFilterValueChange,
+                values: columnFilters,
+                onChange: handleWarrantyFilters,
               }}
               sort={{ value: sortBy, onChange: setSortBy, options: TABLE_SORT_OPTIONS }}
               actions={canCreate('warranty_manager') && (
@@ -350,10 +378,14 @@ export default function WarrantyManager() {
                     onFileChange={handleBulkFile}
                     addLabel="New Warranty"
                     onAdd={openCreate}
-                    title="Bulk upload warranties"
+                    title="Import warranties"
+                    description={<WarrantyBulkNote />}
                     noun="warranty"
                     bulkError={bulkError}
                     bulkResult={bulkResult}
+                    bulkPreview={bulkPreview}
+                    onConfirmImport={confirmBulkImport}
+                    onCancelPreview={cancelBulkPreview}
                   />
                 </div>
               )}
@@ -361,8 +393,11 @@ export default function WarrantyManager() {
                 <TableColumnPicker
                   columnDefs={pickerColumns}
                   visibleColumnIds={visibleColumnIds}
+                  columnOrder={columnOrder}
                   onToggle={toggleColumn}
                   onReset={resetColumns}
+                  onReorder={reorderColumns}
+                  onMove={moveColumn}
                 />
               )}
             />
@@ -450,6 +485,7 @@ export default function WarrantyManager() {
                             return (
                               <td key={columnId} onClick={stopTableRowClick}>
                                 <div className="company-table__actions">
+                                  <RecordPdfButton moduleKey="warranty" recordId={row.id} filename={`${row.serial_number || 'warranty'}.pdf`} />
                                   {canUpdate('warranty_manager') && (
                                     <button
                                       type="button"

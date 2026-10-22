@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { isEventInFixedPopover, useFixedPopover } from '../../hooks/useFixedPopover'
 import { assetUrl } from '../../lib/assets'
-import SpellcheckInput from './SpellcheckInput'
+import { AdvancedFilterMenu } from './ListTableChrome'
 import './TableFilterToolbar.css'
+import './ListTableChrome.css'
 
-const FILTER_ICON_URL = assetUrl('Assets/icons/filter3-outline.svg')
 const SORT_ICON_URL = assetUrl('Assets/icons/sort-alpha-outline.svg')
 
 function IconMask({ url, className }) {
@@ -46,96 +46,35 @@ function useOutsideClose(open, onClose, extraRef) {
 }
 
 function FilterMenu({ filter }) {
-  const [open, setOpen] = useState(false)
-  const fields = filter.fields || []
-  const field = filter.field || ''
-  const value = filter.value || ''
-  const selectedField = fields.find((item) => item.value === field) || null
-  const active = Boolean(field && String(value).trim())
-  const triggerRef = useRef(null)
-  const { popoverRef, style, popoverProps } = useFixedPopover({
-    open,
-    anchorRef: triggerRef,
-    matchWidth: false,
-    minWidth: 320,
-    maxHeight: 480,
-    gap: 8,
-    align: 'start',
-  })
-  const rootRef = useOutsideClose(open, () => setOpen(false), popoverRef)
+  const fields = (filter.fields || []).map((item) => ({
+    id: item.id || item.value,
+    label: item.label,
+    placeholder: item.placeholder,
+    type: item.type,
+    options: item.options,
+    emptyLabel: item.emptyLabel,
+    fromKey: item.fromKey,
+    toKey: item.toKey,
+  }))
+  const values = filter.values
+    || (filter.field && String(filter.value || '').trim() ? { [filter.field]: filter.value } : {})
 
-  const clear = () => {
-    filter.onFieldChange?.('')
-    filter.onValueChange?.('')
+  const onChange = (next) => {
+    if (filter.onChange) {
+      filter.onChange(next)
+      return
+    }
+    const entries = Object.entries(next).filter(([, value]) => String(value ?? '').trim())
+    if (!entries.length) {
+      filter.onFieldChange?.('')
+      filter.onValueChange?.('')
+      return
+    }
+    filter.onFieldChange?.(entries[0][0])
+    filter.onValueChange?.(entries[0][1])
   }
 
-  return (
-    <div className="table-filter-menu" ref={rootRef}>
-      <button
-        ref={triggerRef}
-        type="button"
-        className={`table-filter-menu__trigger${open ? ' table-filter-menu__trigger--open' : ''}${active ? ' table-filter-menu__trigger--active' : ''}`}
-        onClick={() => setOpen((prev) => !prev)}
-        aria-expanded={open}
-        aria-haspopup="dialog"
-        aria-label="Filter"
-        title="Filter"
-      >
-        <IconMask url={FILTER_ICON_URL} className="table-filter-menu__icon" />
-        {active && <span className="table-filter-menu__badge">1</span>}
-      </button>
-
-      {open && style && createPortal(
-        <div className="table-filter-menu__panel" role="dialog" aria-label="Table filter" {...popoverProps}>
-          <div className="table-filter-menu__header">
-            <div>
-              <strong className="table-filter-menu__title">Filter</strong>
-              <p className="table-filter-menu__subtitle">Choose a field, then type a value</p>
-            </div>
-            {active && (
-              <button type="button" className="table-filter-menu__clear" onClick={clear}>
-                Clear
-              </button>
-            )}
-          </div>
-
-          <div className="table-filter-menu__step">
-            <span className="table-filter-menu__label">Filter by</span>
-            <div className="table-filter-menu__choices table-filter-menu__choices--wrap" role="group" aria-label="Filter by">
-              {fields.map((item) => (
-                <button
-                  key={item.value}
-                  type="button"
-                  className={`table-filter-menu__choice${field === item.value ? ' table-filter-menu__choice--active' : ''}`}
-                  onClick={() => {
-                    filter.onFieldChange?.(item.value)
-                    if (field !== item.value) filter.onValueChange?.('')
-                  }}
-                  aria-pressed={field === item.value}
-                >
-                  {item.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {selectedField && (
-            <label className="table-filter-menu__field">
-              <span className="table-filter-menu__label">{selectedField.label}</span>
-              <SpellcheckInput
-                className="company-form__input"
-                value={value}
-                onChange={(e) => filter.onValueChange?.(e.target.value)}
-                placeholder={selectedField.placeholder || `Filter by ${selectedField.label.toLowerCase()}…`}
-                autoFocus
-              />
-            </label>
-          )}
-        </div>,
-        document.body,
-      )}
-    </div>
-  )
+  return <AdvancedFilterMenu fields={fields} values={values} onChange={onChange} hideLabel />
 }
 
 function SortMenu({ sort }) {
@@ -217,17 +156,10 @@ export default function TableFilterToolbar({
   actions,
   columnPicker,
 }) {
-  const activeFilterLabel = useMemo(() => {
-    if (!filter?.field || !String(filter.value || '').trim()) return null
-    const fieldLabel = filter.fields?.find((item) => item.value === filter.field)?.label || filter.field
-    return `${fieldLabel}: ${String(filter.value).trim()}`
-  }, [filter])
-
   return (
     <div className={`table-filter-toolbar wo-page__bar-controls ${className}`.trim()}>
       {search && (
-        <SpellcheckInput
-          variant="inline"
+        <input
           type="search"
           id={search.id}
           className="company-form__input wo-page__search"
@@ -241,21 +173,6 @@ export default function TableFilterToolbar({
       {filterSlot}
       {filter?.fields?.length > 0 && <FilterMenu filter={filter} />}
       {sort?.options?.length > 0 && <SortMenu sort={sort} />}
-
-      {activeFilterLabel && (
-        <button
-          type="button"
-          className="table-filter-toolbar__chip"
-          onClick={() => {
-            filter?.onFieldChange?.('')
-            filter?.onValueChange?.('')
-          }}
-          title="Clear filter"
-        >
-          <span>{activeFilterLabel}</span>
-          <span aria-hidden="true">×</span>
-        </button>
-      )}
 
       {(actions || columnPicker) && (
         <div className="table-filter-toolbar__actions">

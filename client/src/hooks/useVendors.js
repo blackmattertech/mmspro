@@ -6,19 +6,41 @@ import {
   updateVendor,
   deleteVendor,
 } from '../lib/api-vendors'
+import { fetchReferenceData, invalidateReferenceCache, peekReferenceData } from '../lib/referenceDataCache'
 
 export function useVendors(filters = {}) {
+  const {
+    search,
+    limit,
+    offset,
+    enabled = true,
+    listFilters,
+  } = filters
+  const filterKey = JSON.stringify(listFilters || {})
   const [items, setItems] = useState([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
 
-  const load = useCallback(async ({ silent = false } = {}) => {
-    if (!silent) setLoading(true)
+  const load = useCallback(async ({ silent = false, force = false } = {}) => {
+    if (!enabled) {
+      setItems([])
+      setTotal(0)
+      setLoading(false)
+      return
+    }
+    const cacheParams = { search, limit, offset, filters: filterKey }
+    if (!silent && !peekReferenceData('vendors', cacheParams)) setLoading(true)
     setError(null)
     try {
-      const data = await getVendorsList(filters)
+      const params = { search, limit, offset, filters: listFilters }
+      const data = await fetchReferenceData(
+        'vendors',
+        cacheParams,
+        () => getVendorsList(params),
+        { force },
+      )
       setItems(data)
       setTotal(data.total ?? data.length)
     } catch (err) {
@@ -26,18 +48,23 @@ export function useVendors(filters = {}) {
     } finally {
       if (!silent) setLoading(false)
     }
-  }, [filters.search, filters.limit, filters.offset])
+  }, [search, limit, offset, enabled, filterKey])
 
   useEffect(() => {
     load()
   }, [load])
+
+  const refreshAfterMutation = async () => {
+    invalidateReferenceCache('vendors')
+    await load({ silent: true, force: true })
+  }
 
   const create = async (payload) => {
     setSaving(true)
     setError(null)
     try {
       const data = await createVendor(payload)
-      await load({ silent: true })
+      await refreshAfterMutation()
       return data
     } catch (err) {
       setError(err.message)
@@ -52,7 +79,7 @@ export function useVendors(filters = {}) {
     setError(null)
     try {
       const data = await updateVendor(id, payload)
-      await load({ silent: true })
+      await refreshAfterMutation()
       return data
     } catch (err) {
       setError(err.message)
@@ -67,7 +94,7 @@ export function useVendors(filters = {}) {
     setError(null)
     try {
       await deleteVendor(id)
-      await load({ silent: true })
+      await refreshAfterMutation()
     } catch (err) {
       setError(err.message)
       throw err

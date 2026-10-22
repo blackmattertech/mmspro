@@ -46,15 +46,16 @@ export function useFixedPopover({
     const viewportWidth = window.innerWidth
     const viewportHeight = window.innerHeight
     const measuredWidth = popover?.offsetWidth || minWidth
+    const cappedViewport = Math.max(160, viewportWidth - MARGIN * 2)
     const panelWidth = matchWidth
-      ? rect.width
+      ? Math.min(Math.max(rect.width, minWidth || 0), cappedViewport)
       : Math.max(minWidth, measuredWidth)
-    const estimatedHeight = popover?.offsetHeight || Math.min(maxHeight, 240)
+    const estimatedHeight = Math.min(popover?.scrollHeight || maxHeight, maxHeight)
     const spaceBelow = viewportHeight - rect.bottom - MARGIN
     const spaceAbove = rect.top - MARGIN
     const openAbove = spaceBelow < estimatedHeight + gap && spaceAbove > spaceBelow
-    const available = (openAbove ? spaceAbove : spaceBelow) - gap
-    const heightLimit = Math.max(120, Math.min(maxHeight, available))
+    const available = Math.max(0, (openAbove ? spaceAbove : spaceBelow) - gap)
+    const heightLimit = Math.min(maxHeight, Math.max(96, available))
 
     let left = align === 'end' ? rect.right - panelWidth : rect.left
     if (left + panelWidth > viewportWidth - MARGIN) {
@@ -67,9 +68,10 @@ export function useFixedPopover({
       top: openAbove ? undefined : rect.bottom + gap,
       bottom: openAbove ? viewportHeight - rect.top + gap : undefined,
       left,
-      width: matchWidth ? rect.width : undefined,
+      width: matchWidth ? panelWidth : undefined,
       minWidth: matchWidth ? undefined : (minWidth || undefined),
       maxHeight: heightLimit,
+      overflowY: 'auto',
       zIndex: 1400,
     }
 

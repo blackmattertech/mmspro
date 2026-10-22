@@ -15,6 +15,7 @@ import {
 import { uploadEmployeePhoto } from '../../lib/orgAssets'
 import { updateMyProfile, updateMyEmployee } from '../../lib/api-profile'
 import { validatePhoneE164 } from '../../lib/validation'
+import { IMAGE_ACCEPT, isSvgFile, resolveImageMime } from '../../lib/imageFiles'
 import '../company/CompanyShared.css'
 import './ProfileModal.css'
 
@@ -77,6 +78,14 @@ export default function ProfileModal({ profile, employee, avatarUrl, onClose, on
     }
 
     setError(null)
+    if (isSvgFile(file)) {
+      const svgFile = file.type === 'image/svg+xml'
+        ? file
+        : new File([file], file.name, { type: resolveImageMime(file) })
+      setPhotoFile(svgFile)
+      setRemovePhoto(false)
+      return
+    }
     setCropSource({
       url: URL.createObjectURL(file),
       fileName: file.name,
@@ -227,8 +236,13 @@ export default function ProfileModal({ profile, employee, avatarUrl, onClose, on
   const additionalEmails = (employee?.org_employee_emails || []).map((row) => row.email)
 
   return (
-    <div className="company-modal-overlay" onMouseDown={handleBackdropClick}>
-      <div className="company-modal profile-modal" onClick={(e) => e.stopPropagation()}>
+    <div className="company-modal-overlay company-modal-overlay--popup" onMouseDown={handleBackdropClick}>
+      <div
+        className="company-modal company-modal--popup company-modal--popup-wide profile-modal"
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+      >
         <div className="company-modal__header">
           <div className="modal__header-main">
             <PageBack onClick={onClose} className="page-back--header" />
@@ -266,7 +280,7 @@ export default function ProfileModal({ profile, employee, avatarUrl, onClose, on
                 <input
                   ref={photoInputRef}
                   type="file"
-                  accept="image/jpeg,image/png,image/webp,image/gif"
+                  accept={IMAGE_ACCEPT}
                   className="company-logo__input"
                   onChange={handlePhotoSelect}
                   disabled={saving}
@@ -289,7 +303,7 @@ export default function ProfileModal({ profile, employee, avatarUrl, onClose, on
                     Remove
                   </button>
                 )}
-                <p className="company-logo__hint">JPEG, PNG, WebP or GIF. Max 5 MB.</p>
+                <p className="company-logo__hint">JPEG, PNG, WebP, GIF, or SVG. Max 5 MB.</p>
               </div>
             </div>
 

@@ -1,5 +1,8 @@
-import { QUICK_FILTERS } from '../../data/calendarDemo'
-import { TASK_TYPE_COLORS } from '../../data/calendarDemo'
+import { Link } from 'react-router-dom'
+import { QUICK_FILTERS, EVENT_SOURCE_COLORS, SOURCE_LABELS, eventColorKey } from '../../data/calendarDemo'
+import { useOrg } from '../../hooks/useOrg'
+import { usePermissions } from '../../hooks/usePermissions'
+import { calendarEventPath } from '../../lib/calendarEventPath'
 
 const FILTER_ICONS = {
   list: (
@@ -38,13 +41,6 @@ const FILTER_ICONS = {
   ),
 }
 
-const PRIORITY_BADGE_CLASS = {
-  high: 'priority-badge--high',
-  medium: 'priority-badge--medium',
-  low: 'priority-badge--low',
-  followup: 'priority-badge--followup',
-}
-
 export function QuickFilters({ active, onChange, counts }) {
   return (
     <div className="cal-panel">
@@ -59,7 +55,7 @@ export function QuickFilters({ active, onChange, counts }) {
             >
               <span className="cal-quick-filters__icon">{FILTER_ICONS[filter.icon]}</span>
               <span className="cal-quick-filters__label">{filter.label}</span>
-              <span className="cal-quick-filters__count">{counts[filter.id]}</span>
+              <span className="cal-quick-filters__count">{counts[filter.id] ?? 0}</span>
             </button>
           </li>
         ))}
@@ -68,25 +64,52 @@ export function QuickFilters({ active, onChange, counts }) {
   )
 }
 
-export function UpcomingTasksPanel({ tasks, priorityLabels }) {
+function UpcomingItem({ task }) {
+  const { org } = useOrg()
+  const { canRead } = usePermissions()
+  const to = calendarEventPath(org?.slug, task, canRead)
+  const colorKey = eventColorKey(task)
+  const body = (
+    <>
+      <div className="cal-upcoming__content">
+        <span className="cal-upcoming__date">{task.date}</span>
+        <span className="cal-upcoming__title">{task.title}</span>
+        <span className="cal-upcoming__plant">{task.plant}</span>
+      </div>
+      <span
+        className="priority-badge"
+        style={{
+          background: EVENT_SOURCE_COLORS[colorKey],
+          color: '#fff',
+        }}
+      >
+        {SOURCE_LABELS[task.source] || 'Item'}
+      </span>
+    </>
+  )
+  return (
+    <li>
+      {to ? (
+        <Link className="cal-upcoming__item" to={to}>
+          {body}
+        </Link>
+      ) : (
+        <div className="cal-upcoming__item">{body}</div>
+      )}
+    </li>
+  )
+}
+
+export function UpcomingTasksPanel({ tasks }) {
   return (
     <div className="cal-panel">
-      <h3 className="cal-panel__title">Upcoming Tasks</h3>
+      <h3 className="cal-panel__title">Upcoming</h3>
       {!tasks?.length ? (
-        <p className="cal-panel__empty">No upcoming tasks.</p>
+        <p className="cal-panel__empty">No upcoming items.</p>
       ) : (
         <ul className="cal-upcoming">
           {tasks.map((task) => (
-            <li key={task.id} className="cal-upcoming__item">
-              <div className="cal-upcoming__content">
-                <span className="cal-upcoming__date">{task.date}</span>
-                <span className="cal-upcoming__title">{task.title}</span>
-                <span className="cal-upcoming__plant">{task.plant}</span>
-              </div>
-              <span className={`priority-badge ${PRIORITY_BADGE_CLASS[task.priority]}`}>
-                {priorityLabels[task.priority]}
-              </span>
-            </li>
+            <UpcomingItem key={task.id} task={task} />
           ))}
         </ul>
       )}
@@ -102,14 +125,14 @@ export function TaskSummaryPanel({ summary }) {
   const arcs = summary.segments.filter((s) => s.count > 0).map((seg) => {
     const pct = seg.count / (summary.total || 1)
     const dash = pct * circumference
-    const arc = { ...seg, dash, offset, color: TASK_TYPE_COLORS[seg.priority] }
+    const arc = { ...seg, dash, offset, color: EVENT_SOURCE_COLORS[seg.priority] }
     offset += dash
     return arc
   })
 
   return (
     <div className="cal-panel">
-      <h3 className="cal-panel__title">Task Summary</h3>
+      <h3 className="cal-panel__title">Summary</h3>
       <div className="cal-summary">
         <div className="cal-summary__chart">
           <svg width="140" height="140" viewBox="0 0 140 140">
@@ -131,7 +154,7 @@ export function TaskSummaryPanel({ summary }) {
           </svg>
           <div className="cal-summary__center">
             <span className="cal-summary__total">{summary.total}</span>
-            <span className="cal-summary__label">Total Tasks</span>
+            <span className="cal-summary__label">Total items</span>
           </div>
         </div>
         <div className="cal-summary__legend">
@@ -139,7 +162,7 @@ export function TaskSummaryPanel({ summary }) {
             <div key={seg.priority} className="cal-summary__legend-item">
               <span
                 className="cal-summary__dot"
-                style={{ background: TASK_TYPE_COLORS[seg.priority] }}
+                style={{ background: EVENT_SOURCE_COLORS[seg.priority] }}
               />
               <span className="cal-summary__legend-label">{seg.label}</span>
               <span className="cal-summary__legend-value">{seg.count}</span>

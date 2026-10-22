@@ -1,5 +1,5 @@
+import { useMemo } from 'react'
 import {
-  ACCESS_MODULES,
   ACCESS_MODULE_GROUPS,
   PERMISSION_ACTIONS,
   permissionsByModule,
@@ -12,6 +12,8 @@ import {
   isGroupPartiallyChecked,
   toggleGroupModules,
 } from '../../lib/accessModules'
+import { filterAccessGroupsByEntitlements } from '../../lib/orgModules'
+import { useOrg } from '../../hooks/useOrg'
 import './RolePermissionsTable.css'
 
 function ColumnToggle({ checked, disabled, onChange, label }) {
@@ -53,6 +55,15 @@ export default function RolePermissionsTable({
   canEdit,
   onChange,
 }) {
+  const { org } = useOrg()
+  const groups = useMemo(
+    () => filterAccessGroupsByEntitlements(ACCESS_MODULE_GROUPS, org?.disabled_modules),
+    [org?.disabled_modules],
+  )
+  const visibleModules = useMemo(
+    () => groups.flatMap((group) => group.modules),
+    [groups],
+  )
   const rows = permissionsByModule(permissions)
 
   const handleGroupToggle = (group, checked) => {
@@ -76,7 +87,7 @@ export default function RolePermissionsTable({
 
   const handleColumnToggle = (action, checked) => {
     if (!onChange) return
-    onChange(toggleActionColumn(rows, action, checked))
+    onChange(toggleActionColumn(rows, action, checked, visibleModules))
   }
 
   return (
@@ -88,8 +99,8 @@ export default function RolePermissionsTable({
             {PERMISSION_ACTIONS.map((action) => (
               <th key={action} className="role-perm__th-action">
                 <ColumnToggle
-                  checked={isActionColumnChecked(rows, action)}
-                  disabled={!canEdit || !ACCESS_MODULES.some((m) => m.actions.includes(action))}
+                  checked={isActionColumnChecked(rows, action, visibleModules)}
+                  disabled={!canEdit || !visibleModules.some((m) => m.actions.includes(action))}
                   onChange={(checked) => handleColumnToggle(action, checked)}
                   label={action.charAt(0).toUpperCase() + action.slice(1)}
                 />
@@ -98,7 +109,7 @@ export default function RolePermissionsTable({
           </tr>
         </thead>
         <tbody>
-          {ACCESS_MODULE_GROUPS.map((group) => {
+          {groups.map((group) => {
             const groupChecked = isGroupFullyChecked(group, rows)
             const groupPartial = isGroupPartiallyChecked(group, rows)
             const showGroupHeader = group.modules.length > 1

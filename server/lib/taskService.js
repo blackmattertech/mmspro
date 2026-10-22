@@ -24,6 +24,7 @@ import {
 } from './taskAttachmentStorage.js'
 import { getSignedUrl, getSignedUrls } from './signedUrlCache.js'
 import { applyTaskVisibilityFilter } from './taskListQuery.js'
+import { idsByIlike, NO_MATCH_ID, restrictToIds } from './relationFilters.js'
 import { tallyStatusCounts } from './statusCounts.js'
 import { clipToLimit, getTextFieldLimitsMap } from './textFieldLimits.js'
 import {
@@ -614,6 +615,77 @@ async function loadTaskCounts(taskIds) {
   return loadTaskCountsFallback(taskIds)
 }
 
+export async function countTaskTabs(orgId, profileId) {
+  const actor = await getTaskActorContext(orgId, profileId)
+  const countTab = async (tab) => {
+    let query = supabaseAdmin
+      .from('tasks')
+      .select('id', { count: 'exact', head: true })
+      .eq('org_id', orgId)
+    const scoped = await applyTaskVisibilityFilter(query, orgId, actor, tab)
+    if (scoped.empty) return 0
+    const { count, error } = await scoped.query
+    if (error) throw error
+    return count || 0
+  }
+  const [assignedToMe, assignedByMe] = await Promise.all([
+    countTab('assigned_to_me'),
+    countTab('assigned_by_me'),
+  ])
+  return { assigned_to_me: assignedToMe, assigned_by_me: assignedByMe }
+}
+
+const TASK_VISIBILITY_LABELS = [
+  { value: 'self', label: 'self' },
+  { value: 'team', label: 'team' },
+  { value: 'department', label: 'department' },
+  { value: 'location', label: 'location' },
+]
+
+async function applyTaskTextFilter(query, orgId, filters = {}) {
+  const field = String(filters.filter_field || '').trim()
+  const value = String(filters.filter_value || '').trim()
+  if (!field || !value) return { query, empty: false }
+
+  if (field === 'visibility') {
+    const term = value.toLowerCase()
+    const values = TASK_VISIBILITY_LABELS
+      .filter((opt) => opt.label.includes(term) || opt.value.includes(term))
+      .map((opt) => opt.value)
+    if (!values.length) return { query: query.eq('id', NO_MATCH_ID), empty: false }
+    return { query: query.in('visibility_type', values), empty: false }
+  }
+
+  const lookup = {
+    status: ['task_statuses', 'status_id'],
+    priority: ['task_priorities', 'priority_id'],
+    category: ['task_categories', 'category_id'],
+  }[field]
+
+  if (lookup) {
+    const [table, column] = lookup
+    const ids = await idsByIlike(table, orgId, 'name', value)
+    if (!ids.length) return { query, empty: true }
+    return { query: query.in(column, ids), empty: false }
+  }
+
+  if (field === 'tag') {
+    const tagIds = await idsByIlike('task_tags', orgId, 'name', value)
+    if (!tagIds.length) return { query, empty: true }
+    const { data, error } = await supabaseAdmin
+      .from('task_tag_assignments')
+      .select('task_id')
+      .eq('org_id', orgId)
+      .in('tag_id', tagIds)
+    if (error) throw error
+    const taskIds = [...new Set((data || []).map((row) => row.task_id).filter(Boolean))]
+    if (!taskIds.length) return { query, empty: true }
+    return { query: restrictToIds(query, 'id', taskIds), empty: false }
+  }
+
+  return { query, empty: false }
+}
+
 export async function listTasks(orgId, profileId, filters = {}, options = {}) {
   const { lean = false, skipEnsure = false, withCount = false } = options
 
@@ -681,7 +753,9 @@ export async function listTasks(orgId, profileId, filters = {}, options = {}) {
     query = query.eq('due_date', today)
   }
 
-  query = query.range(offset, offset + limit - 1)
+  const textFilter = await applyTaskTextFilter(query, orgId, filters)
+  if (textFilter.empty) return empty
+  query = textFilter.query.range(offset, offset + limit - 1)
 
   const { data, error, count } = await query
   if (error) throw error

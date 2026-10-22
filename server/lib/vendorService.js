@@ -1,6 +1,7 @@
 import { supabaseAdmin } from '../services/supabase.js'
 import { getStateForCity, parseCityName } from './indiaLocations.js'
-import { applyIlikeSearch, listEnvelope } from './listQuery.js'
+import { applyIlikeSearch, applyMappedFilters, listEnvelope } from './listQuery.js'
+import { validateVendorFields, firstVendorValidationError } from './vendorValidation.js'
 
 const VENDOR_SELECT = `
   id, org_id, vendor_code, name, contact_person, mobile, email,
@@ -86,17 +87,26 @@ async function assertUniqueCode(orgId, vendorCode, excludeId = null) {
   }
 }
 
-export async function listVendors(orgId, { search = null, limit = 100, offset = 0 } = {}) {
+export async function listVendors(orgId, { search = null, limit = 100, offset = 0, filters = {} } = {}) {
   let query = supabaseAdmin
     .from('vendors')
     .select(VENDOR_SELECT, { count: 'exact' })
     .eq('org_id', orgId)
-    .order('vendor_code', { ascending: true })
-    .range(offset, offset + limit - 1)
 
   query = applyIlikeSearch(query, search, [
     'vendor_code', 'name', 'contact_person', 'mobile', 'email', 'city', 'gstin',
   ])
+  query = applyMappedFilters(query, filters, {
+    vendor_code: 'vendor_code',
+    name: 'name',
+    contact_person: 'contact_person',
+    mobile: 'mobile',
+    email: 'email',
+    city: 'city',
+    state: 'state',
+    gstin: 'gstin',
+  })
+  query = query.order('vendor_code', { ascending: true }).range(offset, offset + limit - 1)
 
   const { data, error, count } = await query
   if (error) throw error

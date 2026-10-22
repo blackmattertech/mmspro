@@ -41,11 +41,6 @@ export default function AdminOrgEquipment() {
 
       <div className="admin-page__content">
         {orgError && <div className="admin-alert">{orgError}</div>}
-        {org && (
-          <p className="company-readonly-note">
-            Managing equipment schema for <strong>{org.name}</strong> (/{org.slug})
-          </p>
-        )}
 
         <AssetsFieldsPanel
           orgId={orgId}
@@ -53,6 +48,7 @@ export default function AdminOrgEquipment() {
           canManageSchema
           canManageChildren
           fieldScope="equipment"
+          hideLayoutButton
         />
       </div>
     </div>

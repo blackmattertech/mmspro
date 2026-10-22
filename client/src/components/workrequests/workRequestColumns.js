@@ -12,5 +12,9 @@ export const WORK_REQUEST_COLUMNS = [
   { id: 'remarks', label: 'Remarks', defaultVisible: false },
   { id: 'assigned', label: 'Assigned technicians', defaultVisible: false },
   { id: 'work_order', label: 'Work order', defaultVisible: false },
+  { id: 'problem_description', label: 'Problem description', defaultVisible: false },
+  { id: 'execution_status', label: 'Execution status', defaultVisible: false },
+  { id: 'created_at', label: 'Created', defaultVisible: false },
+  { id: 'updated_at', label: 'Updated', defaultVisible: false },
   { id: 'request_date', label: 'Requested' },
 ]

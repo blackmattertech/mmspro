@@ -10,10 +10,11 @@ import EditIcon from '../ui/EditIcon'
 import WorkCenterModal from './WorkCenterModal'
 import TablePagination from '../shared/TablePagination'
 import TableColumnPicker from '../shared/TableColumnPicker'
+import { DynamicPickerCells, DynamicPickerHeaders } from '../shared/DynamicPickerCells'
 import TableFilterToolbar from '../shared/TableFilterToolbar'
 import { useTablePagination } from '../../hooks/useTablePagination'
 import { useTableColumnPrefs } from '../../hooks/useTableColumnPrefs'
-import { TABLE_SORT_OPTIONS, applyTableFilters } from '../../lib/tableFilters'
+import { TABLE_SORT_OPTIONS, applyTableFilters, compactFilters } from '../../lib/tableFilters'
 import { stopTableRowClick, tableRowClickProps } from '../../lib/clickableTableRow'
 import RecordDetailModal from '../shared/RecordDetailModal'
 import { WorkCenterDetailContent } from './CompanyRecordDetails'
@@ -32,20 +33,23 @@ const WORK_CENTER_FILTER_FIELDS = [
   { value: 'name', label: 'Name' },
   { value: 'code', label: 'Code' },
   { value: 'location', label: 'Location' },
-  { value: 'status', label: 'Status', placeholder: 'active or inactive' },
+  { value: 'status', label: 'Status', type: 'select', emptyLabel: 'All Status', options: [
+    { value: 'active', label: 'Active' },
+    { value: 'inactive', label: 'Inactive' },
+  ] },
 ]
 
 export default function WorkCentersTab({ canManage }) {
   const { isOrgAdmin, locationId: myLocationId, accessRole } = usePermissions()
   const canSelectAnyLocation = canPickAnyLocation({ isOrgAdmin, accessRole })
   const [search, setSearch] = useState('')
-  const [filterField, setFilterField] = useState('')
-  const [filterValue, setFilterValue] = useState('')
+  const [columnFilters, setColumnFilters] = useState({})
   const [sortBy, setSortBy] = useState('name_asc')
   const debouncedSearch = useDebouncedValue(search.trim())
+  const listFilters = useMemo(() => compactFilters(columnFilters), [columnFilters])
   const scopedLocationId = canSelectAnyLocation ? undefined : (myLocationId || undefined)
   const [listTotal, setListTotal] = useState(0)
-  const paginationResetKey = `${debouncedSearch}|${filterField}|${filterValue}|${sortBy}|${scopedLocationId || ''}`
+  const paginationResetKey = `${debouncedSearch}|${JSON.stringify(columnFilters)}|${sortBy}|${scopedLocationId || ''}`
   const pagination = useTablePagination(listTotal, { resetKey: paginationResetKey })
   const {
     workCenters,
@@ -63,6 +67,7 @@ export default function WorkCentersTab({ canManage }) {
     search: debouncedSearch,
     limit: pagination.pageSize,
     offset: pagination.offset,
+    filters: listFilters,
   })
   useEffect(() => { setListTotal(total) }, [total])
 
@@ -76,17 +81,10 @@ export default function WorkCentersTab({ canManage }) {
   const selectAllRef = useRef(null)
 
   const filteredWorkCenters = useMemo(() => applyTableFilters(workCenters, {
-    fieldFilter: { field: filterField, value: filterValue },
-    fieldFilterGetters: {
-      name: (row) => row.name,
-      code: (row) => row.code,
-      location: (row) => row.org_locations?.name || 'All locations',
-      status: (row) => (row.is_active === false ? 'inactive' : 'active'),
-    },
     sortBy,
     getName: (row) => row.name,
     getCreatedAt: (row) => row.created_at,
-  }), [workCenters, filterField, filterValue, sortBy])
+  }), [workCenters, sortBy])
 
   const pagedRows = filteredWorkCenters
   const visibleIds = useMemo(() => pagedRows.map((row) => row.id), [pagedRows])
@@ -106,6 +104,8 @@ export default function WorkCentersTab({ canManage }) {
       { id: 'code', label: 'Code' },
       { id: 'location', label: 'Location' },
       { id: 'description', label: 'Description' },
+      { id: 'created_at', label: 'Created', defaultVisible: false },
+      { id: 'updated_at', label: 'Updated', defaultVisible: false },
     ]
     if (canManage) {
       cols.push({ id: 'active', label: 'Active' })
@@ -119,6 +119,9 @@ export default function WorkCentersTab({ canManage }) {
     resetColumns,
     columnDefs: pickerColumns,
     visibleColumnIds,
+    columnOrder,
+    reorderColumns,
+    moveColumn,
   } = useTableColumnPrefs('company-work-centers', columnDefs)
 
   const openCreate = () => {
@@ -220,10 +223,8 @@ export default function WorkCentersTab({ canManage }) {
           }}
           filter={{
             fields: WORK_CENTER_FILTER_FIELDS,
-            field: filterField,
-            onFieldChange: setFilterField,
-            value: filterValue,
-            onValueChange: setFilterValue,
+            values: columnFilters,
+            onChange: setColumnFilters,
           }}
           sort={{ value: sortBy, onChange: setSortBy, options: TABLE_SORT_OPTIONS }}
           actions={canManage && (
@@ -252,8 +253,11 @@ export default function WorkCentersTab({ canManage }) {
             <TableColumnPicker
               columnDefs={pickerColumns}
               visibleColumnIds={visibleColumnIds}
+              columnOrder={columnOrder}
               onToggle={toggleColumn}
               onReset={resetColumns}
+              onReorder={reorderColumns}
+              onMove={moveColumn}
             />
           )}
         />
@@ -290,6 +294,11 @@ export default function WorkCentersTab({ canManage }) {
                 {isVisible('code') && <th>Code</th>}
                 {isVisible('location') && <th>Location</th>}
                 {isVisible('description') && <th>Description</th>}
+                <DynamicPickerHeaders
+                  visibleColumnIds={visibleColumnIds}
+                  columnDefs={pickerColumns}
+                  handledIds={['name', 'code', 'location', 'description', 'active', 'actions']}
+                />
                 {canManage && isVisible('active') && <th>Active</th>}
                 {canManage && isVisible('actions') && <th>Actions</th>}
               </tr>
@@ -332,6 +341,12 @@ export default function WorkCentersTab({ canManage }) {
                     {isVisible('description') && (
                       <td>{row.description || '—'}</td>
                     )}
+                    <DynamicPickerCells
+                      visibleColumnIds={visibleColumnIds}
+                      columnDefs={pickerColumns}
+                      row={row}
+                      handledIds={['name', 'code', 'location', 'description', 'active', 'actions']}
+                    />
                     {canManage && isVisible('active') && (
                       <td onClick={stopTableRowClick}>
                         <GooToggle
