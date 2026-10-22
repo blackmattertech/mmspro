@@ -9,6 +9,7 @@ import {
 import { listEnvelope } from '../../lib/listQuery.js'
 import {
   listTasks,
+  countTaskTabs,
   getTaskDetail,
   createTask,
   updateTask,
@@ -103,6 +104,8 @@ function listFilters(query) {
     overdue: query.overdue || null,
     due_today: query.due_today || null,
     recurring: query.recurring || null,
+    filter_field: query.filter_field || null,
+    filter_value: query.filter_value || null,
   }
 }
 
@@ -385,6 +388,15 @@ router.get('/reminders/upcoming', canRead, async (req, res) => {
       req.userProfile.id,
     )
     res.json({ items })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+router.get('/tab-counts', canRead, async (req, res) => {
+  try {
+    const counts = await countTaskTabs(req.userProfile.org_id, req.userProfile.id)
+    res.json(counts)
   } catch (err) {
     res.status(500).json({ error: err.message })
   }

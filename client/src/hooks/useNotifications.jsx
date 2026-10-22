@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback, createContext, useContext, useMemo, useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import {
   requestNotificationPermission,
   onForegroundMessage,
   isFirebaseConfigured,
   isVapidConfigured,
+  ensureFirebaseConfig,
 } from '../lib/firebase'
 import { playNotificationSound, unlockNotificationSound } from '../lib/notificationSound'
 import { useAuth } from './useAuth'
@@ -28,6 +29,23 @@ function mapItems(items) {
     time: item.time ? new Date(item.time) : new Date(),
     read: Boolean(item.read),
   }))
+}
+
+function notificationSignature(items) {
+  return (items || []).map((item) => `${item.id}:${item.read ? 1 : 0}`).join('|')
+}
+
+function runWhenIdle(fn, timeout = 2500) {
+  if (typeof window === 'undefined') {
+    fn()
+    return () => {}
+  }
+  if (typeof window.requestIdleCallback === 'function') {
+    const id = window.requestIdleCallback(fn, { timeout })
+    return () => window.cancelIdleCallback(id)
+  }
+  const id = window.setTimeout(fn, 50)
+  return () => window.clearTimeout(id)
 }
 
 function readShownReminderIds() {
@@ -71,6 +89,8 @@ export function NotificationsProvider({ children }) {
   const { user } = useAuth()
   const { org } = useOrg()
   const navigate = useNavigate()
+  const location = useLocation()
+  const onTasksPage = /tasks-and-followups/.test(location.pathname)
   const [permission, setPermission] = useState(
     typeof Notification !== 'undefined' ? Notification.permission : 'default'
   )
@@ -78,6 +98,10 @@ export function NotificationsProvider({ children }) {
   const [error, setError] = useState(null)
   const [notifications, setNotifications] = useState([])
   const [pushConfigured, setPushConfigured] = useState(false)
+  const [firebaseReady, setFirebaseReady] = useState({
+    configured: isFirebaseConfigured,
+    vapid: isVapidConfigured,
+  })
   const [inboxReady, setInboxReady] = useState(true)
   const [activeReminder, setActiveReminder] = useState(null)
   const knownIdsRef = useRef(null)
@@ -137,7 +161,9 @@ export function NotificationsProvider({ children }) {
         ? items.filter((item) => item.id && !previousIds.has(item.id))
         : []
       knownIdsRef.current = nextIds
-      setNotifications(items)
+      setNotifications((prev) => (
+        notificationSignature(prev) === notificationSignature(items) ? prev : items
+      ))
       setPushConfigured(Boolean(data?.push_configured))
       setInboxReady(data?.inbox_ready !== false)
 
@@ -188,9 +214,21 @@ export function NotificationsProvider({ children }) {
     }
   }, [user, queueReminderPopup])
 
+  useEffect(() => {
+    return runWhenIdle(() => {
+      ensureFirebaseConfig().then((status) => {
+        if (!status) return
+        setFirebaseReady({
+          configured: Boolean(status.configured),
+          vapid: Boolean(status.vapidConfigured),
+        })
+      })
+    }, 3000)
+  }, [])
+
   const registerToken = useCallback(async () => {
     if (!user) return null
-    if (!isFirebaseConfigured) {
+    if (!firebaseReady.configured) {
       setError('Push notifications are not configured in this environment.')
       return null
     }
@@ -213,7 +251,7 @@ export function NotificationsProvider({ children }) {
       setError(err.message || 'Failed to register for notifications')
       return null
     }
-  }, [user])
+  }, [user, firebaseReady.configured])
 
   useEffect(() => {
     const unlock = () => unlockNotificationSound()
@@ -226,9 +264,11 @@ export function NotificationsProvider({ children }) {
   }, [])
 
   useEffect(() => {
-    loadFeed()
-    loadUpcomingReminders()
-  }, [loadFeed, loadUpcomingReminders])
+    return runWhenIdle(() => {
+      loadFeed()
+      if (onTasksPage) loadUpcomingReminders()
+    }, 2000)
+  }, [loadFeed, loadUpcomingReminders, onTasksPage])
 
   useEffect(() => {
     if (!user) return undefined
@@ -251,16 +291,18 @@ export function NotificationsProvider({ children }) {
         if (document.visibilityState === 'hidden') return
         loadFeed()
       }, NOTIF_POLL_MS)
-      reminderTimer = setInterval(() => {
-        if (document.visibilityState === 'hidden') return
-        loadUpcomingReminders()
-      }, REMINDER_POLL_MS)
+      reminderTimer = onTasksPage
+        ? setInterval(() => {
+          if (document.visibilityState === 'hidden') return
+          loadUpcomingReminders()
+        }, REMINDER_POLL_MS)
+        : null
     }
 
     const onVisible = () => {
       if (document.visibilityState === 'visible') {
         loadFeed()
-        loadUpcomingReminders()
+        if (onTasksPage) loadUpcomingReminders()
         startPollers()
       } else {
         clearPollers()
@@ -275,17 +317,17 @@ export function NotificationsProvider({ children }) {
       for (const timer of reminderTimersRef.current.values()) clearTimeout(timer)
       reminderTimersRef.current.clear()
     }
-  }, [user, loadFeed, loadUpcomingReminders])
+  }, [user, loadFeed, loadUpcomingReminders, onTasksPage])
 
   useEffect(() => {
-    if (!user || !isFirebaseConfigured) return undefined
+    if (!user || !firebaseReady.configured) return undefined
     if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return undefined
     registerToken()
     return undefined
-  }, [user, registerToken])
+  }, [user, registerToken, firebaseReady.configured])
 
   useEffect(() => {
-    if (!user || !isFirebaseConfigured) return undefined
+    if (!user || !firebaseReady.configured) return undefined
     const unsub = onForegroundMessage((payload) => {
       const reminder = reminderFromSource(payload)
       if (reminder) queueReminderPopup(reminder)
@@ -293,7 +335,7 @@ export function NotificationsProvider({ children }) {
       loadFeed()
     })
     return () => unsub()
-  }, [user, loadFeed, queueReminderPopup])
+  }, [user, loadFeed, queueReminderPopup, firebaseReady.configured])
 
   useEffect(() => {
     if (!user || typeof navigator === 'undefined' || !navigator.serviceWorker) return undefined
@@ -344,8 +386,8 @@ export function NotificationsProvider({ children }) {
     error,
     notifications,
     unreadCount,
-    isConfigured: isFirebaseConfigured,
-    vapidConfigured: isVapidConfigured,
+    isConfigured: firebaseReady.configured,
+    vapidConfigured: firebaseReady.vapid,
     pushConfigured,
     inboxReady,
     registerToken,
@@ -358,6 +400,7 @@ export function NotificationsProvider({ children }) {
     error,
     notifications,
     unreadCount,
+    firebaseReady,
     pushConfigured,
     inboxReady,
     registerToken,

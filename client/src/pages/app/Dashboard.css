@@ -15,6 +15,42 @@
   padding: 0 28px 32px;
 }
 
+.dashboard__content.is-refreshing {
+  opacity: 0.72;
+}
+
+.dashboard__refresh {
+  margin: 0 0 12px;
+  color: #6b7280;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.dash-section {
+  margin-bottom: 28px;
+}
+
+.dash-section__head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.dash-section__title {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--color-dark-navy);
+}
+
+.dash-section__sub {
+  margin: 4px 0 0;
+  font-size: 0.82rem;
+  color: var(--color-gray-blue);
+}
+
 .dash-empty {
   margin: 0;
   padding: 24px 8px;
@@ -59,12 +95,35 @@
   grid-template-columns: repeat(3, 1fr);
 }
 
+.dashboard__row--charts {
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+}
+
 /* KPI Cards */
 .kpi-grid {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
   gap: 16px;
   margin-bottom: 20px;
+}
+
+.kpi-grid--fluid {
+  grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+  margin-bottom: 0;
+}
+
+.kpi-row {
+  display: flex;
+  gap: 16px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  margin-bottom: 16px;
+}
+
+.kpi-row .kpi-card {
+  flex: 1 0 180px;
+  min-width: 180px;
+  max-width: 240px;
 }
 
 .kpi-card {
@@ -75,6 +134,14 @@
   background: var(--color-white);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-sm);
+}
+
+.kpi-card--compact {
+  padding: 16px;
+}
+
+.kpi-card--compact .kpi-card__value {
+  font-size: 1.35rem;
 }
 
 .kpi-card__label {
@@ -105,6 +172,18 @@
   color: var(--color-green);
 }
 
+.kpi-card__sub--red {
+  color: var(--color-primary, #E63946);
+}
+
+.kpi-card__spark {
+  display: block;
+  width: 100%;
+  max-width: 140px;
+  height: 32px;
+  margin-top: 8px;
+}
+
 .kpi-card__icon {
   display: flex;
   align-items: center;
@@ -119,6 +198,7 @@
 .kpi-card__icon--yellow { background: #FEF3C7; color: var(--color-yellow); }
 .kpi-card__icon--blue { background: #DBEAFE; color: var(--color-blue); }
 .kpi-card__icon--green { background: #DCFCE7; color: var(--color-green); }
+.kpi-card__icon--purple { background: #EDE9FE; color: #7C3AED; }
 
 /* Cards */
 .dash-card {
@@ -239,6 +319,21 @@
 .trend-chart__label {
   font-size: 11px;
   fill: var(--color-medium-gray);
+}
+
+.trend-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  margin-top: 8px;
+}
+
+.trend-legend__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--color-gray-blue);
 }
 
 /* Bar */
@@ -467,13 +562,96 @@
   color: var(--color-medium-gray);
 }
 
+.upcoming-list__meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.dash-table-wrap {
+  overflow-x: auto;
+}
+
+.dash-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.dash-table th {
+  text-align: left;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-medium-gray);
+  padding: 0 8px 8px 0;
+  white-space: nowrap;
+}
+
+.dash-table td {
+  padding: 8px 8px 8px 0;
+  border-top: 1px solid var(--color-light-gray-1);
+  color: var(--color-gray-blue);
+  vertical-align: middle;
+}
+
+.dash-table__id {
+  font-weight: 600;
+  color: var(--color-dark-navy);
+  white-space: nowrap;
+}
+
+.dash-table__title {
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.status-badge--in_progress,
+.status-badge--under_review,
+.status-badge--pending_approval {
+  background: #FEF3C7;
+  color: #B45309;
+}
+
+.status-badge--completed,
+.status-badge--active,
+.status-badge--approved,
+.status-badge--verified {
+  background: #DCFCE7;
+  color: #15803D;
+}
+
+.status-badge--overdue,
+.status-badge--expired,
+.status-badge--expiring_soon {
+  background: #EDE9FE;
+  color: #6D28D9;
+}
+
+.status-badge--assigned,
+.status-badge--open,
+.status-badge--submitted {
+  background: #FEE2E2;
+  color: #B91C1C;
+}
+
+.status-badge--scheduled,
+.status-badge--converted {
+  background: #DBEAFE;
+  color: #1D4ED8;
+}
+
 @media (max-width: 1400px) {
   .kpi-grid {
     grid-template-columns: repeat(3, 1fr);
   }
 
   .dashboard__row--2,
-  .dashboard__row--3 {
+  .dashboard__row--3,
+  .dashboard__row--charts {
     grid-template-columns: 1fr;
   }
 }

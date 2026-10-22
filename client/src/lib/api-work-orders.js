@@ -1,4 +1,4 @@
-import { apiFetch } from './api'
+import { apiFetch, apiFetchBlob } from './api'
 import { asListArray, listQueryParams } from './listResponse'
 
 export function workOrdersFetch(path, options = {}) {
@@ -94,8 +94,8 @@ export function deleteManualWorkOrder(workOrderId) {
   return workOrdersFetch(`/manual/${workOrderId}`, { method: 'DELETE' })
 }
 
-export async function getReceivedWorkOrders({ search, limit = 50, offset = 0 } = {}) {
-  const data = await workOrdersFetch(`/received${listQueryParams({ search, limit, offset })}`)
+export async function getReceivedWorkOrders({ search, limit = 50, offset = 0, ...rest } = {}) {
+  const data = await workOrdersFetch(`/received${listQueryParams({ search, limit, offset, ...rest })}`)
   return asListArray(data)
 }
 
@@ -103,8 +103,8 @@ export function getReceivedWorkOrder(id) {
   return workOrdersFetch(`/received/${id}`)
 }
 
-export async function getAssignedWorkOrders({ search, limit = 50, offset = 0 } = {}) {
-  const data = await workOrdersFetch(`/assigned${listQueryParams({ search, limit, offset })}`)
+export async function getAssignedWorkOrders({ search, limit = 50, offset = 0, ...rest } = {}) {
+  const data = await workOrdersFetch(`/assigned${listQueryParams({ search, limit, offset, ...rest })}`)
   return asListArray(data)
 }
 
@@ -112,8 +112,8 @@ export function getAssignedWorkOrder(id) {
   return workOrdersFetch(`/assigned/${id}`)
 }
 
-export async function getScheduledWorkOrders({ search, limit = 50, offset = 0 } = {}) {
-  const data = await workOrdersFetch(`/scheduled${listQueryParams({ search, limit, offset })}`)
+export async function getScheduledWorkOrders({ search, limit = 50, offset = 0, ...rest } = {}) {
+  const data = await workOrdersFetch(`/scheduled${listQueryParams({ search, limit, offset, ...rest })}`)
   return asListArray(data)
 }
 
@@ -121,9 +121,13 @@ export function getScheduledWorkOrder(id) {
   return workOrdersFetch(`/scheduled/${id}`)
 }
 
-export async function getManualWorkOrders({ search, limit = 50, offset = 0 } = {}) {
-  const data = await workOrdersFetch(`/manual/orders${listQueryParams({ search, limit, offset })}`)
+export async function getManualWorkOrders({ search, limit = 50, offset = 0, ...rest } = {}) {
+  const data = await workOrdersFetch(`/manual/orders${listQueryParams({ search, limit, offset, ...rest })}`)
   return asListArray(data)
+}
+
+export function exportWorkOrderList(path, params = {}) {
+  return apiFetchBlob(`/api/work-orders${path}${listQueryParams({ ...params, exportCsv: true })}`)
 }
 
 export function getManualWorkOrder(id) {

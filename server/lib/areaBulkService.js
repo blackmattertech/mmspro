@@ -4,7 +4,6 @@ import {
   normalizeMasterName,
   findDepartmentForLocation,
   scopePlacementOptions,
-  departmentValidLabels,
 } from './bulkMasterMatch.js'
 
 const TEMPLATE_SHEET = 'Template'
@@ -58,11 +57,11 @@ export async function buildAreasTemplate(orgId, { locationId } = {}) {
     },
     {
       header: 'Department',
-      values: departments.flatMap((d) => departmentValidLabels(d, locations)),
+      values: departments.map((d) => d.name),
     },
     {
       header: 'Department code',
-      values: departments.map((d) => d.code).filter(Boolean),
+      values: departments.map((d) => d.code || ''),
     },
     {
       header: 'Department applies to',

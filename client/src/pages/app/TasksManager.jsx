@@ -5,9 +5,9 @@ import { usePermissions } from '../../hooks/usePermissions'
 import { useDebouncedValue } from '../../hooks/useDebouncedValue'
 import { useTasksPage, useTaskPoll } from '../../hooks/useTasksPage'
 import { orgPath } from '../../config/navigation'
-import { TASK_TABS, VISIBILITY_OPTIONS } from '../../config/tasks'
+import { TASK_TABS } from '../../config/tasks'
 import { TABLE_SORT_OPTIONS, applyTableFilters } from '../../lib/tableFilters'
-import { deleteTask, getTasksTemplate, bulkUploadTasks } from '../../lib/api-tasks'
+import { deleteTask, getTasksTemplate, bulkUploadTasks, getTaskTabCounts } from '../../lib/api-tasks'
 import { invalidateTasksBootstrapCache } from '../../lib/tasksBootstrapCache'
 import { useTablePagination } from '../../hooks/useTablePagination'
 import TableFilterToolbar from '../../components/shared/TableFilterToolbar'
@@ -31,28 +31,26 @@ const TaskVoiceAssistant = lazy(() => import('../../components/tasks/TaskVoiceAs
 const VoiceAgentIcon = lazy(() => import('../../components/ui/VoiceAgentIcon'))
 
 const TASK_FILTER_FIELDS = [
-  { value: 'status', label: 'Status' },
-  { value: 'priority', label: 'Priority' },
-  { value: 'category', label: 'Category' },
-  { value: 'tag', label: 'Tag' },
-  { value: 'visibility', label: 'Visibility', placeholder: 'self, team, department…' },
+  { value: 'status', label: 'Status', placeholder: 'Enter status...' },
+  { value: 'priority', label: 'Priority', placeholder: 'Enter priority...' },
+  { value: 'category', label: 'Category', placeholder: 'Enter category...' },
+  { value: 'tag', label: 'Tag', placeholder: 'Enter tag...' },
+  {
+    value: 'visibility',
+    label: 'Visibility',
+    type: 'select',
+    emptyLabel: 'All Visibility',
+    options: [
+      { value: 'self', label: 'Self' },
+      { value: 'team', label: 'Team' },
+      { value: 'department', label: 'Department' },
+      { value: 'location', label: 'Location' },
+    ],
+  },
 ]
 
-const TASK_FIELD_FILTER_GETTERS = {
-  status: (task) => task.status?.name,
-  priority: (task) => task.priority?.name,
-  category: (task) => task.category?.name,
-  tag: (task) => (task.tags_list || []).map((tag) => tag.name).join(' '),
-  visibility: (task) => (
-    VISIBILITY_OPTIONS.find((opt) => opt.value === task.visibility_type)?.label
-    || task.visibility_type
-  ),
-}
-
-function filterTasks(tasks, { filterField, filterValue, sortBy }) {
+function filterTasks(tasks, { sortBy }) {
   return applyTableFilters(tasks, {
-    fieldFilter: { field: filterField, value: filterValue },
-    fieldFilterGetters: TASK_FIELD_FILTER_GETTERS,
     sortBy,
     getName: (task) => task.title,
     getCreatedAt: (task) => task.created_at || task.due_at || null,
@@ -66,6 +64,7 @@ export default function TasksManager() {
   const isAdmin = isOrgAdmin || role === 'owner' || role === 'admin'
 
   const [tab, setTab] = useState('assigned_to_me')
+  const [tabCounts, setTabCounts] = useState({})
   const [viewMode, setViewMode] = useState('kanban')
   const [search, setSearch] = useState('')
   const [filterField, setFilterField] = useState('')
@@ -77,10 +76,19 @@ export default function TasksManager() {
   const [voiceOpen, setVoiceOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
 
+  useEffect(() => {
+    let cancelled = false
+    getTaskTabCounts()
+      .then((counts) => { if (!cancelled) setTabCounts(counts || {}) })
+      .catch(() => { if (!cancelled) setTabCounts({}) })
+    return () => { cancelled = true }
+  }, [tab])
+
   const debouncedSearch = useDebouncedValue(search.trim())
+  const debouncedFilterValue = useDebouncedValue(filterValue.trim())
 
   const [listTotal, setListTotal] = useState(0)
-  const filterResetKey = `${tab}|${debouncedSearch}|${filterField}|${filterValue}|${sortBy}|${overdueOnly}|${dueTodayOnly}`
+  const filterResetKey = `${tab}|${debouncedSearch}|${filterField}|${debouncedFilterValue}|${sortBy}|${overdueOnly}|${dueTodayOnly}`
   const pagination = useTablePagination(listTotal, { resetKey: filterResetKey })
 
   const filters = useMemo(() => ({
@@ -88,10 +96,22 @@ export default function TasksManager() {
     search: debouncedSearch || undefined,
     overdue: overdueOnly ? 'true' : undefined,
     due_today: dueTodayOnly ? 'true' : undefined,
+    filter_field: filterField && debouncedFilterValue ? filterField : undefined,
+    filter_value: filterField && debouncedFilterValue ? debouncedFilterValue : undefined,
     ...(viewMode === 'table'
       ? { limit: pagination.pageSize, offset: pagination.offset }
       : {}),
-  }), [tab, debouncedSearch, overdueOnly, dueTodayOnly, viewMode, pagination.pageSize, pagination.offset])
+  }), [
+    tab,
+    debouncedSearch,
+    overdueOnly,
+    dueTodayOnly,
+    viewMode,
+    pagination.pageSize,
+    pagination.offset,
+    filterField,
+    debouncedFilterValue,
+  ])
 
   const {
     items,
@@ -110,8 +130,8 @@ export default function TasksManager() {
   useTaskPoll(pollReload, 30000, true)
 
   const filteredItems = useMemo(
-    () => filterTasks(items, { filterField, filterValue, sortBy }),
-    [items, filterField, filterValue, sortBy],
+    () => filterTasks(items, { sortBy }),
+    [items, sortBy],
   )
 
   const filteredBoard = useMemo(() => {
@@ -120,10 +140,10 @@ export default function TasksManager() {
       ...board,
       columns: (board.columns || []).map((column) => ({
         ...column,
-        tasks: filterTasks(column.tasks || [], { filterField, filterValue, sortBy }),
+        tasks: filterTasks(column.tasks || [], { sortBy }),
       })),
     }
-  }, [board, filterField, filterValue, sortBy])
+  }, [board, sortBy])
 
   const displayStatusCounts = useMemo(() => {
     if (filteredBoard?.columns) {
@@ -230,7 +250,7 @@ export default function TasksManager() {
               onFileChange={handleBulkFile}
               addLabel="+ New Task"
               onAdd={openCreate}
-              title="Bulk upload tasks"
+              title="Import tasks"
               noun="task"
               bulkError={bulkError}
               bulkResult={bulkResult}
@@ -263,6 +283,7 @@ export default function TasksManager() {
                   onClick={() => setTab(item.id)}
                 >
                   {item.label}
+                  <span className="wo-page__tab-count">{tabCounts[item.id] ?? 0}</span>
                 </button>
               ))}
             </nav>

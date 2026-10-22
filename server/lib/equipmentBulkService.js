@@ -4,10 +4,8 @@ import { loadOrgFields } from './equipmentFieldService.js'
 import { createEquipment, orderedParentFields } from './equipmentService.js'
 import {
   normalizeMasterName,
-  primaryMasterToken,
   findDepartmentForLocation,
   scopePlacementOptions,
-  departmentValidLabels,
 } from './bulkMasterMatch.js'
 
 const TEMPLATE_SHEET = 'Template'
@@ -15,6 +13,26 @@ const VALID_VALUES_SHEET = 'Valid values'
 const PLACEMENT_COLUMNS = ['Location', 'Department', 'Area']
 const OPTION_FIELD_TYPES = new Set(['dropdown', 'radio', 'checkbox'])
 const MULTI_OPTION_FIELD_TYPES = new Set(['checkbox'])
+
+function isAreaParent(field) {
+  return normalizeMasterName(field?.name) === 'area'
+}
+
+/** Placement columns already represented by a super-admin parent field are omitted. */
+function extraPlacementColumns(parents) {
+  const used = new Set((parents || []).map((field) => normalizeMasterName(field.name)))
+  return PLACEMENT_COLUMNS.filter((name) => !used.has(normalizeMasterName(name)))
+}
+
+function cellsForHeader(cells, header) {
+  const key = normalizeMasterName(header)
+  return cells.filter((cell) => normalizeMasterName(cell.header) === key)
+}
+
+function firstFilledCell(cells, header) {
+  const matches = cellsForHeader(cells, header)
+  return matches.find((cell) => cell.text) || matches[0] || { text: '', raw: null }
+}
 
 async function loadPlacementOptions(orgId) {
   const [locations, departments, areas] = await Promise.all([
@@ -30,7 +48,7 @@ async function loadPlacementOptions(orgId) {
       .order('name'),
     supabaseAdmin
       .from('areas')
-      .select('id, name, location_id, department_id, is_active')
+      .select('id, name, code, location_id, department_id, is_active')
       .eq('org_id', orgId)
       .order('name'),
   ])
@@ -60,7 +78,7 @@ export async function buildEquipmentTemplate(orgId, { locationId } = {}) {
   workbook.created = new Date()
 
   const templateSheet = workbook.addWorksheet(TEMPLATE_SHEET)
-  const headers = [...parents.map((p) => p.name), ...PLACEMENT_COLUMNS]
+  const headers = [...parents.map((p) => p.name), ...extraPlacementColumns(parents)]
   templateSheet.addRow(headers)
   templateSheet.getRow(1).font = { bold: true }
   templateSheet.views = [{ state: 'frozen', ySplit: 1 }]
@@ -79,23 +97,14 @@ export async function buildEquipmentTemplate(orgId, { locationId } = {}) {
       })
     }
   }
-  validColumns.push({
-    header: 'Location',
-    values: locations.map((l) => l.name),
-  })
-  validColumns.push({
-    header: 'Department',
-    values: departments.flatMap((d) => departmentValidLabels(d, locations)),
-  })
-  validColumns.push({
-    header: 'Area',
-    values: areas.map((a) => {
-      const loc = locations.find((l) => l.id === a.location_id)?.name
-      const dept = departments.find((d) => d.id === a.department_id)?.name
-      const suffix = [loc, dept].filter(Boolean).join(' / ')
-      return suffix ? `${a.name} — ${suffix}` : a.name
-    }),
-  })
+  const pushValid = (header, values) => {
+    if (validColumns.some((column) => normalizeMasterName(column.header) === normalizeMasterName(header))) return
+    validColumns.push({ header, values })
+  }
+  pushValid('Location', locations.map((l) => l.name))
+  pushValid('Department', departments.map((d) => d.name))
+  const areaHeader = parents.find(isAreaParent)?.name || 'Area'
+  pushValid(areaHeader, [...new Set(areas.map((area) => area.name).filter(Boolean))])
 
   validSheet.addRow(validColumns.map((c) => c.header))
   validSheet.getRow(1).font = { bold: true }
@@ -132,30 +141,46 @@ function formatDateValue(value, withTime) {
   return cellToString(value)
 }
 
-function resolvePlacement(rowValues, options) {
-  const locName = normalizeMasterName(rowValues.Location)
-  const location = options.locations.find((l) => normalizeMasterName(l.name) === locName)
-  if (!location) throw new Error(`Unknown location "${rowValues.Location || ''}"`)
+function resolvePlacement(cells, options) {
+  const locText = firstFilledCell(cells, 'Location').text
+  let location = null
+  if (locText) {
+    const locName = normalizeMasterName(locText)
+    location = options.locations.find((item) => normalizeMasterName(item.name) === locName) || null
+    if (!location) throw new Error(`Unknown location "${locText}"`)
+  }
 
-  const department = findDepartmentForLocation(options.departments, rowValues.Department, location)
-  if (!department) throw new Error(`Unknown department "${rowValues.Department || ''}" for the location`)
+  const deptText = firstFilledCell(cells, 'Department').text
+  let department = null
+  if (deptText) {
+    if (location) {
+      department = findDepartmentForLocation(options.departments, deptText, location)
+      if (!department) throw new Error(`Unknown department "${deptText}" for the location`)
+    } else {
+      const token = normalizeMasterName(deptText)
+      const matches = options.departments.filter((item) => (
+        normalizeMasterName(item.name) === token || normalizeMasterName(item.code) === token
+      ))
+      if (matches.length === 1) department = matches[0]
+      else if (!matches.length) throw new Error(`Unknown department "${deptText}"`)
+      else throw new Error(`Department "${deptText}" needs a location`)
+    }
+  }
 
-  const areaToken = normalizeMasterName(primaryMasterToken(rowValues.Area))
-  const area = options.areas.find((a) => (
-    (normalizeMasterName(a.name) === areaToken || normalizeMasterName(a.code) === areaToken)
-    && a.location_id === location.id
-    && a.department_id === department.id
-  ))
-  if (!area) throw new Error(`Unknown area "${rowValues.Area || ''}" for the location/department`)
+  if (!location && department?.location_id) {
+    location = options.locations.find((item) => item.id === department.location_id) || null
+  }
 
-  return { location_id: location.id, department_id: department.id, area_id: area.id }
+  return {
+    location_id: location?.id || null,
+    department_id: department?.id || null,
+  }
 }
 
 /** Parse an uploaded workbook and create equipment rows. */
 export async function bulkImportEquipment(orgId, buffer, { locationId } = {}) {
   const fields = await loadOrgFields(orgId)
   const parents = orderedParentFields(fields)
-  const parentByName = new Map(parents.map((p) => [normalizeMasterName(p.name), p]))
   const options = scopePlacementOptions(await loadPlacementOptions(orgId), locationId)
 
   const workbook = new ExcelJS.Workbook()
@@ -175,30 +200,25 @@ export async function bulkImportEquipment(orgId, buffer, { locationId } = {}) {
 
   for (let rowNumber = 2; rowNumber <= sheet.rowCount; rowNumber++) {
     const row = sheet.getRow(rowNumber)
-    const rowValues = {}
-    let hasData = false
-    for (const { colNumber, header } of columns) {
-      const raw = row.getCell(colNumber).value
-      const text = cellToString(raw)
-      rowValues[header] = text
-      if (text) hasData = true
-      // keep raw for date formatting
-      rowValues[`__raw_${header}`] = raw
-    }
-    if (!hasData) continue
+    const cells = columns.map(({ colNumber, header }) => ({
+      header,
+      raw: row.getCell(colNumber).value,
+      text: cellToString(row.getCell(colNumber).value),
+    }))
+    if (!cells.some((cell) => cell.text)) continue
 
     try {
-      const placement = resolvePlacement(rowValues, options)
+      const placement = resolvePlacement(cells, options)
       const values = []
-      for (const { header } of columns) {
-        if (PLACEMENT_COLUMNS.includes(header)) continue
-        const field = parentByName.get(normalizeMasterName(header))
-        if (!field) continue
-        const rawText = rowValues[header]
-        if (!rawText) continue
+      const seenFields = new Set()
+      for (const field of parents) {
+        if (seenFields.has(field.id)) continue
+        const cell = firstFilledCell(cells, field.name)
+        if (!cell.text) continue
+        seenFields.add(field.id)
 
         if (MULTI_OPTION_FIELD_TYPES.has(field.field_type) && (field.dropdown_options || []).length) {
-          const parts = rawText.split(',').map((s) => s.trim()).filter(Boolean)
+          const parts = cell.text.split(',').map((part) => part.trim()).filter(Boolean)
           values.push({
             field_id: field.id,
             value_text: parts.join(', '),
@@ -207,31 +227,25 @@ export async function bulkImportEquipment(orgId, buffer, { locationId } = {}) {
         } else if (field.field_type === 'date' || field.field_type === 'datetime') {
           values.push({
             field_id: field.id,
-            value_text: formatDateValue(rowValues[`__raw_${header}`], field.field_type === 'datetime'),
+            value_text: formatDateValue(cell.raw, field.field_type === 'datetime'),
           })
         } else {
-          values.push({ field_id: field.id, value_text: rawText })
+          values.push({ field_id: field.id, value_text: cell.text })
         }
       }
 
       await createEquipment(orgId, { ...placement, values }, { fields, skipDetail: true })
       results.created += 1
       if (results.preview.length < MAX_PREVIEW) {
-        let label = ''
-        for (const { header } of columns) {
-          if (PLACEMENT_COLUMNS.includes(header)) continue
-          const text = rowValues[header]
-          if (text) {
-            label = text
-            break
-          }
-        }
+        const areaParent = parents.find(isAreaParent)
+        const areaText = areaParent ? firstFilledCell(cells, areaParent.name).text : firstFilledCell(cells, 'Area').text
+        const label = parents.map((field) => firstFilledCell(cells, field.name).text).find(Boolean) || areaText
         results.preview.push({
           row: rowNumber,
-          name: label || rowValues.Area || 'Equipment',
-          location: rowValues.Location?.trim() || '',
-          department: rowValues.Department?.trim() || '',
-          area: rowValues.Area?.trim() || '',
+          name: label || 'Equipment',
+          location: firstFilledCell(cells, 'Location').text,
+          department: firstFilledCell(cells, 'Department').text,
+          area: areaText,
         })
       }
     } catch (err) {

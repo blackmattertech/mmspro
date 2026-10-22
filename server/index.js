@@ -1,4 +1,5 @@
 import 'dotenv/config'
+import './lib/serverLog.js'
 import app from './app.js'
 import { getCorsOrigins, getPublicAppUrl } from './lib/appUrl.js'
 import { startTaskScheduler } from './lib/taskScheduler.js'
@@ -22,7 +23,7 @@ async function main() {
   const server = app.listen(PORT, HOST, () => {
     console.log(`MMSPro server running on http://${HOST}:${PORT}`)
     if (isDev) {
-      console.log('Dev CORS: allowing localhost and private-network origins on ports 5173/4173/3000')
+      console.log('Dev CORS: allowing localhost and private-network origins on ports 5173/5174/4173/3000')
     }
     if (allowedOrigins.length) {
       console.log(`Configured CLIENT_URL origins: ${allowedOrigins.join(', ')}`)

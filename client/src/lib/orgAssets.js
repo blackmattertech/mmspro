@@ -1,8 +1,8 @@
 import { supabase } from './supabase'
+import { isAllowedImageFile, resolveImageMime } from './imageFiles'
 
 export const ORG_ASSETS_BUCKET = 'org-assets'
 const MAX_BYTES = 5 * 1024 * 1024
-const ALLOWED_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif'])
 
 const EXT_BY_TYPE = {
   'image/jpeg': 'jpg',
@@ -17,8 +17,8 @@ const SECTION_ICON_MAX_BYTES = 2 * 1024 * 1024
 
 export function validateLogoFile(file) {
   if (!file) return 'No file selected'
-  if (!ALLOWED_TYPES.has(file.type)) {
-    return 'Logo must be JPEG, PNG, WebP, or GIF'
+  if (!isAllowedImageFile(file)) {
+    return 'Logo must be JPEG, PNG, WebP, GIF, or SVG'
   }
   if (file.size > MAX_BYTES) {
     return 'Logo must be 5 MB or smaller'
@@ -37,11 +37,12 @@ export async function uploadOrgLogo(orgId, file) {
   const validationError = validateLogoFile(file)
   if (validationError) throw new Error(validationError)
 
-  const path = logoStoragePath(orgId, file.type)
+  const contentType = resolveImageMime(file)
+  const path = logoStoragePath(orgId, contentType)
 
   const { error } = await supabase.storage
     .from(ORG_ASSETS_BUCKET)
-    .upload(path, file, { upsert: true, contentType: file.type })
+    .upload(path, file, { upsert: true, contentType })
 
   if (error) throw new Error(error.message)
   return path
@@ -65,11 +66,12 @@ export async function uploadEmployeePhoto(orgId, employeeId, file) {
   const validationError = validateLogoFile(file)
   if (validationError) throw new Error(validationError)
 
-  const path = employeePhotoStoragePath(orgId, employeeId, file.type)
+  const contentType = resolveImageMime(file)
+  const path = employeePhotoStoragePath(orgId, employeeId, contentType)
 
   const { error } = await supabase.storage
     .from(ORG_ASSETS_BUCKET)
-    .upload(path, file, { upsert: true, contentType: file.type })
+    .upload(path, file, { upsert: true, contentType })
 
   if (error) {
     const msg = error.message || 'Upload failed'

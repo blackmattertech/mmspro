@@ -9,10 +9,29 @@ function finiteNumber(value, fallback = 0) {
 }
 
 function statusLegendLabel(seg) {
+  if (seg.label) return seg.label
   if (STATUS_LABELS[seg.status]) return STATUS_LABELS[seg.status]
   if (seg.priority) return seg.priority.charAt(0).toUpperCase() + seg.priority.slice(1)
   if (seg.status) return String(seg.status).replace(/_/g, ' ')
   return 'Unknown'
+}
+
+function humanStatus(status) {
+  if (!status) return '—'
+  if (STATUS_LABELS[status]) return STATUS_LABELS[status]
+  return String(status).replace(/_/g, ' ')
+}
+
+function formatWhen(value) {
+  if (!value) return '—'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return String(value).slice(0, 10)
+  return date.toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  })
 }
 
 export function KpiCards({ stats }) {
@@ -133,9 +152,9 @@ export function DonutChart({ title, total, segments, filterLabel }) {
         <div className="donut-chart__ring">
           <svg width="180" height="180" viewBox="0 0 180 180">
             <circle cx="90" cy="90" r={radius} fill="none" stroke="#F1F5F9" strokeWidth="24"/>
-            {arcs.map((arc, i) => (
+            {arcs.map((arc) => (
               <circle
-                key={i}
+                key={arc.status || arc.priority || arc.label}
                 cx="90"
                 cy="90"
                 r={radius}
@@ -301,7 +320,7 @@ function timeAgo(dateStr) {
 
 export function RecentWorkOrders({ orders }) {
   const { org } = useOrg()
-  const viewAllPath = org ? orgPath(org.slug, 'work-orders/manual') : '#'
+  const viewAllPath = org ? orgPath(org.slug, 'work-orders/received') : '#'
 
   return (
     <div className="dash-card">
@@ -312,16 +331,77 @@ export function RecentWorkOrders({ orders }) {
       {!orders?.length ? (
         <p className="dash-empty">No work orders yet.</p>
       ) : (
-        <div className="recent-list">
-          {orders.map((order) => (
-            <div key={order.id} className="recent-list__item">
-              <span className="recent-list__id">{order.wo_number || order.work_order_number}</span>
-              <span className="recent-list__title">{order.short_description || order.title || order.summary}</span>
-              <span className="recent-list__plant">{order.location_name || '—'}</span>
-              <span className="recent-list__time">{timeAgo(order.created_at)}</span>
-              <span className={`status-badge status-badge--${order.status}`}>
-                {STATUS_LABELS[order.status] || order.status}
-              </span>
+        <div className="dash-table-wrap">
+          <table className="dash-table">
+            <thead>
+              <tr>
+                <th>WO No.</th>
+                <th>Description</th>
+                <th>Location</th>
+                <th>Created</th>
+                <th>Priority</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {orders.map((order) => (
+                <tr key={order.id}>
+                  <td className="dash-table__id">{order.wo_number || order.work_order_number}</td>
+                  <td className="dash-table__title">{order.short_description || order.title || order.summary}</td>
+                  <td>{order.location_name || '—'}</td>
+                  <td>{timeAgo(order.created_at)}</td>
+                  <td>
+                    {order.priority ? (
+                      <span className={`priority-badge priority-badge--${order.priority}`}>{order.priority}</span>
+                    ) : '—'}
+                  </td>
+                  <td>
+                    <span className={`status-badge status-badge--${order.status}`}>
+                      {humanStatus(order.status)}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
+export function UpcomingSchedule({ title, viewAllPath, items, emptyLabel }) {
+  return (
+    <div className="dash-card">
+      <div className="dash-card__header">
+        <h3 className="dash-card__title">{title}</h3>
+        {viewAllPath ? <Link to={viewAllPath} className="dash-card__link">View All</Link> : null}
+      </div>
+      {!items?.length ? (
+        <p className="dash-empty">{emptyLabel}</p>
+      ) : (
+        <div className="upcoming-list">
+          {items.map((item) => (
+            <div key={item.id} className="upcoming-list__item">
+              <div className="upcoming-list__icon" aria-hidden="true">
+                <svg width="18" height="18" viewBox="0 0 22 22" fill="none">
+                  <rect x="4" y="5" width="14" height="13" rx="2" stroke="currentColor" strokeWidth="1.5" />
+                  <path d="M8 3.5V6.5M14 3.5V6.5M4 9H18" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                </svg>
+              </div>
+              <div className="upcoming-list__content">
+                <span className="upcoming-list__title">{item.title}</span>
+                <span className="upcoming-list__location">{item.location_name || item.plan_number || '—'}</span>
+                <span className="upcoming-list__time">{formatWhen(item.due_at)}</span>
+              </div>
+              <div className="upcoming-list__meta">
+                {item.priority ? (
+                  <span className={`priority-badge priority-badge--${item.priority}`}>{item.priority}</span>
+                ) : null}
+                {item.status ? (
+                  <span className={`status-badge status-badge--${item.status}`}>{humanStatus(item.status)}</span>
+                ) : null}
+              </div>
             </div>
           ))}
         </div>
@@ -366,4 +446,143 @@ export function CalendarWidget() {
       </div>
     </div>
   )
+}
+
+const MODULE_TONES = ['red', 'blue', 'green', 'yellow', 'purple']
+
+function formatKpiValue(value) {
+  const n = finiteNumber(value)
+  return n.toLocaleString()
+}
+
+function formatKpiSub(item) {
+  if (item.limit == null || item.limit === '') return null
+  return `of ${Number(item.limit).toLocaleString()} limit`
+}
+
+export function MultiTrendChart({ title, filterLabel, series, points }) {
+  const rows = points || []
+  const lines = series || []
+  const width = 520
+  const height = 210
+  const padding = { top: 16, right: 12, bottom: 28, left: 32 }
+  const chartW = width - padding.left - padding.right
+  const chartH = height - padding.top - padding.bottom
+  const max = Math.max(1, ...rows.flatMap((point) => lines.map((line) => finiteNumber(point.values?.[line.key]))))
+  const empty = !rows.length || rows.every((point) => lines.every((line) => !finiteNumber(point.values?.[line.key])))
+  const gradientId = `trend-${String(title || 'series').replace(/[^a-z0-9]+/gi, '-').toLowerCase()}`
+
+  const coords = (line) => rows.map((point, index) => {
+    const x = padding.left + (rows.length <= 1 ? chartW / 2 : (index / (rows.length - 1)) * chartW)
+    const y = padding.top + chartH - (finiteNumber(point.values?.[line.key]) / max) * chartH
+    return { x, y, date: point.date }
+  })
+
+  return (
+    <div className="dash-card">
+      <div className="dash-card__header">
+        <h3 className="dash-card__title">{title}</h3>
+        {filterLabel ? <span className="dash-card__filter">{filterLabel}</span> : null}
+      </div>
+      {empty ? (
+        <p className="dash-empty">No activity in this range.</p>
+      ) : (
+        <>
+          <svg viewBox={`0 0 ${width} ${height}`} className="trend-chart">
+            {lines.map((line) => {
+              const pts = coords(line)
+              const linePath = pts.map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`).join(' ')
+              const areaPath = pts.length
+                ? `${linePath} L ${pts[pts.length - 1].x} ${padding.top + chartH} L ${pts[0].x} ${padding.top + chartH} Z`
+                : ''
+              return (
+                <g key={line.key}>
+                  {lines[0]?.key === line.key ? (
+                    <>
+                      <defs>
+                        <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor={line.color} stopOpacity="0.18" />
+                          <stop offset="100%" stopColor={line.color} stopOpacity="0" />
+                        </linearGradient>
+                      </defs>
+                      <path d={areaPath} fill={`url(#${gradientId})`} />
+                    </>
+                  ) : null}
+                  <path d={linePath} fill="none" stroke={line.color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                </g>
+              )
+            })}
+            {rows.map((point, index) => {
+              const x = padding.left + (rows.length <= 1 ? chartW / 2 : (index / (rows.length - 1)) * chartW)
+              const show = rows.length <= 8 || index % Math.ceil(rows.length / 7) === 0 || index === rows.length - 1
+              if (!show) return null
+              return (
+                <text key={point.date} x={x} y={height - 8} textAnchor="middle" className="trend-chart__label">{point.date}</text>
+              )
+            })}
+          </svg>
+          <div className="trend-legend">
+            {lines.map((line) => (
+              <span key={line.key} className="trend-legend__item">
+                <span className="donut-chart__dot" style={{ background: line.color }} />
+                {line.label}
+              </span>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+export function ModuleSection({ module: mod, children }) {
+  const { org } = useOrg()
+  if (!mod) return null
+  const href = mod.href && org?.slug ? orgPath(org.slug, mod.href) : null
+  const kpis = mod.kpis || []
+
+  return (
+    <section className="dash-section">
+      <div className="dash-section__head">
+        <h2 className="dash-section__title">{mod.label}</h2>
+        {href ? (
+          <Link to={href} className="dash-card__link">Open</Link>
+        ) : null}
+      </div>
+      {kpis.length ? (
+        <div className="kpi-row">
+          {kpis.map((item, index) => {
+            const sub = formatKpiSub(item)
+            return (
+              <div key={`${mod.id}-${item.key}`} className="kpi-card kpi-card--compact">
+                <div className="kpi-card__content">
+                  <span className="kpi-card__label">{item.label}</span>
+                  <span className="kpi-card__value">{formatKpiValue(item.value)}</span>
+                  {sub ? <span className="kpi-card__sub">{sub}</span> : null}
+                </div>
+                <div className={`kpi-card__icon kpi-card__icon--${MODULE_TONES[index % MODULE_TONES.length]}`}>
+                  <svg width="18" height="18" viewBox="0 0 22 22" fill="none" aria-hidden="true">
+                    <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="1.5" />
+                  </svg>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      ) : null}
+      {children}
+    </section>
+  )
+}
+
+export function ModuleKpiSections({ modules }) {
+  if (!modules?.length) {
+    return (
+      <section className="dash-section">
+        <p className="dash-empty">No module KPIs available for your role.</p>
+      </section>
+    )
+  }
+
+  return modules.map((mod) => <ModuleSection key={mod.id} module={mod} />)
 }

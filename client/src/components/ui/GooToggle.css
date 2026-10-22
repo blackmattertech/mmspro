@@ -5,7 +5,14 @@
   position: relative;
   aspect-ratio: 292 / 142;
   height: 1.875em;
+  width: auto;
+  max-width: 4em;
+  align-self: flex-start;
   flex-shrink: 0;
+}
+
+.goo-toggle-container--danger {
+  --goo-toggle-active: #e63946;
 }
 
 .goo-toggle-input {

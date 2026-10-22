@@ -9,6 +9,8 @@ import {
 import { asListArray } from '../../lib/listResponse'
 import { useBackdropClose } from '../../hooks/useBackdropClose'
 import SpellcheckInput from '../shared/SpellcheckInput'
+import EditIcon from '../ui/EditIcon'
+import TrashIcon from '../ui/TrashIcon'
 import '../company/CompanyShared.css'
 import './ReportsLayout.css'
 
@@ -423,13 +425,15 @@ export default function ReportScheduleModal({
                     </button>
                     <button
                       type="button"
-                      className="company-btn company-btn--secondary company-btn--compact"
+                      className="company-btn company-btn--secondary company-btn--compact company-btn--icon"
                       onClick={() => {
                         setEditingId(row.id)
                         setForm(formFromSchedule(row))
                       }}
+                      aria-label="Edit schedule"
+                      title="Edit"
                     >
-                      Edit
+                      <EditIcon />
                     </button>
                     <button
                       type="button"
@@ -447,7 +451,7 @@ export default function ReportScheduleModal({
                     </button>
                     <button
                       type="button"
-                      className="company-btn company-btn--danger company-btn--compact"
+                      className="company-btn company-btn--danger company-btn--compact company-btn--icon"
                       onClick={async () => {
                         try {
                           await deleteReportSchedule(row.id)
@@ -457,8 +461,10 @@ export default function ReportScheduleModal({
                           setError(err.message)
                         }
                       }}
+                      aria-label="Delete schedule"
+                      title="Delete"
                     >
-                      Delete
+                      <TrashIcon />
                     </button>
                   </div>
                 </div>

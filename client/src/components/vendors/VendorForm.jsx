@@ -110,7 +110,7 @@ export default function VendorForm({
             className="company-form__input"
             value={form.vendor_code}
             onChange={(e) => setField('vendor_code', e.target.value)}
-            placeholder={isEdit ? 'Ven-0001' : (nextCodePreview || 'Auto-generated if left blank')}
+            placeholder={isEdit ? 'Any vendor ID' : (nextCodePreview || 'Auto-generated if left blank')}
             disabled={isEdit}
           />
           {!isEdit && (

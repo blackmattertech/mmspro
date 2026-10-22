@@ -61,7 +61,7 @@ export function findByNameOrCode(rows, value, fields = ['name', 'code']) {
     || null
 }
 
-export async function buildWorkbook(templateColumns, validColumns = [], { sampleRow = null } = {}) {
+export async function buildWorkbook(templateColumns, validColumns = [], { sampleRow = null, sampleRows = null } = {}) {
   const workbook = new ExcelJS.Workbook()
   workbook.creator = 'MMS Pro'
   workbook.created = new Date()
@@ -69,7 +69,10 @@ export async function buildWorkbook(templateColumns, validColumns = [], { sample
   const templateSheet = workbook.addWorksheet(TEMPLATE_SHEET)
   templateSheet.addRow(templateColumns)
   templateSheet.getRow(1).font = { bold: true }
-  if (sampleRow) templateSheet.addRow(templateColumns.map((header) => sampleRow[header] ?? ''))
+  const samples = sampleRows || (sampleRow ? [sampleRow] : [])
+  for (const sample of samples) {
+    templateSheet.addRow(templateColumns.map((header) => sample[header] ?? ''))
+  }
   templateSheet.views = [{ state: 'frozen', ySplit: 1 }]
   templateSheet.columns = templateColumns.map((header) => ({
     width: Math.max(16, Math.min(42, header.length + 6)),
@@ -143,18 +146,28 @@ export async function runBulkImport(buffer, columns, importRow, options = {}) {
   await workbook.xlsx.load(buffer)
   const rows = readTemplateRows(workbook, columns, options)
   const results = { created: 0, failed: 0, errors: [], preview: [] }
+  const chunkSize = Math.max(1, Number(options.chunkSize) || 20)
 
-  for (const { rowNumber, rowValues } of rows) {
-    try {
-      const preview = await importRow(rowValues, rowNumber)
-      results.created += 1
-      if (preview && results.preview.length < 250) {
-        results.preview.push({ row: rowNumber, ...preview })
+  for (let index = 0; index < rows.length; index += chunkSize) {
+    const chunk = rows.slice(index, index + chunkSize)
+    const outcomes = await Promise.allSettled(
+      chunk.map(({ rowNumber, rowValues }) => importRow(rowValues, rowNumber)),
+    )
+    outcomes.forEach((outcome, offset) => {
+      const rowNumber = chunk[offset].rowNumber
+      if (outcome.status === 'fulfilled') {
+        results.created += 1
+        if (outcome.value && results.preview.length < 250) {
+          results.preview.push({ row: rowNumber, ...outcome.value })
+        }
+      } else {
+        results.failed += 1
+        results.errors.push({
+          row: rowNumber,
+          message: outcome.reason?.message || 'Import failed',
+        })
       }
-    } catch (err) {
-      results.failed += 1
-      results.errors.push({ row: rowNumber, message: err.message })
-    }
+    })
   }
 
   return results

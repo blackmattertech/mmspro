@@ -1,8 +1,11 @@
 import { useMemo, useState } from 'react'
+import { useDebouncedValue } from '../../hooks/useDebouncedValue'
 import { NavLink, Navigate, Outlet, useNavigate, useLocation } from 'react-router-dom'
 import { useOrg } from '../../hooks/useOrg'
 import { useProfile } from '../../hooks/useProfile'
 import { useLocations } from '../../hooks/useLocations'
+import { useWorkCenters } from '../../hooks/useWorkCenters'
+import { useOrgStatusOptions } from '../../hooks/useOrgStatusOptions'
 import { useWorkOrderToolbar } from '../../hooks/useWorkOrderToolbar'
 import { usePermissions } from '../../hooks/usePermissions'
 import { orgPath } from '../../config/navigation'
@@ -11,10 +14,14 @@ import {
   getWorkOrderActiveTab,
   visibleWorkOrderTabs,
 } from '../../config/workOrders'
-import { createFilterRule, countActiveAdvancedRules, WO_SORT_OPTIONS } from '../../lib/workOrderFilters'
-import { getWorkOrdersTemplate, bulkUploadWorkOrders } from '../../lib/api-work-orders'
-import WorkOrderAdvancedFilter from './WorkOrderAdvancedFilter'
+import { createFilterRule, WO_SORT_OPTIONS } from '../../lib/workOrderFilters'
+import { getWorkOrdersTemplate, bulkUploadWorkOrders, exportWorkOrderList } from '../../lib/api-work-orders'
+import { downloadBlobFile } from '../../lib/api'
+import { useWorkOrderCounts } from '../../hooks/useWorkOrderCounts'
 import TableFilterToolbar from '../shared/TableFilterToolbar'
+import { AdvancedFilterMenu, ExportCsvButton } from '../shared/ListTableChrome'
+import { ColumnPickerMount, ColumnPickerScope } from '../shared/ColumnPickerSlot'
+import '../shared/ListTableChrome.css'
 import PageBreadcrumbs from '../shared/PageBreadcrumbs'
 import NavIcon from '../layout/NavIcon'
 import {
@@ -24,15 +31,26 @@ import {
 import '../company/CompanyShared.css'
 import '../shared/TableFilterToolbar.css'
 import './WorkOrdersPage.css'
-import './WorkOrderAdvancedFilter.css'
 
-const WO_FILTER_FIELDS = [
-  { value: 'location', label: 'Location' },
-  { value: 'status', label: 'Status' },
-  { value: 'summary', label: 'Short description' },
-  { value: 'wo_number', label: 'WO #' },
-  { value: 'assignee', label: 'Assignee' },
-  { value: 'creator', label: 'Created by' },
+const WO_STATUS_FALLBACK = [
+  { value: 'draft', label: 'Draft' },
+  { value: 'assigned', label: 'Assigned' },
+  { value: 'accepted', label: 'Accepted' },
+  { value: 'started', label: 'Started' },
+  { value: 'in_progress', label: 'In progress' },
+  { value: 'waiting_material', label: 'Waiting material' },
+  { value: 'waiting_shutdown', label: 'Waiting shutdown' },
+  { value: 'on_hold', label: 'On hold' },
+  { value: 'completed', label: 'Completed' },
+  { value: 'verified', label: 'Verified' },
+  { value: 'closed', label: 'Closed' },
+  { value: 'returned_rework', label: 'Returned / rework' },
+]
+
+const WO_PRIORITY_OPTIONS = [
+  { value: 'high', label: 'High' },
+  { value: 'medium', label: 'Medium' },
+  { value: 'low', label: 'Low' },
 ]
 
 export default function WorkOrdersLayout() {
@@ -41,14 +59,20 @@ export default function WorkOrdersLayout() {
   const { org } = useOrg()
   const { employee } = useProfile()
   const { locations } = useLocations()
+  const { workCenters } = useWorkCenters()
+  const { options: loadedStatusOptions } = useOrgStatusOptions('work_order')
   const { toolbarLeft, toolbarRight } = useWorkOrderToolbar()
   const { isOrgAdmin, canCreate, canRead, loading: permsLoading, locationId: scopedLocationId } = usePermissions()
   const [search, setSearch] = useState('')
-  const [filterField, setFilterField] = useState('')
-  const [filterValue, setFilterValue] = useState('')
+  const debouncedSearch = useDebouncedValue(search.trim())
   const [sortBy, setSortBy] = useState('newest')
   const [advancedRules, setAdvancedRules] = useState([createFilterRule()])
+  const [columnFilters, setColumnFilters] = useState({})
+  const [headerSort, setHeaderSort] = useState(null)
+  const [statusFilters, setStatusFilters] = useState([])
+  const [exporting, setExporting] = useState(false)
   const [bulkReloadToken, setBulkReloadToken] = useState(0)
+  const { counts: tabCounts } = useWorkOrderCounts()
   const {
     bulkInputRef,
     bulkBusy,
@@ -86,24 +110,104 @@ export default function WorkOrdersLayout() {
   }, [locations, canSeeAllLocations, userLocationId])
 
   const locationFilter = canSeeAllLocations ? 'all' : (userLocationId || 'all')
-  const advancedFilterCount = countActiveAdvancedRules(advancedRules)
-  const fieldFilterActive = filterField && String(filterValue || '').trim() ? 1 : 0
-  const totalFilterCount = advancedFilterCount + fieldFilterActive
+  const workOrderFilterFields = useMemo(() => ([
+    { id: 'wo_number', label: 'WO #', placeholder: 'Enter work order number...' },
+    { id: 'summary', label: 'Short description', placeholder: 'Enter keywords...' },
+    {
+      id: 'status',
+      label: 'Status',
+      type: 'select',
+      emptyLabel: 'All Status',
+      options: loadedStatusOptions.length ? loadedStatusOptions : WO_STATUS_FALLBACK,
+    },
+    {
+      id: 'priority',
+      label: 'Priority',
+      type: 'select',
+      emptyLabel: 'All Priorities',
+      options: WO_PRIORITY_OPTIONS,
+    },
+    {
+      id: 'location',
+      label: 'Location',
+      type: 'select',
+      emptyLabel: 'All Locations',
+      options: activeLocations.map((loc) => ({ value: loc.id, label: loc.name })),
+    },
+    {
+      id: 'work_center',
+      label: 'Work center',
+      type: 'select',
+      emptyLabel: 'All Work Centers',
+      options: (workCenters || []).map((center) => ({ value: center.name, label: center.name })),
+    },
+    { id: 'assignee', label: 'Assignee', placeholder: 'Enter assignee...' },
+    { id: 'creator', label: 'Created by', placeholder: 'Enter name...' },
+    { id: 'work_request', label: 'Work request', placeholder: 'Enter work request...' },
+    { id: 'created', label: 'Created', type: 'date-range', fromKey: 'created_from', toKey: 'created_to' },
+  ]), [activeLocations, loadedStatusOptions, workCenters])
 
   const handleAddWorkOrder = () => {
     if (!org?.slug) return
     navigate(orgPath(org.slug, 'work-orders/manual/create'))
   }
 
+  const setColumnFilter = (columnId, value) => {
+    setColumnFilters((prev) => {
+      const next = { ...prev }
+      if (!String(value || '').trim()) delete next[columnId]
+      else next[columnId] = value
+      return next
+    })
+  }
+  const toggleStatus = (key) => {
+    setStatusFilters((prev) => (
+      prev.includes(key) ? prev.filter((item) => item !== key) : [...prev, key]
+    ))
+  }
+  const exportPath = activeTab === 'received'
+    ? '/received'
+    : activeTab === 'assigned'
+      ? '/assigned'
+      : '/manual/orders'
+
+  const exportRows = async () => {
+    setExporting(true)
+    try {
+      const filters = { ...columnFilters }
+      const file = await exportWorkOrderList(exportPath, {
+        search: debouncedSearch,
+        filters,
+        statuses: statusFilters,
+        excludeStatuses: statusFilters.length ? [] : ['draft'],
+        sort: headerSort?.id || '',
+        sortDir: headerSort?.dir || '',
+        sort_by: headerSort ? '' : sortBy,
+      })
+      downloadBlobFile(file)
+    } finally {
+      setExporting(false)
+    }
+  }
+
   const outletContext = useMemo(() => ({
-    search,
+    search: debouncedSearch,
     locationFilter,
     sortBy,
     advancedRules,
-    fieldFilter: { field: filterField, value: filterValue },
+    fieldFilter: { field: '', value: '' },
     locations: activeLocations,
     bulkReloadToken,
-  }), [search, locationFilter, sortBy, advancedRules, filterField, filterValue, activeLocations, bulkReloadToken])
+    columnFilters,
+    setColumnFilter,
+    headerSort,
+    setHeaderSort,
+    statusFilters,
+    toggleStatus,
+  }), [
+    debouncedSearch, locationFilter, sortBy, advancedRules,
+    activeLocations, bulkReloadToken, columnFilters, headerSort, statusFilters,
+  ])
 
   if (!permsLoading && onIndex && org?.slug && fallbackTab) {
     return <Navigate to={orgPath(org.slug, fallbackTab.segment)} replace />
@@ -122,6 +226,7 @@ export default function WorkOrdersLayout() {
   }
 
   return (
+    <ColumnPickerScope>
     <div className="company-page wo-page">
       <header className="wo-page__top">
         <div className="wo-page__intro">
@@ -145,6 +250,9 @@ export default function WorkOrdersLayout() {
               >
                 {tab.icon ? <NavIcon name={tab.icon} /> : null}
                 {tab.label}
+                {tab.countKey && Number.isFinite(Number(tabCounts?.[tab.countKey])) && (
+                  <span className="wo-page__tab-count">{tabCounts[tab.countKey]}</span>
+                )}
               </NavLink>
             ))}
           </nav>
@@ -162,22 +270,18 @@ export default function WorkOrdersLayout() {
                   placeholder: 'Search work orders...',
                   ariaLabel: 'Search work orders',
                 }}
-                filter={{
-                  fields: WO_FILTER_FIELDS,
-                  field: filterField,
-                  onFieldChange: setFilterField,
-                  value: filterValue,
-                  onValueChange: setFilterValue,
-                }}
-                sort={{ value: sortBy, onChange: setSortBy, options: WO_SORT_OPTIONS }}
+                filterSlot={(
+                  <AdvancedFilterMenu
+                    fields={workOrderFilterFields}
+                    values={columnFilters}
+                    onChange={setColumnFilters}
+                  />
+                )}
+                sort={{ value: sortBy, onChange: (value) => { setSortBy(value); setHeaderSort(null) }, options: WO_SORT_OPTIONS }}
+                columnPicker={<ColumnPickerMount />}
                 actions={(
                   <>
-                    <WorkOrderAdvancedFilter
-                      rules={advancedRules}
-                      onChange={setAdvancedRules}
-                      locations={activeLocations}
-                      activeCount={totalFilterCount}
-                    />
+                    <ExportCsvButton onClick={exportRows} busy={exporting} />
                   {toolbarRight}
                   {canCreateWorkOrders && (
                     <MasterBulkActions
@@ -187,7 +291,7 @@ export default function WorkOrdersLayout() {
                       onFileChange={handleBulkFile}
                       addLabel="+ Add Work Order"
                       onAdd={handleAddWorkOrder}
-                      title="Bulk upload work orders"
+                      title="Import work orders"
                       noun="work order"
                       bulkError={bulkError}
                       bulkResult={bulkResult}
@@ -207,7 +311,7 @@ export default function WorkOrdersLayout() {
                     bulkBusy={bulkBusy}
                     bulkInputRef={bulkInputRef}
                     onFileChange={handleBulkFile}
-                    title="Bulk upload work orders"
+                    title="Import work orders"
                     noun="work order"
                     bulkError={bulkError}
                     bulkResult={bulkResult}
@@ -221,9 +325,10 @@ export default function WorkOrdersLayout() {
 
       <div className="wo-page__content">
         <div className="company-panel">
-          <Outlet key={location.pathname} context={outletContext} />
+          <Outlet context={outletContext} />
         </div>
       </div>
     </div>
+    </ColumnPickerScope>
   )
 }

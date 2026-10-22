@@ -20,10 +20,11 @@ import EmployeeModal from './EmployeeModal'
 import LimitExceededCard from '../shared/LimitExceededCard'
 import TablePagination from '../shared/TablePagination'
 import TableColumnPicker from '../shared/TableColumnPicker'
+import { DynamicPickerCells, DynamicPickerHeaders } from '../shared/DynamicPickerCells'
 import TableFilterToolbar from '../shared/TableFilterToolbar'
 import { useTablePagination } from '../../hooks/useTablePagination'
 import { useTableColumnPrefs } from '../../hooks/useTableColumnPrefs'
-import { TABLE_SORT_OPTIONS, applyTableFilters } from '../../lib/tableFilters'
+import { TABLE_SORT_OPTIONS, applyTableFilters, compactFilters } from '../../lib/tableFilters'
 import { stopTableRowClick, tableRowClickProps } from '../../lib/clickableTableRow'
 import RecordDetailModal from '../shared/RecordDetailModal'
 import { EmployeeDetailContent } from './CompanyRecordDetails'
@@ -49,30 +50,11 @@ const EMPLOYEE_FILTER_FIELDS = [
   { value: 'email', label: 'Email' },
   { value: 'mobile', label: 'Mobile' },
   { value: 'manager', label: 'Manager' },
-  { value: 'status', label: 'Status', placeholder: 'active or inactive' },
+  { value: 'status', label: 'Status', type: 'select', emptyLabel: 'All Status', options: [
+    { value: 'active', label: 'Active' },
+    { value: 'inactive', label: 'Inactive' },
+  ] },
 ]
-
-function employeeSearchHaystack(employee) {
-  const emails = [
-    employee.email,
-    ...(employee.org_employee_emails || []).map((row) => row.email),
-  ]
-  const parts = [
-    employee.emp_id,
-    employee.name,
-    employee.mobile,
-    employee.mobile ? formatPhoneDisplay(employee.mobile) : '',
-    ...emails,
-    employee.departments?.name,
-    employee.org_locations?.name,
-    employee.manager?.name,
-    employee.manager?.emp_id,
-    employee.access_role?.name,
-    isLocationHeadEmployee(employee) ? 'Location Head' : '',
-    employee.is_active === false ? 'inactive' : 'active',
-  ]
-  return parts.filter(Boolean).join(' ').toLowerCase()
-}
 
 function canPickAnyLocation({ isOrgAdmin, accessRole }) {
   if (isOrgAdmin) return true
@@ -85,10 +67,10 @@ export default function EmployeesTab({ canManage }) {
   const { isOrgAdmin, locationId: myLocationId, accessRole } = usePermissions()
   const canSelectAnyLocation = canPickAnyLocation({ isOrgAdmin, accessRole })
   const [search, setSearch] = useState('')
-  const [filterField, setFilterField] = useState('')
-  const [filterValue, setFilterValue] = useState('')
+  const [columnFilters, setColumnFilters] = useState({})
   const [sortBy, setSortBy] = useState('name_asc')
   const debouncedSearch = useDebouncedValue(search.trim())
+  const listFilters = useMemo(() => compactFilters(columnFilters), [columnFilters])
 
   const scopedLocationId = canSelectAnyLocation ? '' : (myLocationId || '')
 
@@ -101,7 +83,7 @@ export default function EmployeesTab({ canManage }) {
   const [viewing, setViewing] = useState(null)
   const [togglingId, setTogglingId] = useState(null)
   const [deleteError, setDeleteError] = useState(null)
-  const paginationResetKey = `${debouncedSearch}|${filterField}|${filterValue}|${sortBy}|${scopedLocationId}`
+  const paginationResetKey = `${debouncedSearch}|${JSON.stringify(columnFilters)}|${sortBy}|${scopedLocationId}`
   const pagination = useTablePagination(employeeTotal, { resetKey: paginationResetKey })
   const {
     employees,
@@ -119,6 +101,7 @@ export default function EmployeesTab({ canManage }) {
     search: debouncedSearch,
     limit: pagination.pageSize,
     offset: pagination.offset,
+    listFilters,
   })
   const { employees: employeeOptions } = useEmployees({
     locationId: scopedLocationId,
@@ -131,7 +114,7 @@ export default function EmployeesTab({ canManage }) {
   }, [total])
 
   const { isResourceAtLimit, reload: reloadLimits } = useOrgLimits()
-  const { visible: limitVisible, resource: limitResource, trigger: triggerLimit, tryHandleLimitError, dismiss: dismissLimit } = useLimitExceeded()
+  const { visible: limitVisible, resource: limitResource, overflow: limitOverflow, trigger: triggerLimit, tryHandleLimitError, dismiss: dismissLimit } = useLimitExceeded()
 
   const {
     bulkInputRef,
@@ -144,9 +127,10 @@ export default function EmployeesTab({ canManage }) {
     downloadTemplate: getEmployeesTemplate,
     upload: bulkUploadEmployees,
     onSuccess: async () => {
-      await reload?.({ silent: true })
+      await reload?.({ silent: true, force: true })
       await reloadLimits()
     },
+    onError: (err) => tryHandleLimitError(err, 'Employee'),
     defaultFilename: 'employees-template.xlsx',
   })
 
@@ -157,25 +141,10 @@ export default function EmployeesTab({ canManage }) {
   const lockCreateLocation = Boolean(defaultCreateLocationId)
 
   const filteredEmployees = useMemo(() => applyTableFilters(employees, {
-    fieldFilter: { field: filterField, value: filterValue },
-    fieldFilterGetters: {
-      name: (employee) => employee.name,
-      emp_id: (employee) => employee.emp_id,
-      role: (employee) => employee.access_role?.name,
-      department: (employee) => employee.departments?.name,
-      location: (employee) => employee.org_locations?.name,
-      email: (employee) => [
-        employee.email,
-        ...(employee.org_employee_emails || []).map((row) => row.email),
-      ].filter(Boolean).join(' '),
-      mobile: (employee) => employee.mobile ? formatPhoneDisplay(employee.mobile) : employee.mobile,
-      manager: (employee) => employee.manager?.name,
-      status: (employee) => (employee.is_active === false ? 'inactive' : 'active'),
-    },
     sortBy,
     getName: (employee) => employee.name,
     getCreatedAt: (employee) => employee.created_at,
-  }), [employees, filterField, filterValue, sortBy])
+  }), [employees, sortBy])
 
   const atEmployeeLimit = isResourceAtLimit('employees', 'employee_limit')
 
@@ -204,6 +173,8 @@ export default function EmployeesTab({ canManage }) {
       { id: 'email', label: 'Email(s)' },
       { id: 'department', label: 'Department' },
       { id: 'manager', label: 'Manager' },
+      { id: 'created_at', label: 'Created', defaultVisible: false },
+      { id: 'updated_at', label: 'Updated', defaultVisible: false },
     ]
     if (canManage) {
       cols.push({ id: 'active', label: 'Active' })
@@ -217,6 +188,9 @@ export default function EmployeesTab({ canManage }) {
     resetColumns: resetEmployeeColumns,
     columnDefs: employeePickerColumns,
     visibleColumnIds: employeeVisibleColumnIds,
+    columnOrder: employeeColumnOrder,
+    reorderColumns: reorderEmployeeColumns,
+    moveColumn: moveEmployeeColumn,
   } = useTableColumnPrefs('company-employees', employeeColumnDefs)
 
   const refreshMasters = async () => {
@@ -391,15 +365,13 @@ export default function EmployeesTab({ canManage }) {
           search={{
             value: search,
             onChange: setSearch,
-            placeholder: 'Search employees...',
-            ariaLabel: 'Search employees',
+            placeholder: 'Search all columns...',
+            ariaLabel: 'Search employees across all columns',
           }}
           filter={{
             fields: EMPLOYEE_FILTER_FIELDS,
-            field: filterField,
-            onFieldChange: setFilterField,
-            value: filterValue,
-            onValueChange: setFilterValue,
+            values: columnFilters,
+            onChange: setColumnFilters,
           }}
           sort={{ value: sortBy, onChange: setSortBy, options: TABLE_SORT_OPTIONS }}
           actions={canManage && (
@@ -422,10 +394,11 @@ export default function EmployeesTab({ canManage }) {
               onFileChange={handleBulkFile}
               addLabel="+ Add Employee"
               onAdd={openCreate}
-              title="Bulk upload employees"
+              title="Import employees"
               bulkError={bulkError}
               bulkResult={bulkResult}
               noun="employee"
+              closeSignal={limitVisible}
             />
             </>
           )}
@@ -433,8 +406,11 @@ export default function EmployeesTab({ canManage }) {
             <TableColumnPicker
               columnDefs={employeePickerColumns}
               visibleColumnIds={employeeVisibleColumnIds}
+              columnOrder={employeeColumnOrder}
               onToggle={toggleEmployeeColumn}
               onReset={resetEmployeeColumns}
+              onReorder={reorderEmployeeColumns}
+              onMove={moveEmployeeColumn}
             />
           )}
         />
@@ -447,7 +423,7 @@ export default function EmployeesTab({ canManage }) {
 
       {loading ? (
         <div className="company-loading">Loading employees...</div>
-      ) : employees.length === 0 ? (
+      ) : employees.length === 0 && !debouncedSearch && !listFilters ? (
         <div className="company-empty">No employees yet. Add your first team member.</div>
       ) : filteredEmployees.length === 0 ? (
         <div className="company-empty">No employees match your search.</div>
@@ -478,6 +454,11 @@ export default function EmployeesTab({ canManage }) {
                   {isEmployeeColumnVisible('email') && <th>Email(s)</th>}
                   {isEmployeeColumnVisible('department') && <th>Department</th>}
                   {isEmployeeColumnVisible('manager') && <th className="company-table__cell--manager">Manager</th>}
+                  <DynamicPickerHeaders
+                    visibleColumnIds={employeeVisibleColumnIds}
+                    columnDefs={employeePickerColumns}
+                    handledIds={['photo', 'emp_id', 'name', 'role', 'location', 'mobile', 'email', 'department', 'manager', 'active', 'actions']}
+                  />
                   {canManage && isEmployeeColumnVisible('active') && <th>Active</th>}
                   {canManage && isEmployeeColumnVisible('actions') && <th>Actions</th>}
                 </tr>
@@ -584,6 +565,12 @@ export default function EmployeesTab({ canManage }) {
                           )}
                         </td>
                       )}
+                      <DynamicPickerCells
+                        visibleColumnIds={employeeVisibleColumnIds}
+                        columnDefs={employeePickerColumns}
+                        row={employee}
+                        handledIds={['photo', 'emp_id', 'name', 'role', 'location', 'mobile', 'email', 'department', 'manager', 'active', 'actions']}
+                      />
                       {canManage && isEmployeeColumnVisible('active') && (
                         <td onClick={stopTableRowClick}>
                           <GooToggle
@@ -695,7 +682,7 @@ export default function EmployeesTab({ canManage }) {
       )}
 
       {limitVisible && (
-        <LimitExceededCard resource={limitResource} onClose={dismissLimit} />
+        <LimitExceededCard resource={limitResource} overflow={limitOverflow} onClose={dismissLimit} />
       )}
     </div>
   )

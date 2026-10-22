@@ -1,4 +1,4 @@
-import { companyFetch } from './api'
+import { apiFetchBlob, companyFetch } from './api'
 import { listQueryParams, asListArray } from './listResponse'
 
 export async function getEmployees(filters = {}) {
@@ -7,10 +7,25 @@ export async function getEmployees(filters = {}) {
     location_id: filters.locationId,
     for_assignment: filters.forAssignment ? '1' : undefined,
     search: filters.search,
-    limit: filters.limit ?? 200,
+    limit: filters.limit ?? 50,
     offset: filters.offset ?? 0,
+    filters: filters.filters,
+    sort: filters.sort,
+    sortDir: filters.sortDir,
   })}`)
   return asListArray(data)
+}
+
+export function exportEmployees(filters = {}) {
+  return apiFetchBlob(`/api/company/employees${listQueryParams({
+    department_id: filters.departmentId,
+    location_id: filters.locationId,
+    search: filters.search,
+    filters: filters.filters,
+    sort: filters.sort,
+    sortDir: filters.sortDir,
+    exportCsv: true,
+  })}`)
 }
 
 export function createEmployee(data) {

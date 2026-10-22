@@ -1,11 +1,17 @@
-import { useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { useEffect, useMemo, useState, lazy, Suspense } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useAdminOrganizations } from '../../hooks/useAdminOrganizations'
 import CreateOrgModal from '../../components/admin/CreateOrgModal'
 import OrgLimitsModal from '../../components/admin/OrgLimitsModal'
 import GooToggle from '../../components/ui/GooToggle'
+import SettingsIcon from '../../components/ui/SettingsIcon'
 import TablePagination from '../../components/shared/TablePagination'
 import TableFilterToolbar from '../../components/shared/TableFilterToolbar'
+import TableColumnPicker from '../../components/shared/TableColumnPicker'
+import { DynamicPickerCells, DynamicPickerHeaders } from '../../components/shared/DynamicPickerCells'
+import { ExportCsvButton, TableColumnHead } from '../../components/shared/ListTableChrome'
+import { useTableColumnPrefs } from '../../hooks/useTableColumnPrefs'
+import { downloadClientCsv } from '../../lib/clientCsv'
 import { useTablePagination } from '../../hooks/useTablePagination'
 import { LIMIT_ITEMS, formatUsage, isAtOrOverLimit } from '../../lib/orgLimits'
 import '../../components/company/CompanyShared.css'
@@ -13,7 +19,8 @@ import '../../components/shared/TableFilterToolbar.css'
 import '../../components/admin/OrgLimitsModal.css'
 import './AdminPage.css'
 import './Organizations.css'
-import './AdminOrgAssets.css'
+
+const OrgConfigureModal = lazy(() => import('../../components/admin/OrgConfigureModal'))
 
 const ORG_FILTER_FIELDS = [
   { value: 'name', label: 'Name' },
@@ -159,6 +166,22 @@ function LimitsSummary({ org, onManage, disabled }) {
   )
 }
 
+function OrgConfigureButton({ onClick }) {
+  return (
+    <div className="admin-org-configure">
+      <button
+        type="button"
+        className="admin-org-configure__btn"
+        aria-label="Configure"
+        onClick={onClick}
+      >
+        <SettingsIcon size={18} />
+        <span className="admin-org-configure__tooltip" role="tooltip">Configure</span>
+      </button>
+    </div>
+  )
+}
+
 function computeStats(organizations) {
   const totals = organizations.reduce(
     (acc, org) => {
@@ -179,7 +202,31 @@ function computeStats(organizations) {
   }
 }
 
-function filterAndSort(organizations, { search, filterField, filterValue, sortBy }) {
+const ORG_COLUMNS = [
+  { id: 'name', label: 'Organization' },
+  { id: 'plan', label: 'Plan' },
+  { id: 'usage', label: 'Usage / Limits' },
+  { id: 'created', label: 'Created' },
+  { id: 'enabled', label: 'Enabled' },
+  { id: 'slug', label: 'Slug', defaultVisible: false },
+  { id: 'email', label: 'Email', defaultVisible: false },
+  { id: 'phone', label: 'Phone', defaultVisible: false },
+  { id: 'city', label: 'City', defaultVisible: false },
+  { id: 'state', label: 'State', defaultVisible: false },
+  { id: 'country', label: 'Country', defaultVisible: false },
+  { id: 'actions', label: 'Actions', locked: true },
+]
+
+function orgFieldValue(org, key) {
+  if (key === 'name') return org.name
+  if (key === 'plan') return org.plan
+  if (key === 'created') return org.created_at
+  if (key === 'enabled' || key === 'status') return org.is_active === false ? 'inactive' : 'active'
+  if (key === 'slug') return org.slug
+  return ''
+}
+
+function filterAndSort(organizations, { search, filterField, filterValue, sortBy, columnFilters = {}, headerSort = null }) {
   let rows = [...organizations]
   const query = search.trim().toLowerCase()
 
@@ -204,6 +251,22 @@ function filterAndSort(organizations, { search, filterField, filterValue, sortBy
     }
   }
 
+  for (const [key, raw] of Object.entries(columnFilters)) {
+    const text = String(raw || '').trim().toLowerCase()
+    if (!text) continue
+    rows = rows.filter((org) => String(orgFieldValue(org, key) || '').toLowerCase().includes(text))
+  }
+
+  if (headerSort?.id) {
+    rows.sort((a, b) => {
+      const left = String(orgFieldValue(a, headerSort.id) || '')
+      const right = String(orgFieldValue(b, headerSort.id) || '')
+      const compared = left.localeCompare(right)
+      return headerSort.dir === 'desc' ? -compared : compared
+    })
+    return rows
+  }
+
   rows.sort((a, b) => {
     if (sortBy === 'oldest') {
       return new Date(a.created_at) - new Date(b.created_at)
@@ -218,14 +281,24 @@ function filterAndSort(organizations, { search, filterField, filterValue, sortBy
 }
 
 export default function Organizations() {
-  const [showModal, setShowModal] = useState(false)
+  const [params, setParams] = useSearchParams()
+  const [showModal, setShowModal] = useState(() => params.get('new') === '1')
   const [limitsOrg, setLimitsOrg] = useState(null)
+  const [configureOrg, setConfigureOrg] = useState(null)
   const [success, setSuccess] = useState(null)
   const [search, setSearch] = useState('')
-  const [filterField, setFilterField] = useState('')
-  const [filterValue, setFilterValue] = useState('')
+  const [columnFilters, setColumnFilters] = useState({})
+  const [headerSort, setHeaderSort] = useState(null)
   const [sortBy, setSortBy] = useState('newest')
   const [togglingId, setTogglingId] = useState(null)
+
+  useEffect(() => {
+    if (params.get('new') !== '1') return
+    setShowModal(true)
+    const next = new URLSearchParams(params)
+    next.delete('new')
+    setParams(next, { replace: true })
+  }, [params, setParams])
 
   const {
     organizations,
@@ -235,16 +308,27 @@ export default function Organizations() {
     createOrg,
     toggleOrgStatus,
     updateOrgLimits,
+    patchOrg,
   } = useAdminOrganizations()
 
   const stats = useMemo(() => computeStats(organizations), [organizations])
 
   const filtered = useMemo(
-    () => filterAndSort(organizations, { search, filterField, filterValue, sortBy }),
-    [organizations, search, filterField, filterValue, sortBy],
+    () => filterAndSort(organizations, { search, sortBy, columnFilters, headerSort }),
+    [organizations, search, sortBy, columnFilters, headerSort],
   )
 
-  const paginationResetKey = `${search}|${filterField}|${filterValue}|${sortBy}`
+  const {
+    visibleColumnIds,
+    columnOrder,
+    columnDefs: orgPickerColumns,
+    toggleColumn,
+    resetColumns,
+    reorderColumns,
+    moveColumn,
+  } = useTableColumnPrefs('admin-organizations', ORG_COLUMNS)
+
+  const paginationResetKey = `${search}|${JSON.stringify(columnFilters)}|${sortBy}`
   const pagination = useTablePagination(filtered.length, { resetKey: paginationResetKey })
   const pageRows = pagination.paginate(filtered)
 
@@ -320,18 +404,43 @@ export default function Organizations() {
               }}
               filter={{
                 fields: ORG_FILTER_FIELDS,
-                field: filterField,
-                onFieldChange: (value) => {
-                  setFilterField(value)
-                  pagination.setPage(1)
-                },
-                value: filterValue,
-                onValueChange: (value) => {
-                  setFilterValue(value)
+                values: columnFilters,
+                onChange: (next) => {
+                  setColumnFilters(next)
                   pagination.setPage(1)
                 },
               }}
               sort={{ value: sortBy, onChange: setSortBy, options: ORG_SORT_OPTIONS }}
+              actions={(
+                <ExportCsvButton
+                  onClick={() => downloadClientCsv('organizations.csv', filtered, [
+                    { label: 'Organization', value: (row) => row.name },
+                    { label: 'Plan', value: (row) => row.plan },
+                    { label: 'Locations', value: (row) => row.usage?.locations ?? '' },
+                    { label: 'Employees', value: (row) => row.usage?.employees ?? '' },
+                    { label: 'Logins', value: (row) => row.usage?.logins ?? '' },
+                    { label: 'Created', value: (row) => row.created_at },
+                    { label: 'Enabled', value: (row) => (row.is_active === false ? 'Inactive' : 'Active') },
+                    { label: 'Slug', value: (row) => row.slug },
+                    { label: 'Email', value: (row) => row.email },
+                    { label: 'Phone', value: (row) => row.phone },
+                    { label: 'City', value: (row) => row.city },
+                    { label: 'State', value: (row) => row.state },
+                    { label: 'Country', value: (row) => row.country },
+                  ])}
+                />
+              )}
+              columnPicker={(
+                <TableColumnPicker
+                  columnDefs={orgPickerColumns}
+                  visibleColumnIds={visibleColumnIds}
+                  columnOrder={columnOrder}
+                  onToggle={toggleColumn}
+                  onReset={resetColumns}
+                  onReorder={reorderColumns}
+                  onMove={moveColumn}
+                />
+              )}
             />
           </div>
 
@@ -343,18 +452,29 @@ export default function Organizations() {
                 <table className="admin-table admin-org-table">
                   <thead>
                     <tr>
-                      <th>Organization</th>
-                      <th>Plan</th>
-                      <th>Usage / Limits</th>
-                      <th>Created</th>
-                      <th>Enabled</th>
-                      <th>Actions</th>
+                      {visibleColumnIds.includes('name') && (
+                        <TableColumnHead columnId="name" label="Organization" sort={headerSort} onSort={setHeaderSort} filterValue={columnFilters.name || ''} onFilter={(id, value) => setColumnFilters((prev) => ({ ...prev, [id]: value }))} />
+                      )}
+                      {visibleColumnIds.includes('plan') && (
+                        <TableColumnHead columnId="plan" label="Plan" sort={headerSort} onSort={setHeaderSort} filterValue={columnFilters.plan || ''} onFilter={(id, value) => setColumnFilters((prev) => ({ ...prev, [id]: value }))} />
+                      )}
+                      {visibleColumnIds.includes('usage') && <th>Usage / Limits</th>}
+                      {visibleColumnIds.includes('created') && (
+                        <TableColumnHead columnId="created" label="Created" sort={headerSort} onSort={setHeaderSort} filterValue={columnFilters.created || ''} onFilter={(id, value) => setColumnFilters((prev) => ({ ...prev, [id]: value }))} />
+                      )}
+                      {visibleColumnIds.includes('enabled') && <th>Enabled</th>}
+                      <DynamicPickerHeaders
+                        visibleColumnIds={visibleColumnIds}
+                        columnDefs={orgPickerColumns}
+                        handledIds={['name', 'plan', 'usage', 'created', 'enabled', 'actions']}
+                      />
+                      {visibleColumnIds.includes('actions') && <th>Actions</th>}
                     </tr>
                   </thead>
                   <tbody>
                     {!pageRows.length ? (
                       <tr>
-                        <td colSpan={6} className="admin-table__empty">
+                        <td colSpan={visibleColumnIds.length || 1} className="admin-table__empty">
                           {organizations.length
                             ? 'No organizations match your search.'
                             : 'No organizations yet. Create your first organization to get started.'}
@@ -363,6 +483,7 @@ export default function Organizations() {
                     ) : (
                       pageRows.map((org) => (
                         <tr key={org.id}>
+                          {visibleColumnIds.includes('name') && (
                           <td>
                             <div className="admin-org__cell">
                               <OrgLogo org={org} />
@@ -372,11 +493,15 @@ export default function Organizations() {
                               </div>
                             </div>
                           </td>
+                          )}
+                          {visibleColumnIds.includes('plan') && (
                           <td>
                             <span className={`admin-plan-badge admin-plan-badge--${org.plan}`}>
                               {org.plan}
                             </span>
                           </td>
+                          )}
+                          {visibleColumnIds.includes('usage') && (
                           <td>
                             <LimitsSummary
                               org={org}
@@ -384,7 +509,9 @@ export default function Organizations() {
                               onManage={() => setLimitsOrg(org)}
                             />
                           </td>
-                          <td>{new Date(org.created_at).toLocaleDateString()}</td>
+                          )}
+                          {visibleColumnIds.includes('created') && <td>{new Date(org.created_at).toLocaleDateString()}</td>}
+                          {visibleColumnIds.includes('enabled') && (
                           <td>
                             <GooToggle
                               checked={org.is_active !== false}
@@ -393,22 +520,18 @@ export default function Organizations() {
                               ariaLabel={`${org.is_active !== false ? 'Disable' : 'Enable'} ${org.name}`}
                             />
                           </td>
+                          )}
+                          <DynamicPickerCells
+                            visibleColumnIds={visibleColumnIds}
+                            columnDefs={orgPickerColumns}
+                            row={org}
+                            handledIds={['name', 'plan', 'usage', 'created', 'enabled', 'actions']}
+                          />
+                          {visibleColumnIds.includes('actions') && (
                           <td>
-                            <div className="admin-org-actions">
-                              <Link
-                                to={`/admin/organizations/${org.id}/assets`}
-                                className="admin-org-actions__btn"
-                              >
-                                Assets
-                              </Link>
-                              <Link
-                                to={`/admin/organizations/${org.id}/equipment`}
-                                className="admin-org-actions__btn"
-                              >
-                                Equipment
-                              </Link>
-                            </div>
+                            <OrgConfigureButton onClick={() => setConfigureOrg(org)} />
                           </td>
+                          )}
                         </tr>
                       ))
                     )}
@@ -462,6 +585,19 @@ export default function Organizations() {
           }}
           saving={saving}
         />
+      )}
+
+      {configureOrg && (
+        <Suspense fallback={null}>
+          <OrgConfigureModal
+            org={configureOrg}
+            onClose={() => setConfigureOrg(null)}
+            onOrgUpdated={(updated) => {
+              patchOrg(updated)
+              setConfigureOrg(updated)
+            }}
+          />
+        </Suspense>
       )}
     </div>
   )

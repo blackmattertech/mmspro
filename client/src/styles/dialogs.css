@@ -1,40 +1,82 @@
 /**
- * Full-width dialogs — overlays fill the main content area (sidebar stays visible).
- * Opt out with `.company-modal-overlay--popup` / `.company-modal--popup` for centered cards.
+ * Centered dialogs — overlays cover the viewport; cards size to their content.
  */
 
-.modal-overlay:not(.image-crop-overlay):not(.task-voice-overlay):not(.task-meta-edit-overlay):not(.task-meta-settings-overlay):not(.company-modal-overlay--popup),
-.company-modal-overlay:not(.image-crop-overlay):not(.task-voice-overlay):not(.task-meta-edit-overlay):not(.task-meta-settings-overlay):not(.company-modal-overlay--popup),
-.admin-modal-overlay {
-  align-items: stretch;
-  justify-content: stretch;
-  padding: 0;
+html body .modal-overlay,
+html body .company-modal-overlay,
+html body .admin-modal-overlay,
+html body .advanced-filter-overlay {
+  position: fixed;
+  inset: 0;
+  left: 0 !important;
+  right: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  overflow: auto;
 }
 
-.company-modal-overlay--nested {
-  left: 0 !important;
+html body .company-modal-overlay--nested {
   z-index: 1100;
 }
 
-.modal:not(.image-crop-modal):not(.task-meta-edit-modal):not(.task-meta-settings-modal):not(.company-modal--popup),
-.company-modal:not(.image-crop-modal):not(.task-meta-edit-modal):not(.task-meta-settings-modal):not(.company-modal--popup),
-.admin-modal {
-  width: 100%;
-  max-width: none;
-  height: 100%;
-  max-height: none;
-  border-radius: 0;
+html body .modal,
+html body .company-modal,
+html body .admin-modal,
+html body .advanced-filter__dialog {
+  width: min(560px, 100%);
+  max-width: min(560px, 100%);
+  height: auto;
+  max-height: min(90dvh, 900px);
+  margin: auto;
+  border-radius: var(--radius-md);
   display: flex;
   flex-direction: column;
   overflow: hidden;
 }
 
-.modal__header,
-.company-modal__header {
+html body .company-modal--wide,
+html body .company-modal--popup-wide,
+html body .modal.company-modal--popup-wide,
+html body .company-modal.pm-modal,
+html body .company-modal.pm-modal--wide,
+html body .advanced-filter__dialog,
+html body .modal.wo-received-detail,
+html body .modal.wo-settings-modal,
+html body .assign-employees-modal,
+html body .profile-modal {
+  width: min(760px, 100%);
+  max-width: min(760px, 100%);
+}
+
+html body .asset-layout-modal,
+html body .org-configure-modal {
+  width: min(1080px, 100%);
+  max-width: min(1080px, 100%);
+  height: min(86dvh, 840px);
+  max-height: min(86dvh, 840px);
+}
+
+html body .image-crop-modal {
+  width: min(400px, 100%);
+  max-width: min(400px, 100%);
+  height: auto;
+}
+
+html body .modal__header,
+html body .company-modal__header,
+html body .admin-modal__header,
+html body .advanced-filter__head,
+html body .advanced-filter__foot,
+html body .modal__actions,
+html body .company-modal__actions,
+html body .company-modal__footer,
+html body .admin-modal__actions {
   flex-shrink: 0;
 }
 
-.modal__header-main {
+html body .modal__header-main {
   display: flex;
   flex-direction: row;
   align-items: center;
@@ -42,118 +84,58 @@
   min-width: 0;
 }
 
-.modal__header-main h2,
-.modal__header-main .modal__title,
-.modal__header-main .admin-modal__title {
+html body .modal__header-main h2,
+html body .modal__header-main .modal__title,
+html body .modal__header-main .admin-modal__title {
   margin: 0;
 }
 
-.modal__actions,
-.company-modal__actions,
-.company-modal__footer {
-  flex-shrink: 0;
-}
-
-.company-modal:not(.image-crop-modal):not(.task-meta-edit-modal):not(.task-meta-settings-modal):not(.company-modal--popup) .company-modal__form {
-  flex: 1;
+html body .company-modal__form,
+html body .modal__form,
+html body .admin-modal__form,
+html body .company-modal--wide .company-modal__body,
+html body .wo-received-detail__body,
+html body .wo-settings-modal__body,
+html body .asset-layout-modal__body,
+html body .org-configure-modal__body,
+html body .advanced-filter__grid {
+  flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
-}
-
-/* Centered popup card (e.g. Add/Edit Location) */
-.company-modal-overlay--popup {
-  left: 0 !important;
-  right: 0;
-  z-index: 1100;
-  align-items: center !important;
-  justify-content: center !important;
-  padding: 24px !important;
-}
-
-.company-modal--popup {
-  width: min(560px, 100%);
-  max-width: 560px;
-  height: auto;
-  max-height: min(90vh, 900px);
-  border-radius: var(--radius-md);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.company-modal--popup-wide {
-  width: min(720px, 100%);
-  max-width: 720px;
-}
-
-.company-modal--popup .company-modal__form {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-}
-
-.modal.wo-received-detail,
-.modal.wo-settings-modal {
-  display: flex;
-  flex-direction: column;
-}
-
-.wo-received-detail__body,
-.wo-settings-modal__body {
-  flex: 1;
-  min-height: 0;
-  max-height: none;
-  overflow-y: auto;
-}
-
-.asset-layout-modal__body {
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
-}
-
-.modal__form {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-}
-
-/* App shell: align with main content, not over the sidebar */
-.app-shell .modal-overlay:not(.image-crop-overlay):not(.task-voice-overlay):not(.task-meta-edit-overlay):not(.task-meta-settings-overlay):not(.company-modal-overlay--popup),
-.app-shell .company-modal-overlay:not(.image-crop-overlay):not(.task-voice-overlay):not(.task-meta-edit-overlay):not(.task-meta-settings-overlay):not(.company-modal-overlay--popup) {
-  left: var(--sidebar-width, 260px);
-}
-
-.app-shell--sidebar-collapsed .modal-overlay:not(.image-crop-overlay):not(.task-voice-overlay):not(.task-meta-edit-overlay):not(.task-meta-settings-overlay):not(.company-modal-overlay--popup),
-.app-shell--sidebar-collapsed .company-modal-overlay:not(.image-crop-overlay):not(.task-voice-overlay):not(.task-meta-edit-overlay):not(.task-meta-settings-overlay):not(.company-modal-overlay--popup) {
-  left: var(--sidebar-collapsed-width, 72px);
 }
 
 @media (max-width: 1024px) {
-  .company-modal-overlay--popup {
-    padding: 12px !important;
-    align-items: flex-end !important;
+  html body .modal-overlay,
+  html body .company-modal-overlay,
+  html body .admin-modal-overlay,
+  html body .advanced-filter-overlay {
+    padding: 12px;
+    padding-bottom: max(12px, env(safe-area-inset-bottom, 0px));
+    align-items: center;
   }
 
-  .company-modal--popup {
-    width: 100%;
+  html body .modal,
+  html body .company-modal,
+  html body .admin-modal,
+  html body .advanced-filter__dialog {
+    width: min(560px, 100%);
     max-width: 100%;
     max-height: min(92dvh, 900px);
   }
 
-  .app-shell .modal-overlay:not(.image-crop-overlay):not(.task-voice-overlay):not(.task-meta-edit-overlay):not(.task-meta-settings-overlay):not(.company-modal-overlay--popup),
-  .app-shell .company-modal-overlay:not(.image-crop-overlay):not(.task-voice-overlay):not(.task-meta-edit-overlay):not(.task-meta-settings-overlay):not(.company-modal-overlay--popup),
-  .app-shell--sidebar-collapsed .modal-overlay:not(.image-crop-overlay):not(.task-voice-overlay):not(.task-meta-edit-overlay):not(.task-meta-settings-overlay):not(.company-modal-overlay--popup),
-  .app-shell--sidebar-collapsed .company-modal-overlay:not(.image-crop-overlay):not(.task-voice-overlay):not(.task-meta-edit-overlay):not(.task-meta-settings-overlay):not(.company-modal-overlay--popup) {
-    left: 0;
+  html body .company-modal--wide,
+  html body .company-modal--popup-wide,
+  html body .modal.company-modal--popup-wide,
+  html body .company-modal.pm-modal,
+  html body .company-modal.pm-modal--wide,
+  html body .advanced-filter__dialog,
+  html body .modal.wo-received-detail,
+  html body .modal.wo-settings-modal,
+  html body .assign-employees-modal,
+  html body .profile-modal,
+  html body .asset-layout-modal,
+  html body .org-configure-modal {
+    width: 100%;
+    max-width: 100%;
   }
-}
-
-.company-modal-overlay.task-voice-overlay,
-.company-modal-overlay.task-meta-settings-overlay {
-  left: 0 !important;
-  right: 0;
-  align-items: center !important;
-  justify-content: center !important;
-  padding: 24px !important;
 }

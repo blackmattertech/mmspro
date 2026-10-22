@@ -45,7 +45,7 @@ router.get('/', async (req, res) => {
         return res.json({
           items: [],
           unread: 0,
-          push_configured: isFirebaseAdminConfigured,
+          push_configured: await isFirebaseAdminConfigured(),
           inbox_ready: false,
         })
       }
@@ -66,7 +66,7 @@ router.get('/', async (req, res) => {
     res.json({
       items,
       unread: items.filter((item) => !item.read).length,
-      push_configured: isFirebaseAdminConfigured,
+      push_configured: await isFirebaseAdminConfigured(),
       inbox_ready: true,
     })
   } catch (err) {

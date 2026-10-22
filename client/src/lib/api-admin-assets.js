@@ -59,3 +59,14 @@ export function reorderAdminAssetParents(orgId, sectionId, ids) {
     body: JSON.stringify({ kind: 'parent', section_id: sectionId, ids }),
   })
 }
+
+export function getAdminAssetFieldsTemplate(orgId, kind) {
+  return adminFetch(orgAssetFieldsPath(orgId, `/template/${kind}`))
+}
+
+export function bulkUploadAdminAssetFields(orgId, kind, base64Data) {
+  return adminFetch(orgAssetFieldsPath(orgId, `/bulk/${kind}`), {
+    method: 'POST',
+    body: JSON.stringify({ data: base64Data }),
+  })
+}

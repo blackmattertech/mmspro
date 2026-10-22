@@ -27,6 +27,8 @@ import {
   serializeWorkOrderValues,
   writeFormDraft,
 } from '../lib/formDraftStorage'
+import { getEquipment } from '../lib/api-equipment'
+import { prefillValuesForFields } from '../lib/equipmentLayoutFields'
 import { seedDateFieldDefaults } from '../lib/dateInputDefaults'
 
 const FILE_FIELD_TYPES = new Set(['file', 'image'])
@@ -93,7 +95,7 @@ function formValuesFromDetail(detail) {
   return next
 }
 
-export function useManualWorkOrderForm({ workOrderId = null } = {}) {
+export function useManualWorkOrderForm({ workOrderId = null, initialEquipmentId = '' } = {}) {
   const { org } = useOrg()
   const isEdit = Boolean(workOrderId)
   const [schema, setSchema] = useState({ sections: [] })
@@ -103,6 +105,7 @@ export function useManualWorkOrderForm({ workOrderId = null } = {}) {
   const [assignToDepartment, setAssignToDepartment] = useState(false)
   const [assignedDepartmentId, setAssignedDepartmentId] = useState(null)
   const [assignedLocationId, setAssignedLocationId] = useState(null)
+  const [linkedEquipment, setLinkedEquipment] = useState(null)
   const [existingStatus, setExistingStatus] = useState(null)
   const [formOpen, setFormOpen] = useState(true)
   const valuesRef = useRef(values)
@@ -193,10 +196,41 @@ export function useManualWorkOrderForm({ workOrderId = null } = {}) {
   }, [draftKey, loading, isEdit])
 
   useEffect(() => {
+    if (isEdit || !initialEquipmentId || loading) return undefined
+    let cancelled = false
+    getEquipment(initialEquipmentId)
+      .then((row) => {
+        if (cancelled || !row) return
+        setLinkedEquipment(row)
+        setAssignedLocationId((current) => current || row.location_id || null)
+        setAssignedDepartmentId((current) => current || row.department_id || null)
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [isEdit, initialEquipmentId, loading])
+
+  useEffect(() => {
     if (isEdit || !draftHydratedRef.current || loading || dateDefaultsSeededRef.current) return
     dateDefaultsSeededRef.current = true
     setValues((prev) => seedDateFieldDefaults(flattenSchemaFields(schema), prev))
   }, [schema, loading, isEdit])
+
+  useEffect(() => {
+    if (isEdit || !linkedEquipment || loading) return
+    const filled = prefillValuesForFields(linkedEquipment, flattenSchemaFields(schema))
+    if (!Object.keys(filled).length) return
+    setValues((prev) => {
+      const next = { ...prev }
+      let changed = false
+      for (const [fieldId, value] of Object.entries(filled)) {
+        if (next[fieldId] == null || next[fieldId] === '') {
+          next[fieldId] = value
+          changed = true
+        }
+      }
+      return changed ? next : prev
+    })
+  }, [isEdit, linkedEquipment, schema, loading])
 
   useEffect(() => {
     if (isEdit || !draftKey || !draftHydratedRef.current) return
@@ -272,7 +306,7 @@ export function useManualWorkOrderForm({ workOrderId = null } = {}) {
     }
   }
 
-  const submit = async (status = 'created') => {
+  const submit = async (status = 'created', extras = {}) => {
     if (!org?.id) {
       setError('Organization not loaded')
       return
@@ -324,11 +358,15 @@ export function useManualWorkOrderForm({ workOrderId = null } = {}) {
         assignedEmployeeIds,
         assignedDepartmentId: assignedDepartmentId || null,
         assignedLocationId: assignedLocationId || null,
+        checklist_template_id: extras.checklistTemplateId || null,
       }
 
       const workOrder = isEdit
         ? await updateManualWorkOrder(workOrderId, payload)
-        : await createManualWorkOrder(payload)
+        : await createManualWorkOrder({
+          ...payload,
+          equipmentId: linkedEquipment?.id || initialEquipmentId || null,
+        })
 
       if (fileEntries.length) {
         const uploadsByField = new Map()
@@ -381,6 +419,7 @@ export function useManualWorkOrderForm({ workOrderId = null } = {}) {
     assignToDepartment,
     setAssignToDepartment,
     setDepartmentTarget,
+    linkedEquipment,
     formOpen,
     setFormOpen,
     isEdit,

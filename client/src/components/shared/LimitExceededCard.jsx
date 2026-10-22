@@ -1,7 +1,11 @@
 import { useEffect } from 'react'
 import './LimitExceededCard.css'
 
-export default function LimitExceededCard({ resource = 'Resource', onClose }) {
+export default function LimitExceededCard({ resource = 'Resource', overflow, onClose }) {
+  const extraCount = Number(overflow)
+  const hasOverflow = Number.isInteger(extraCount) && extraCount > 0
+  const rowLabel = extraCount === 1 ? 'row' : 'rows'
+
   useEffect(() => {
     const onKeyDown = (e) => {
       if (e.key === 'Escape') onClose()
@@ -30,10 +34,21 @@ export default function LimitExceededCard({ resource = 'Resource', onClose }) {
           Limit Exceeded
         </h2>
         <p className="limit-exceeded-card__resource">
-          Your {resource.toLowerCase()} limit has been reached.
+          {hasOverflow
+            ? `Beyond the ${resource.toLowerCase()} limit.`
+            : `Your ${resource.toLowerCase()} limit has been reached.`}
         </p>
         <p id="limit-exceeded-desc" className="limit-exceeded-card__message">
-          Please contact your Administrator to increase the limit.
+          {hasOverflow ? (
+            <>
+              Please delete{' '}
+              <strong className="limit-exceeded-card__count">{extraCount}</strong>
+              {' '}
+              {rowLabel} from the file and try again.
+            </>
+          ) : (
+            'Please contact your Administrator to increase the limit.'
+          )}
         </p>
         <button type="button" className="limit-exceeded-card__btn" onClick={onClose}>
           Got it
@@ -42,3 +57,4 @@ export default function LimitExceededCard({ resource = 'Resource', onClose }) {
     </div>
   )
 }
+

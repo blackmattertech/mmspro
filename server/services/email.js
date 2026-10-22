@@ -3,6 +3,7 @@ import { dirname, join } from 'path'
 import { fileURLToPath } from 'url'
 import Mailjet from 'node-mailjet'
 import { getPublicAppUrl } from '../lib/appUrl.js'
+import { resolveEmailConfig } from '../lib/platformIntegrations.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -16,50 +17,46 @@ try {
   passwordResetTemplate = null
 }
 
-const FROM_EMAIL = process.env.MAILJET_FROM_EMAIL
-const FROM_NAME = process.env.MAILJET_FROM_NAME || 'MMSPro'
-
-const isPlaceholder = (value) => !value || /^your_/i.test(value)
-
-export const isEmailConfigured = Boolean(
-  process.env.MAILJET_API_KEY &&
-  process.env.MAILJET_SECRET_KEY &&
-  FROM_EMAIL &&
-  !isPlaceholder(process.env.MAILJET_API_KEY) &&
-  !isPlaceholder(process.env.MAILJET_SECRET_KEY) &&
-  !isPlaceholder(FROM_EMAIL)
-)
+const FROM_NAME_FALLBACK = 'MMS PRO'
 
 let mailjet = null
+let mailjetKey = ''
 
-function getMailjetClient() {
-  if (!isEmailConfigured) return null
-  if (mailjet) return mailjet
+export async function isEmailConfigured() {
+  return Boolean(await resolveEmailConfig())
+}
+
+async function getMailjetClient() {
+  const config = await resolveEmailConfig()
+  if (!config) return null
+  const key = `${config.apiKey}:${config.secretKey}`
+  if (mailjet && mailjetKey === key) return { client: mailjet, config }
   try {
-    mailjet = Mailjet.apiConnect(
-      process.env.MAILJET_API_KEY,
-      process.env.MAILJET_SECRET_KEY
-    )
+    mailjet = Mailjet.apiConnect(config.apiKey, config.secretKey)
+    mailjetKey = key
+    return { client: mailjet, config }
   } catch (err) {
     console.warn('Mailjet failed to initialize:', err.message)
     mailjet = null
+    mailjetKey = ''
+    return null
   }
-  return mailjet
 }
 
 /**
  * Core send function — no-ops when Mailjet is not configured
  */
 export const sendEmail = async ({ to, toName, subject, htmlContent, textContent, attachments }) => {
-  const client = getMailjetClient()
-  if (!client) {
+  const ready = await getMailjetClient()
+  if (!ready) {
     console.warn(`Email not sent (Mailjet not configured): ${subject} → ${to}`)
     return null
   }
+  const { client, config } = ready
 
   try {
     const payload = {
-      From: { Email: FROM_EMAIL, Name: FROM_NAME },
+      From: { Email: config.fromEmail, Name: config.fromName || FROM_NAME_FALLBACK },
       To: [{ Email: to, Name: toName || to }],
       Subject: subject,
       HTMLPart: htmlContent,
@@ -262,4 +259,131 @@ export const sendEmployeePasswordSetupEmail = (to, { resetUrl, orgName, employee
       ? `Hello ${employeeName},\n\nCreate your MMS PRO password here: ${resetUrl}`
       : `Create your MMS PRO password here: ${resetUrl}`,
   })
+
+function detailRows(lines) {
+  return lines
+    .filter((line) => line.value)
+    .map((line) => `
+      <tr>
+        <td style="padding:6px 12px 6px 0;font-size:13px;line-height:18px;color:#6B7280;vertical-align:top;">${escapeHtml(line.label)}</td>
+        <td style="padding:6px 0;font-size:14px;line-height:18px;color:#111111;font-weight:600;">${escapeHtml(line.value)}</td>
+      </tr>
+    `)
+    .join('')
+}
+
+export const sendCheckoutDroppedEmail = (to, { company, planName, amount, currency, orderId, reason }) => {
+  const companyName = company?.companyName || 'A company'
+  const lines = [
+    { label: 'Company', value: company?.companyName },
+    { label: 'Contact', value: company?.contactName },
+    { label: 'Email', value: company?.email },
+    { label: 'Mobile', value: company?.phone },
+    { label: 'Website', value: company?.website },
+    { label: 'Tax ID', value: company?.taxId },
+    { label: 'Address', value: company?.addressLine1 },
+    { label: 'City', value: company?.city },
+    { label: 'State', value: company?.state },
+    { label: 'Postal code', value: company?.postalCode },
+    { label: 'Country', value: company?.country },
+    { label: 'Plan', value: planName },
+    { label: 'Amount', value: amount != null ? `${amount} ${currency || ''}`.trim() : '' },
+    { label: 'Order', value: orderId },
+  ]
+  const text = [
+    `Checkout was not completed for ${companyName}.`,
+    reason,
+    ...lines.filter((line) => line.value).map((line) => `${line.label}: ${line.value}`),
+  ].filter(Boolean)
+
+  return sendEmail({
+    to,
+    subject: `Checkout dropped: ${companyName}`,
+    htmlContent: `
+      <div style="margin:0;padding:0;background:#f5f6f8;font-family:Inter,Arial,Helvetica,sans-serif;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f5f6f8;padding:24px 12px;">
+          <tr>
+            <td align="center">
+              <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%;background:#ffffff;border-radius:12px;overflow:hidden;border:1px solid #e8edf3;">
+                <tr>
+                  <td style="padding:20px 28px;background:#ffffff;border-bottom:3px solid #E63946;">
+                    <div style="font-size:16px;font-weight:700;color:#111111;">MMS PRO</div>
+                    <div style="font-size:12px;color:#6B7280;">Maintenance Solution</div>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:28px;">
+                    <h1 style="margin:0 0 12px;font-size:20px;line-height:26px;color:#111111;">Checkout was not completed</h1>
+                    <p style="margin:0 0 16px;font-size:15px;line-height:22px;color:#374151;">${escapeHtml(reason || 'The customer did not finish payment.')}</p>
+                    <table role="presentation" cellpadding="0" cellspacing="0">${detailRows(lines)}</table>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        </table>
+      </div>
+    `,
+    textContent: text.join('\n'),
+  })
+}
+
+export const sendCompanyWelcomeEmail = (to, { contactName, companyName, temporaryPassword, loginUrl }) => {
+  const safeName = escapeHtml(contactName || 'there')
+  const safeCompany = escapeHtml(companyName || 'your company')
+  const safeEmail = escapeHtml(to)
+  const safePassword = escapeHtml(temporaryPassword)
+  const safeUrl = escapeHtml(loginUrl)
+  const greeting = contactName ? `Hello ${contactName}` : 'Hello'
+
+  return sendEmail({
+    to,
+    toName: contactName || to,
+    subject: companyName
+      ? `Your MMS PRO login for ${companyName}`
+      : 'Your MMS PRO login',
+    htmlContent: `
+      <div style="margin:0;padding:0;background:#f5f6f8;font-family:Inter,Arial,Helvetica,sans-serif;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f5f6f8;padding:24px 12px;">
+          <tr>
+            <td align="center">
+              <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%;background:#ffffff;border-radius:12px;overflow:hidden;border:1px solid #e8edf3;">
+                <tr>
+                  <td style="padding:20px 28px;background:#ffffff;border-bottom:3px solid #E63946;">
+                    <div style="font-size:16px;font-weight:700;color:#111111;">MMS PRO</div>
+                    <div style="font-size:12px;color:#6B7280;">Maintenance Solution</div>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:28px;">
+                    <h1 style="margin:0 0 12px;font-size:20px;line-height:26px;color:#111111;">Your company is ready</h1>
+                    <p style="margin:0 0 16px;font-size:15px;line-height:22px;color:#374151;">Hello ${safeName}, ${safeCompany} now has an MMS PRO account. Sign in with the temporary password below, then change it from your profile.</p>
+                    <p style="margin:0 0 6px;font-size:13px;color:#6B7280;">Email</p>
+                    <p style="margin:0 0 14px;font-size:15px;font-weight:600;color:#111111;">${safeEmail}</p>
+                    <p style="margin:0 0 6px;font-size:13px;color:#6B7280;">Temporary password</p>
+                    <p style="margin:0 0 18px;font-size:18px;font-weight:700;letter-spacing:0.04em;color:#111111;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;">${safePassword}</p>
+                    <a href="${safeUrl}" style="display:inline-block;padding:10px 18px;background:#E63946;color:#ffffff;font-size:14px;font-weight:600;border-radius:8px;text-decoration:none;">Sign in</a>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:16px 28px 22px;font-size:12px;line-height:18px;color:#9CA3AF;">
+                    Use this temporary password as your current password when you change it. If you did not request this account, you can ignore this email.
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        </table>
+      </div>
+    `,
+    textContent: [
+      `${greeting},`,
+      `${companyName || 'Your company'} is ready on MMS PRO.`,
+      `Sign in: ${loginUrl}`,
+      `Email: ${to}`,
+      `Temporary password: ${temporaryPassword}`,
+      'After you sign in, open your profile and change this password. Use the temporary password as your current password.',
+    ].join('\n\n'),
+  })
+}
 

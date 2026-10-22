@@ -1,9 +1,19 @@
 import { createContext, useContext, useState, useEffect, useCallback, useMemo, createElement, useRef } from 'react'
 import { useAuth } from './useAuth'
 import { getOrgCache, setOrgCache, clearOrgCache } from '../lib/orgCache'
-import { fetchSession, peekSession } from '../lib/session'
+import { fetchSession, peekSession, sessionIsUsable } from '../lib/session'
+import { loadOrgBootstrap } from '../lib/orgBootstrap'
 
 const OrgContext = createContext(null)
+
+function meFromPayload(payload) {
+  if (!payload) return null
+  return {
+    profile: payload.profile || null,
+    employee: payload.employee || null,
+    avatarUrl: payload.avatar_url || null,
+  }
+}
 
 /**
  * Shared org + permissions bootstrap. One GET /api/session per user session
@@ -12,6 +22,7 @@ const OrgContext = createContext(null)
 export function OrgProvider({ children }) {
   const { user, setAccountRole, bootstrapEpoch } = useAuth()
   const userId = user?.id ?? null
+  const peeked = peekSession(userId)
   const [org, setOrg] = useState(null)
   const [orgRole, setOrgRole] = useState(null)
   const [permissionSession, setPermissionSession] = useState(null)
@@ -28,20 +39,21 @@ export function OrgProvider({ children }) {
     setOrg(nextOrg)
     setOrgRole(nextRole)
     setPermissionSession(nextPerms)
-    setMe({
-      profile: payload?.profile || null,
-      employee: payload?.employee || null,
-      avatarUrl: payload?.avatar_url || null,
-    })
+    setMe(meFromPayload(payload))
     setAccountRole?.(nextRole)
     setBootstrappedUserId(uid || null)
     bootstrappedUserIdRef.current = uid || null
-    if (uid && nextOrg) {
-      setOrgCache(uid, { org: nextOrg, orgRole: nextRole })
+    if (uid) {
+      setOrgCache(uid, {
+        org: nextOrg,
+        orgRole: nextRole,
+        permissions: nextPerms,
+        me: meFromPayload(payload),
+      })
     }
   }, [setAccountRole])
 
-  const load = useCallback(async ({ silent = false } = {}) => {
+  const load = useCallback(async () => {
     if (!userId) {
       bootstrappedUserIdRef.current = null
       setBootstrappedUserId(null)
@@ -55,23 +67,25 @@ export function OrgProvider({ children }) {
       return
     }
 
-    const peeked = peekSession()
-    if (peeked?.org) {
-      applyBootstrap(userId, peeked)
-    } else {
-      const cached = getOrgCache(userId)
-      if (cached?.org) {
-        setOrg((prev) => prev ?? cached.org)
-        setOrgRole((prev) => prev ?? cached.orgRole)
-      }
+    const snapshot = peekSession(userId)
+    const cached = getOrgCache(userId)
+    const hasSnapshot = sessionIsUsable(snapshot)
+    if (hasSnapshot) {
+      applyBootstrap(userId, snapshot)
+    } else if (cached?.org) {
+      setOrg((prev) => prev ?? cached.org)
+      setOrgRole((prev) => prev ?? cached.orgRole)
+      if (cached.permissions) setPermissionSession((prev) => prev ?? cached.permissions)
+      if (cached.me) setMe((prev) => prev ?? cached.me)
     }
 
-    if (!silent) setFetching(true)
+    if (!hasSnapshot) setFetching(true)
 
     setError(null)
     try {
-      const data = await fetchSession()
+      const data = await fetchSession(userId)
       applyBootstrap(userId, data)
+      loadOrgBootstrap().catch(() => {})
     } catch (err) {
       console.error('[OrgProvider] session bootstrap failed:', err.message)
       setError(err.message)
@@ -79,15 +93,17 @@ export function OrgProvider({ children }) {
       if (fallback?.org) {
         setOrg(fallback.org)
         setOrgRole(fallback.orgRole)
+        setPermissionSession(fallback.permissions || null)
+        setMe(fallback.me || null)
         setBootstrappedUserId(userId)
         bootstrappedUserIdRef.current = userId
-      } else {
+      } else if (!hasSnapshot) {
         setOrg(null)
         setOrgRole(null)
         setBootstrappedUserId(userId)
         bootstrappedUserIdRef.current = userId
+        setPermissionSession(null)
       }
-      setPermissionSession(null)
     } finally {
       setFetching(false)
     }
@@ -103,16 +119,22 @@ export function OrgProvider({ children }) {
     load()
   }, [load])
 
-  const loading = Boolean(userId) && (fetching || bootstrappedUserId !== userId)
+  const hydrated = bootstrappedUserId === userId
+  const liveOrg = hydrated ? org : (peeked?.org ?? org)
+  const liveRole = hydrated ? orgRole : (peeked?.role ?? orgRole)
+  const livePerms = hydrated ? permissionSession : (peeked?.permissions ?? permissionSession)
+  const liveMe = hydrated ? me : (peeked ? meFromPayload(peeked) : me)
+  const hasUsableSnapshot = Boolean(userId && (hydrated || sessionIsUsable(peeked)))
+  const loading = Boolean(userId) && !hasUsableSnapshot && (fetching || bootstrappedUserId !== userId)
 
   const value = useMemo(() => ({
-    org,
-    orgRole,
-    permissionSession,
-    me,
+    org: liveOrg,
+    orgRole: liveRole,
+    permissionSession: livePerms,
+    me: liveMe,
     loading,
     error,
-    reload: (opts) => load({ silent: true, ...opts }),
+    reload: () => load(),
     clear: () => {
       bootstrappedUserIdRef.current = null
       setBootstrappedUserId(null)
@@ -122,7 +144,7 @@ export function OrgProvider({ children }) {
       setPermissionSession(null)
       setMe(null)
     },
-  }), [org, orgRole, permissionSession, me, loading, error, load])
+  }), [liveOrg, liveRole, livePerms, liveMe, loading, error, load])
 
   return createElement(OrgContext.Provider, { value }, children)
 }

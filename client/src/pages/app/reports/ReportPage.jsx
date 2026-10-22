@@ -522,6 +522,29 @@ export default function ReportPage() {
               </div>
             ) : (
             <div className="reports-table-wrap company-table-wrap">
+              <div className="company-table-toolbar">
+                <TableColumnPicker
+                  columnDefs={columnDefs}
+                  visibleColumnIds={selectedColumnIds}
+                  onToggle={(id) => {
+                    if (selectedColumnIds.includes(id)) {
+                      if (selectedColumnIds.length <= 1) return
+                      setSelectedColumnIds(selectedColumnIds.filter((item) => item !== id))
+                      return
+                    }
+                    setSelectedColumnIds([...selectedColumnIds, id])
+                  }}
+                  onReorder={(orderedIds) => {
+                    const next = orderedIds.filter((id) => selectedColumnIds.includes(id))
+                    if (next.length) setSelectedColumnIds(next)
+                  }}
+                  onMove={(id, position) => {
+                    const rest = selectedColumnIds.filter((item) => item !== id)
+                    setSelectedColumnIds(position === 'top' ? [id, ...rest] : [...rest, id])
+                  }}
+                  onReset={() => setSelectedColumnIds(defaultColumnIds)}
+                />
+              </div>
               <div className="company-table-scroll">
               <table className="company-table master-table reports-table">
                 <thead>
@@ -529,25 +552,6 @@ export default function ReportPage() {
                     {visibleCols.map((col) => (
                       <th key={col.id}>{col.label}</th>
                     ))}
-                    <th className="reports-table__gear">
-                      <TableColumnPicker
-                        columnDefs={columnDefs}
-                        visibleColumnIds={selectedColumnIds}
-                        onToggle={(id) => {
-                          if (selectedColumnIds.includes(id)) {
-                            if (selectedColumnIds.length <= 1) return
-                            setSelectedColumnIds(selectedColumnIds.filter((item) => item !== id))
-                            return
-                          }
-                          setSelectedColumnIds([...selectedColumnIds, id])
-                        }}
-                        onReorder={(orderedIds) => {
-                          const next = orderedIds.filter((id) => selectedColumnIds.includes(id))
-                          if (next.length) setSelectedColumnIds(next)
-                        }}
-                        onReset={() => setSelectedColumnIds(defaultColumnIds)}
-                      />
-                    </th>
                   </tr>
                 </thead>
                 <tbody>

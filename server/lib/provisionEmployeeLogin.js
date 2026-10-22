@@ -77,10 +77,10 @@ async function sendPasswordSetupEmail(email, { orgName, employeeName }) {
     throw new Error('Could not create password setup link (missing action_link)')
   }
 
-  if (!isEmailConfigured) {
+  if (!(await isEmailConfigured())) {
     console.log(`\n[Employee password setup link — Mailjet not configured]\n  ${email}\n  ${actionLink}\n`)
     throw new Error(
-      'Login was enabled but email is not configured on the server. Set MAILJET_API_KEY, MAILJET_SECRET_KEY, and MAILJET_FROM_EMAIL, then save the employee again to resend.',
+      'Login was enabled but email is not configured. Add Mailjet under Super Admin → Integrations, then save the employee again to resend.',
     )
   }
 

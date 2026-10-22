@@ -13,6 +13,7 @@ import TablePagination from '../shared/TablePagination'
 import TableColumnPicker from '../shared/TableColumnPicker'
 import { useTablePagination } from '../../hooks/useTablePagination'
 import { useTableColumnPrefs } from '../../hooks/useTableColumnPrefs'
+import RecordPdfButton from '../shared/RecordPdfButton'
 
 const TASK_COLUMNS = [
   { id: 'task_number', label: 'Task #' },
@@ -56,6 +57,9 @@ export default function TasksTable({
     toggleColumn,
     resetColumns,
     columnDefs,
+    columnOrder,
+    reorderColumns,
+    moveColumn,
   } = useTableColumnPrefs('tasks-manager', TASK_COLUMNS)
 
   const localPagination = useTablePagination(totalCount ?? tasks.length, { resetKey: paginationResetKey })
@@ -133,8 +137,11 @@ export default function TasksTable({
           <TableColumnPicker
             columnDefs={columnDefs}
             visibleColumnIds={visibleColumnIds}
+            columnOrder={columnOrder}
             onToggle={toggleColumn}
             onReset={resetColumns}
+            onReorder={reorderColumns}
+            onMove={moveColumn}
           />
         </div>
         <table className="company-table master-table">
@@ -160,6 +167,7 @@ export default function TasksTable({
                     return (
                       <td key={columnId} onClick={stopTableRowClick}>
                         <div className="company-table__actions">
+                          <RecordPdfButton moduleKey="task" recordId={task.id} filename={`${task.task_number || 'task'}.pdf`} />
                           {canManage && (
                             <>
                               <button

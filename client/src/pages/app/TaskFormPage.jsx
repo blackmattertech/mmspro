@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useOrg } from '../../hooks/useOrg'
 import { usePermissions } from '../../hooks/usePermissions'
 import { useTaskMeta } from '../../hooks/useTaskMeta'
@@ -11,6 +11,7 @@ import { useAuth } from '../../hooks/useAuth'
 import { useProfile, profileDisplayName } from '../../hooks/useProfile'
 import { orgPath } from '../../config/navigation'
 import { createTask, getTask, updateTask, getTasksTemplate, bulkUploadTasks } from '../../lib/api-tasks'
+import { getEquipment } from '../../lib/api-equipment'
 import { syncTaskAttachments, attachmentsFromTask } from '../../lib/taskAttachmentSync'
 import { validateTaskForm, buildTaskPayload } from '../../lib/taskFormSchema'
 import PageBack from '../../components/shared/PageBack'
@@ -66,6 +67,8 @@ function taskToForm(task) {
 
 export default function TaskFormPage() {
   const { taskId } = useParams()
+  const [searchParams] = useSearchParams()
+  const prefillEquipmentId = searchParams.get('equipment_id') || ''
   const isEdit = Boolean(taskId)
   const navigate = useNavigate()
   const { org } = useOrg()
@@ -120,6 +123,30 @@ export default function TaskFormPage() {
     load()
     return () => { cancelled = true }
   }, [isEdit, taskId])
+
+  useEffect(() => {
+    if (isEdit || !prefillEquipmentId) return undefined
+    let cancelled = false
+    getEquipment(prefillEquipmentId)
+      .then((row) => {
+        if (cancelled || !row) return
+        setValues((prev) => ({
+          ...prev,
+          title: prev.title || row.name || '',
+          location_id: prev.location_id || row.location_id || '',
+          department_id: prev.department_id || row.department_id || '',
+          references: [{
+            reference_type: 'equipment',
+            reference_number: row.code || '',
+            reference_label: row.name || '',
+            reference_entity_id: row.id,
+            reference_entity_type: 'equipment',
+          }],
+        }))
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [isEdit, prefillEquipmentId])
 
   const currentEmployee = useMemo(() => {
     const fromList = employees.find((e) => e.profile_id === user?.id)
@@ -214,7 +241,7 @@ export default function TaskFormPage() {
                 bulkBusy={bulkBusy}
                 bulkInputRef={bulkInputRef}
                 onFileChange={handleBulkFile}
-                title="Bulk upload tasks"
+                title="Import tasks"
                 noun="task"
                 bulkError={bulkError}
                 bulkResult={bulkResult}

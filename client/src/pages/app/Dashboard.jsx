@@ -1,26 +1,17 @@
 import { useDashboard } from '../../hooks/useDashboard'
 import DashboardHeader from '../../components/dashboard/DashboardHeader'
-import {
-  KpiCards,
-  DonutChart,
-  TrendChart,
-  LocationsBarChart,
-  RecentWorkOrders,
-  CalendarWidget,
-} from '../../components/dashboard/DashboardWidgets'
+import DashboardBoard from '../../components/dashboard/DashboardBoard'
 import './Dashboard.css'
 
 export default function Dashboard() {
   const {
     loading,
+    refreshing,
     error,
     locations,
     canSeeAllLocations,
-    recentOrders,
-    trendData,
-    locationBreakdown,
-    statusBreakdown,
-    stats,
+    charts,
+    modules,
     locationFilter,
     setLocationFilter,
     dateFrom,
@@ -28,6 +19,9 @@ export default function Dashboard() {
     dateTo,
     setDateTo,
     createWorkOrder,
+    createWorkRequest,
+    canCreateWorkOrder,
+    canCreateWorkRequest,
   } = useDashboard()
 
   const locationFilterLabel = canSeeAllLocations && locationFilter === 'all'
@@ -46,33 +40,31 @@ export default function Dashboard() {
         onDateFromChange={setDateFrom}
         onDateToChange={setDateTo}
         onCreateWorkOrder={createWorkOrder}
+        onCreateWorkRequest={createWorkRequest}
+        canCreateWorkOrder={canCreateWorkOrder}
+        canCreateWorkRequest={canCreateWorkRequest}
       />
 
-      {loading ? (
+      {loading && !modules?.length && !charts ? (
         <div className="dashboard--loading">
           <p>Loading dashboard...</p>
         </div>
       ) : (
-        <div className="dashboard__content">
+        <div className={`dashboard__content${refreshing ? ' is-refreshing' : ''}`}>
+          {refreshing ? <p className="dashboard__refresh">Updating charts…</p> : null}
           {error && <div className="company-alert" role="alert">{error}</div>}
 
-          <KpiCards stats={stats} />
-
-          <div className="dashboard__row dashboard__row--2">
-            <DonutChart
-              title="Work Orders by Status"
-              total={stats.total}
-              segments={statusBreakdown}
-              filterLabel={locationFilterLabel}
+          {!modules?.length ? (
+            <section className="dash-section">
+              <p className="dash-empty">No module KPIs available for your role.</p>
+            </section>
+          ) : (
+            <DashboardBoard
+              modules={modules}
+              charts={charts}
+              locationLabel={locationFilterLabel}
             />
-            <TrendChart data={trendData} filterLabel="Last 7 Days" />
-          </div>
-
-          <div className="dashboard__row dashboard__row--3">
-            <LocationsBarChart data={locationBreakdown} filterLabel="Current filters" />
-            <RecentWorkOrders orders={recentOrders} />
-            <CalendarWidget />
-          </div>
+          )}
         </div>
       )}
     </div>

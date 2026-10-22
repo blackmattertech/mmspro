@@ -21,6 +21,11 @@ create table if not exists public.org_employees (
   unique (org_id, emp_id)
 );
 
+-- Existing databases created this table before designation_id existed.
+-- CREATE TABLE IF NOT EXISTS does not add columns, so add it before the index.
+alter table public.org_employees
+  add column if not exists designation_id uuid references public.designations(id) on delete set null;
+
 create index if not exists idx_org_employees_org_id on public.org_employees(org_id);
 create index if not exists idx_org_employees_department_id on public.org_employees(department_id);
 create index if not exists idx_org_employees_location_id on public.org_employees(location_id);

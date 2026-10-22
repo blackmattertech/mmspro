@@ -5,23 +5,39 @@ import {
   updateWorkCenter,
   deleteWorkCenter,
 } from '../lib/api'
-import { fetchReferenceData, invalidateReferenceCache } from '../lib/referenceDataCache'
+import { fetchReferenceData, invalidateReferenceCache, peekCachedList, peekReferenceData, PICKER_LIMIT } from '../lib/referenceDataCache'
 
-export function useWorkCenters({ locationId, search, limit = 200, offset = 0 } = {}) {
-  const [workCenters, setWorkCenters] = useState([])
-  const [total, setTotal] = useState(0)
-  const [loading, setLoading] = useState(true)
+export function useWorkCenters({
+  locationId,
+  search,
+  limit = PICKER_LIMIT,
+  offset = 0,
+  enabled = true,
+  filters,
+} = {}) {
+  const filterKey = JSON.stringify(filters || {})
+  const initial = peekCachedList('work-centers', { locationId, search, limit, offset, filters: filterKey })
+  const [workCenters, setWorkCenters] = useState(() => initial?.items || [])
+  const [total, setTotal] = useState(() => initial?.total || 0)
+  const [loading, setLoading] = useState(() => !initial)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
 
   const load = useCallback(async ({ silent = false, force = false } = {}) => {
-    if (!silent) setLoading(true)
+    if (!enabled) {
+      setWorkCenters([])
+      setTotal(0)
+      setLoading(false)
+      return
+    }
+    const cacheParams = { locationId, search, limit, offset, filters: filterKey }
+    if (!silent && !peekReferenceData('work-centers', cacheParams)) setLoading(true)
     setError(null)
     try {
       const data = await fetchReferenceData(
         'work-centers',
-        { locationId, search, limit, offset },
-        () => getWorkCenters({ locationId, search, limit, offset }),
+        cacheParams,
+        () => getWorkCenters({ locationId, search, limit, offset, filters }),
         { force },
       )
       setWorkCenters(data)
@@ -31,7 +47,7 @@ export function useWorkCenters({ locationId, search, limit = 200, offset = 0 } =
     } finally {
       if (!silent) setLoading(false)
     }
-  }, [locationId, search, limit, offset])
+  }, [locationId, search, limit, offset, enabled, filterKey])
 
   useEffect(() => {
     load()

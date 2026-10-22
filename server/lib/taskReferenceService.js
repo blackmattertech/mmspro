@@ -8,6 +8,7 @@ const VALID_REFERENCE_TYPES = new Set([
   'contract',
   'amc',
   'document',
+  'equipment',
   'custom',
 ])
 

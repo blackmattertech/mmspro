@@ -4,10 +4,92 @@ import {
   OPTION_CHECKLIST_FIELD_TYPES,
 } from './pmConstants.js'
 
+const CHECKLIST_MODULES = new Set(['work_request', 'work_order', 'pm_plan'])
+
+/** Keep in sync with client/src/lib/checklistForms.js */
+export const CHECKLIST_FORMS = [
+  { formId: 'work_request.create', label: 'Work request', moduleKey: 'work_request' },
+  { formId: 'work_orders.manual', label: 'Manual work order', moduleKey: 'work_order' },
+  { formId: 'pm.plan', label: 'PM plan', moduleKey: 'pm_plan' },
+]
+
+const FORM_BY_ID = new Map(CHECKLIST_FORMS.map((item) => [item.formId, item]))
+const FORM_BY_MODULE = new Map(CHECKLIST_FORMS.map((item) => [item.moduleKey, item.formId]))
+
+export function formIdsFromChecklist(row) {
+  const stored = Array.isArray(row?.form_ids)
+    ? row.form_ids.map((id) => String(id || '').trim()).filter((id) => FORM_BY_ID.has(id))
+    : []
+  if (stored.length) return [...new Set(stored)]
+  const fallback = FORM_BY_MODULE.get(row?.module_key)
+  return fallback ? [fallback] : []
+}
+
+export function checklistMatchesForm(row, formId) {
+  if (!formId) return true
+  return formIdsFromChecklist(row).includes(formId)
+}
+
+function normalizeFormIds(value, fallbackModule = 'pm_plan') {
+  if (value == null) {
+    const fallback = FORM_BY_MODULE.get(fallbackModule) || 'pm.plan'
+    return [fallback]
+  }
+  const ids = [...new Set(
+    (Array.isArray(value) ? value : String(value).split(','))
+      .map((id) => String(id || '').trim())
+      .filter((id) => FORM_BY_ID.has(id)),
+  )]
+  if (!ids.length) throw httpError('Choose at least one form for this checklist.')
+  return ids
+}
+
+function moduleKeyForFormIds(formIds, fallback = 'pm_plan') {
+  return FORM_BY_ID.get(formIds[0])?.moduleKey || fallback
+}
+
+export async function assertChecklistForForm(orgId, templateId, formId) {
+  if (!templateId) return null
+  const template = await getChecklistTemplate(orgId, templateId)
+  if (!checklistMatchesForm(template, formId)) {
+    const label = FORM_BY_ID.get(formId)?.label || 'this form'
+    throw httpError(`Select a checklist mapped to ${label}.`)
+  }
+  return template
+}
+
+export function normalizeChecklistModule(value, fallback = 'pm_plan') {
+  const key = String(value || '').trim()
+  return CHECKLIST_MODULES.has(key) ? key : fallback
+}
+
 const TEMPLATE_SELECT = `
+  id, org_id, name, description, version, is_active, module_key, form_ids,
+  created_by, updated_by, created_at, updated_at
+`
+
+const TEMPLATE_SELECT_NO_FORMS = `
+  id, org_id, name, description, version, is_active, module_key,
+  created_by, updated_by, created_at, updated_at
+`
+
+const TEMPLATE_SELECT_LEGACY = `
   id, org_id, name, description, version, is_active,
   created_by, updated_by, created_at, updated_at
 `
+
+function missingModuleColumn(error) {
+  return /module_key/i.test(error?.message || '')
+}
+
+function missingFormIdsColumn(error) {
+  return /form_ids/i.test(error?.message || '')
+}
+
+function withResolvedFormIds(row) {
+  if (!row) return row
+  return { ...row, form_ids: formIdsFromChecklist(row) }
+}
 
 const SECTION_SELECT = `
   id, org_id, template_id, name, sort_order, created_at, updated_at
@@ -124,7 +206,7 @@ function attachSectionsAndFields(template, sections, fields) {
   }
 }
 
-export async function listChecklistTemplates(orgId, { includeInactive = false } = {}) {
+export async function listChecklistTemplates(orgId, { includeInactive = false, moduleKey = null, formId = null } = {}) {
   let query = supabaseAdmin
     .from('checklist_templates')
     .select(TEMPLATE_SELECT)
@@ -132,8 +214,36 @@ export async function listChecklistTemplates(orgId, { includeInactive = false } 
     .order('name', { ascending: true })
 
   if (!includeInactive) query = query.eq('is_active', true)
+  if (!formId && moduleKey && CHECKLIST_MODULES.has(moduleKey)) query = query.eq('module_key', moduleKey)
 
-  const { data, error } = await query
+  let { data, error } = await query
+  if (error && missingFormIdsColumn(error)) {
+    let retryQuery = supabaseAdmin
+      .from('checklist_templates')
+      .select(TEMPLATE_SELECT_NO_FORMS)
+      .eq('org_id', orgId)
+      .order('name', { ascending: true })
+    if (!includeInactive) retryQuery = retryQuery.eq('is_active', true)
+    if (!formId && moduleKey && CHECKLIST_MODULES.has(moduleKey)) {
+      retryQuery = retryQuery.eq('module_key', moduleKey)
+    }
+    const retry = await retryQuery
+    data = retry.data
+    error = retry.error
+  }
+  if (error && missingModuleColumn(error)) {
+    let fallback = supabaseAdmin
+      .from('checklist_templates')
+      .select(TEMPLATE_SELECT_LEGACY)
+      .eq('org_id', orgId)
+      .order('name', { ascending: true })
+    if (!includeInactive) fallback = fallback.eq('is_active', true)
+    const retry = await fallback
+    if (retry.error) throw retry.error
+    data = (retry.data || []).map((row) => ({ ...row, module_key: 'pm_plan' }))
+    if (moduleKey && moduleKey !== 'pm_plan') return []
+    error = null
+  }
   if (error) throw error
 
   const templates = data || []
@@ -169,23 +279,45 @@ export async function listChecklistTemplates(orgId, { includeInactive = false } 
     counts.set(field.template_id, (counts.get(field.template_id) || 0) + 1)
   }
 
-  return templates.map((row) => ({
+  return templates.map((row) => withResolvedFormIds({
     ...row,
     field_count: counts.get(row.id) || 0,
     section_count: sectionCounts.get(row.id) || 0,
-  }))
+  })).filter((row) => checklistMatchesForm(row, formId))
 }
 
 export async function getChecklistTemplate(orgId, templateId) {
-  const { data, error } = await supabaseAdmin
+  let { data, error } = await supabaseAdmin
     .from('checklist_templates')
     .select(TEMPLATE_SELECT)
     .eq('org_id', orgId)
     .eq('id', templateId)
     .maybeSingle()
 
+  if (error && missingFormIdsColumn(error)) {
+    const retry = await supabaseAdmin
+      .from('checklist_templates')
+      .select(TEMPLATE_SELECT_NO_FORMS)
+      .eq('org_id', orgId)
+      .eq('id', templateId)
+      .maybeSingle()
+    data = retry.data
+    error = retry.error
+  }
+  if (error && missingModuleColumn(error)) {
+    const retry = await supabaseAdmin
+      .from('checklist_templates')
+      .select(TEMPLATE_SELECT_LEGACY)
+      .eq('org_id', orgId)
+      .eq('id', templateId)
+      .maybeSingle()
+    if (retry.error) throw retry.error
+    data = retry.data ? { ...retry.data, module_key: 'pm_plan' } : null
+    error = null
+  }
   if (error) throw error
   if (!data) throw httpError('Checklist template not found.', 404)
+  data = withResolvedFormIds(data)
 
   const [sections, fields] = await Promise.all([
     loadSections(orgId, templateId),
@@ -198,22 +330,52 @@ export async function createChecklistTemplate(orgId, profileId, body = {}) {
   const name = String(body.name || '').trim()
   if (!name) throw httpError('Checklist name is required.')
 
-  const { data, error } = await supabaseAdmin
+  const formIds = body.form_ids !== undefined
+    ? normalizeFormIds(body.form_ids, body.module_key)
+    : normalizeFormIds(null, body.module_key)
+  const insertRow = {
+    org_id: orgId,
+    name,
+    description: String(body.description || '').trim() || null,
+    is_active: body.is_active !== false,
+    module_key: moduleKeyForFormIds(formIds, normalizeChecklistModule(body.module_key)),
+    form_ids: formIds,
+    version: 1,
+    created_by: profileId || null,
+    updated_by: profileId || null,
+  }
+  let { data, error } = await supabaseAdmin
     .from('checklist_templates')
-    .insert({
-      org_id: orgId,
-      name,
-      description: String(body.description || '').trim() || null,
-      is_active: body.is_active !== false,
-      version: 1,
-      created_by: profileId || null,
-      updated_by: profileId || null,
-    })
+    .insert(insertRow)
     .select(TEMPLATE_SELECT)
     .single()
-
+  if (error && missingFormIdsColumn(error)) {
+    if (formIds.length > 1) {
+      throw httpError('Apply the checklist form-map database patch before attaching a checklist to more than one form.')
+    }
+    delete insertRow.form_ids
+    const retry = await supabaseAdmin
+      .from('checklist_templates')
+      .insert(insertRow)
+      .select(TEMPLATE_SELECT_NO_FORMS)
+      .single()
+    if (retry.error) throw retry.error
+    data = withResolvedFormIds(retry.data)
+    error = null
+  }
+  if (error && missingModuleColumn(error)) {
+    delete insertRow.module_key
+    const retry = await supabaseAdmin
+      .from('checklist_templates')
+      .insert(insertRow)
+      .select(TEMPLATE_SELECT_LEGACY)
+      .single()
+    if (retry.error) throw retry.error
+    data = withResolvedFormIds({ ...retry.data, module_key: 'pm_plan' })
+    error = null
+  }
   if (error) throw error
-  return attachSectionsAndFields(data, [], [])
+  return attachSectionsAndFields(withResolvedFormIds(data), [], [])
 }
 
 export async function updateChecklistTemplate(orgId, profileId, templateId, body = {}) {
@@ -231,17 +393,52 @@ export async function updateChecklistTemplate(orgId, profileId, templateId, body
     patch.description = String(body.description || '').trim() || null
   }
   if (body.is_active !== undefined) patch.is_active = Boolean(body.is_active)
+  if (body.form_ids !== undefined || body.module_key !== undefined) {
+    const formIds = body.form_ids !== undefined
+      ? normalizeFormIds(body.form_ids, body.module_key || existing.module_key)
+      : normalizeFormIds(null, body.module_key || existing.module_key)
+    patch.form_ids = formIds
+    patch.module_key = moduleKeyForFormIds(formIds, existing.module_key || 'pm_plan')
+  }
 
-  const { data, error } = await supabaseAdmin
+  let { data, error } = await supabaseAdmin
     .from('checklist_templates')
     .update(patch)
     .eq('org_id', orgId)
     .eq('id', templateId)
     .select(TEMPLATE_SELECT)
     .single()
-
+  if (error && missingFormIdsColumn(error)) {
+    if (Array.isArray(patch.form_ids) && patch.form_ids.length > 1) {
+      throw httpError('Apply the checklist form-map database patch before attaching a checklist to more than one form.')
+    }
+    delete patch.form_ids
+    const retry = await supabaseAdmin
+      .from('checklist_templates')
+      .update(patch)
+      .eq('org_id', orgId)
+      .eq('id', templateId)
+      .select(TEMPLATE_SELECT_NO_FORMS)
+      .single()
+    if (retry.error) throw retry.error
+    data = withResolvedFormIds(retry.data)
+    error = null
+  }
+  if (error && missingModuleColumn(error)) {
+    delete patch.module_key
+    const retry = await supabaseAdmin
+      .from('checklist_templates')
+      .update(patch)
+      .eq('org_id', orgId)
+      .eq('id', templateId)
+      .select(TEMPLATE_SELECT_LEGACY)
+      .single()
+    if (retry.error) throw retry.error
+    data = withResolvedFormIds({ ...retry.data, module_key: existing.module_key || 'pm_plan' })
+    error = null
+  }
   if (error) throw error
-  return attachSectionsAndFields(data, existing.sections || [], existing.fields || [])
+  return attachSectionsAndFields(withResolvedFormIds(data), existing.sections || [], existing.fields || [])
 }
 
 export async function deleteChecklistTemplate(orgId, templateId) {

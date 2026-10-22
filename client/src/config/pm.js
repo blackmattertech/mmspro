@@ -11,6 +11,7 @@ export const PM_CALENDAR_UNITS = [
   { value: 'quarter', label: 'Quarterly' },
   { value: 'half_yearly', label: 'Half Yearly' },
   { value: 'yearly', label: 'Yearly' },
+  { value: 'custom', label: 'Custom' },
 ]
 
 /** Types that advance due dates from the calendar interval. */

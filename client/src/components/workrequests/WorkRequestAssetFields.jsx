@@ -1,4 +1,5 @@
-import { useMemo, useEffect, useState } from 'react'
+import { useMemo, useEffect, useRef, useState } from 'react'
+import QRCode from 'qrcode'
 import DateField from '../ui/DateField'
 import { dependencyLabel } from '../../lib/assetFieldDependencies'
 import {
@@ -6,6 +7,10 @@ import {
   capacityOptionsForSelection,
   distinctAreasFromEquipment,
   distinctFieldValues,
+  BLANK_EQUIPMENT_TYPE,
+  equipmentFieldValue,
+  equipmentMatchingSelectors,
+  equipmentTypeChoices,
   fieldValuesFromEquipment,
   fieldsForWorkRequestSection,
   filterEquipmentByArea,
@@ -24,10 +29,6 @@ import { useTextFieldLimits } from '../../hooks/useTextFieldLimits'
 import '../assets/AssetsFields.css'
 import '../company/CompanyShared.css'
 
-function formatEquipmentLabel(row) {
-  return row?.name || row?.id || ''
-}
-
 function AssetFieldInput({
   field,
   value,
@@ -44,10 +45,21 @@ function AssetFieldInput({
   const limit = maxLengthForField(field)
 
   if (readOnly) {
+    const text = value || ''
+    const showImage = (field.field_type === 'image' || /image/i.test(field.name || ''))
+      && /^(https?:|data:image\/)/i.test(text)
+    if (showImage) {
+      return (
+        <div className="company-form__field">
+          <span className="company-form__label">{field.name}</span>
+          <img className="wr-asset-image" src={text} alt={field.name || ''} />
+        </div>
+      )
+    }
     return (
       <label className="company-form__field">
-        <span className="company-form__label">{label}</span>
-        <input className="company-form__input" type="text" value={value || '—'} readOnly disabled />
+        <span className="company-form__label">{field.name}</span>
+        <input className="company-form__input" type="text" value={text || '—'} readOnly disabled />
       </label>
     )
   }
@@ -198,6 +210,69 @@ function AssetFieldInput({
   )
 }
 
+function EquipmentQrThumb({ value }) {
+  const [src, setSrc] = useState('')
+
+  useEffect(() => {
+    if (!value) {
+      setSrc('')
+      return undefined
+    }
+    let cancelled = false
+    QRCode.toDataURL(String(value), { width: 160, margin: 1, errorCorrectionLevel: 'M' })
+      .then((url) => {
+        if (!cancelled) setSrc(url)
+      })
+      .catch(() => {
+        if (!cancelled) setSrc('')
+      })
+    return () => { cancelled = true }
+  }, [value])
+
+  if (!src) return null
+  return <img className="wr-asset-qr" src={src} alt="Equipment QR code" />
+}
+
+function isImageValue(value) {
+  return /^(https?:|data:image\/)/i.test(String(value || ''))
+}
+
+function equipmentMasterFacts(row, allFields) {
+  if (!row) return []
+  const facts = []
+  if (row.code) facts.push({ key: 'code', label: 'Code', value: row.code })
+  if (row.location_name) facts.push({ key: 'location', label: 'Location', value: row.location_name })
+  if (row.image_signed_url) facts.push({ key: 'image', label: 'Image', image: row.image_signed_url })
+  if (row.qr_code) facts.push({ key: 'qr', label: 'QR code', qr: row.qr_code })
+
+  const skip = new Set(['area', 'equipmentName', 'equipmentType', 'equipmentCode', 'redundant'])
+  for (const field of allFields) {
+    const role = getEquipmentFieldRole(field)
+    if (skip.has(role)) continue
+    const value = equipmentFieldValue(row, field)
+    if (!value) continue
+    const image = field.field_type === 'image' || /image/i.test(field.name || '')
+    if (image) {
+      if (!isImageValue(value) || value === row.image_signed_url) continue
+      facts.push({ key: field.id, label: field.name, image: value })
+      continue
+    }
+    facts.push({ key: field.id, label: field.name, value })
+  }
+  return facts
+}
+
+function equipmentChoiceLabel(row, nameField) {
+  const name = (nameField && equipmentFieldValue(row, nameField)) || row?.name || row?.code || 'Equipment'
+  if (row?.code && name !== row.code) return `${name} (${row.code})`
+  return name
+}
+
+function optionValue(option) {
+  if (option && typeof option === 'object') return option.value ?? ''
+  return option ?? ''
+}
+
 function clearCascadeAfter(fieldValues, allFields, fromRole) {
   const order = ['equipmentType', 'equipmentName', 'equipmentTag', 'equipmentCode', 'capacity']
   const start = order.indexOf(fromRole)
@@ -218,6 +293,7 @@ export default function WorkRequestAssetFields({
   onFieldValuesChange,
   equipmentId,
   onEquipmentIdChange,
+  seedAreaId = '',
   loading,
   disabled,
 }) {
@@ -232,7 +308,14 @@ export default function WorkRequestAssetFields({
   )
 
   const areas = useMemo(() => distinctAreasFromEquipment(equipment), [equipment])
-  const [areaId, setAreaId] = useState('')
+  const [areaId, setAreaId] = useState(seedAreaId || '')
+  const seededAreaRef = useRef(Boolean(seedAreaId))
+
+  useEffect(() => {
+    if (!seedAreaId || seededAreaRef.current) return
+    seededAreaRef.current = true
+    setAreaId(seedAreaId)
+  }, [seedAreaId])
 
   const scopedEquipment = useMemo(
     () => filterEquipmentByArea(equipment, areaId),
@@ -260,8 +343,8 @@ export default function WorkRequestAssetFields({
   }
 
   useEffect(() => {
-    if (!equipment.length) setAreaId('')
-  }, [equipment])
+    if (!equipment.length && !seedAreaId) setAreaId('')
+  }, [equipment, seedAreaId])
 
   useEffect(() => {
     if (!capacityField || !areaId) return
@@ -331,17 +414,20 @@ export default function WorkRequestAssetFields({
       || equipment.find((r) => r.id === equipmentId)
     if (!row) return
     const fromRow = fieldValuesFromEquipment(row, allFields)
+    const typeField = allFields.find((field) => getEquipmentFieldRole(field) === 'equipmentType')
+    if (typeField && !fromRow[typeField.id]) fromRow[typeField.id] = BLANK_EQUIPMENT_TYPE
+    for (const field of allFields) {
+      const isImage = field.field_type === 'image' || /image/i.test(field.name || '')
+      if (isImage && !fromRow[field.id] && row.image_signed_url) {
+        fromRow[field.id] = row.image_signed_url
+      }
+    }
     const next = { ...fieldValues }
     let changed = false
     for (const [fieldId, value] of Object.entries(fromRow)) {
-      if (!value) continue
-      const field = allFields.find((f) => f.id === fieldId)
-      if (!field) continue
-      const role = getEquipmentFieldRole(field)
-      if (role === 'equipmentCode' && next[fieldId] !== value) {
-        next[fieldId] = value
-        changed = true
-      }
+      if (!value || next[fieldId] === value) continue
+      next[fieldId] = value
+      changed = true
     }
     if (changed) onFieldValuesChange(next)
   }, [
@@ -354,19 +440,20 @@ export default function WorkRequestAssetFields({
   ])
 
   useEffect(() => {
-    if (!equipmentId) return
+    if (!equipmentId || loading) return
     const row = scopedEquipment.find((r) => r.id === equipmentId)
       || equipment.find((r) => r.id === equipmentId)
     if (!row) {
       onEquipmentIdChange('')
     }
-  }, [areaId, scopedEquipment, equipment, equipmentId, onEquipmentIdChange])
+  }, [areaId, scopedEquipment, equipment, equipmentId, onEquipmentIdChange, loading])
 
   useEffect(() => {
-    if (!areaId || !allFields.length) return
+    if (!areaId || !allFields.length || loading) return
 
     let next = { ...fieldValues }
     let changed = false
+    const selected = equipment.find((row) => row.id === equipmentId) || null
 
     for (const field of allFields) {
       const role = getEquipmentFieldRole(field)
@@ -375,6 +462,12 @@ export default function WorkRequestAssetFields({
       const raw = next[field.id]
       const current = Array.isArray(raw) ? '' : String(raw ?? '').trim()
       if (!current) continue
+
+      if (role === 'equipmentType' && current === BLANK_EQUIPMENT_TYPE) continue
+
+      const fromSelected = equipmentFieldValue(selected, field)
+      if (fromSelected && fromSelected.trim().toLowerCase() === current.toLowerCase()) continue
+      if (role === 'equipmentType' && selected && !fromSelected && current === BLANK_EQUIPMENT_TYPE) continue
 
       const opts = optionsForAssetField(field, scopedEquipment, next, allFields)
       const allowed = opts.some((opt) => String(opt).trim().toLowerCase() === current.toLowerCase())
@@ -391,34 +484,57 @@ export default function WorkRequestAssetFields({
   }, [
     areaId,
     scopedEquipment,
+    equipment,
+    equipmentId,
     allFields,
     fieldValues,
     onFieldValuesChange,
     onEquipmentIdChange,
+    loading,
   ])
+
+  const equipmentTypeField = useMemo(
+    () => allFields.find((f) => getEquipmentFieldRole(f) === 'equipmentType') || null,
+    [allFields],
+  )
+  const equipmentNameField = useMemo(
+    () => allFields.find((f) => getEquipmentFieldRole(f) === 'equipmentName') || null,
+    [allFields],
+  )
+  const typeOptions = useMemo(
+    () => (areaId ? equipmentTypeChoices(scopedEquipment, equipmentTypeField, allFields) : []),
+    [areaId, equipmentTypeField, scopedEquipment, allFields],
+  )
+  const typeUnavailable = !equipmentTypeField
+  const nameChoices = useMemo(() => {
+    if (!areaId) return []
+    return equipmentMatchingSelectors(scopedEquipment, fieldValues, allFields, equipmentNameField?.id)
+  }, [areaId, scopedEquipment, fieldValues, allFields, equipmentNameField])
 
   const renderField = (field) => {
     const role = getEquipmentFieldRole(field)
     if (role === 'redundant' || role === 'area' || role === 'equipmentCode') return null
 
-    const typeField = allFields.find((f) => getEquipmentFieldRole(f) === 'equipmentType')
-    const nameField = allFields.find((f) => getEquipmentFieldRole(f) === 'equipmentName')
+    const nameField = equipmentNameField
     const tagField = allFields.find((f) => getEquipmentFieldRole(f) === 'equipmentTag')
 
-    if (role === 'equipmentType' && !areaId) return null
-    if (role === 'equipmentName' && (!areaId || scopedEquipment.length === 0 || !typeField || !fieldValues[typeField.id])) return null
+    if (role === 'equipmentType' && (!areaId || typeUnavailable || scopedEquipment.length === 0)) return null
+    if (role === 'equipmentName' && (!areaId || scopedEquipment.length === 0)) return null
     if (role === 'equipmentTag' && (!areaId || scopedEquipment.length === 0 || !nameField || !fieldValues[nameField.id])) return null
     if (role === 'capacity' && (!areaId || scopedEquipment.length === 0 || !tagField || !fieldValues[tagField.id])) return null
 
-    const options = optionsForAssetField(field, scopedEquipment, fieldValues, allFields)
+    const isMedia = field.field_type === 'image' || field.field_type === 'file' || /image/i.test(field.name || '')
+    if (role === 'other' || isMedia) return null
 
-    const noEquipmentTypeInArea = role === 'equipmentType' && areaId && !options.length
+    const options = role === 'equipmentType'
+      ? typeOptions
+      : optionsForAssetField(field, scopedEquipment, fieldValues, allFields)
 
     const rawValue = fieldValues[field.id]
     let value = Array.isArray(rawValue) ? rawValue : (rawValue ?? '')
 
-    if (isEquipmentCascadeRole(role) && value) {
-      const optionList = options.map((opt) => String(opt).trim().toLowerCase())
+    if (isEquipmentCascadeRole(role) && value && role !== 'equipmentType') {
+      const optionList = options.map((opt) => String(optionValue(opt)).trim().toLowerCase())
       const current = String(value).trim().toLowerCase()
       if (!optionList.length || !optionList.includes(current)) {
         value = ''
@@ -428,7 +544,7 @@ export default function WorkRequestAssetFields({
     let forceSelect = false
     let readOnly = false
 
-    if (role === 'equipmentName' || role === 'equipmentTag') {
+    if (role === 'equipmentType' || role === 'equipmentName' || role === 'equipmentTag') {
       forceSelect = true
     }
 
@@ -447,21 +563,15 @@ export default function WorkRequestAssetFields({
       }
     }
 
-    if (noEquipmentTypeInArea) {
-      forceSelect = true
-    }
-
-    const fieldDisabled = disabled || loading || noEquipmentTypeInArea
+    const fieldDisabled = disabled || loading
       || (role === 'equipmentType' && !areaId)
-      || (role === 'equipmentName' && typeField && !fieldValues[typeField.id])
       || (role === 'equipmentTag' && nameField && !fieldValues[nameField.id])
 
     return (
       <AssetFieldInput
         key={field.id}
         field={field}
-        value={noEquipmentTypeInArea ? '' : value}
-        errorMessage={noEquipmentTypeInArea ? 'No equipment type in this area.' : null}
+        value={value}
         options={forceSelect && role === 'capacity'
           ? capacityOptionsForSelection(scopedEquipment, fieldValues, allFields, field)
           : options}
@@ -473,16 +583,22 @@ export default function WorkRequestAssetFields({
     )
   }
 
+  const selectedEquipment = useMemo(
+    () => equipment.find((row) => row.id === equipmentId) || null,
+    [equipment, equipmentId],
+  )
+  const masterFacts = useMemo(
+    () => equipmentMasterFacts(selectedEquipment, allFields),
+    [selectedEquipment, allFields],
+  )
   const showAreaSelect = areas.length > 0
-  const equipmentTypeField = useMemo(
-    () => allFields.find((f) => getEquipmentFieldRole(f) === 'equipmentType') || null,
-    [allFields],
-  )
-  const showEquipmentTypeGap = Boolean(
-    areaId
-    && equipmentTypeField
-    && !optionsForAssetField(equipmentTypeField, scopedEquipment, fieldValues, allFields).length,
-  )
+  const showNameFallback = typeUnavailable && !equipmentNameField
+
+  const selectEquipmentByName = (nextId) => {
+    onEquipmentIdChange(nextId || '')
+    const row = scopedEquipment.find((item) => item.id === nextId)
+    onFieldValuesChange(row ? fieldValuesFromEquipment(row, allFields) : {})
+  }
 
   return (
     <div className="wr-asset-sections">
@@ -491,10 +607,10 @@ export default function WorkRequestAssetFields({
         return (
           <div key={section.id} className="equipment-dynamic-section">
             <h3 className="equipment-dynamic-section__title">{section.name}</h3>
-            <div className="company-form__grid">
+            <div className="company-form__grid wr-asset-grid">
               {showAreaSelect && sectionIndex === 0 && (
                 <label className="company-form__field">
-                  <span className="company-form__label">Area *</span>
+                  <span className="company-form__label">Area</span>
                   <FilterableSelect
                     value={areaId}
                     onChange={handleAreaChange}
@@ -508,34 +624,68 @@ export default function WorkRequestAssetFields({
                   />
                 </label>
               )}
+              {showNameFallback && sectionIndex === 0 && (
+                <label className="company-form__field">
+                  <span className="company-form__label">Equipment name *</span>
+                  <FilterableSelect
+                    value={equipmentId}
+                    onChange={selectEquipmentByName}
+                    options={scopedEquipment}
+                    getOptionValue={(row) => row.id}
+                    getOptionLabel={(row) => row.name || row.code || 'Equipment'}
+                    placeholder="Select equipment name…"
+                    disabled={disabled || loading}
+                    required
+                    className="company-form__input--select"
+                  />
+                </label>
+              )}
               {orderedFields.map((field) => {
                 if (showAreaSelect && getEquipmentFieldRole(field) === 'area') return null
+                if (getEquipmentFieldRole(field) === 'equipmentName') {
+                  return (
+                    <label key={field.id} className="company-form__field">
+                      <span className="company-form__label">
+                        {field.is_required ? `${field.name} *` : field.name}
+                      </span>
+                      <FilterableSelect
+                        value={equipmentId}
+                        onChange={selectEquipmentByName}
+                        options={nameChoices}
+                        getOptionValue={(row) => row.id}
+                        getOptionLabel={(row) => equipmentChoiceLabel(row, field)}
+                        placeholder="Select…"
+                        disabled={disabled || loading || nameChoices.length === 0}
+                        required={field.is_required}
+                        className="company-form__input--select"
+                      />
+                    </label>
+                  )
+                }
                 return renderField(field)
               })}
+              {sectionIndex === 0 && masterFacts.length > 0 && (
+                <dl className="wr-asset-facts">
+                  {masterFacts.map((fact) => (
+                    <div key={fact.key} className="wr-asset-facts__item">
+                      <dt>{fact.label}</dt>
+                      <dd>
+                        {fact.qr ? <EquipmentQrThumb value={fact.qr} /> : null}
+                        {fact.image ? <img className="wr-asset-image" src={fact.image} alt={fact.label} /> : null}
+                        {fact.value ? <span>{fact.value}</span> : null}
+                      </dd>
+                    </div>
+                  ))}
+                </dl>
+              )}
             </div>
           </div>
         )
       })}
 
-      {areaId && scopedEquipment.length === 0 && !loading && !showEquipmentTypeGap && (
+      {areaId && scopedEquipment.length === 0 && !loading && (
         <p className="wo-manual__intro" style={{ marginTop: 0 }}>
           No equipment in this area for the selected department.
-        </p>
-      )}
-
-      {areaId && scopedEquipment.length > 0 && !equipmentId && !loading && !showEquipmentTypeGap && (
-        <p className="wo-manual__intro" style={{ marginTop: 0 }}>
-          Complete Area, Equipment Type, Name, Tag, and Capacity to select equipment.
-        </p>
-      )}
-
-      {equipmentId && (
-        <p className="wr-selected-asset">
-          <strong>Selected equipment:</strong>{' '}
-          {formatEquipmentLabel(
-            scopedEquipment.find((r) => r.id === equipmentId)
-            || equipment.find((r) => r.id === equipmentId),
-          )}
         </p>
       )}
     </div>

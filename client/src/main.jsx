@@ -2,9 +2,7 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import './styles/global.css'
 import '@fontsource/inter/latin-400.css'
-import '@fontsource/inter/latin-500.css'
 import '@fontsource/inter/latin-600.css'
-import '@fontsource/inter/latin-700.css'
 import { initAnalytics } from './lib/firebase'
 import { initAssetCssVars } from './lib/assets'
 import { installChunkLoadRecovery } from './lib/chunkLoadRecovery'
@@ -24,7 +22,21 @@ const scheduleAnalyticsInit = () => {
   }
 }
 
+const scheduleDeferredFonts = () => {
+  if (typeof window === 'undefined') return
+  const load = () => {
+    import('@fontsource/inter/latin-500.css')
+    import('@fontsource/inter/latin-700.css')
+  }
+  if ('requestIdleCallback' in window) {
+    window.requestIdleCallback(load, { timeout: 4000 })
+  } else {
+    setTimeout(load, 100)
+  }
+}
+
 scheduleAnalyticsInit()
+scheduleDeferredFonts()
 initAssetCssVars()
 
 ReactDOM.createRoot(document.getElementById('root')).render(

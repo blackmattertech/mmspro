@@ -2,9 +2,9 @@ import { getStateForCity, isKnownIndianCity, parseCityName } from './indiaLocati
 
 const PAN_RE = /^[A-Z]{5}[0-9]{4}[A-Z]{1}$/
 const IFSC_RE = /^[A-Z]{4}0[A-Z0-9]{6}$/
-const VENDOR_CODE_RE = /^Ven-\d{4,}$/i
 const INDIAN_MOBILE_RE = /^(\+91)?[6-9]\d{9}$/
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const VENDOR_CODE_MAX = 64
 
 function trimOrNull(value) {
   const text = String(value ?? '').trim()
@@ -31,8 +31,8 @@ export function validateVendorFields(input, { requireName = true, requireCode = 
 
   if (requireCode && !vendor_code) {
     errors.vendor_code = 'Vendor ID is required'
-  } else if (vendor_code && !VENDOR_CODE_RE.test(vendor_code)) {
-    errors.vendor_code = 'Vendor ID must be in Ven-0001 format'
+  } else if (vendor_code && vendor_code.length > VENDOR_CODE_MAX) {
+    errors.vendor_code = `Vendor ID must be ${VENDOR_CODE_MAX} characters or fewer`
   }
 
   if (requireName && !name) {

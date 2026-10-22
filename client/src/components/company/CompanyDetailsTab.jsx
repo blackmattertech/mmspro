@@ -4,13 +4,13 @@ import LogoUpload from './LogoUpload'
 import AddressAutocomplete from '../shared/AddressAutocomplete'
 import PhoneInput from '../shared/PhoneInput'
 import SpellcheckInput from '../shared/SpellcheckInput'
-import { validatePostalCode, validatePhoneE164 } from '../../lib/validation'
+import { validatePostalCode, validatePhoneE164, validateWebsite, normalizeWebsite } from '../../lib/validation'
 import './CompanyShared.css'
 
 const TEXT_FIELDS_TOP = [
   { key: 'name', label: 'Company Name', required: true },
   { key: 'email', label: 'Organization Email', type: 'email' },
-  { key: 'website', label: 'Website', type: 'url' },
+  { key: 'website', label: 'Website', type: 'text', inputMode: 'url', autoComplete: 'url', placeholder: 'www.example.com' },
   { key: 'tax_id', label: 'Tax ID / GSTIN' },
 ]
 
@@ -68,6 +68,12 @@ export default function CompanyDetailsTab({ canManage }) {
     setSuccess(null)
     setFormError(null)
 
+    const websiteError = validateWebsite(form.website)
+    if (websiteError) {
+      setFormError(websiteError)
+      return
+    }
+
     const phoneError = validatePhoneE164(form.phone)
     if (phoneError) {
       setFormError(phoneError)
@@ -81,7 +87,9 @@ export default function CompanyDetailsTab({ canManage }) {
     }
 
     try {
-      await save(form)
+      const payload = { ...form, website: normalizeWebsite(form.website) }
+      await save(payload)
+      setForm((prev) => ({ ...prev, website: payload.website }))
       setSuccess('Company details saved.')
     } catch {
       // error from hook
@@ -121,6 +129,9 @@ export default function CompanyDetailsTab({ canManage }) {
                   onChange={(e) => handleChange(field.key, e.target.value)}
                   disabled={!canManage}
                   required={field.required && canManage}
+                  inputMode={field.inputMode}
+                  autoComplete={field.autoComplete}
+                  placeholder={field.placeholder}
                 />
               ) : (
                 <SpellcheckInput

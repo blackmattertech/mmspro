@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useCallback } from 'react'
 import { useOrg } from '../../hooks/useOrg'
 import { orgPath } from '../../config/navigation'
 import PageBack from '../../components/shared/PageBack'
@@ -13,10 +13,11 @@ import TrashIcon from '../../components/ui/TrashIcon'
 import EditIcon from '../../components/ui/EditIcon'
 import TablePagination from '../../components/shared/TablePagination'
 import TableColumnPicker from '../../components/shared/TableColumnPicker'
+import { DynamicPickerCells, DynamicPickerHeaders } from '../../components/shared/DynamicPickerCells'
 import TableFilterToolbar from '../../components/shared/TableFilterToolbar'
 import { useTablePagination } from '../../hooks/useTablePagination'
 import { useTableColumnPrefs } from '../../hooks/useTableColumnPrefs'
-import { TABLE_SORT_OPTIONS, applyTableFilters } from '../../lib/tableFilters'
+import { TABLE_SORT_OPTIONS, applyTableFilters, compactFilters, matchesFieldFilter } from '../../lib/tableFilters'
 import '../../components/shared/TableColumnPicker.css'
 import '../../components/shared/TableFilterToolbar.css'
 import '../../components/workorders/WorkOrdersPage.css'
@@ -62,17 +63,27 @@ export default function RolesAccess() {
   } = useRoles()
   const [selectedId, setSelectedId] = useState(null)
   const [search, setSearch] = useState('')
-  const [filterField, setFilterField] = useState('')
-  const [filterValue, setFilterValue] = useState('')
+  const [columnFilters, setColumnFilters] = useState({})
   const [sortBy, setSortBy] = useState('name_asc')
   const [editorMode, setEditorMode] = useState(null)
   const [assignOpen, setAssignOpen] = useState(false)
   const [permDraft, setPermDraft] = useState(null)
   const [permSaving, setPermSaving] = useState(false)
+  const [assignQuery, setAssignQuery] = useState({ search: '', listFilters: undefined })
+  const handleAssignQuery = useCallback((next) => setAssignQuery(next), [])
+  const assignLocationId = isOrgAdmin ? undefined : (userLocationId || undefined)
+  const assignSearching = Boolean(assignQuery.search || assignQuery.listFilters)
   const { employees } = useEmployees({
-    locationId: isOrgAdmin ? undefined : (userLocationId || undefined),
+    locationId: assignLocationId,
     enabled: assignOpen,
     limit: 200,
+  })
+  const { employees: matchedEmployees } = useEmployees({
+    locationId: assignLocationId,
+    enabled: assignOpen && assignSearching,
+    limit: 200,
+    search: assignQuery.search || undefined,
+    listFilters: assignQuery.listFilters,
   })
 
   useEffect(() => {
@@ -96,25 +107,33 @@ export default function RolesAccess() {
     [roles],
   )
 
-  const filteredRoles = useMemo(() => applyTableFilters(activeRoles, {
-    search,
-    searchHaystack: (role) => [role.name, role.description].filter(Boolean).join(' '),
-    fieldFilter: { field: filterField, value: filterValue },
-    fieldFilterGetters: {
+  const filteredRoles = useMemo(() => {
+    const rows = applyTableFilters(activeRoles, {
+      search,
+      searchHaystack: (role) => [role.name, role.description].filter(Boolean).join(' '),
+      sortBy,
+      getName: (role) => role.name,
+      getCreatedAt: (role) => role.created_at,
+    })
+    const active = compactFilters(columnFilters)
+    if (!active) return rows
+    const getters = {
       name: (role) => role.name,
       description: (role) => role.description,
-    },
-    sortBy,
-    getName: (role) => role.name,
-    getCreatedAt: (role) => role.created_at,
-  }), [activeRoles, search, filterField, filterValue, sortBy])
+    }
+    return rows.filter((role) => Object.entries(active).every(([field, value]) => (
+      matchesFieldFilter(role, field, value, getters)
+    )))
+  }, [activeRoles, search, columnFilters, sortBy])
 
-  const rolesPagination = useTablePagination(filteredRoles.length, { resetKey: `${search}|${filterField}|${filterValue}|${sortBy}` })
+  const rolesPagination = useTablePagination(filteredRoles.length, { resetKey: `${search}|${JSON.stringify(columnFilters)}|${sortBy}` })
   const pagedRoles = rolesPagination.paginate(filteredRoles)
   const roleColumnDefs = useMemo(() => ([
     { id: 'name', label: 'Role' },
     { id: 'description', label: 'Description' },
     { id: 'employees', label: 'Employees' },
+    { id: 'created_at', label: 'Created', defaultVisible: false },
+    { id: 'updated_at', label: 'Updated', defaultVisible: false },
     { id: 'actions', label: 'Actions', locked: true },
   ]), [])
   const {
@@ -123,6 +142,9 @@ export default function RolesAccess() {
     resetColumns: resetRoleColumns,
     columnDefs: rolePickerColumns,
     visibleColumnIds: roleVisibleColumnIds,
+    columnOrder: roleColumnOrder,
+    reorderColumns: reorderRoleColumns,
+    moveColumn: moveRoleColumn,
   } = useTableColumnPrefs('roles-access', roleColumnDefs)
 
   const selectedRole = useMemo(
@@ -153,24 +175,31 @@ export default function RolesAccess() {
   const canDeleteSelected = canDelete && canManageRole(selectedRole)
   const canAssignSelected = canAssign && canAssignRole(selectedRole)
 
-  const assignableEmployees = useMemo(() => {
-    if (isOrgAdmin || capability.is_location_head) return employees
+  const scopeAssignable = useCallback((list) => {
+    if (isOrgAdmin || capability.is_location_head) return list
     if (capability.is_department_head) {
-      return employees.filter((employee) => (
+      return list.filter((employee) => (
         (capability.department_id && employee.department_id === capability.department_id)
         || employee.manager_id === capability.employee_id
         || employee.id === capability.employee_id
       ))
     }
-    return employees
+    return list
   }, [
     capability.department_id,
     capability.employee_id,
     capability.is_department_head,
     capability.is_location_head,
-    employees,
     isOrgAdmin,
   ])
+  const assignableEmployees = useMemo(
+    () => scopeAssignable(employees),
+    [employees, scopeAssignable],
+  )
+  const matchedAssignableEmployees = useMemo(
+    () => scopeAssignable(assignSearching ? matchedEmployees : employees),
+    [assignSearching, employees, matchedEmployees, scopeAssignable],
+  )
 
   const assignScopeHint = isOrgAdmin
     ? null
@@ -268,12 +297,6 @@ export default function RolesAccess() {
       </header>
 
       <div className="roles-page__content">
-        {!capability.can_read && !canManageAny && (
-          <p className="company-readonly-note">
-            Only org admins, or employees assigned Roles & Access permission by an admin, can manage roles.
-          </p>
-        )}
-
         {error && <div className="company-alert">{error}</div>}
 
         {showEditor && canShowEditor && (
@@ -298,10 +321,8 @@ export default function RolesAccess() {
                 }}
                 filter={{
                   fields: ROLE_FILTER_FIELDS,
-                  field: filterField,
-                  onFieldChange: setFilterField,
-                  value: filterValue,
-                  onValueChange: setFilterValue,
+                  values: columnFilters,
+                  onChange: setColumnFilters,
                 }}
                 sort={{ value: sortBy, onChange: setSortBy, options: TABLE_SORT_OPTIONS }}
                 actions={canCreate && (
@@ -318,8 +339,11 @@ export default function RolesAccess() {
                   <TableColumnPicker
                     columnDefs={rolePickerColumns}
                     visibleColumnIds={roleVisibleColumnIds}
+                    columnOrder={roleColumnOrder}
                     onToggle={toggleRoleColumn}
                     onReset={resetRoleColumns}
+                    onReorder={reorderRoleColumns}
+                    onMove={moveRoleColumn}
                   />
                 )}
               />
@@ -346,6 +370,11 @@ export default function RolesAccess() {
                       {isRoleColumnVisible('name') && <th>Role</th>}
                       {isRoleColumnVisible('description') && <th>Description</th>}
                       {isRoleColumnVisible('employees') && <th>Employees</th>}
+                      <DynamicPickerHeaders
+                        visibleColumnIds={roleVisibleColumnIds}
+                        columnDefs={rolePickerColumns}
+                        handledIds={['name', 'description', 'employees', 'actions']}
+                      />
                       {isRoleColumnVisible('actions') && <th>Actions</th>}
                     </tr>
                   </thead>
@@ -414,6 +443,12 @@ export default function RolesAccess() {
                               )}
                             </td>
                           )}
+                          <DynamicPickerCells
+                            visibleColumnIds={roleVisibleColumnIds}
+                            columnDefs={rolePickerColumns}
+                            row={role}
+                            handledIds={['name', 'description', 'employees', 'actions']}
+                          />
                           {isRoleColumnVisible('actions') && (
                             <td>
                               <div className="company-table__actions">
@@ -574,9 +609,11 @@ export default function RolesAccess() {
       {assignOpen && selectedRole && canAssignSelected && (
         <AssignEmployeesModal
           role={selectedRole}
-          employees={assignableEmployees}
+          employees={matchedAssignableEmployees}
+          selectionEmployees={assignableEmployees}
           saving={saving}
           scopeHint={assignScopeHint}
+          onQueryChange={handleAssignQuery}
           onClose={() => setAssignOpen(false)}
           onSave={handleAssign}
         />

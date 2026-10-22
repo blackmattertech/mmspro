@@ -57,7 +57,7 @@ export async function sendOwnerAccessEmail(email, { orgName }) {
     return false
   }
 
-  if (!isEmailConfigured) {
+  if (!(await isEmailConfigured())) {
     console.log(`\n[Owner password setup link — Mailjet not configured]\n  ${email}\n  ${actionLink}\n`)
     return false
   }

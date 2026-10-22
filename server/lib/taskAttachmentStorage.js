@@ -5,7 +5,7 @@ const ORG_ASSETS_BUCKET = 'org-assets'
 const MAX_BYTES = 25 * 1024 * 1024
 
 const ALLOWED_TYPES = new Set([
-  'image/png', 'image/jpeg', 'image/webp', 'image/gif',
+  'image/png', 'image/jpeg', 'image/webp', 'image/gif', 'image/svg+xml',
   'application/pdf',
   'application/msword',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',

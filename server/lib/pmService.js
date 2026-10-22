@@ -6,7 +6,7 @@ import {
   addWorkOrderAuditEntry,
 } from './workOrderService.js'
 import { clipToLimit, getTextFieldLimitsMap } from './textFieldLimits.js'
-import { snapshotChecklistTemplate } from './checklistService.js'
+import { assertChecklistForForm, snapshotChecklistTemplate } from './checklistService.js'
 import { isMaintenanceDepartment } from './bulkMasterMatch.js'
 import {
   DEFAULT_ACTIVITY_TYPES,
@@ -17,6 +17,10 @@ import {
   normalizeCalendarUnit,
   WO_OPEN_FOR_PLAN,
 } from './pmConstants.js'
+import { loadRuntimeFormLayout, attachFormFieldValueMaps } from './orgFormLayouts.js'
+import { applyMappedFilters, ilikePattern } from './listQuery.js'
+import { idsByIlike, NO_MATCH_ID, restrictToIds } from './relationFilters.js'
+import { shouldRequire, systemId } from './formLayoutIds.js'
 import {
   computeNextDueDate,
   formatDateOnly,
@@ -52,6 +56,10 @@ function packScheduleMeta({
   last_service_date,
   reading_interval,
   whichever_comes_first,
+  weekdays,
+  custom_interval,
+  custom_unit,
+  never_ends,
 }) {
   return `${SCHEDULE_META_PREFIX}${JSON.stringify({
     calendar_unit: calendar_unit || 'month',
@@ -59,6 +67,10 @@ function packScheduleMeta({
     last_service_date: last_service_date || null,
     reading_interval: reading_interval ?? null,
     whichever_comes_first: whichever_comes_first !== false,
+    weekdays: weekdays || [],
+    custom_interval: custom_interval ?? null,
+    custom_unit: custom_unit || null,
+    never_ends: Boolean(never_ends),
   })}`
 }
 
@@ -73,6 +85,10 @@ function unpackScheduleMeta(row = {}) {
         last_service_date: parsed.last_service_date || null,
         reading_interval: parsed.reading_interval ?? null,
         whichever_comes_first: parsed.whichever_comes_first !== false,
+        weekdays: Array.isArray(parsed.weekdays) ? parsed.weekdays : (row.weekdays || []),
+        custom_interval: parsed.custom_interval ?? row.custom_interval ?? null,
+        custom_unit: parsed.custom_unit || row.custom_unit || null,
+        never_ends: parsed.never_ends === true || row.never_ends === true,
       }
     } catch {
       // fall through
@@ -84,7 +100,24 @@ function unpackScheduleMeta(row = {}) {
     last_service_date: row.last_service_date || null,
     reading_interval: row.reading_interval ?? null,
     whichever_comes_first: row.whichever_comes_first !== false,
+    weekdays: row.weekdays || [],
+    custom_interval: row.custom_interval ?? null,
+    custom_unit: row.custom_unit || null,
+    never_ends: row.never_ends === true,
   }
+}
+
+async function persistRecurrenceColumns(planId, workingShift) {
+  const meta = unpackScheduleMeta({ working_shift: workingShift })
+  const { error } = await supabaseAdmin.from('pm_plans').update({
+    weekdays: meta.weekdays?.length ? meta.weekdays : null,
+    custom_interval: meta.custom_interval ?? null,
+    custom_unit: meta.custom_unit || null,
+    never_ends: meta.never_ends === true,
+  }).eq('id', planId)
+  if (!error) return
+  if (/weekdays|custom_interval|custom_unit|never_ends|schema cache|column/i.test(error.message || '')) return
+  throw error
 }
 
 function httpError(message, status = 400) {
@@ -392,15 +425,19 @@ async function syncPlanTechnicians(orgId, planId, employeeIds, { locationId } = 
   return unique
 }
 
-function normalizePlanPayload(body, existing = null) {
+function normalizePlanPayload(body, existing = null, layout = null) {
+  const requireField = (key, whenNoLayout) => shouldRequire(layout, systemId(key), whenNoLayout)
   const name = String(body.name ?? existing?.name ?? '').trim()
-  if (!name) throw httpError('PM plan name is required.')
+  if (requireField('name', true) && !name) throw httpError('PM plan name is required.')
 
   const departmentId = body.department_id ?? existing?.department_id
+  if (requireField('department_id', true) && !departmentId) throw httpError('Department is required.')
   if (!departmentId) throw httpError('Department is required.')
 
   const activityTypeId = body.activity_type_id ?? existing?.activity_type_id
-  if (!activityTypeId) throw httpError('Maintenance activity type is required.')
+  if (requireField('activity_type_id', true) && !activityTypeId) {
+    throw httpError('Maintenance activity type is required.')
+  }
 
   const scheduleType = String(body.schedule_type ?? existing?.schedule_type ?? 'calendar')
   if (!PM_SCHEDULE_TYPES.includes(scheduleType)) {
@@ -447,6 +484,19 @@ function normalizePlanPayload(body, existing = null) {
   const lastReadingRaw = body.last_reading !== undefined ? body.last_reading : existing?.last_reading
   const lastReading = lastReadingRaw === '' || lastReadingRaw == null ? null : Number(lastReadingRaw)
 
+  const weekdays = calendarUnit === 'week' && Array.isArray(body.weekdays)
+    ? [...new Set(body.weekdays.map(Number).filter((day) => day >= 0 && day <= 6))]
+    : (calendarUnit === 'week' ? (existing?.weekdays || []) : [])
+  const customInterval = calendarUnit === 'custom'
+    ? Math.max(1, Number(body.custom_interval ?? existing?.custom_interval ?? body.every_n ?? 1) || 1)
+    : null
+  const customUnit = calendarUnit === 'custom'
+    ? (['day', 'week', 'month', 'year'].includes(body.custom_unit) ? body.custom_unit : (existing?.custom_unit || 'day'))
+    : null
+  const neverEnds = usesCalendar && (body.never_ends !== undefined
+    ? Boolean(body.never_ends)
+    : Boolean(existing?.never_ends))
+
   const scheduleMeta = {
     calendar_unit: calendarUnit,
     last_reading: usesReading ? lastReading : null,
@@ -459,15 +509,19 @@ function normalizePlanPayload(body, existing = null) {
         ? Boolean(body.whichever_comes_first)
         : (existing?.whichever_comes_first !== false))
       : true,
+    weekdays,
+    custom_interval: customInterval,
+    custom_unit: customUnit,
+    never_ends: neverEnds,
   }
 
   return {
-    name,
+    name: name || 'Untitled plan',
     department_id: departmentId,
     location_id: body.location_id !== undefined ? (body.location_id || null) : (existing?.location_id || null),
     area_id: body.area_id !== undefined ? (body.area_id || null) : (existing?.area_id || null),
     equipment_id: body.equipment_id !== undefined ? (body.equipment_id || null) : (existing?.equipment_id || null),
-    activity_type_id: activityTypeId,
+    activity_type_id: activityTypeId || null,
     work_center: String(body.work_center ?? existing?.work_center ?? '').trim() || 'General',
     priority,
     status,
@@ -476,7 +530,7 @@ function normalizePlanPayload(body, existing = null) {
       ? Math.max(1, Number(body.every_n ?? existing?.every_n ?? 1) || 1)
       : Math.max(1, Number(existing?.every_n ?? 1) || 1),
     start_date: resolvedStartDate,
-    end_date: usesCalendar
+    end_date: usesCalendar && !neverEnds
       ? formatDateOnly(body.end_date !== undefined ? body.end_date : existing?.end_date)
       : null,
     grace_days: body.grace_days === '' || body.grace_days == null
@@ -561,13 +615,71 @@ async function buildAssetHierarchy(orgId, payload) {
   return steps
 }
 
-export async function listPmPlans(orgId, { status, search, limit = 100, offset = 0 } = {}) {
+async function applyPmPlanFieldFilters(query, orgId, filters = {}) {
+  const rest = { ...(filters || {}) }
+  if (rest.location) {
+    query = restrictToIds(
+      query,
+      'location_id',
+      await idsByIlike('org_locations', orgId, 'name', rest.location),
+    )
+    delete rest.location
+  }
+  if (rest.status) {
+    const term = String(rest.status).trim().toLowerCase()
+    const statuses = PM_PLAN_STATUSES.filter((value) => value.includes(term))
+    query = statuses.length ? query.in('status', statuses) : query.eq('id', NO_MATCH_ID)
+    delete rest.status
+  }
+  if (rest.activity) {
+    query = restrictToIds(
+      query,
+      'activity_type_id',
+      await idsByIlike('pm_activity_types', orgId, 'name', rest.activity),
+    )
+    delete rest.activity
+  }
+  if (rest.equipment) {
+    const pattern = ilikePattern(rest.equipment)
+    if (pattern) {
+      const { data, error } = await supabaseAdmin
+        .from('equipment')
+        .select('id')
+        .eq('org_id', orgId)
+        .or(`name.ilike.${pattern},code.ilike.${pattern}`)
+      if (error) throw error
+      query = restrictToIds(query, 'equipment_id', (data || []).map((row) => row.id))
+    }
+    delete rest.equipment
+  }
+  if (rest.technician) {
+    const employeeIds = await idsByIlike('org_employees', orgId, 'name', rest.technician)
+    if (!employeeIds.length) {
+      query = query.eq('id', NO_MATCH_ID)
+    } else {
+      const { data, error } = await supabaseAdmin
+        .from('pm_plan_technicians')
+        .select('plan_id')
+        .eq('org_id', orgId)
+        .in('employee_id', employeeIds)
+      if (error) throw error
+      query = restrictToIds(query, 'id', [...new Set((data || []).map((row) => row.plan_id).filter(Boolean))])
+    }
+    delete rest.technician
+  }
+  return {
+    query: applyMappedFilters(query, rest, {
+      name: 'name',
+      plan_number: 'plan_number',
+    }),
+  }
+}
+
+export async function listPmPlans(orgId, { status, search, limit = 100, offset = 0, filters = {} } = {}) {
   let query = supabaseAdmin
     .from('pm_plans')
     .select(PLAN_SELECT, { count: 'exact' })
     .eq('org_id', orgId)
-    .order('created_at', { ascending: false })
-    .range(offset, offset + limit - 1)
 
   if (status === 'inactive') query = query.eq('status', 'inactive')
   if (status === 'overdue') query = query.eq('status', 'overdue')
@@ -576,6 +688,8 @@ export async function listPmPlans(orgId, { status, search, limit = 100, offset =
     const q = String(search).replace(/%/g, '').trim()
     if (q) query = query.or(`name.ilike.%${q}%,plan_number.ilike.%${q}%`)
   }
+  query = (await applyPmPlanFieldFilters(query, orgId, filters)).query
+  query = query.order('created_at', { ascending: false }).range(offset, offset + limit - 1)
 
   const { data, error, count } = await query
   if (error) throw error
@@ -583,8 +697,13 @@ export async function listPmPlans(orgId, { status, search, limit = 100, offset =
   const rows = data || []
   await persistPlanStatuses(rows)
   const techniciansByPlan = await loadTechnicians(orgId, rows.map((row) => row.id))
+  const items = await attachFormFieldValueMaps(
+    orgId,
+    'pm.plan',
+    rows.map((row) => mapPlanRow(row, techniciansByPlan.get(row.id) || [])),
+  )
   return {
-    items: rows.map((row) => mapPlanRow(row, techniciansByPlan.get(row.id) || [])),
+    items,
     total: count || 0,
     limit,
     offset,
@@ -619,10 +738,16 @@ export async function getPmPlan(orgId, planId) {
   }
 }
 
-export async function createPmPlan(orgId, profileId, body = {}) {
-  const payload = normalizePlanPayload(body)
+export async function createPmPlan(orgId, profileId, body = {}, { lean = false } = {}) {
+  const layout = await loadRuntimeFormLayout(orgId, 'pm.plan')
+  const payload = normalizePlanPayload(body, null, layout)
+  if (payload.checklist_template_id) {
+    await assertChecklistForForm(orgId, payload.checklist_template_id, 'pm.plan')
+  }
   payload.location_id = await resolveLocationId(orgId, payload)
-  if (!payload.equipment_id) throw httpError('Asset / equipment is required.')
+  if (shouldRequire(layout, systemId('equipment_id'), true) && !payload.equipment_id) {
+    throw httpError('Asset / equipment is required.')
+  }
 
   const nextDue = initialDueDate(payload)
   payload.status = resolveLivePlanStatus({ ...payload, next_due_at: nextDue })
@@ -661,14 +786,25 @@ export async function createPmPlan(orgId, profileId, body = {}) {
     }
   }
 
+  await persistRecurrenceColumns(data.id, payload.working_shift)
+  if (lean) {
+    const techniciansByPlan = await loadTechnicians(orgId, [data.id])
+    return mapPlanRow(data, techniciansByPlan.get(data.id) || [])
+  }
   return getPmPlan(orgId, data.id)
 }
 
 export async function updatePmPlan(orgId, profileId, planId, body = {}) {
   const existing = await getPmPlan(orgId, planId)
-  const payload = normalizePlanPayload(body, existing)
+  const layout = await loadRuntimeFormLayout(orgId, 'pm.plan')
+  const payload = normalizePlanPayload(body, existing, layout)
+  if (payload.checklist_template_id) {
+    await assertChecklistForForm(orgId, payload.checklist_template_id, 'pm.plan')
+  }
   payload.location_id = await resolveLocationId(orgId, payload)
-  if (!payload.equipment_id) throw httpError('Asset / equipment is required.')
+  if (shouldRequire(layout, systemId('equipment_id'), true) && !payload.equipment_id) {
+    throw httpError('Asset / equipment is required.')
+  }
 
   const wasActive = existing.status === 'active' || existing.status === 'overdue'
   const becomingActive = payload.status !== 'inactive' && !wasActive
@@ -720,6 +856,7 @@ export async function updatePmPlan(orgId, profileId, planId, body = {}) {
     }
   }
 
+  await persistRecurrenceColumns(planId, payload.working_shift)
   return getPmPlan(orgId, planId)
 }
 

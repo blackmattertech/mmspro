@@ -9,6 +9,12 @@ import {
 } from './accessModules.js'
 import { canManageOrg } from './accountRoles.js'
 import { permissionsCache, permissionsCacheKey } from './requestCache.js'
+import {
+  isEntitlementOnlyKey,
+  isMissingDisabledModulesColumn,
+  isPermissionKeyEnabled,
+  normalizeDisabledModules,
+} from './orgModules.js'
 
 const ACTION_COLUMNS = {
   create: 'can_create',
@@ -165,12 +171,22 @@ export async function resolveSessionPermissions(profile) {
       access_role: null,
       is_location_head: false,
       is_department_head: false,
+      disabled_modules: [],
       permissions: emptyPermissions(),
     }
   }
 
   const orgAdmin = canManageOrg(profile?.role)
-  const employee = await getLinkedEmployee(orgId, profile)
+  const [{ data: orgRow, error: orgError }, employee] = await Promise.all([
+    supabaseAdmin
+      .from('organizations')
+      .select('disabled_modules')
+      .eq('id', orgId)
+      .maybeSingle(),
+    getLinkedEmployee(orgId, profile),
+  ])
+  if (orgError && !isMissingDisabledModulesColumn(orgError)) throw orgError
+  const disabled_modules = normalizeDisabledModules(orgRow?.disabled_modules)
   const locationId = employee?.location_id || null
   const departmentId = employee?.department_id || null
 
@@ -192,6 +208,7 @@ export async function resolveSessionPermissions(profile) {
       employee_id: employee?.id || null,
       access_role: accessRole,
       ...headFlags,
+      disabled_modules,
       permissions: allTruePermissions(),
     }
   } else {
@@ -202,6 +219,7 @@ export async function resolveSessionPermissions(profile) {
       employee_id: employee?.id || null,
       access_role: accessRole,
       ...headFlags,
+      disabled_modules,
       permissions: permissions || emptyPermissions(),
     }
     if (headFlags.is_department_head) {
@@ -223,6 +241,8 @@ export function permissionMap(permissions) {
 
 export function hasModulePermission(session, moduleKey, action) {
   if (!session) return false
+  if (!isPermissionKeyEnabled(session.disabled_modules, moduleKey)) return false
+  if (isEntitlementOnlyKey(moduleKey)) return true
   if (session.is_org_admin) return true
 
   const column = ACTION_COLUMNS[action]

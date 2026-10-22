@@ -1,5 +1,8 @@
 import nspell from 'nspell'
 
+const affUrl = `${import.meta.env.BASE_URL}spellcheck/en.aff`
+const dicUrl = `${import.meta.env.BASE_URL}spellcheck/en.dic`
+
 const IGNORE_WORDS = new Set([
   'bm',
   'bom',
@@ -46,13 +49,11 @@ export function preloadSpellchecker() {
   if (spellchecker) return Promise.resolve(spellchecker)
   if (!loadPromise) {
     loadPromise = Promise.all([
-      import('virtual:en-aff'),
-      import('virtual:en-dic'),
+      fetch(affUrl).then((res) => res.text()),
+      fetch(dicUrl).then((res) => res.text()),
     ])
-      .then(([affMod, dicMod]) => {
-        const aff = decodeDictionaryBytes(affMod.default ?? affMod)
-        const dic = decodeDictionaryBytes(dicMod.default ?? dicMod)
-        spellchecker = nspell(aff, dic)
+      .then(([aff, dic]) => {
+        spellchecker = nspell(decodeDictionaryBytes(aff), decodeDictionaryBytes(dic))
         return spellchecker
       })
       .catch((error) => {

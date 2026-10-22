@@ -15,10 +15,11 @@ import DepartmentModal, { formatDepartmentLocation } from './DepartmentModal'
 import LimitExceededCard from '../shared/LimitExceededCard'
 import TablePagination from '../shared/TablePagination'
 import TableColumnPicker from '../shared/TableColumnPicker'
+import { DynamicPickerCells, DynamicPickerHeaders } from '../shared/DynamicPickerCells'
 import TableFilterToolbar from '../shared/TableFilterToolbar'
 import { useTablePagination } from '../../hooks/useTablePagination'
 import { useTableColumnPrefs } from '../../hooks/useTableColumnPrefs'
-import { TABLE_SORT_OPTIONS, applyTableFilters } from '../../lib/tableFilters'
+import { TABLE_SORT_OPTIONS, applyTableFilters, compactFilters } from '../../lib/tableFilters'
 import { stopTableRowClick, tableRowClickProps } from '../../lib/clickableTableRow'
 import RecordDetailModal from '../shared/RecordDetailModal'
 import { DepartmentDetailContent } from './CompanyRecordDetails'
@@ -42,29 +43,38 @@ const DEPARTMENT_FILTER_FIELDS = [
   { value: 'name', label: 'Name' },
   { value: 'code', label: 'Code' },
   { value: 'location', label: 'Location' },
-  { value: 'status', label: 'Status', placeholder: 'active or inactive' },
+  { value: 'headcount', label: 'Headcount' },
+  { value: 'status', label: 'Status', type: 'select', emptyLabel: 'All Status', options: [
+    { value: 'active', label: 'Active' },
+    { value: 'inactive', label: 'Inactive' },
+  ] },
 ]
 
 export default function DepartmentsTab({ canManage }) {
   const { isOrgAdmin, locationId: myLocationId, accessRole } = usePermissions()
   const canSelectAnyLocation = canPickAnyLocation({ isOrgAdmin, accessRole })
   const [search, setSearch] = useState('')
-  const [filterField, setFilterField] = useState('')
-  const [filterValue, setFilterValue] = useState('')
+  const [columnFilters, setColumnFilters] = useState({})
   const [sortBy, setSortBy] = useState('name_asc')
   const debouncedSearch = useDebouncedValue(search.trim())
+  const listFilters = useMemo(() => compactFilters(columnFilters), [columnFilters])
   const [listTotal, setListTotal] = useState(0)
   const locationFilter = canSelectAnyLocation ? '' : (myLocationId || '')
-  const filterResetKey = `${debouncedSearch}|${filterField}|${filterValue}|${sortBy}|${locationFilter}`
+  const filterResetKey = `${debouncedSearch}|${JSON.stringify(columnFilters)}|${sortBy}|${locationFilter}`
   const pagination = useTablePagination(listTotal, { resetKey: filterResetKey })
   const { locations, create: createLocation, saving: savingLocation } = useLocations()
   const { departments, total, loading, saving, error, create, update, remove, toggleActive, reload } = useDepartments(
     locationFilter,
-    { search: debouncedSearch, limit: pagination.pageSize, offset: pagination.offset },
+    {
+      search: debouncedSearch,
+      limit: pagination.pageSize,
+      offset: pagination.offset,
+      filters: listFilters,
+    },
   )
   useEffect(() => { setListTotal(total) }, [total])
   const { isResourceAtLimit, reload: reloadLimits } = useOrgLimits()
-  const { visible: limitVisible, resource: limitResource, trigger: triggerLimit, tryHandleLimitError, dismiss: dismissLimit } = useLimitExceeded()
+  const { visible: limitVisible, resource: limitResource, overflow: limitOverflow, trigger: triggerLimit, tryHandleLimitError, dismiss: dismissLimit } = useLimitExceeded()
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState(null)
   const [viewing, setViewing] = useState(null)
@@ -84,6 +94,7 @@ export default function DepartmentsTab({ canManage }) {
       await reload?.({ silent: true })
       await reloadLimits()
     },
+    onError: (err) => tryHandleLimitError(err, 'Department'),
     defaultFilename: 'departments-template.xlsx',
   })
 
@@ -94,17 +105,10 @@ export default function DepartmentsTab({ canManage }) {
   const lockCreateLocation = Boolean(defaultCreateLocationId)
 
   const filteredDepartments = useMemo(() => applyTableFilters(departments, {
-    fieldFilter: { field: filterField, value: filterValue },
-    fieldFilterGetters: {
-      name: (dept) => dept.name,
-      code: (dept) => dept.code,
-      location: (dept) => formatDepartmentLocation(dept),
-      status: (dept) => (dept.is_active === false ? 'inactive' : 'active'),
-    },
     sortBy,
     getName: (dept) => dept.name,
     getCreatedAt: (dept) => dept.created_at,
-  }), [departments, filterField, filterValue, sortBy])
+  }), [departments, sortBy])
 
   const pagedDepartments = filteredDepartments
   const [selected, setSelected] = useState(() => new Set())
@@ -126,7 +130,11 @@ export default function DepartmentsTab({ canManage }) {
       { id: 'code', label: 'Code' },
       { id: 'name', label: 'Name' },
       { id: 'location', label: 'Location' },
+      { id: 'headcount', label: 'Headcount' },
       { id: 'description', label: 'Description' },
+      { id: 'all_locations', label: 'All locations', defaultVisible: false },
+      { id: 'created_at', label: 'Created', defaultVisible: false },
+      { id: 'updated_at', label: 'Updated', defaultVisible: false },
     ]
     if (canManage) {
       cols.push({ id: 'active', label: 'Active' })
@@ -140,7 +148,10 @@ export default function DepartmentsTab({ canManage }) {
     resetColumns: resetDepartmentColumns,
     columnDefs: departmentPickerColumns,
     visibleColumnIds: departmentVisibleColumnIds,
-  } = useTableColumnPrefs('company-departments', departmentColumnDefs)
+    columnOrder: departmentColumnOrder,
+    reorderColumns: reorderDepartmentColumns,
+    moveColumn: moveDepartmentColumn,
+  } = useTableColumnPrefs('company-departments-v2', departmentColumnDefs)
 
   const openCreate = () => {
     if (atDepartmentLimit) {
@@ -274,10 +285,8 @@ export default function DepartmentsTab({ canManage }) {
           }}
           filter={{
             fields: DEPARTMENT_FILTER_FIELDS,
-            field: filterField,
-            onFieldChange: setFilterField,
-            value: filterValue,
-            onValueChange: setFilterValue,
+            values: columnFilters,
+            onChange: setColumnFilters,
           }}
           sort={{ value: sortBy, onChange: setSortBy, options: TABLE_SORT_OPTIONS }}
           actions={canManage && (
@@ -300,10 +309,11 @@ export default function DepartmentsTab({ canManage }) {
               onFileChange={handleBulkFile}
               addLabel="+ Add Department"
               onAdd={openCreate}
-              title="Bulk upload departments"
+              title="Import departments"
               bulkError={bulkError}
               bulkResult={bulkResult}
               noun="department"
+              closeSignal={limitVisible}
             />
             </>
           )}
@@ -311,8 +321,11 @@ export default function DepartmentsTab({ canManage }) {
             <TableColumnPicker
               columnDefs={departmentPickerColumns}
               visibleColumnIds={departmentVisibleColumnIds}
+              columnOrder={departmentColumnOrder}
               onToggle={toggleDepartmentColumn}
               onReset={resetDepartmentColumns}
+              onReorder={reorderDepartmentColumns}
+              onMove={moveDepartmentColumn}
             />
           )}
         />
@@ -349,7 +362,13 @@ export default function DepartmentsTab({ canManage }) {
                 {isDepartmentColumnVisible('code') && <th>Code</th>}
                 {isDepartmentColumnVisible('name') && <th>Name</th>}
                 {isDepartmentColumnVisible('location') && <th>Location</th>}
+                {isDepartmentColumnVisible('headcount') && <th className="company-table__cell--num">Headcount</th>}
                 {isDepartmentColumnVisible('description') && <th>Description</th>}
+                <DynamicPickerHeaders
+                  visibleColumnIds={departmentVisibleColumnIds}
+                  columnDefs={departmentPickerColumns}
+                  handledIds={['code', 'name', 'location', 'headcount', 'description', 'active', 'actions']}
+                />
                 {canManage && isDepartmentColumnVisible('active') && <th>Active</th>}
                 {canManage && isDepartmentColumnVisible('actions') && <th>Actions</th>}
               </tr>
@@ -389,9 +408,18 @@ export default function DepartmentsTab({ canManage }) {
                     {isDepartmentColumnVisible('location') && (
                       <td>{formatDepartmentLocation(dept)}</td>
                     )}
+                    {isDepartmentColumnVisible('headcount') && (
+                      <td className="company-table__cell--num">{dept.headcount ?? 0}</td>
+                    )}
                     {isDepartmentColumnVisible('description') && (
                       <td>{dept.description || '—'}</td>
                     )}
+                    <DynamicPickerCells
+                      visibleColumnIds={departmentVisibleColumnIds}
+                      columnDefs={departmentPickerColumns}
+                      row={dept}
+                      handledIds={['code', 'name', 'location', 'headcount', 'description', 'active', 'actions']}
+                    />
                     {canManage && isDepartmentColumnVisible('active') && (
                       <td onClick={stopTableRowClick}>
                         <GooToggle
@@ -469,7 +497,7 @@ export default function DepartmentsTab({ canManage }) {
       )}
 
       {limitVisible && (
-        <LimitExceededCard resource={limitResource} onClose={dismissLimit} />
+        <LimitExceededCard resource={limitResource} overflow={limitOverflow} onClose={dismissLimit} />
       )}
     </div>
   )

@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react'
 import { getAdminUsers } from '../../lib/api'
+import { downloadClientCsv } from '../../lib/clientCsv'
+import { ExportCsvButton } from '../../components/shared/ListTableChrome'
 import TablePagination from '../../components/shared/TablePagination'
 import { useTablePagination } from '../../hooks/useTablePagination'
 import '../../components/company/CompanyShared.css'
@@ -33,6 +35,14 @@ export default function Users() {
           <h1 className="admin-page__title">Users</h1>
           <p className="admin-page__subtitle">View all registered platform users</p>
         </div>
+        <ExportCsvButton
+          onClick={() => downloadClientCsv('users.csv', users, [
+            { label: 'Email', value: (row) => row.email },
+            { label: 'Role', value: (row) => ROLE_LABELS[row.role] || row.role },
+            { label: 'Organization', value: (row) => row.organizations?.name },
+            { label: 'Joined', value: (row) => row.created_at },
+          ])}
+        />
       </header>
 
       <div className="admin-page__content">

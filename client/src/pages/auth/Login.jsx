@@ -106,13 +106,9 @@ export default function Login() {
   }
 
   const getPostAuthPath = async () => {
-    try {
-      const session = await fetchSession()
-      const path = orgPathFromSession(session)
-      if (path) return path
-    } catch (err) {
-      if (/disabled/i.test(err.message || '')) throw err
-    }
+    const session = await fetchSession()
+    const path = orgPathFromSession(session)
+    if (path) return path
     throw new Error('No organization is linked to your account. Contact your administrator.')
   }
 

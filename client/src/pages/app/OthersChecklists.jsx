@@ -5,12 +5,14 @@ import { useOrg } from '../../hooks/useOrg'
 import { usePermissions } from '../../hooks/usePermissions'
 import { isCompanyAdmin, canManageOrg } from '../../lib/accountRoles'
 import { orgPath } from '../../config/navigation'
+import { checklistFormLabels } from '../../lib/checklistForms'
 import {
   getChecklistTemplates,
   deleteChecklistTemplate,
 } from '../../lib/api-pm'
 import PageBack from '../../components/shared/PageBack'
 import EditIcon from '../../components/ui/EditIcon'
+import RecordPdfButton from '../../components/shared/RecordPdfButton'
 import TrashIcon from '../../components/ui/TrashIcon'
 import '../../components/company/CompanyShared.css'
 import './Others.css'
@@ -99,12 +101,6 @@ export default function OthersChecklists() {
         </div>
       </header>
 
-      {!canManage && (
-        <p className="company-readonly-note">
-          You can view checklists. Contact a company admin to create or edit them.
-        </p>
-      )}
-
       {error && <div className="company-alert">{error}</div>}
 
       {loading ? (
@@ -116,6 +112,7 @@ export default function OthersChecklists() {
               <thead>
                 <tr>
                   <th>Name</th>
+                  <th>Forms</th>
                   <th>Description</th>
                   <th>Sections</th>
                   <th>Fields</th>
@@ -127,7 +124,7 @@ export default function OthersChecklists() {
               <tbody>
                 {rows.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="task-meta-table__empty">
+                    <td colSpan={8} className="task-meta-table__empty">
                       No checklists yet. Create one to start building sections and fields.
                     </td>
                   </tr>
@@ -142,6 +139,7 @@ export default function OthersChecklists() {
                         <span className="company-table__name">{row.name}</span>
                       </button>
                     </td>
+                    <td>{checklistFormLabels(row)}</td>
                     <td>{row.description || '—'}</td>
                     <td>{row.section_count ?? 0}</td>
                     <td>{row.field_count ?? 0}</td>
@@ -150,6 +148,7 @@ export default function OthersChecklists() {
                     {(canManage || canRemove) && (
                       <td>
                         <div className="company-table__actions">
+                          <RecordPdfButton moduleKey="checklist" recordId={row.id} filename={`${row.name || 'checklist'}.pdf`} />
                           {canManage && (
                             <button
                               type="button"

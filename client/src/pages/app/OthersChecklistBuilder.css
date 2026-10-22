@@ -22,6 +22,31 @@
   border-bottom: 1px solid var(--color-light-gray-1, #e5e7eb);
 }
 
+.checklist-builder__forms {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  border: none;
+}
+
+.checklist-builder__forms-hint {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--color-gray-blue, #64748b);
+}
+
+.checklist-builder__form-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: var(--color-dark-navy, #0f172a);
+  cursor: pointer;
+}
+
 .checklist-builder__sections-head {
   display: flex;
   flex-direction: column;

@@ -40,11 +40,6 @@ export default function AdminOrgAssets() {
 
       <div className="admin-page__content">
         {orgError && <div className="admin-alert">{orgError}</div>}
-        {org && (
-          <p className="company-readonly-note">
-            Managing asset schema for <strong>{org.name}</strong> (/{org.slug})
-          </p>
-        )}
 
         <AssetsFieldsPanel
           orgId={orgId}

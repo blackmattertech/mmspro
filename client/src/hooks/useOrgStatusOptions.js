@@ -1,13 +1,15 @@
 import { useEffect, useMemo, useState } from 'react'
 import { getOrgStatuses } from '../lib/api-org-statuses'
+import { fetchReferenceData, peekReferenceData } from '../lib/referenceDataCache'
 
 /**
- * Load active org statuses for dropdowns / labels.
- * Falls back to empty until loaded; callers may keep hardcoded fallbacks.
+ * Load org statuses for dropdowns / labels.
+ * One cached fetch includes inactive rows; callers can still hide them.
  */
 export function useOrgStatusOptions(entityType, { includeInactive = false } = {}) {
-  const [statuses, setStatuses] = useState([])
-  const [loading, setLoading] = useState(Boolean(entityType))
+  const cached = entityType ? peekReferenceData('org-statuses', { entityType }) : null
+  const [statuses, setStatuses] = useState(() => (Array.isArray(cached) ? cached : []))
+  const [loading, setLoading] = useState(() => Boolean(entityType) && !cached)
 
   useEffect(() => {
     if (!entityType) {
@@ -16,8 +18,13 @@ export function useOrgStatusOptions(entityType, { includeInactive = false } = {}
       return undefined
     }
     let cancelled = false
-    setLoading(true)
-    getOrgStatuses(entityType, { includeInactive })
+    const existing = peekReferenceData('org-statuses', { entityType })
+    if (!existing) setLoading(true)
+    fetchReferenceData(
+      'org-statuses',
+      { entityType },
+      () => getOrgStatuses(entityType, { includeInactive: true }),
+    )
       .then((rows) => {
         if (!cancelled) setStatuses(Array.isArray(rows) ? rows : [])
       })
@@ -28,7 +35,7 @@ export function useOrgStatusOptions(entityType, { includeInactive = false } = {}
         if (!cancelled) setLoading(false)
       })
     return () => { cancelled = true }
-  }, [entityType, includeInactive])
+  }, [entityType])
 
   const options = useMemo(
     () => statuses

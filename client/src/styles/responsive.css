@@ -119,8 +119,29 @@
     justify-content: flex-start;
   }
 
+  #root .company-form__field--span-1,
+  #root .company-form__field--span-2,
+  #root .company-form__field--w-25,
+  #root .company-form__field--w-33,
+  #root .company-form__field--w-75,
+  #root .company-form__field--w-100,
+  #root .form-builder-board__field.span-1,
+  #root .form-builder-board__field.span-2,
+  #root .form-builder-board__field.span-w-25,
+  #root .form-builder-board__field.span-w-33,
+  #root .form-builder-board__field.span-w-75,
+  #root .form-builder-board__field.span-w-100,
+  #root .form-builder-board__grid {
+    grid-column: 1 / -1;
+  }
+
+  #root .form-builder-board__grid {
+    grid-template-columns: 1fr !important;
+  }
+
   #root .company-form__grid,
   #root .company-form__grid--2,
+  #root .company-form__grid--12,
   #root .company-form__row,
   #root .wo-assignment__filters,
   #root .wo-assignment__grid,
@@ -222,8 +243,14 @@
   }
 
   #root .dashboard__row--2,
-  #root .dashboard__row--3 {
+  #root .dashboard__row--3,
+  #root .dashboard__row--charts {
     grid-template-columns: 1fr;
+  }
+
+  #root .dash-table-wrap {
+    max-width: 100%;
+    overflow-x: auto;
   }
 
   #root .donut-chart {
@@ -268,21 +295,24 @@
   }
 
   #root .company-modal-overlay--popup,
+  #root .admin-modal-overlay--popup,
   #root .company-modal-overlay.task-voice-overlay,
   #root .company-modal-overlay.task-meta-settings-overlay,
   #root .app-shell .company-modal-overlay.pm-modal-overlay {
     padding: 12px !important;
     padding-bottom: max(12px, env(safe-area-inset-bottom, 0px)) !important;
-    align-items: flex-end !important;
+    align-items: center !important;
   }
 
   #root .company-modal--popup,
+  #root .admin-modal--popup,
   #root .company-modal.company-modal--popup.pm-modal,
   #root .company-modal.company-modal--popup.pm-modal--wide {
-    width: 100%;
+    width: min(560px, 100%);
     max-width: 100%;
+    height: auto;
     max-height: min(92dvh, 900px);
-    border-radius: 16px 16px 8px 8px;
+    border-radius: var(--radius-md);
   }
 
   #root .company-modal__header,
@@ -326,6 +356,11 @@
     width: 100%;
     min-width: 0;
     flex: 1 1 100%;
+  }
+
+  #root .asset-field-toggle-row {
+    flex-direction: row;
+    flex-wrap: nowrap;
   }
 
   #root .wo-section__header,

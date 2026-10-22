@@ -18,6 +18,21 @@
   border-radius: var(--radius-pill);
 }
 
+.status-count-bar__item--button {
+  font: inherit;
+  cursor: pointer;
+}
+
+.status-count-bar__item--button:hover {
+  border-color: var(--color-gray-blue);
+}
+
+.status-count-bar__item--active {
+  background: var(--color-white);
+  border-color: var(--color-dark-navy);
+  box-shadow: 0 0 0 1px var(--color-dark-navy);
+}
+
 .status-count-bar__dot {
   width: 8px;
   height: 8px;

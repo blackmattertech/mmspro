@@ -27,11 +27,20 @@ let analyticsInitStarted = false
 let appInflight = null
 
 const getFirebaseApp = async () => {
-  if (!isFirebaseConfigured || typeof window === 'undefined') return null
+  const config = await activeFirebaseConfig()
+  if (!config || typeof window === 'undefined') return null
   if (app) return app
   if (!appInflight) {
     appInflight = import('firebase/app').then(({ initializeApp, getApps }) => {
-      app = getApps().length ? getApps()[0] : initializeApp(firebaseConfig)
+      app = getApps().length ? getApps()[0] : initializeApp({
+        apiKey: config.apiKey,
+        authDomain: config.authDomain,
+        projectId: config.projectId,
+        storageBucket: config.storageBucket,
+        messagingSenderId: config.messagingSenderId,
+        appId: config.appId,
+        measurementId: config.measurementId,
+      })
       return app
     })
   }
@@ -39,10 +48,11 @@ const getFirebaseApp = async () => {
 }
 
 export const initAnalytics = async () => {
-  if (!isFirebaseConfigured || analyticsInitStarted || typeof window === 'undefined') return null
+  const config = await activeFirebaseConfig()
+  if (!config || analyticsInitStarted || typeof window === 'undefined') return null
   analyticsInitStarted = true
 
-  if (!firebaseConfig.measurementId || isPlaceholder(firebaseConfig.measurementId)) return null
+  if (!config.measurementId || isPlaceholder(config.measurementId)) return null
 
   const { getAnalytics, isSupported } = await import('firebase/analytics')
   const supported = await isSupported()
@@ -56,11 +66,14 @@ export const initAnalytics = async () => {
 
 const registerServiceWorker = async () => {
   if (!('serviceWorker' in navigator)) return null
-  return navigator.serviceWorker.register('/firebase-messaging-sw.js', { scope: '/' })
+  return navigator.serviceWorker.register('/firebase-messaging-sw.js', {
+    scope: '/firebase-cloud-messaging-push-scope',
+  })
 }
 
 export const initMessaging = async () => {
-  if (!isFirebaseConfigured || typeof window === 'undefined') return null
+  const config = await activeFirebaseConfig()
+  if (!config || typeof window === 'undefined') return null
   if (messaging) return messaging
 
   const { getMessaging, isSupported } = await import('firebase/messaging')
@@ -80,6 +93,55 @@ export const initMessaging = async () => {
 const vapidKey = import.meta.env.VITE_FIREBASE_VAPID_KEY
 export const isVapidConfigured = Boolean(vapidKey) && !isPlaceholder(vapidKey)
 
+let remoteConfig = null
+let remotePromise = null
+
+function apiOrigin() {
+  if (import.meta.env.VITE_API_URL) return import.meta.env.VITE_API_URL
+  if (typeof window !== 'undefined') return window.location.origin
+  return 'http://localhost:5050'
+}
+
+export function ensureFirebaseConfig() {
+  if (typeof window === 'undefined') {
+    return Promise.resolve({ configured: isFirebaseConfigured, vapidConfigured: isVapidConfigured })
+  }
+  if (!remotePromise) {
+    const url = `${apiOrigin()}/api/integrations/firebase-web`
+    const headers = /ngrok/i.test(window.location.hostname) ? { 'ngrok-skip-browser-warning': '1' } : {}
+    remotePromise = fetch(url, { headers })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        remoteConfig = data
+        if (data?.disabled) return { configured: false, vapidConfigured: false }
+        if (data?.configured) {
+          return {
+            configured: true,
+            vapidConfigured: Boolean(data.vapidKey) && !isPlaceholder(data.vapidKey),
+          }
+        }
+        return { configured: isFirebaseConfigured, vapidConfigured: isVapidConfigured }
+      })
+      .catch(() => ({ configured: isFirebaseConfigured, vapidConfigured: isVapidConfigured }))
+  }
+  return remotePromise
+}
+
+async function activeFirebaseConfig() {
+  await ensureFirebaseConfig()
+  if (remoteConfig?.disabled) return null
+  if (remoteConfig?.configured && remoteConfig.apiKey && remoteConfig.projectId && remoteConfig.appId) {
+    return remoteConfig
+  }
+  return isFirebaseConfigured ? firebaseConfig : null
+}
+
+async function activeVapidKey() {
+  const config = await activeFirebaseConfig()
+  const key = config?.vapidKey || vapidKey
+  return key && !isPlaceholder(key) ? key : ''
+}
+
 export const requestNotificationPermission = async () => {
   const messagingInstance = await initMessaging()
   if (!messagingInstance) return null
@@ -90,8 +152,8 @@ export const requestNotificationPermission = async () => {
   const registration = await navigator.serviceWorker.ready
   const { getToken } = await import('firebase/messaging')
   const options = { serviceWorkerRegistration: registration }
-  if (isVapidConfigured) options.vapidKey = vapidKey
-  else console.warn('VITE_FIREBASE_VAPID_KEY is not set; using the Firebase default Web Push key')
+  const key = await activeVapidKey()
+  if (key) options.vapidKey = key
 
   return getToken(messagingInstance, options)
 }

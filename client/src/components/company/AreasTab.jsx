@@ -11,10 +11,11 @@ import EditIcon from '../ui/EditIcon'
 import AreaModal from './AreaModal'
 import TablePagination from '../shared/TablePagination'
 import TableColumnPicker from '../shared/TableColumnPicker'
+import { DynamicPickerCells, DynamicPickerHeaders } from '../shared/DynamicPickerCells'
 import TableFilterToolbar from '../shared/TableFilterToolbar'
 import { useTablePagination } from '../../hooks/useTablePagination'
 import { useTableColumnPrefs } from '../../hooks/useTableColumnPrefs'
-import { TABLE_SORT_OPTIONS, applyTableFilters } from '../../lib/tableFilters'
+import { TABLE_SORT_OPTIONS, applyTableFilters, compactFilters } from '../../lib/tableFilters'
 import { stopTableRowClick, tableRowClickProps } from '../../lib/clickableTableRow'
 import RecordDetailModal from '../shared/RecordDetailModal'
 import { AreaDetailContent } from './CompanyRecordDetails'
@@ -52,7 +53,10 @@ const AREA_FILTER_FIELDS = [
   { value: 'code', label: 'Code' },
   { value: 'location', label: 'Location' },
   { value: 'department', label: 'Department' },
-  { value: 'status', label: 'Status', placeholder: 'active or inactive' },
+  { value: 'status', label: 'Status', type: 'select', emptyLabel: 'All Status', options: [
+    { value: 'active', label: 'Active' },
+    { value: 'inactive', label: 'Inactive' },
+  ] },
 ]
 
 export default function AreasTab({ canManage }) {
@@ -60,23 +64,24 @@ export default function AreasTab({ canManage }) {
   const canSelectAnyLocation = canPickAnyLocation({ isOrgAdmin, accessRole })
 
   const [search, setSearch] = useState('')
-  const [filterField, setFilterField] = useState('')
-  const [filterValue, setFilterValue] = useState('')
+  const [columnFilters, setColumnFilters] = useState({})
   const [sortBy, setSortBy] = useState('name_asc')
   const debouncedSearch = useDebouncedValue(search.trim())
+  const listFilters = useMemo(() => compactFilters(columnFilters), [columnFilters])
 
   const scopedLocationId = canSelectAnyLocation ? undefined : (myLocationId || undefined)
 
   const { locations } = useLocations()
   const { departments } = useDepartments(scopedLocationId)
   const [listTotal, setListTotal] = useState(0)
-  const paginationResetKey = `${debouncedSearch}|${filterField}|${filterValue}|${sortBy}|${scopedLocationId || ''}`
+  const paginationResetKey = `${debouncedSearch}|${JSON.stringify(columnFilters)}|${sortBy}|${scopedLocationId || ''}`
   const pagination = useTablePagination(listTotal, { resetKey: paginationResetKey })
   const { areas, total, loading, saving, error, create, update, remove, toggleActive, reload } = useAreas({
     locationId: scopedLocationId,
     search: debouncedSearch,
     limit: pagination.pageSize,
     offset: pagination.offset,
+    filters: listFilters,
   })
   useEffect(() => { setListTotal(total) }, [total])
   const [modalOpen, setModalOpen] = useState(false)
@@ -88,18 +93,10 @@ export default function AreasTab({ canManage }) {
   const activeDepartments = departments.filter((d) => d.is_active !== false)
 
   const filteredAreas = useMemo(() => applyTableFilters(areas, {
-    fieldFilter: { field: filterField, value: filterValue },
-    fieldFilterGetters: {
-      name: (area) => area.name,
-      code: (area) => area.code,
-      location: (area) => area.org_locations?.name,
-      department: (area) => area.departments?.name,
-      status: (area) => (area.is_active === false ? 'inactive' : 'active'),
-    },
     sortBy,
     getName: (area) => area.name,
     getCreatedAt: (area) => area.created_at,
-  }), [areas, filterField, filterValue, sortBy])
+  }), [areas, sortBy])
 
   const pagedAreas = filteredAreas
   const [selected, setSelected] = useState(() => new Set())
@@ -138,6 +135,8 @@ export default function AreasTab({ canManage }) {
       { id: 'code', label: 'Code' },
       { id: 'location', label: 'Location' },
       { id: 'department', label: 'Department' },
+      { id: 'created_at', label: 'Created', defaultVisible: false },
+      { id: 'updated_at', label: 'Updated', defaultVisible: false },
     ]
     if (canManage) {
       cols.push({ id: 'active', label: 'Active' })
@@ -151,6 +150,9 @@ export default function AreasTab({ canManage }) {
     resetColumns: resetAreaColumns,
     columnDefs: areaPickerColumns,
     visibleColumnIds: areaVisibleColumnIds,
+    columnOrder: areaColumnOrder,
+    reorderColumns: reorderAreaColumns,
+    moveColumn: moveAreaColumn,
   } = useTableColumnPrefs('company-areas', areaColumnDefs)
 
   const openCreate = () => {
@@ -250,10 +252,8 @@ export default function AreasTab({ canManage }) {
           }}
           filter={{
             fields: AREA_FILTER_FIELDS,
-            field: filterField,
-            onFieldChange: setFilterField,
-            value: filterValue,
-            onValueChange: setFilterValue,
+            values: columnFilters,
+            onChange: setColumnFilters,
           }}
           sort={{ value: sortBy, onChange: setSortBy, options: TABLE_SORT_OPTIONS }}
           actions={canManage && (
@@ -276,7 +276,7 @@ export default function AreasTab({ canManage }) {
                 onFileChange={handleBulkFile}
                 addLabel="+ Add Area"
                 onAdd={openCreate}
-                title="Bulk upload areas"
+                title="Import areas"
                 bulkError={bulkError}
                 bulkResult={bulkResult}
                 noun="area"
@@ -287,8 +287,11 @@ export default function AreasTab({ canManage }) {
             <TableColumnPicker
               columnDefs={areaPickerColumns}
               visibleColumnIds={areaVisibleColumnIds}
+              columnOrder={areaColumnOrder}
               onToggle={toggleAreaColumn}
               onReset={resetAreaColumns}
+              onReorder={reorderAreaColumns}
+              onMove={moveAreaColumn}
             />
           )}
         />
@@ -327,6 +330,11 @@ export default function AreasTab({ canManage }) {
                 {isAreaColumnVisible('code') && <th>Code</th>}
                 {isAreaColumnVisible('location') && <th>Location</th>}
                 {isAreaColumnVisible('department') && <th>Department</th>}
+                <DynamicPickerHeaders
+                  visibleColumnIds={areaVisibleColumnIds}
+                  columnDefs={areaPickerColumns}
+                  handledIds={['name', 'code', 'location', 'department', 'active', 'actions']}
+                />
                 {canManage && isAreaColumnVisible('active') && <th>Active</th>}
                 {canManage && isAreaColumnVisible('actions') && <th>Actions</th>}
               </tr>
@@ -365,6 +373,12 @@ export default function AreasTab({ canManage }) {
                   )}
                   {isAreaColumnVisible('location') && <td>{area.org_locations?.name || '—'}</td>}
                   {isAreaColumnVisible('department') && <td>{area.departments?.name || '—'}</td>}
+                  <DynamicPickerCells
+                    visibleColumnIds={areaVisibleColumnIds}
+                    columnDefs={areaPickerColumns}
+                    row={area}
+                    handledIds={['name', 'code', 'location', 'department', 'active', 'actions']}
+                  />
                   {canManage && isAreaColumnVisible('active') && (
                     <td onClick={stopTableRowClick}>
                       <GooToggle

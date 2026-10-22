@@ -26,3 +26,14 @@ export function reorderAssetSections(ids) {
     body: JSON.stringify({ kind: 'section', ids }),
   })
 }
+
+export function getAssetFieldsTemplate(kind) {
+  return assetsFetch(`/fields/template/${kind}`)
+}
+
+export function bulkUploadAssetFields(kind, base64Data) {
+  return assetsFetch(`/fields/bulk/${kind}`, {
+    method: 'POST',
+    body: JSON.stringify({ data: base64Data }),
+  })
+}

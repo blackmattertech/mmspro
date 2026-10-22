@@ -76,14 +76,11 @@ export function scopePlacementOptions(options, locationId) {
   }
 }
 
-export function departmentValidLabels(department, locations) {
-  const scope = department.all_locations
-    ? 'All locations'
-    : (locations || []).find((location) => location.id === department.location_id)?.name
-  const labels = [department.name, department.code].filter(Boolean)
-  if (scope) {
-    labels.push(`${department.name} — ${scope}`)
-    if (department.code) labels.push(`${department.code} — ${scope}`)
-  }
-  return [...new Set(labels)]
+/**
+ * One acceptable Department label for Valid values sheets (name only).
+ * Import still accepts name or code, and optional "Name — Location" suffixes.
+ */
+export function departmentValidLabels(department) {
+  const name = String(department?.name || '').trim()
+  return name ? [name] : []
 }

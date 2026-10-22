@@ -142,8 +142,10 @@
 }
 
 .sidebar__link--active {
-  color: var(--color-white);
-  background: rgba(230, 57, 70, 0.25);
+  color: #fff;
+  background: #ff3b57;
+  border-radius: 12px;
+  box-shadow: 0 8px 18px rgba(255, 59, 87, 0.28);
 }
 
 .sidebar__link--parent {
@@ -154,8 +156,10 @@
 }
 
 .sidebar__link--parent.sidebar__link--active {
-  color: var(--color-white);
-  background: rgba(230, 57, 70, 0.25);
+  color: #fff;
+  background: #ff3b57;
+  border-radius: 12px;
+  box-shadow: 0 8px 18px rgba(255, 59, 87, 0.28);
 }
 
 .sidebar__chevron {
@@ -198,8 +202,10 @@
 }
 
 .sidebar__sublink--active {
-  color: var(--color-white);
-  background: rgba(230, 57, 70, 0.25);
+  color: #fff;
+  background: #ff3b57;
+  border-radius: 12px;
+  box-shadow: 0 8px 18px rgba(255, 59, 87, 0.28);
 }
 
 .sidebar__flyout {
@@ -259,8 +265,10 @@
 }
 
 .sidebar__flyout-link--active {
-  color: var(--color-white);
-  background: rgba(230, 57, 70, 0.25);
+  color: #fff;
+  background: #ff3b57;
+  border-radius: 12px;
+  box-shadow: 0 8px 18px rgba(255, 59, 87, 0.28);
 }
 
 .sidebar__footer {
@@ -350,9 +358,10 @@
 }
 
 .sidebar-quick__btn--active {
-  color: var(--color-white);
-  background: rgba(230, 57, 70, 0.25);
-  border-color: rgba(230, 57, 70, 0.35);
+  color: #fff;
+  background: #ff3b57;
+  border-color: #ff3b57;
+  box-shadow: 0 8px 18px rgba(255, 59, 87, 0.28);
 }
 
 .sidebar-quick__btn--add {
@@ -450,6 +459,35 @@
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
+.sidebar-quick__picker-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 0;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-white);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.sidebar-quick__picker-back svg {
+  width: 14px;
+  height: 14px;
+  transform: rotate(90deg);
+  flex-shrink: 0;
+  opacity: 0.8;
+}
+
+.sidebar-quick__picker-back span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .sidebar-quick__picker-hint {
   font-weight: 400;
   color: var(--color-medium-gray);
@@ -495,6 +533,18 @@
 .sidebar-quick__picker-item:hover {
   color: var(--color-white);
   background: rgba(255, 255, 255, 0.08);
+}
+
+.sidebar-quick__picker-item--folder .sidebar-quick__picker-chevron {
+  margin-left: auto;
+  display: inline-flex;
+  opacity: 0.55;
+}
+
+.sidebar-quick__picker-item--folder .sidebar-quick__picker-chevron svg {
+  width: 14px;
+  height: 14px;
+  transform: rotate(-90deg);
 }
 
 .sidebar-quick__picker-label {

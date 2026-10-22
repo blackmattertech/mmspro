@@ -77,6 +77,13 @@ export function useAdminOrganizations() {
     }
   }
 
+  const patchOrg = (updated) => {
+    if (!updated?.id) return
+    setOrganizations((prev) =>
+      prev.map((org) => (org.id === updated.id ? { ...org, ...updated } : org))
+    )
+  }
+
   return {
     organizations,
     loading,
@@ -85,6 +92,7 @@ export function useAdminOrganizations() {
     createOrg,
     toggleOrgStatus,
     updateOrgLimits,
+    patchOrg,
     refresh: fetchOrganizations,
   }
 }

@@ -3,12 +3,13 @@ import { createPortal } from 'react-dom'
 import SettingsIcon from '../ui/SettingsIcon'
 import './TableColumnPicker.css'
 
-function orderedToggleable(columnDefs, visibleColumnIds) {
+function orderedToggleable(columnDefs, visibleColumnIds, columnOrder) {
   const toggleable = columnDefs.filter((col) => !col.locked)
   const byId = new Map(toggleable.map((col) => [col.id, col]))
   const seen = new Set()
   const list = []
-  for (const id of visibleColumnIds) {
+  const preferred = columnOrder?.length ? columnOrder : visibleColumnIds
+  for (const id of preferred) {
     const col = byId.get(id)
     if (!col || seen.has(id)) continue
     list.push(col)
@@ -47,9 +48,11 @@ function GripIcon() {
 export default function TableColumnPicker({
   columnDefs = [],
   visibleColumnIds = [],
+  columnOrder,
   onToggle,
   onReset,
   onReorder,
+  onMove,
   className = '',
 }) {
   const [open, setOpen] = useState(false)
@@ -59,13 +62,18 @@ export default function TableColumnPicker({
   const rootRef = useRef(null)
   const triggerRef = useRef(null)
   const menuRef = useRef(null)
+  const dragRef = useRef(null)
+  const columnsRef = useRef([])
   const listId = useId()
-  const canReorder = typeof onReorder === 'function'
+  const canDrag = typeof onReorder === 'function'
+  const canMove = typeof onMove === 'function'
+  const canReorder = canDrag || canMove
 
   const columns = useMemo(
-    () => orderedToggleable(columnDefs, visibleColumnIds),
-    [columnDefs, visibleColumnIds],
+    () => orderedToggleable(columnDefs, visibleColumnIds, columnOrder),
+    [columnDefs, visibleColumnIds, columnOrder],
   )
+  columnsRef.current = columns
   const hiddenCount = columns.filter((col) => !visibleColumnIds.includes(col.id)).length
 
   const updateMenuPosition = useCallback(() => {
@@ -129,8 +137,16 @@ export default function TableColumnPicker({
   if (!columns.length) return null
 
   const applyReorder = (fromId, toId) => {
-    if (!canReorder || !fromId || !toId || fromId === toId) return
-    onReorder(moveById(columns, fromId, toId).map((col) => col.id))
+    if (!canDrag || !fromId || !toId || fromId === toId) return
+    onReorder(moveById(columnsRef.current, fromId, toId).map((col) => col.id))
+  }
+
+  const endDrag = (commit) => {
+    const drag = dragRef.current
+    dragRef.current = null
+    setDragId(null)
+    setOverId(null)
+    if (commit && drag?.id && drag.overId) applyReorder(drag.id, drag.overId)
   }
 
   return (
@@ -175,7 +191,7 @@ export default function TableColumnPicker({
             </button>
           </div>
           {canReorder ? (
-            <p className="table-column-picker__hint">Drag rows up or down to change column order</p>
+            <p className="table-column-picker__hint">Drag to reorder, or send a column to the top or bottom</p>
           ) : null}
           <ul className="table-column-picker__list">
             {columns.map((col) => {
@@ -183,40 +199,48 @@ export default function TableColumnPicker({
               return (
                 <li
                   key={col.id}
+                  data-column-id={col.id}
                   className={[
                     'table-column-picker__item',
                     dragId === col.id ? 'table-column-picker__item--dragging' : '',
                     overId === col.id && dragId && dragId !== col.id ? 'table-column-picker__item--over' : '',
                   ].filter(Boolean).join(' ')}
-                  onDragOver={(event) => {
-                    if (!canReorder || !dragId) return
-                    event.preventDefault()
-                    event.dataTransfer.dropEffect = 'move'
-                    if (overId !== col.id) setOverId(col.id)
-                  }}
-                  onDrop={(event) => {
-                    event.preventDefault()
-                    applyReorder(dragId, col.id)
-                    setDragId(null)
-                    setOverId(null)
-                  }}
                 >
-                  {canReorder ? (
+                  {canDrag ? (
                     <span
                       className="table-column-picker__grip"
                       title="Drag to reorder"
                       aria-label={`Reorder ${col.label}`}
                       role="button"
                       tabIndex={0}
-                      draggable
-                      onDragStart={(event) => {
+                      onPointerDown={(event) => {
+                        if (event.button !== 0) return
+                        event.preventDefault()
+                        event.stopPropagation()
+                        dragRef.current = { id: col.id, overId: col.id }
+                        const trackOver = (moveEvent) => {
+                          const hit = document.elementFromPoint(moveEvent.clientX, moveEvent.clientY)
+                          const row = hit?.closest?.('[data-column-id]')
+                          const nextOver = row?.getAttribute('data-column-id')
+                          if (!dragRef.current || !nextOver || nextOver === dragRef.current.overId) return
+                          dragRef.current.overId = nextOver
+                          setOverId(nextOver)
+                        }
+                        let finishDrag
+                        let cancelDrag
+                        const finish = (commit) => {
+                          window.removeEventListener('pointermove', trackOver)
+                          window.removeEventListener('pointerup', finishDrag)
+                          window.removeEventListener('pointercancel', cancelDrag)
+                          endDrag(commit)
+                        }
+                        finishDrag = () => finish(true)
+                        cancelDrag = () => finish(false)
+                        window.addEventListener('pointermove', trackOver)
+                        window.addEventListener('pointerup', finishDrag)
+                        window.addEventListener('pointercancel', cancelDrag)
                         setDragId(col.id)
-                        event.dataTransfer.effectAllowed = 'move'
-                        event.dataTransfer.setData('text/plain', col.id)
-                      }}
-                      onDragEnd={() => {
-                        setDragId(null)
-                        setOverId(null)
+                        setOverId(col.id)
                       }}
                       onKeyDown={(event) => {
                         if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return
@@ -237,6 +261,28 @@ export default function TableColumnPicker({
                     />
                     <span>{col.label}</span>
                   </label>
+                  {canMove ? (
+                    <span className="table-column-picker__moves">
+                      <button
+                        type="button"
+                        className="table-column-picker__move"
+                        title="Send to top"
+                        aria-label={`Send ${col.label} to top`}
+                        onClick={() => onMove?.(col.id, 'top')}
+                      >
+                        Top
+                      </button>
+                      <button
+                        type="button"
+                        className="table-column-picker__move"
+                        title="Send to bottom"
+                        aria-label={`Send ${col.label} to bottom`}
+                        onClick={() => onMove?.(col.id, 'bottom')}
+                      >
+                        Bottom
+                      </button>
+                    </span>
+                  ) : null}
                 </li>
               )
             })}

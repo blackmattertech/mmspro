@@ -5,6 +5,7 @@ import {
   WORK_REQUEST_MODULE_KEYS,
   REPORT_MODULE_KEYS,
 } from '../lib/accessModules'
+import { isProductModuleEnabled, productIdForPermissionKey } from '../lib/orgModules'
 import { WORK_REQUEST_TABS } from './workRequests'
 import { WORK_ORDER_TABS, isWorkOrdersNavPath } from './workOrders'
 
@@ -81,10 +82,10 @@ const APP_SEGMENTS = [
         icon: 'buildings',
         altModuleKeys: ['locations', 'departments', 'work_centers', 'employees'],
       },
-      { label: 'Assets', segment: 'masters/assets', moduleKey: 'assets', icon: 'asset' },
+      { label: 'Fields', segment: 'masters/assets', moduleKey: 'assets', icon: 'asset' },
       { label: 'Equipment', segment: 'masters/equipment', moduleKey: 'equipment', icon: 'washer', altModuleKeys: ['areas'] },
-      { label: 'Vendors', segment: 'masters/vendors', icon: 'userCheck', showWithoutPermission: true },
-      { label: 'Others', segment: 'masters/others', icon: 'dots', showWithoutPermission: true },
+      { label: 'Vendors', segment: 'masters/vendors', moduleKey: 'vendors', icon: 'userCheck', showWithoutPermission: true },
+      { label: 'Others', segment: 'masters/others', moduleKey: 'others', icon: 'dots', showWithoutPermission: true },
     ],
   },
   {
@@ -93,6 +94,7 @@ const APP_SEGMENTS = [
     icon: 'settings',
     children: [
       { label: 'Roles & Access', segment: 'configuration/roles', moduleKey: 'roles_access', icon: 'key' },
+      { label: 'Approvals', segment: 'configuration/approvals', moduleKey: 'settings', icon: 'userCheck' },
       { label: 'Settings', segment: 'configuration/settings', moduleKey: 'settings', icon: 'settings' },
       { label: 'Import', segment: 'configuration/import', moduleKey: 'settings', icon: 'upload' },
       { label: 'Export', segment: 'configuration/export', moduleKey: 'settings', icon: 'download' },
@@ -130,8 +132,10 @@ export function moduleKeyForPath(pathname, orgSlug) {
   if (rest.startsWith('masters/company')) return 'company'
   if (rest.startsWith('masters/assets')) return 'assets'
   if (rest.startsWith('masters/equipment')) return 'equipment'
-  if (rest.startsWith('masters/others')) return 'company'
+  if (rest.startsWith('masters/vendors')) return 'vendors'
+  if (rest.startsWith('masters/others')) return 'others'
   if (rest.startsWith('configuration/roles')) return 'roles_access'
+  if (rest.startsWith('configuration/approvals')) return 'settings'
   if (rest.startsWith('configuration/settings')) return 'settings'
   if (rest.startsWith('configuration/import')) return 'settings'
   if (rest.startsWith('configuration/export')) return 'settings'
@@ -158,9 +162,16 @@ export function moduleKeysForPath(pathname, orgSlug) {
   return [key]
 }
 
-export function getNavItems(orgSlug, { canRead } = {}) {
+export function getNavItems(orgSlug, { canRead, disabledModules } = {}) {
   const allow = typeof canRead === 'function' ? canRead : () => true
+  const productOk = (item) => {
+    const productId = item.moduleKey
+      ? (productIdForPermissionKey(item.moduleKey) || item.moduleKey)
+      : null
+    return isProductModuleEnabled(disabledModules, productId)
+  }
   const allowItem = (item) => {
+    if (!productOk(item)) return false
     if (item.showWithoutPermission) return true
     if (allow(item.moduleKey)) return true
     return (item.altModuleKeys || []).some((key) => allow(key))
@@ -187,29 +198,97 @@ export function getNavItems(orgSlug, { canRead } = {}) {
     .filter(Boolean)
 }
 
-/** Flatten nav into leaf pages that can be pinned as shortcuts. */
-export function getShortcutOptions(orgSlug, { canRead } = {}) {
+/** Page-level tabs under a top-level nav item. */
+const SHORTCUT_TAB_GROUPS = {
+  'work-request': WORK_REQUEST_TABS,
+  'work-orders': WORK_ORDER_TABS,
+}
+
+/** Inner destinations under Masters → Others. */
+const OTHERS_SHORTCUTS = [
+  { id: 'status', label: 'Status', segment: 'masters/others/status', icon: 'list' },
+  { id: 'checklists', label: 'Checklists', segment: 'masters/others/checklists', icon: 'clipboard' },
+  {
+    id: 'character-limits',
+    label: 'Character limits',
+    segment: 'masters/others/character-limits',
+    icon: 'document',
+  },
+]
+
+function shortcutLeaf({ id, label, path, icon, group = null }) {
+  return { id, label, path, icon: icon || 'document', group }
+}
+
+/** Nested shortcut menu (parents drill into children; leaves are pin targets). */
+export function getShortcutOptions(orgSlug, { canRead, disabledModules } = {}) {
+  const allow = typeof canRead === 'function' ? canRead : () => true
   const options = []
-  for (const item of getNavItems(orgSlug, { canRead })) {
+
+  for (const item of getNavItems(orgSlug, { canRead, disabledModules })) {
     if (item.children) {
+      const children = []
       for (const child of item.children) {
-        options.push({
+        if (child.segment === 'masters/others') {
+          children.push({
+            id: child.segment,
+            label: child.label,
+            icon: child.icon || item.icon || 'document',
+            children: OTHERS_SHORTCUTS.map((hub) => shortcutLeaf({
+              id: hub.segment,
+              label: hub.label,
+              path: orgPath(orgSlug, hub.segment),
+              icon: hub.icon || child.icon || item.icon,
+              group: child.label,
+            })),
+          })
+          continue
+        }
+        children.push(shortcutLeaf({
           id: child.segment,
           label: child.label,
           path: child.path,
-          icon: child.icon || item.icon || 'document',
+          icon: child.icon || item.icon,
           group: item.label,
-        })
+        }))
       }
-    } else {
+      if (!children.length) continue
+      options.push({
+        id: item.id,
+        label: item.label,
+        icon: item.icon || 'document',
+        children,
+      })
+      continue
+    }
+
+    const tabGroup = item.segment ? SHORTCUT_TAB_GROUPS[item.segment] : null
+    if (tabGroup) {
+      const children = tabGroup
+        .filter((tab) => !tab.moduleKey || allow(tab.moduleKey))
+        .map((tab) => shortcutLeaf({
+          id: tab.segment,
+          label: tab.label,
+          path: orgPath(orgSlug, tab.segment),
+          icon: tab.icon || item.icon,
+          group: item.label,
+        }))
+      if (!children.length) continue
       options.push({
         id: item.segment || item.id,
         label: item.label,
-        path: item.path,
         icon: item.icon || 'document',
-        group: null,
+        children,
       })
+      continue
     }
+
+    options.push(shortcutLeaf({
+      id: item.segment || item.id,
+      label: item.label,
+      path: item.path,
+      icon: item.icon,
+    }))
   }
   return options
 }

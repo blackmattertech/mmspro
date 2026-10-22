@@ -12,12 +12,16 @@ import WorkOrdersTable from '../../components/workorders/WorkOrdersTable'
 import '../../components/company/CompanyShared.css'
 import '../../components/workorders/WorkOrdersPage.css'
 
-const RECEIVED_COLUMNS = ['wo_number', 'summary', 'assignees', 'creator', 'received_at', 'status', 'progress']
+const RECEIVED_COLUMNS = ['wo_number', 'summary', 'work_request', 'assignees', 'creator', 'received_at', 'status', 'priority', 'progress']
 const APPROVABLE_STATUSES = new Set(['assigned', 'returned_rework'])
 
 export default function ReceivedWorkOrders() {
   const [selectedId, setSelectedId, closeSelected] = useOpenQueryId()
-  const { search, locationFilter, sortBy, advancedRules, fieldFilter, locations } = useOutletContext()
+  const {
+    search, locationFilter, sortBy, advancedRules, fieldFilter, locations,
+    columnFilters = {}, setColumnFilter, headerSort = null, setHeaderSort,
+    statusFilters = [], toggleStatus,
+  } = useOutletContext()
   const { canUpdate, isOrgAdmin } = usePermissions()
   const canUpdateReceived = isOrgAdmin
     || canUpdate('work_orders_received')
@@ -26,23 +30,34 @@ export default function ReceivedWorkOrders() {
   const [listTotal, setListTotal] = useState(0)
   const [approvingId, setApprovingId] = useState(null)
   const [actionError, setActionError] = useState(null)
+  const listFilters = useMemo(() => {
+    const next = { ...columnFilters }
+    if (fieldFilter?.field && String(fieldFilter.value || '').trim()) next[fieldFilter.field] = fieldFilter.value
+    return next
+  }, [columnFilters, fieldFilter])
   const pagination = useTablePagination(listTotal, {
-    resetKey: `${debouncedSearch}|${locationFilter}|${fieldFilter?.field}|${fieldFilter?.value}|${sortBy}`,
+    resetKey: `${debouncedSearch}|${locationFilter}|${JSON.stringify(listFilters)}|${sortBy}|${headerSort?.id || ''}|${statusFilters.join(',')}`,
   })
   const fetchOrders = useCallback(
     () => getReceivedWorkOrders({
       search: debouncedSearch,
       limit: pagination.pageSize,
       offset: pagination.offset,
+      filters: listFilters,
+      statuses: statusFilters,
+      excludeStatuses: statusFilters.length ? [] : ['draft'],
+      sort: headerSort?.id || '',
+      sortDir: headerSort?.dir || '',
+      sort_by: headerSort ? '' : sortBy,
     }),
-    [debouncedSearch, pagination.pageSize, pagination.offset],
+    [debouncedSearch, pagination.pageSize, pagination.offset, listFilters, statusFilters, headerSort, sortBy],
   )
   const { orders, total, statusCounts, loading, error, reload } = useWorkOrderList(fetchOrders)
   useEffect(() => { setListTotal(total) }, [total])
 
   const filtered = useMemo(
-    () => applyWorkOrderFilters(orders, { search: '', locationFilter, sortBy, advancedRules, fieldFilter, locations }),
-    [orders, search, locationFilter, sortBy, advancedRules, fieldFilter, locations],
+    () => applyWorkOrderFilters(orders, { search: '', locationFilter, advancedRules, locations }),
+    [orders, locationFilter, advancedRules, locations],
   )
 
   const canApproveOrder = useCallback((order) => (
@@ -87,6 +102,12 @@ export default function ReceivedWorkOrders() {
         canApproveOrder={canApproveOrder}
         approvingId={approvingId}
         paginationResetKey={`${search}|${locationFilter}|${fieldFilter?.field}|${fieldFilter?.value}|${sortBy}`}
+        headerSort={headerSort}
+        onHeaderSort={setHeaderSort}
+        columnFilters={columnFilters}
+        onColumnFilter={setColumnFilter}
+        statusFilters={statusFilters}
+        onToggleStatus={toggleStatus}
       />
 
       {selectedId && (

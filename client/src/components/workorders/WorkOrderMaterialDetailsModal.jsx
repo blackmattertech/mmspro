@@ -37,11 +37,12 @@ export default function WorkOrderMaterialDetailsModal({ logs = [], onClose }) {
     .filter((log) => log.materials.length > 0)
 
   return (
-    <div className="modal-overlay company-modal-overlay--nested" onClick={handleBackdropClick} role="presentation">
+    <div className="modal-overlay company-modal-overlay--nested company-modal-overlay--popup" onClick={handleBackdropClick} role="presentation">
       <div
-        className="modal wo-material-details-modal"
+        className="modal company-modal--popup company-modal--popup-wide wo-material-details-modal"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
+        aria-modal="true"
         aria-labelledby="wo-material-details-title"
       >
         <div className="modal__header">

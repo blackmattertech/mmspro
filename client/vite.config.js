@@ -6,6 +6,32 @@ import { VitePWA } from 'vite-plugin-pwa'
 
 const SW_TEMPLATE = resolve(__dirname, 'public/firebase-messaging-sw.template.js')
 const SW_OUTPUT = resolve(__dirname, 'public/firebase-messaging-sw.js')
+const SPELLCHECK_AFF = resolve(__dirname, 'node_modules/dictionary-en/index.aff')
+const SPELLCHECK_DIC = resolve(__dirname, 'node_modules/dictionary-en/index.dic')
+
+function spellcheckDictionaryAssets() {
+  const files = {
+    '/spellcheck/en.aff': SPELLCHECK_AFF,
+    '/spellcheck/en.dic': SPELLCHECK_DIC,
+  }
+  return {
+    name: 'spellcheck-dictionary-assets',
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        const pathname = String(req.url || '').split('?')[0]
+        const file = files[pathname]
+        if (!file) return next()
+        res.setHeader('Content-Type', 'text/plain; charset=utf-8')
+        res.setHeader('Cache-Control', 'public, max-age=86400')
+        res.end(readFileSync(file))
+      })
+    },
+    generateBundle() {
+      this.emitFile({ type: 'asset', fileName: 'spellcheck/en.aff', source: readFileSync(SPELLCHECK_AFF) })
+      this.emitFile({ type: 'asset', fileName: 'spellcheck/en.dic', source: readFileSync(SPELLCHECK_DIC) })
+    },
+  }
+}
 
 function buildFirebaseServiceWorker(env) {
   const replacements = {
@@ -32,25 +58,8 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [
-      {
-        name: 'hunspell-en-dictionary',
-        resolveId(id) {
-          if (id === 'virtual:en-aff' || id === 'virtual:en-dic') return `\0${id}`
-          return undefined
-        },
-        load(id) {
-          if (id === '\0virtual:en-aff') {
-            const text = readFileSync(resolve(__dirname, 'node_modules/dictionary-en/index.aff'), 'utf8')
-            return `export default ${JSON.stringify(text)}`
-          }
-          if (id === '\0virtual:en-dic') {
-            const text = readFileSync(resolve(__dirname, 'node_modules/dictionary-en/index.dic'), 'utf8')
-            return `export default ${JSON.stringify(text)}`
-          }
-          return undefined
-        },
-      },
       react(),
+      spellcheckDictionaryAssets(),
       {
         name: 'dev-ngrok-skip-warning',
         transformIndexHtml(html, ctx) {
@@ -127,6 +136,7 @@ export default defineConfig(({ mode }) => {
         },
       },
       VitePWA({
+        disable: true,
         registerType: 'autoUpdate',
         injectRegister: false,
         strategies: 'injectManifest',
@@ -151,7 +161,7 @@ export default defineConfig(({ mode }) => {
                 || id.includes('/react/')
               ) return 'vendor-react'
               if (id.includes('@lottiefiles')) return 'vendor-lottie'
-              if (id.includes('nspell') || id.includes('dictionary-en')) return 'vendor-spellcheck'
+              if (id.includes('nspell')) return 'vendor-spellcheck'
             }
           },
         },

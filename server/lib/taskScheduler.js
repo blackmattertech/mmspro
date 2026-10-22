@@ -3,16 +3,19 @@ import { runTaskRecurrenceJob } from './taskRecurrenceJob.js'
 import { runTaskReminderJob } from './taskReminderJob.js'
 import { runPmScheduler } from './pmScheduler.js'
 import { runReportSchedulerJob } from './reportSchedulerJob.js'
+import { runWarrantyExpiryJob } from './warrantyExpiryJob.js'
 
 const RECURRENCE_INTERVAL_MS = 60 * 60 * 1000
 const REMINDER_INTERVAL_MS = 60 * 1000
 const PM_INTERVAL_MS = 60 * 1000
 const REPORT_INTERVAL_MS = 60 * 1000
+const WARRANTY_INTERVAL_MS = 60 * 60 * 1000
 
 let recurrenceTimer = null
 let reminderTimer = null
 let pmTimer = null
 let reportTimer = null
+let warrantyTimer = null
 let started = false
 
 function scheduleRecurrence() {
@@ -67,6 +70,19 @@ function scheduleReports() {
   })
 }
 
+function scheduleWarranty() {
+  runInBackground(async () => {
+    try {
+      const result = await runWarrantyExpiryJob()
+      if (result.sent > 0) {
+        console.log(`[taskScheduler] sent ${result.sent} warranty expiry alert(s)`)
+      }
+    } catch (err) {
+      console.error('[taskScheduler] warranty expiry job error:', err)
+    }
+  })
+}
+
 /** True when in-process timers should run (always-on Node, not Vercel Functions). */
 export function shouldStartInlineScheduler() {
   if (process.env.ENABLE_TASK_SCHEDULER === 'false') return false
@@ -77,7 +93,7 @@ export function shouldStartInlineScheduler() {
 }
 
 export async function runAllSchedulerJobs() {
-  const [recurrence, reminders, pm, reports] = await Promise.all([
+  const [recurrence, reminders, pm, reports, warranty] = await Promise.all([
     runTaskRecurrenceJob().catch((err) => {
       console.error('[taskScheduler] recurrence job error:', err)
       return { generated: 0, error: err.message }
@@ -94,8 +110,12 @@ export async function runAllSchedulerJobs() {
       console.error('[taskScheduler] report scheduler error:', err)
       return { due: 0, sent: 0, failed: 0, error: err.message }
     }),
+    runWarrantyExpiryJob().catch((err) => {
+      console.error('[taskScheduler] warranty expiry job error:', err)
+      return { sent: 0, error: err.message }
+    }),
   ])
-  return { recurrence, reminders, pm, reports }
+  return { recurrence, reminders, pm, reports, warranty }
 }
 
 export function startTaskScheduler() {
@@ -110,16 +130,19 @@ export function startTaskScheduler() {
   scheduleReminders()
   schedulePm()
   scheduleReports()
+  scheduleWarranty()
 
   recurrenceTimer = setInterval(scheduleRecurrence, RECURRENCE_INTERVAL_MS)
   reminderTimer = setInterval(scheduleReminders, REMINDER_INTERVAL_MS)
   pmTimer = setInterval(schedulePm, PM_INTERVAL_MS)
   reportTimer = setInterval(scheduleReports, REPORT_INTERVAL_MS)
+  warrantyTimer = setInterval(scheduleWarranty, WARRANTY_INTERVAL_MS)
 
   if (recurrenceTimer.unref) recurrenceTimer.unref()
   if (reminderTimer.unref) reminderTimer.unref()
   if (pmTimer.unref) pmTimer.unref()
   if (reportTimer.unref) reportTimer.unref()
+  if (warrantyTimer.unref) warrantyTimer.unref()
 
   console.log('[taskScheduler] started (recurrence hourly, reminders/PM/reports every 60s)')
   return true
@@ -130,9 +153,11 @@ export function stopTaskScheduler() {
   if (reminderTimer) clearInterval(reminderTimer)
   if (pmTimer) clearInterval(pmTimer)
   if (reportTimer) clearInterval(reportTimer)
+  if (warrantyTimer) clearInterval(warrantyTimer)
   recurrenceTimer = null
   reminderTimer = null
   pmTimer = null
   reportTimer = null
+  warrantyTimer = null
   started = false
 }

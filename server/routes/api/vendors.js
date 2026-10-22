@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import { verifyAuth } from '../../middleware/auth.js'
 import { requireOrgAccess, assertOrgOwnership } from '../../middleware/orgAccess.js'
+import { requireModulePermission } from '../../middleware/modulePermission.js'
 import {
   listVendors,
   getVendorDetail,
@@ -11,10 +12,11 @@ import {
 } from '../../lib/vendorService.js'
 import { buildVendorsTemplate, bulkImportVendors } from '../../lib/vendorBulkService.js'
 import { attachFailedFileToResult } from '../../lib/importErrorWorkbook.js'
+import { parseListControls } from '../../lib/listQuery.js'
 
 const router = Router()
 
-router.use(verifyAuth, requireOrgAccess)
+router.use(verifyAuth, requireOrgAccess, requireModulePermission('vendors', 'read'))
 
 function parsePagination(query) {
   const rawLimit = Number(query.limit)
@@ -36,8 +38,10 @@ router.get('/next-code', async (req, res) => {
 router.get('/', async (req, res) => {
   try {
     const { limit, offset } = parsePagination(req.query)
+    const controls = parseListControls(req.query)
     const rows = await listVendors(req.userProfile.org_id, {
       search: req.query.search || null,
+      filters: controls.filters,
       limit,
       offset,
     })

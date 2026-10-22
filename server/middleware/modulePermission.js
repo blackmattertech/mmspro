@@ -20,7 +20,7 @@ export async function loadOrgPermissions(req, _res, next) {
 
 /**
  * Require a single module action (create|read|update|delete).
- * Org admins always pass. Default deny for everyone else.
+ * Disabled product modules are denied even for org admins.
  */
 export function requireModulePermission(moduleKey, action) {
   return async (req, res, next) => {

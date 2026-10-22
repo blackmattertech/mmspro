@@ -5,9 +5,9 @@ export const ASSET_FIELD_TYPES = [
   { value: 'date', label: 'Date' },
   { value: 'datetime', label: 'Date & time' },
   { value: 'image', label: 'Image' },
-  { value: 'file', label: 'Files' },
+  { value: 'file', label: 'File' },
   { value: 'dropdown', label: 'Dropdown' },
-  { value: 'radio', label: 'Radio' },
+  { value: 'radio', label: 'Radio button' },
   { value: 'checkbox', label: 'Checkbox' },
 ]
 
@@ -36,10 +36,11 @@ export function fieldTypeLabel(value) {
   return ASSET_FIELD_TYPES.find((t) => t.value === value)?.label || value || '—'
 }
 
-export function filterFieldsByView(fields, view) {
+export function filterFieldsByView(fields, view, { excludeSections = false } = {}) {
   if (view === 'sections') return fields.filter((f) => f.kind === 'section')
   if (view === 'parents') return fields.filter((f) => f.kind === 'parent')
   if (view === 'children') return fields.filter((f) => f.kind === 'child')
+  if (excludeSections) return fields.filter((f) => f.kind === 'parent' || f.kind === 'child')
   return fields.filter((f) => f.kind !== 'child')
 }
 
@@ -75,8 +76,8 @@ export function fieldSearchText(field, view = 'all') {
   return parts.filter((p) => p && p !== '—').join(' ').toLowerCase()
 }
 
-export function applyFieldFilters(fields, { view, search, sectionId, parentId }) {
-  let result = filterFieldsByView(fields, view)
+export function applyFieldFilters(fields, { view, search, sectionId, parentId, excludeSections = false }) {
+  let result = filterFieldsByView(fields, view, { excludeSections })
 
   if (sectionId) {
     result = result.filter((field) => {

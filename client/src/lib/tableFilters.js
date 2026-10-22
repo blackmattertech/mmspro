@@ -79,6 +79,21 @@ export function sortTableRows(rows, sortBy, {
   }
 }
 
+export function serverFieldFilters(field, value) {
+  const text = String(value ?? '').trim()
+  if (!field || !text) return undefined
+  return { [field]: text }
+}
+
+export function compactFilters(values) {
+  const next = {}
+  for (const [key, value] of Object.entries(values || {})) {
+    const text = String(value ?? '').trim()
+    if (text) next[key] = text
+  }
+  return Object.keys(next).length ? next : undefined
+}
+
 export function applyTableFilters(rows, {
   search,
   searchHaystack,

@@ -27,8 +27,14 @@ export default function CreateWorkOrderModal({
   }
 
   return (
-    <div className="modal-overlay" onClick={onClose} role="presentation">
-      <div className="modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-labelledby="modal-title">
+    <div className="modal-overlay company-modal-overlay--popup" onClick={onClose} role="presentation">
+      <div
+        className="modal company-modal--popup"
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="modal-title"
+      >
         <div className="modal__header">
           <div className="modal__header-main">
             <PageBack onClick={onClose} className="page-back--header" />

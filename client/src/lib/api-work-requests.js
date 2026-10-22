@@ -1,5 +1,5 @@
-import { apiFetch } from './api'
-import { asListArray } from './listResponse'
+import { apiFetch, apiFetchBlob } from './api'
+import { asListArray, listQueryParams } from './listResponse'
 
 export function workRequestsFetch(path, options = {}) {
   return apiFetch(`/api/work-requests${path}`, options)
@@ -40,13 +40,49 @@ export function bulkUploadWorkRequests(base64Data) {
   })
 }
 
-export async function listWorkRequests(filter, { search, limit = 50, offset = 0 } = {}) {
-  const qs = new URLSearchParams({ filter })
-  if (search) qs.set('search', search)
-  qs.set('limit', String(limit))
-  qs.set('offset', String(offset))
-  const data = await workRequestsFetch(`/?${qs}`)
+export async function listWorkRequests(filter, {
+  search,
+  limit = 50,
+  offset = 0,
+  filters,
+  statuses,
+  excludeStatuses,
+  sort,
+  sortDir,
+  sortBy,
+} = {}) {
+  const data = await workRequestsFetch(`/${listQueryParams({
+    filter,
+    search,
+    limit,
+    offset,
+    filters,
+    statuses,
+    excludeStatuses,
+    sort,
+    sortDir,
+    sort_by: sortBy,
+  })}`)
   return asListArray(data)
+}
+
+export function exportWorkRequests(filter, params = {}) {
+  return apiFetchBlob(`/api/work-requests/${listQueryParams({
+    filter,
+    ...params,
+    exportCsv: true,
+  })}`)
+}
+
+export function getWorkRequestTabCounts() {
+  return workRequestsFetch('/tab-counts')
+}
+
+export function saveWorkRequestChecklist(id, checklistValues) {
+  return workRequestsFetch(`/${id}/checklist`, {
+    method: 'PATCH',
+    body: JSON.stringify({ checklist_values: checklistValues }),
+  })
 }
 
 export function getWorkRequest(id) {

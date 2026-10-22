@@ -1,11 +1,11 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useBackdropClose } from '../../hooks/useBackdropClose'
+import { useDebouncedValue } from '../../hooks/useDebouncedValue'
 import EmployeeAvatar from '../company/EmployeeAvatar'
 import PageBack from '../shared/PageBack'
 import TableFilterToolbar from '../shared/TableFilterToolbar'
-import { TABLE_SORT_OPTIONS, applyTableFilters } from '../../lib/tableFilters'
+import { TABLE_SORT_OPTIONS, applyTableFilters, compactFilters } from '../../lib/tableFilters'
 import { formatPhoneDisplay } from '../shared/PhoneInput'
-import { isLocationHeadEmployee } from '../../lib/employeeRoles'
 import '../company/CompanyShared.css'
 import '../shared/PageBack.css'
 import '../shared/TableFilterToolbar.css'
@@ -24,73 +24,50 @@ const EMPLOYEE_FILTER_FIELDS = [
   { value: 'status', label: 'Status', placeholder: 'active or inactive' },
 ]
 
-function employeeSearchHaystack(employee) {
-  const emails = [
-    employee.email,
-    ...(employee.org_employee_emails || []).map((row) => row.email),
-  ]
-  return [
-    employee.emp_id,
-    employee.name,
-    employee.mobile,
-    employee.mobile ? formatPhoneDisplay(employee.mobile) : '',
-    ...emails,
-    employee.departments?.name,
-    employee.org_locations?.name,
-    employee.manager?.name,
-    employee.manager?.emp_id,
-    employee.access_role?.name,
-    isLocationHeadEmployee(employee) ? 'Location Head' : '',
-    employee.is_active === false ? 'inactive' : 'active',
-  ].filter(Boolean).join(' ').toLowerCase()
-}
-
 export default function AssignEmployeesModal({
   role,
   employees,
+  selectionEmployees,
   saving,
   scopeHint,
   onClose,
   onSave,
+  onQueryChange,
 }) {
   const [selected, setSelected] = useState(new Set())
   const [search, setSearch] = useState('')
-  const [filterField, setFilterField] = useState('')
-  const [filterValue, setFilterValue] = useState('')
+  const [columnFilters, setColumnFilters] = useState({})
   const [sortBy, setSortBy] = useState('name_asc')
   const handleBackdropClick = useBackdropClose(onClose)
+  const debouncedSearch = useDebouncedValue(search.trim())
+  const seededRoleId = useRef(null)
 
   const assignedIds = useMemo(
-    () => employees.filter((e) => e.access_role_id === role?.id).map((e) => e.id),
-    [employees, role?.id],
+    () => (selectionEmployees || employees)
+      .filter((employee) => employee.access_role_id === role?.id)
+      .map((employee) => employee.id),
+    [selectionEmployees, employees, role?.id],
   )
 
   useEffect(() => {
+    if (!role?.id || seededRoleId.current === role.id) return
+    if (!(selectionEmployees || employees).length && assignedIds.length === 0) return
+    seededRoleId.current = role.id
     setSelected(new Set(assignedIds))
-  }, [assignedIds])
+  }, [assignedIds, employees, role?.id, selectionEmployees])
+
+  useEffect(() => {
+    onQueryChange?.({
+      search: debouncedSearch,
+      listFilters: compactFilters(columnFilters),
+    })
+  }, [debouncedSearch, columnFilters, onQueryChange])
 
   const filtered = useMemo(() => applyTableFilters(employees, {
-    search,
-    searchHaystack: employeeSearchHaystack,
-    fieldFilter: { field: filterField, value: filterValue },
-    fieldFilterGetters: {
-      name: (employee) => employee.name,
-      emp_id: (employee) => employee.emp_id,
-      department: (employee) => employee.departments?.name,
-      location: (employee) => employee.org_locations?.name,
-      email: (employee) => [
-        employee.email,
-        ...(employee.org_employee_emails || []).map((row) => row.email),
-      ].filter(Boolean).join(' '),
-      mobile: (employee) => employee.mobile ? formatPhoneDisplay(employee.mobile) : employee.mobile,
-      manager: (employee) => employee.manager?.name,
-      role: (employee) => employee.access_role?.name,
-      status: (employee) => (employee.is_active === false ? 'inactive' : 'active'),
-    },
     sortBy,
     getName: (employee) => employee.name,
     getCreatedAt: (employee) => employee.created_at,
-  }), [employees, search, filterField, filterValue, sortBy])
+  }), [employees, sortBy])
 
   const toggle = (id) => {
     setSelected((prev) => {
@@ -138,10 +115,8 @@ export default function AssignEmployeesModal({
             }}
             filter={{
               fields: EMPLOYEE_FILTER_FIELDS,
-              field: filterField,
-              onFieldChange: setFilterField,
-              value: filterValue,
-              onValueChange: setFilterValue,
+              values: columnFilters,
+              onChange: setColumnFilters,
             }}
             sort={{ value: sortBy, onChange: setSortBy, options: TABLE_SORT_OPTIONS }}
           />

@@ -1,18 +1,41 @@
 import { useState, useEffect, useCallback } from 'react'
 import { getAreas, createArea, updateArea, deleteArea } from '../lib/api'
+import { fetchReferenceData, invalidateReferenceCache, peekCachedList, peekReferenceData, PICKER_LIMIT } from '../lib/referenceDataCache'
 
-export function useAreas({ locationId, departmentId, search, limit = 200, offset = 0 } = {}) {
-  const [areas, setAreas] = useState([])
-  const [total, setTotal] = useState(0)
-  const [loading, setLoading] = useState(true)
+export function useAreas({
+  locationId,
+  departmentId,
+  search,
+  limit = PICKER_LIMIT,
+  offset = 0,
+  enabled = true,
+  filters,
+} = {}) {
+  const filterKey = JSON.stringify(filters || {})
+  const initial = peekCachedList('areas', { locationId, departmentId, search, limit, offset, filters: filterKey })
+  const [areas, setAreas] = useState(() => initial?.items || [])
+  const [total, setTotal] = useState(() => initial?.total || 0)
+  const [loading, setLoading] = useState(() => !initial)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
 
-  const load = useCallback(async ({ silent = false } = {}) => {
-    if (!silent) setLoading(true)
+  const load = useCallback(async ({ silent = false, force = false } = {}) => {
+    if (!enabled) {
+      setAreas([])
+      setTotal(0)
+      setLoading(false)
+      return
+    }
+    const cacheParams = { locationId, departmentId, search, limit, offset, filters: filterKey }
+    if (!silent && !peekReferenceData('areas', cacheParams)) setLoading(true)
     setError(null)
     try {
-      const data = await getAreas({ locationId, departmentId, search, limit, offset })
+      const data = await fetchReferenceData(
+        'areas',
+        cacheParams,
+        () => getAreas({ locationId, departmentId, search, limit, offset, filters }),
+        { force },
+      )
       setAreas(data)
       setTotal(data.total ?? data.length)
     } catch (err) {
@@ -20,18 +43,23 @@ export function useAreas({ locationId, departmentId, search, limit = 200, offset
     } finally {
       if (!silent) setLoading(false)
     }
-  }, [locationId, departmentId, search, limit, offset])
+  }, [locationId, departmentId, search, limit, offset, enabled, filterKey])
 
   useEffect(() => {
     load()
   }, [load])
+
+  const refreshAfterMutation = async () => {
+    invalidateReferenceCache('areas')
+    await load({ silent: true, force: true })
+  }
 
   const create = async (payload) => {
     setSaving(true)
     setError(null)
     try {
       const data = await createArea(payload)
-      await load({ silent: true })
+      await refreshAfterMutation()
       return data
     } catch (err) {
       setError(err.message)
@@ -46,7 +74,7 @@ export function useAreas({ locationId, departmentId, search, limit = 200, offset
     setError(null)
     try {
       const data = await updateArea(id, payload)
-      await load({ silent: true })
+      await refreshAfterMutation()
       return data
     } catch (err) {
       setError(err.message)
@@ -61,7 +89,7 @@ export function useAreas({ locationId, departmentId, search, limit = 200, offset
     setError(null)
     try {
       await deleteArea(id)
-      await load({ silent: true })
+      await refreshAfterMutation()
     } catch (err) {
       setError(err.message)
       throw err
@@ -74,7 +102,7 @@ export function useAreas({ locationId, departmentId, search, limit = 200, offset
     setError(null)
     try {
       await updateArea(id, { is_active: isActive })
-      await load({ silent: true })
+      await refreshAfterMutation()
     } catch (err) {
       setError(err.message)
       throw err

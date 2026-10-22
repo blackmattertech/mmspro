@@ -27,21 +27,21 @@ export default function Sidebar({ collapsed = false, onToggle, mobileOpen = fals
   const { org, orgRole } = useOrg()
   const { canRead, loading: permsLoading, accessRole, isOrgAdmin } = usePermissions()
   const location = useLocation()
-  const navItems = org && !permsLoading ? getNavItems(org.slug, { canRead }) : []
+  const navItems = org && !permsLoading ? getNavItems(org.slug, { canRead, disabledModules: org.disabled_modules }) : []
   const quickAccessScope = org ? orgQuickAccessScope(org.id) : null
   const shortcutCatalog = useMemo(
-    () => (org ? getShortcutOptions(org.slug) : []),
-    [org?.slug],
+    () => (org ? getShortcutOptions(org.slug, { disabledModules: org.disabled_modules }) : []),
+    [org?.slug, org?.disabled_modules],
   )
   const quickAccessOptions = useMemo(
-    () => (org && !permsLoading ? getShortcutOptions(org.slug, { canRead }) : []),
-    [org?.slug, canRead, permsLoading],
+    () => (org && !permsLoading ? getShortcutOptions(org.slug, { canRead, disabledModules: org.disabled_modules }) : []),
+    [org?.slug, org?.disabled_modules, canRead, permsLoading],
   )
   const [openMenu, setOpenMenu] = useState(null)
 
   useEffect(() => {
     if (!org || permsLoading) return
-    const items = getNavItems(org.slug, { canRead })
+    const items = getNavItems(org.slug, { canRead, disabledModules: org.disabled_modules })
     setOpenMenu(findActiveParentId(items, location.pathname))
   }, [location.pathname, org, canRead, permsLoading])
 

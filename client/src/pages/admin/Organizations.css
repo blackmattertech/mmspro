@@ -71,6 +71,10 @@
   overflow: visible;
 }
 
+.admin-org-card .admin-table-wrap {
+  overflow: visible;
+}
+
 .admin-org-toolbar {
   display: flex;
   align-items: center;
@@ -78,7 +82,22 @@
   gap: 16px;
   padding: 16px 20px;
   border-bottom: 1px solid var(--color-light-gray-1);
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  min-width: 0;
+}
+
+.admin-org-toolbar .table-filter-toolbar {
+  flex: 1;
+  min-width: 0;
+  flex-wrap: nowrap;
+}
+
+.admin-org-toolbar .table-filter-toolbar .spellcheck-field--inline,
+.admin-org-toolbar .table-filter-toolbar .wo-page__search {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 140px;
+  max-width: none;
 }
 
 .admin-org-toolbar__search {
@@ -302,11 +321,78 @@
   }
 
   .admin-org-toolbar {
-    flex-direction: column;
-    align-items: stretch;
+    flex-direction: row;
+    align-items: center;
+    flex-wrap: nowrap;
   }
 
   .admin-org-toolbar__search {
     max-width: none;
   }
+
+  .admin-org-toolbar .table-filter-toolbar {
+    flex-wrap: nowrap;
+  }
+
+  .admin-org-toolbar .table-filter-toolbar .spellcheck-field--inline,
+  .admin-org-toolbar .table-filter-toolbar .wo-page__search {
+    flex: 1 1 auto !important;
+    width: auto !important;
+    min-width: 0 !important;
+    max-width: none !important;
+  }
+}
+
+.admin-org-configure {
+  position: relative;
+  display: inline-flex;
+}
+
+.admin-org-configure__btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  color: var(--color-primary);
+  background: var(--color-light-pink-2);
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+
+.admin-org-configure__btn:hover {
+  color: #d42f3c;
+  background: var(--color-light-pink-1);
+}
+
+.admin-org-configure__tooltip {
+  position: absolute;
+  top: 50%;
+  right: calc(100% + 8px);
+  z-index: 40;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: #1f2937;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.35;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-50%) translateX(4px);
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.18);
+  transition: opacity 0.12s ease, transform 0.12s ease, visibility 0.12s ease;
+}
+
+.admin-org-configure__btn:hover .admin-org-configure__tooltip,
+.admin-org-configure__btn:focus-visible .admin-org-configure__tooltip {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(-50%) translateX(0);
 }

@@ -15,6 +15,7 @@ export function useWarranties(filters = {}) {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
 
+  const filterKey = JSON.stringify(filters)
   const load = useCallback(async ({ silent = false } = {}) => {
     if (!silent) setLoading(true)
     setError(null)
@@ -28,7 +29,7 @@ export function useWarranties(filters = {}) {
     } finally {
       if (!silent) setLoading(false)
     }
-  }, [filters.search, filters.limit, filters.offset])
+  }, [filterKey])
 
   useEffect(() => {
     load()

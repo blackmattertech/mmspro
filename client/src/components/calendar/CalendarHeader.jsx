@@ -1,7 +1,10 @@
 import { useState } from 'react'
-import CreateWorkOrderModal from '../dashboard/CreateWorkOrderModal'
+import { useNavigate } from 'react-router-dom'
 import DateField from '../ui/DateField'
 import FilterableSelect from '../ui/FilterableSelect'
+import { useOrg } from '../../hooks/useOrg'
+import { usePermissions } from '../../hooks/usePermissions'
+import { orgPath } from '../../config/navigation'
 import '../dashboard/DashboardHeader.css'
 
 export default function CalendarHeader({
@@ -22,7 +25,7 @@ export default function CalendarHeader({
         <div className="dash-header__left">
           <h1 className="dash-header__title">Calendar</h1>
           <p className="dash-header__subtitle">
-            View and manage all scheduled tasks and follow-ups
+            Tasks, work orders, work requests, PM schedules, and warranty dates
           </p>
         </div>
 
@@ -88,10 +91,20 @@ export function CalendarToolbar({
   onToday,
   onPrevMonth,
   onNextMonth,
-  onCreateTask,
-  plants,
 }) {
-  const [showModal, setShowModal] = useState(false)
+  const navigate = useNavigate()
+  const { org } = useOrg()
+  const { canCreate } = usePermissions()
+  const [menuOpen, setMenuOpen] = useState(false)
+  const slug = org?.slug
+  const items = [
+    canCreate('work_request_create') && { label: 'Work Request', path: 'work-request/create' },
+    (canCreate('work_orders_manual') || canCreate('work_orders')) && { label: 'Work Order', path: 'work-orders/manual/create' },
+    canCreate('work_orders_scheduled') && { label: 'PM Schedule', path: 'work-orders/scheduled?create=1' },
+    canCreate('tasks_followups') && { label: 'Task', path: 'tasks-and-followups/create' },
+    canCreate('warranty_manager') && { label: 'Warranty', path: 'warranty-manager/create' },
+    canCreate('vendors') && { label: 'Vendor', path: 'masters/vendors?create=1' },
+  ].filter(Boolean)
 
   return (
     <>
@@ -134,28 +147,40 @@ export function CalendarToolbar({
           </div>
         </div>
 
-        <button
-          type="button"
-          className="cal-toolbar__create-btn"
-          onClick={() => setShowModal(true)}
-        >
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-            <path d="M8 3V13M3 8H13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-          </svg>
-          Create Task
-        </button>
+        {items.length > 0 && (
+          <div className="cal-toolbar__create">
+            <button
+              type="button"
+              className="cal-toolbar__create-btn"
+              onClick={() => setMenuOpen((open) => !open)}
+              aria-expanded={menuOpen}
+            >
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <path d="M8 3V13M3 8H13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+              </svg>
+              Create
+            </button>
+            {menuOpen && (
+              <div className="cal-toolbar__create-menu" role="menu">
+                {items.map((item) => (
+                  <button
+                    key={item.path}
+                    type="button"
+                    role="menuitem"
+                    className="cal-toolbar__create-item"
+                    onClick={() => {
+                      setMenuOpen(false)
+                      if (slug) navigate(orgPath(slug, item.path))
+                    }}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
-
-      {showModal && (
-        <CreateWorkOrderModal
-          plants={plants}
-          onClose={() => setShowModal(false)}
-          onSubmit={async (data) => {
-            await onCreateTask?.(data)
-            setShowModal(false)
-          }}
-        />
-      )}
     </>
   )
 }

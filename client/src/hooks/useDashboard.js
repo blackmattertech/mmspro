@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useOrg } from './useOrg'
 import { usePermissions } from './usePermissions'
-import { getDashboardWorkOrders } from '../lib/api-work-orders'
+import { getDashboardSummary } from '../lib/api-dashboard'
 import { orgPath } from '../config/navigation'
 
 const EMPTY_STATS = {
@@ -23,18 +23,22 @@ const EMPTY_STATS = {
 export const useDashboard = () => {
   const navigate = useNavigate()
   const { org } = useOrg()
-  const { isOrgAdmin, locationId: scopedLocationId, canCreate, loading: permLoading } = usePermissions()
+  const { isOrgAdmin, locationId: scopedLocationId, canCreate, canRead, loading: permLoading } = usePermissions()
 
   const canSeeAllLocations = isOrgAdmin
   const userLocationId = scopedLocationId || null
+  const canReadWorkOrders = canRead('work_orders_received')
+    || canRead('work_orders_assigned')
+    || canRead('work_orders_manual')
+    || canRead('work_orders_scheduled')
+    || canRead('work_orders')
 
-  const [workOrders, setWorkOrders] = useState([])
   const [locations, setLocations] = useState([])
-  const [stats, setStats] = useState(EMPTY_STATS)
-  const [statusBreakdown, setStatusBreakdown] = useState([])
-  const [locationBreakdown, setLocationBreakdown] = useState([])
-  const [trendData, setTrendData] = useState([])
+  const [overview, setOverview] = useState([])
+  const [modules, setModules] = useState([])
+  const [charts, setCharts] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState(null)
   const [locationFilter, setLocationFilter] = useState('all')
   const [dateFrom, setDateFrom] = useState('')
@@ -60,41 +64,29 @@ export const useDashboard = () => {
 
   const fetchData = useCallback(async () => {
     if (permLoading) return
-    setLoading(true)
+    setRefreshing(true)
     setError(null)
     try {
-      const data = await getDashboardWorkOrders({
+      const summary = await getDashboardSummary({
         locationId: fetchLocationId,
         dateFrom: dateFrom || undefined,
         dateTo: dateTo || undefined,
       })
-      const recent = Array.isArray(data?.recent_orders)
-        ? data.recent_orders
-        : (Array.isArray(data?.work_orders) ? data.work_orders : [])
-      const nextStats = {
-        ...EMPTY_STATS,
-        ...(data?.stats && typeof data.stats === 'object' ? data.stats : {}),
+
+      setOverview(Array.isArray(summary?.overview) ? summary.overview : [])
+      setModules(Array.isArray(summary?.modules) ? summary.modules : [])
+      setCharts(summary?.charts && typeof summary.charts === 'object' ? summary.charts : null)
+      if (Array.isArray(summary?.locations) && summary.locations.length) {
+        setLocations(summary.locations)
       }
-      for (const key of Object.keys(EMPTY_STATS)) {
-        if (EMPTY_STATS[key] === null) continue
-        const n = Number(nextStats[key])
-        nextStats[key] = Number.isFinite(n) ? n : 0
-      }
-      setWorkOrders(recent)
-      setStats(nextStats)
-      setStatusBreakdown(Array.isArray(data?.status_breakdown) ? data.status_breakdown : [])
-      setLocationBreakdown(Array.isArray(data?.location_breakdown) ? data.location_breakdown : [])
-      setTrendData(Array.isArray(data?.trend_data) ? data.trend_data : [])
-      if (Array.isArray(data?.locations)) setLocations(data.locations)
     } catch (err) {
-      setWorkOrders([])
-      setStats(EMPTY_STATS)
-      setStatusBreakdown([])
-      setLocationBreakdown([])
-      setTrendData([])
+      setOverview([])
+      setModules([])
+      setCharts(null)
       setError(err.message || 'Failed to load dashboard')
     } finally {
       setLoading(false)
+      setRefreshing(false)
     }
   }, [permLoading, fetchLocationId, dateFrom, dateTo])
 
@@ -112,20 +104,34 @@ export const useDashboard = () => {
     return { data: null, error: null }
   }
 
+  const createWorkRequest = async () => {
+    if (!org?.slug) return { data: null, error: { message: 'No organization found' } }
+    if (canCreate && !canCreate('work_request_create') && !canCreate('work_request')) {
+      return { data: null, error: { message: 'You do not have permission to create work requests' } }
+    }
+    navigate(orgPath(org.slug, 'work-request/create'))
+    return { data: null, error: null }
+  }
+
   return {
     loading,
+    refreshing,
     error,
     isDemo: false,
     locations: filterLocations,
     canSeeAllLocations,
-    workOrders,
-    recentOrders: workOrders.slice(0, 5),
-    trendData,
-    locationBreakdown,
-    plantBreakdown: locationBreakdown,
-    statusBreakdown,
+    canReadWorkOrders,
+    workOrders: charts?.recent_work_orders || [],
+    recentOrders: charts?.recent_work_orders || [],
+    trendData: [],
+    locationBreakdown: charts?.locations || [],
+    plantBreakdown: charts?.locations || [],
+    statusBreakdown: [],
     priorityBreakdown: [],
-    stats,
+    stats: EMPTY_STATS,
+    overview,
+    modules,
+    charts,
     locationFilter,
     setLocationFilter,
     plantFilter: locationFilter,
@@ -135,6 +141,9 @@ export const useDashboard = () => {
     dateTo,
     setDateTo,
     createWorkOrder,
+    createWorkRequest,
+    canCreateWorkOrder: !canCreate || canCreate('work_orders_manual') || canCreate('work_orders'),
+    canCreateWorkRequest: !canCreate || canCreate('work_request_create') || canCreate('work_request'),
     refresh: fetchData,
   }
 }

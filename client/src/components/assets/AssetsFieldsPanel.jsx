@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect, useRef } from 'react'
+import { useMemo, useState, useEffect, useRef, lazy, Suspense } from 'react'
 import { useOrg } from '../../hooks/useOrg'
 import { useAssetFields } from '../../hooks/useAssetFields'
 import {
@@ -6,7 +6,6 @@ import {
   fieldTypeSupportsOptions,
   applyFieldFilters,
   sortAssetFields,
-  kindLabel,
   dropdownValuesLabel,
   getSortOptionsForView,
   defaultSortForView,
@@ -22,14 +21,28 @@ import TrashIcon from '../ui/TrashIcon'
 import EditIcon from '../ui/EditIcon'
 import FieldModal from './FieldModal'
 import AssetFieldSortMenu from './AssetFieldSortMenu'
-import AssetFormLayoutModal from './AssetFormLayoutModal'
 import TablePagination from '../shared/TablePagination'
 import SpellcheckInput from '../shared/SpellcheckInput'
 import FilterableSelect from '../ui/FilterableSelect'
 import { useTablePagination } from '../../hooks/useTablePagination'
+import {
+  getAdminAssetFieldsTemplate,
+  bulkUploadAdminAssetFields,
+} from '../../lib/api-admin-assets'
+import {
+  getAssetFieldsTemplate,
+  bulkUploadAssetFields,
+} from '../../lib/api-assets'
+import {
+  useMasterBulkUpload,
+  MasterBulkActions,
+  MasterBulkResult,
+} from '../company/MasterBulkUpload'
 import '../company/CompanyShared.css'
 import './AssetsFields.css'
 import './AssetFormLayoutModal.css'
+
+const FormLayoutEditorModal = lazy(() => import('../admin/FormLayoutEditorModal'))
 
 function AssetSettingsIcon() {
   return (
@@ -55,7 +68,6 @@ function AssetSettingsIcon() {
 }
 
 const VIEW_TABS = [
-  { id: 'all', label: 'All' },
   { id: 'sections', label: 'Sections' },
   { id: 'parents', label: 'Parents' },
   { id: 'children', label: 'Children' },
@@ -119,6 +131,10 @@ export default function AssetsFieldsPanel({
   orgId: orgIdProp,
   fieldsState,
   fieldScope = 'all',
+  lockedView,
+  hideViewTabs = false,
+  hideLayoutButton = false,
+  hideReorder = false,
 }) {
   const { org } = useOrg()
   const orgId = orgIdProp || org?.id
@@ -138,6 +154,7 @@ export default function AssetsFieldsPanel({
     reorderParents,
     uploadIcon,
     removeIcon,
+    reload,
   } = fieldsState || internalState
   const modalStateKey = orgId ? `mms:asset-field-modal:${orgId}` : null
   const scopedFields = useMemo(
@@ -157,17 +174,28 @@ export default function AssetsFieldsPanel({
     return VIEW_TABS
   }, [fieldScope, canManageSchema])
   const [view, setView] = useState(() => {
+    if (lockedView) return lockedView
     if (fieldScope === 'equipment' && !canManageSchema) return 'children'
-    return 'all'
+    return 'parents'
   })
   const [search, setSearch] = useState('')
   const [sectionFilter, setSectionFilter] = useState('')
   const [parentFilter, setParentFilter] = useState('')
-  const [sortBy, setSortBy] = useState('parent')
-  const [sortDir, setSortDir] = useState('asc')
+  const [sortBy, setSortBy] = useState(() => (
+    defaultSortForView(
+      lockedView
+        || (fieldScope === 'equipment' && !canManageSchema ? 'children' : 'parents'),
+    ).sortBy
+  ))
+  const [sortDir, setSortDir] = useState(() => (
+    defaultSortForView(
+      lockedView
+        || (fieldScope === 'equipment' && !canManageSchema ? 'children' : 'parents'),
+    ).sortDir
+  ))
   const [modalOpen, setModalOpen] = useState(false)
   const [layoutModalOpen, setLayoutModalOpen] = useState(false)
-  const [modalMode, setModalMode] = useState('all')
+  const [modalMode, setModalMode] = useState('parent')
   const [valuesOnly, setValuesOnly] = useState(false)
   const [editing, setEditing] = useState(null)
   const [togglingId, setTogglingId] = useState(null)
@@ -199,7 +227,7 @@ export default function AssetsFieldsPanel({
 
     modalRestoredRef.current = true
     setModalOpen(true)
-    setModalMode(saved.mode || 'all')
+    setModalMode(saved.mode || 'parent')
     if (saved.editingId) {
       setEditing(scopedFields.find((f) => f.id === saved.editingId) || null)
     } else {
@@ -208,10 +236,21 @@ export default function AssetsFieldsPanel({
   }, [modalStateKey, loading, scopedFields])
 
   useEffect(() => {
+    if (lockedView) return
     if (!viewTabs.some((tab) => tab.id === view)) {
-      setView(viewTabs[0]?.id || 'all')
+      setView(viewTabs[0]?.id || 'parents')
     }
-  }, [view, viewTabs])
+  }, [view, viewTabs, lockedView])
+
+  useEffect(() => {
+    if (!lockedView) return
+    setView(lockedView)
+    setParentFilter('')
+    if (lockedView === 'sections') setSectionFilter('')
+    const defaults = defaultSortForView(lockedView)
+    setSortBy(defaults.sortBy)
+    setSortDir(defaults.sortDir)
+  }, [lockedView])
 
   useEffect(() => {
     if (!modalStateKey) return
@@ -226,25 +265,29 @@ export default function AssetsFieldsPanel({
     }
   }, [modalOpen, modalMode, editing, modalStateKey])
 
+  const hideSections = fieldScope === 'assets' && !canManageSchema
   const visibleFields = useMemo(() => {
     const filtered = applyFieldFilters(scopedFields, {
       view,
       search,
       sectionId: sectionFilter,
       parentId: parentFilter,
+      excludeSections: hideSections,
     })
     return sortAssetFields(filtered, { sortBy, sortDir })
-  }, [scopedFields, view, search, sectionFilter, parentFilter, sortBy, sortDir])
+  }, [scopedFields, view, search, sectionFilter, parentFilter, sortBy, sortDir, hideSections])
 
   const hasFilters = Boolean(search.trim() || sectionFilter || parentFilter)
   const fieldsPaginationResetKey = `${view}|${search}|${sectionFilter}|${parentFilter}|${sortBy}|${sortDir}`
   const fieldsPagination = useTablePagination(visibleFields.length, { resetKey: fieldsPaginationResetKey })
   const pagedVisibleFields = fieldsPagination.paginate(visibleFields)
   const showSectionFilter = view !== 'sections'
-  const showParentFilter = view === 'parents' || view === 'children' || view === 'all'
+  const showParentFilter = view === 'parents' || view === 'children'
+  const showSectionOrder = view === 'sections' && !hideReorder
 
   const canReorderRows = Boolean(
-    canManageSchema
+    !hideReorder
+    && canManageSchema
     && typeof reorderSections === 'function'
     && !search.trim()
     && !parentFilter
@@ -481,12 +524,65 @@ export default function AssetsFieldsPanel({
     ? 'section'
     : view === 'parents'
       ? 'parent'
-      : view === 'children'
-        ? 'child'
-        : 'all'
+      : 'child'
 
   const showAddButton = (canManageSchema && view !== 'children')
     || (canManageChildren && view === 'children')
+
+  const bulkKind = view === 'sections'
+    ? 'sections'
+    : view === 'parents'
+      ? 'parents'
+      : view === 'children'
+        ? 'children'
+        : null
+  const isAssetScope = fieldScope === 'assets' || fieldScope === 'all'
+  const showSchemaBulk = Boolean(
+    canManageSchema
+    && orgId
+    && isAssetScope
+    && (bulkKind === 'sections' || bulkKind === 'parents')
+  )
+  const showChildrenBulk = Boolean(
+    canManageChildren
+    && isAssetScope
+    && bulkKind === 'children'
+    && (!canManageSchema || orgId)
+  )
+  const showBulk = showSchemaBulk || showChildrenBulk
+  const useAdminBulk = Boolean(canManageSchema && orgId)
+  const {
+    bulkInputRef,
+    bulkBusy,
+    bulkError,
+    bulkResult,
+    setBulkResult,
+    handleDownloadTemplate,
+    handleBulkFile,
+  } = useMasterBulkUpload({
+    downloadTemplate: () => (
+      useAdminBulk
+        ? getAdminAssetFieldsTemplate(orgId, bulkKind)
+        : getAssetFieldsTemplate(bulkKind)
+    ),
+    upload: (base64) => (
+      useAdminBulk
+        ? bulkUploadAdminAssetFields(orgId, bulkKind, base64)
+        : bulkUploadAssetFields(bulkKind, base64)
+    ),
+    onSuccess: async () => {
+      await reload?.({ silent: true })
+    },
+    defaultFilename: bulkKind === 'children'
+      ? 'child-values-template.xlsx'
+      : bulkKind === 'parents'
+        ? 'parent-fields-template.xlsx'
+        : 'sections-template.xlsx',
+  })
+
+  useEffect(() => {
+    setBulkResult(null)
+  }, [view, setBulkResult])
 
   const handleViewChange = (tabId) => {
     setView(tabId)
@@ -511,44 +607,93 @@ export default function AssetsFieldsPanel({
     }
   }
 
+  const showToolbar = !hideViewTabs || (canManageSchema && !hideLayoutButton)
+  const addButton = showAddButton ? (
+    <button
+      type="button"
+      className="company-btn company-btn--primary"
+      onClick={() => openCreate(createModeForView)}
+    >
+      {view === 'children'
+        ? '+ Add Child'
+        : view === 'sections'
+          ? '+ Add Section'
+          : view === 'parents'
+            ? '+ Add Parent Field'
+            : '+ Add Field'}
+    </button>
+  ) : null
+  const bulkCopy = view === 'children'
+    ? {
+      title: 'Import child values',
+      description: 'Download the Excel file to export current child values, or start from the template. Section and Parent must match the Valid values sheet. Matching names under a parent are updated; new names are created.',
+      noun: 'child value',
+      addLabel: '+ Add Child',
+    }
+    : view === 'sections'
+      ? {
+        title: 'Import sections',
+        description: 'Download the Excel file to export current sections, or start from the template. Add or edit rows, then upload the completed .xlsx file. Matching names are updated; new names are created.',
+        noun: 'section',
+        addLabel: '+ Add Section',
+      }
+      : {
+        title: 'Import parent fields',
+        description: 'Download the Excel file to export current parent fields, or start from the template. Section and Type must match the Valid values sheet. Matching names in a section are updated; new names are created.',
+        noun: 'parent field',
+        addLabel: '+ Add Parent Field',
+      }
+  const bulkActions = showBulk ? (
+    <MasterBulkActions
+      onDownload={handleDownloadTemplate}
+      bulkBusy={bulkBusy}
+      bulkInputRef={bulkInputRef}
+      onFileChange={handleBulkFile}
+      addLabel={showAddButton ? bulkCopy.addLabel : undefined}
+      onAdd={showAddButton ? () => openCreate(createModeForView) : undefined}
+      title={bulkCopy.title}
+      description={bulkCopy.description}
+      bulkError={bulkError}
+      bulkResult={bulkResult}
+      noun={bulkCopy.noun}
+    />
+  ) : null
+  const toolbarActions = showBulk ? bulkActions : addButton
+
   return (
-    <div className="company-panel">
-      <div className="company-panel__toolbar">
-        <nav className="asset-field-tabs" aria-label="Field views">
-          {viewTabs.map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              className={`asset-field-tabs__btn ${view === tab.id ? 'asset-field-tabs__btn--active' : ''}`}
-              onClick={() => handleViewChange(tab.id)}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </nav>
-        <div className="asset-field-toolbar__actions">
-          {canManageSchema && (
-            <button
-              type="button"
-              className="asset-form-layout-btn"
-              onClick={() => setLayoutModalOpen(true)}
-              aria-label="Arrange form layout"
-              title="Arrange form layout"
-            >
-              <AssetSettingsIcon />
-            </button>
+    <div className={`company-panel${hideViewTabs ? ' asset-fields-panel--compact' : ''}`}>
+      {showToolbar && (
+        <div className="company-panel__toolbar">
+          {!hideViewTabs && (
+            <nav className="asset-field-tabs" aria-label="Field views">
+              {viewTabs.map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  className={`asset-field-tabs__btn ${view === tab.id ? 'asset-field-tabs__btn--active' : ''}`}
+                  onClick={() => handleViewChange(tab.id)}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </nav>
           )}
-          {showAddButton && (
-            <button
-              type="button"
-              className="company-btn company-btn--primary"
-              onClick={() => openCreate(createModeForView)}
-            >
-              {view === 'children' ? '+ Add Child' : '+ Add Field'}
-            </button>
-          )}
+          <div className="asset-field-toolbar__actions">
+            {canManageSchema && !hideLayoutButton && (
+              <button
+                type="button"
+                className="asset-form-layout-btn"
+                onClick={() => setLayoutModalOpen(true)}
+                aria-label="Arrange form layout"
+                title="Arrange form layout"
+              >
+                <AssetSettingsIcon />
+              </button>
+            )}
+            {!hideViewTabs && toolbarActions}
+          </div>
         </div>
-      </div>
+      )}
 
       <div className="asset-field-filters">
         <div className="asset-field-filters__search-group">
@@ -602,11 +747,23 @@ export default function AssetsFieldsPanel({
         <p className="company-panel__count">
           {visibleFields.length} result(s)
         </p>
+        {hideViewTabs && toolbarActions && (
+          <div className="asset-field-filters__add">
+            {toolbarActions}
+          </div>
+        )}
       </div>
 
       {error && <div className="company-alert">{error}</div>}
+      {showBulk && bulkError && <div className="company-error">{bulkError}</div>}
+      {showBulk && (
+        <MasterBulkResult
+          result={bulkResult}
+          noun={bulkCopy.noun}
+        />
+      )}
 
-      {canManageSchema && (view === 'sections' || view === 'parents') && (
+      {!hideReorder && canManageSchema && (view === 'sections' || view === 'parents') && (
         <p className="asset-field-reorder-hint">
           {search.trim()
             ? 'Clear search to enable drag reordering.'
@@ -646,11 +803,6 @@ export default function AssetsFieldsPanel({
               ? 'No child values yet. Add a child value to an existing option-backed parent.'
               : 'No child values yet. Ask Super Admin to add a Dropdown or Checkbox parent field, then add values here.'
           )}
-          {!hasFilters && view === 'all' && (
-            canManageSchema
-              ? 'No fields yet. Add sections and parent fields for this organization. Companies can add option values in their org app.'
-              : 'No fields yet. Super Admin adds sections and parent fields; your company adds option values.'
-          )}
         </div>
       ) : (
         <div className="company-table-wrap">
@@ -659,17 +811,16 @@ export default function AssetsFieldsPanel({
               <tr>
                 {canReorderRows && <th className="asset-field-drag-col" aria-label="Reorder" />}
                 <th>Name</th>
-                {view === 'all' && <th>Type</th>}
                 {view !== 'sections' && <th>Section</th>}
                 {view === 'children' && <th>Parent</th>}
                 {view !== 'sections' && view !== 'children' && <th>Field type</th>}
-                {view === 'sections' && <th>Order</th>}
+                {showSectionOrder && <th>Order</th>}
                 {view === 'sections' && <th>Parents</th>}
                 {view === 'sections' && <th>Values</th>}
                 {view === 'parents' && <th>Order</th>}
                 {view === 'parents' && <th>Values</th>}
                 {view === 'parents' && <th>Dependency</th>}
-                {(view === 'all' || view === 'children') && <th>Hierarchy</th>}
+                {view === 'children' && <th>Hierarchy</th>}
                 {(canManageSchema || canManageChildren) && <th>Active</th>}
                 {(canManageSchema || canManageChildren) && <th aria-label="Actions" />}
               </tr>
@@ -704,13 +855,12 @@ export default function AssetsFieldsPanel({
                     </td>
                   )}
                   <td><FieldNameCell field={field} /></td>
-                  {view === 'all' && <td>{kindLabel(field.kind)}</td>}
                   {view !== 'sections' && <td>{field.section_name || '—'}</td>}
                   {view === 'children' && (
                     <td><FieldPill>{field.parent_name}</FieldPill></td>
                   )}
                   {view !== 'sections' && view !== 'children' && <td>{fieldTypeLabel(field.field_type)}</td>}
-                  {view === 'sections' && <td>{field.sort_order ?? 0}</td>}
+                  {showSectionOrder && <td>{field.sort_order ?? 0}</td>}
                   {view === 'sections' && <td>{field.parent_count ?? 0}</td>}
                   {view === 'sections' && <td>{field.child_count ?? 0}</td>}
                   {view === 'parents' && <td>{field.sort_order ?? 0}</td>}
@@ -730,15 +880,6 @@ export default function AssetsFieldsPanel({
                   {view === 'parents' && (
                     <td className="asset-field-dependency-cell">
                       {dependencyLabel(field) || '—'}
-                    </td>
-                  )}
-                  {view === 'all' && (
-                    <td className="asset-field-hierarchy">
-                      {field.kind === 'section'
-                        ? field.name
-                        : fieldTypeSupportsOptions(field.field_type) && field.dropdown_options?.length
-                          ? `${field.section_name || '—'} → ${field.dropdown_options.join(', ')}`
-                          : hierarchyLabel(field)}
                     </td>
                   )}
                   {view === 'children' && (
@@ -825,13 +966,14 @@ export default function AssetsFieldsPanel({
         </div>
       )}
 
-      {layoutModalOpen && (
-        <AssetFormLayoutModal
-          fields={fields}
-          saving={saving}
-          onClose={() => setLayoutModalOpen(false)}
-          onSave={reorderSections}
-        />
+      {layoutModalOpen && orgId && (
+        <Suspense fallback={null}>
+          <FormLayoutEditorModal
+            orgId={orgId}
+            formId="work_orders.manual"
+            onClose={() => setLayoutModalOpen(false)}
+          />
+        </Suspense>
       )}
 
       {modalOpen && (

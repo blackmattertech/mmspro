@@ -120,12 +120,6 @@ export default function OthersCharacterLimits() {
         </div>
       </header>
 
-      {!canManage && (
-        <p className="company-readonly-note">
-          Only company admins can change character limits. You can view the current values.
-        </p>
-      )}
-
       {(error || actionError) && (
         <div className="company-alert">{error || actionError}</div>
       )}

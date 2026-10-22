@@ -41,7 +41,8 @@ export default function EmployeeSelect({
     open,
     anchorRef: triggerRef,
     matchWidth: true,
-    maxHeight: 320,
+    minWidth: 520,
+    maxHeight: 280,
     gap: 4,
   })
 
@@ -90,7 +91,12 @@ export default function EmployeeSelect({
         </button>
 
         {open && style && createPortal(
-          <ul className="company-employee-select__menu" role="listbox" {...popoverProps}>
+          <ul
+            className="company-employee-select__menu"
+            role="listbox"
+            {...popoverProps}
+            style={{ ...style, overflowY: 'scroll' }}
+          >
             <li role="option" aria-selected={!value}>
               <button
                 type="button"

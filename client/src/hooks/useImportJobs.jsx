@@ -5,6 +5,7 @@ import {
   useMemo,
   useState,
 } from 'react'
+import { invalidateReferenceCache } from '../lib/referenceDataCache'
 
 /** @typedef {'running' | 'success' | 'partial' | 'failed' | 'error'} ImportJobStatus */
 
@@ -27,9 +28,10 @@ const ImportJobsContext = createContext(null)
 
 export function importResultStatus(result) {
   if (!result) return 'failed'
-  if (result.failed > 0 && result.created > 0) return 'partial'
+  const imported = (result.created || 0) + (result.updated || 0) + (result.skipped || 0)
+  if (result.failed > 0 && imported > 0) return 'partial'
   if (result.failed > 0) return 'failed'
-  if (result.created > 0) return 'success'
+  if (imported > 0) return 'success'
   return 'failed'
 }
 
@@ -54,6 +56,9 @@ export function ImportJobsProvider({ children }) {
 
     try {
       const result = await upload()
+      if (templateId === 'equipment' || templateId === 'areas') {
+        invalidateReferenceCache('areas')
+      }
       const status = importResultStatus(result)
       setJobs((prev) => prev.map((job) => (
         job.id === id

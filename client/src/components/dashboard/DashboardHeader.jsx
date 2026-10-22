@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import DateField from '../ui/DateField'
 import FilterableSelect from '../ui/FilterableSelect'
 import { useOrg } from '../../hooks/useOrg'
@@ -15,8 +15,13 @@ export default function DashboardHeader({
   onDateFromChange,
   onDateToChange,
   onCreateWorkOrder,
+  onCreateWorkRequest,
+  canCreateWorkOrder = false,
+  canCreateWorkRequest = false,
 }) {
   const { org } = useOrg()
+  const [createOpen, setCreateOpen] = useState(false)
+  const createRef = useRef(null)
   const [logoUrl, setLogoUrl] = useState(null)
 
   useEffect(() => {
@@ -39,8 +44,21 @@ export default function DashboardHeader({
     return () => { cancelled = true }
   }, [org?.logo_url])
 
+  useEffect(() => {
+    if (!createOpen) return undefined
+    function onPointer(event) {
+      if (!createRef.current?.contains(event.target)) setCreateOpen(false)
+    }
+    document.addEventListener('pointerdown', onPointer)
+    return () => document.removeEventListener('pointerdown', onPointer)
+  }, [createOpen])
+
   const companyName = org?.name
   const logoLetter = (companyName?.[0] || 'C').toUpperCase()
+  const createActions = [
+    canCreateWorkRequest ? { id: 'request', label: 'Create Work Request', run: onCreateWorkRequest } : null,
+    canCreateWorkOrder ? { id: 'order', label: 'Create Work Order', run: onCreateWorkOrder } : null,
+  ].filter(Boolean)
 
   return (
     <>
@@ -56,9 +74,6 @@ export default function DashboardHeader({
             </div>
             <div className="dash-header__text">
               <h1 className="dash-header__title">Dashboard</h1>
-              {companyName && (
-                <p className="dash-header__subtitle">{companyName}</p>
-              )}
             </div>
           </div>
         </div>
@@ -96,20 +111,51 @@ export default function DashboardHeader({
             />
           </div>
 
-          <button
-            type="button"
-            className="dash-header__create-btn"
-            onClick={async () => {
-              if (typeof onCreateWorkOrder === 'function') {
-                await onCreateWorkOrder()
-              }
-            }}
-          >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-              <path d="M8 3V13M3 8H13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-            </svg>
-            Create Work Order
-          </button>
+          {createActions.length ? (
+            <div className="dash-create" ref={createRef}>
+              <button
+                type="button"
+                className="dash-header__create-btn"
+                onClick={() => createActions[0].run?.()}
+              >
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                  <path d="M8 3V13M3 8H13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                </svg>
+                {createActions[0].label}
+              </button>
+              {createActions.length > 1 ? (
+                <button
+                  type="button"
+                  className="dash-create__caret"
+                  aria-expanded={createOpen}
+                  aria-label="More create actions"
+                  onClick={() => setCreateOpen((open) => !open)}
+                >
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                    <path d="M2.5 4.5L6 8L9.5 4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                  </svg>
+                </button>
+              ) : null}
+              {createOpen && createActions.length > 1 ? (
+                <div className="dash-create__menu" role="menu">
+                  {createActions.slice(1).map((action) => (
+                    <button
+                      key={action.id}
+                      type="button"
+                      role="menuitem"
+                      className="dash-create__item"
+                      onClick={() => {
+                        setCreateOpen(false)
+                        action.run?.()
+                      }}
+                    >
+                      {action.label}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
         </div>
       </header>
     </>

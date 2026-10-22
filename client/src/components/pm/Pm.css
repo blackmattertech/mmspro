@@ -1,28 +1,8 @@
-/* Keep PM dialogs in the main pane so they do not cover the sidebar. */
-.app-shell .company-modal-overlay.pm-modal-overlay {
-  left: var(--sidebar-width, 260px) !important;
-  right: 0;
-  z-index: 1100;
-  align-items: center !important;
-  justify-content: center !important;
-  padding: 24px !important;
-}
-
-.app-shell--sidebar-collapsed .company-modal-overlay.pm-modal-overlay {
-  left: var(--sidebar-collapsed-width, 72px) !important;
-}
-
-@media (max-width: 1024px) {
-  .app-shell .company-modal-overlay.pm-modal-overlay,
-  .app-shell--sidebar-collapsed .company-modal-overlay.pm-modal-overlay {
-    left: 0 !important;
-  }
-}
-
 .company-modal.company-modal--popup.pm-modal,
 .company-modal.company-modal--popup.pm-modal--wide {
   width: min(800px, 100%);
   max-width: min(800px, 100%);
+  height: auto;
 }
 
 .pm-steps {
@@ -176,20 +156,33 @@
 }
 
 .pm-subtabs__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   padding: 8px 14px;
   font-size: 13px;
   font-weight: 600;
   font-family: inherit;
-  color: var(--color-gray-blue);
-  background: var(--color-light-gray-1);
-  border: none;
+  color: var(--color-primary);
+  background: var(--color-white);
+  border: 1px solid var(--color-light-gray-2);
   border-radius: var(--radius-pill);
+  box-shadow: 0 1px 2px rgba(17, 24, 39, 0.06);
   cursor: pointer;
 }
 
-.pm-subtabs__btn--active {
+.pm-subtabs__btn:hover {
+  color: var(--color-primary-dark);
+  border-color: #d1d5db;
+  box-shadow: 0 2px 6px rgba(17, 24, 39, 0.1);
+}
+
+.pm-subtabs__btn--active,
+.pm-subtabs__btn--active:hover {
   color: var(--color-white);
   background: var(--color-primary);
+  border-color: var(--color-primary);
+  box-shadow: none;
 }
 
 .pm-tech-grid {

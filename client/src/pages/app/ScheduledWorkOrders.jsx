@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useOutletContext } from 'react-router-dom'
+import { useOutletContext, useSearchParams } from 'react-router-dom'
 import {
   getScheduledWorkOrders,
   getScheduledWorkOrder,
 } from '../../lib/api-work-orders'
 import {
+  getPmPlan,
   getPmPlans,
+  getPmTabCounts,
   createPmPlan,
   updatePmPlan,
   deletePmPlan,
@@ -21,10 +23,11 @@ import { useDebouncedValue } from '../../hooks/useDebouncedValue'
 import { useTablePagination } from '../../hooks/useTablePagination'
 import { useOpenQueryId } from '../../hooks/useOpenQueryId'
 import { applyWorkOrderFilters } from '../../lib/workOrderFilters'
+import { buildServerListParams } from '../../lib/serverListParams'
 import { applyPmPlanFilters } from '../../lib/pmPlanFilters'
 import ReceivedWorkOrderDetailModal from '../../components/workorders/ReceivedWorkOrderDetailModal'
 import WorkOrdersTable from '../../components/workorders/WorkOrdersTable'
-import PmPlanModal from '../../components/pm/PmPlanModal'
+import { getEquipment } from '../../lib/api-equipment'
 import PmPlansTable from '../../components/pm/PmPlansTable'
 import PmActivityTypesModal from '../../components/pm/PmActivityTypesModal'
 import {
@@ -35,7 +38,7 @@ import '../../components/company/CompanyShared.css'
 import '../../components/workorders/WorkOrdersPage.css'
 import '../../components/pm/Pm.css'
 
-const SCHEDULED_COLUMNS = ['wo_number', 'summary', 'scheduled_at', 'assignees', 'status', 'progress']
+const SCHEDULED_COLUMNS = ['wo_number', 'summary', 'work_request', 'scheduled_at', 'assignees', 'status', 'priority', 'progress']
 
 export default function ScheduledWorkOrders() {
   const outlet = useOutletContext() || {}
@@ -49,6 +52,12 @@ export default function ScheduledWorkOrders() {
     fieldFilter = { field: '', value: '' },
     locations = [],
     pmVisibleColumnIds,
+    columnFilters = {},
+    setColumnFilter,
+    headerSort = null,
+    setHeaderSort,
+    statusFilters = [],
+    toggleStatus,
   } = outlet
   const { setToolbar, clearToolbar } = useWorkOrderToolbar()
   const { canCreate, canUpdate, canDelete } = usePermissions()
@@ -57,6 +66,7 @@ export default function ScheduledWorkOrders() {
   const canRemove = canDelete('work_orders_scheduled') || canDelete('work_orders')
 
   const [plans, setPlans] = useState([])
+  const [tabCounts, setTabCounts] = useState({ plans: 0, orders: 0 })
   const [loadingMeta, setLoadingMeta] = useState(true)
   const [error, setError] = useState(null)
   const [saving, setSaving] = useState(false)
@@ -64,6 +74,40 @@ export default function ScheduledWorkOrders() {
   const [duplicatingId, setDuplicatingId] = useState(null)
   const [showActivityTypes, setShowActivityTypes] = useState(false)
   const [selectedId, setSelectedId, closeSelected] = useOpenQueryId()
+  const [params, setParams] = useSearchParams()
+  const planId = params.get('plan')
+
+  useEffect(() => {
+    if (params.get('create') !== '1') return undefined
+    setView?.('plans')
+    setPlanModal({})
+    const next = new URLSearchParams(params)
+    next.delete('create')
+    setParams(next, { replace: true })
+    return undefined
+  }, [params, setParams, setView])
+
+  useEffect(() => {
+    const equipmentId = params.get('equipment_id')
+    if (!equipmentId) return undefined
+    let cancelled = false
+    getEquipment(equipmentId)
+      .then((row) => {
+        if (cancelled || !row) return
+        setView?.('plans')
+        setPlanModal({
+          equipment_id: row.id,
+          location_id: row.location_id || '',
+          department_id: row.department_id || '',
+          area_id: row.area_id || '',
+        })
+        const next = new URLSearchParams(params)
+        next.delete('equipment_id')
+        setParams(next, { replace: true })
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [params, setParams, setView])
 
   const debouncedSearch = useDebouncedValue(search)
   const [listTotal, setListTotal] = useState(0)
@@ -72,20 +116,58 @@ export default function ScheduledWorkOrders() {
   })
 
   const fetchOrders = useCallback(
-    () => getScheduledWorkOrders({
+    () => getScheduledWorkOrders(buildServerListParams({
       search: debouncedSearch,
       limit: pagination.pageSize,
       offset: pagination.offset,
-    }),
-    [debouncedSearch, pagination.pageSize, pagination.offset],
+      columnFilters,
+      fieldFilter,
+      statusFilters,
+      headerSort,
+      sortBy,
+      excludeDraft: true,
+    })),
+    [debouncedSearch, pagination.pageSize, pagination.offset, columnFilters, fieldFilter, statusFilters, headerSort, sortBy],
   )
   const { orders, total, statusCounts, loading, error: ordersError } = useWorkOrderList(fetchOrders)
   useEffect(() => { setListTotal(total) }, [total])
 
   const loadPlans = useCallback(async () => {
-    const rows = await getPmPlans({ search: debouncedSearch, limit: 200 })
+    const field = fieldFilter?.field
+    const value = String(fieldFilter?.value || '').trim()
+    const rows = await getPmPlans({
+      search: debouncedSearch,
+      limit: 200,
+      filters: field && value ? { [field]: value } : undefined,
+    })
     setPlans(rows)
-  }, [debouncedSearch])
+  }, [debouncedSearch, fieldFilter])
+
+  useEffect(() => {
+    if (!planId && selectedId) setView?.('orders')
+  }, [planId, selectedId, setView])
+
+  useEffect(() => {
+    if (!planId) return undefined
+    let cancelled = false
+    setView?.('plans')
+    getPmPlan(planId)
+      .then((plan) => {
+        if (!cancelled && plan) setPlanModal(plan)
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err.message)
+      })
+    return () => { cancelled = true }
+  }, [planId, setView])
+
+  const closePlanModal = () => {
+    setPlanModal(null)
+    if (!params.has('plan')) return
+    const next = new URLSearchParams(params)
+    next.delete('plan')
+    setParams(next, { replace: true })
+  }
 
   const reloadMeta = useCallback(async () => {
     setLoadingMeta(true)
@@ -118,6 +200,14 @@ export default function ScheduledWorkOrders() {
   }, [reloadMeta])
 
   useEffect(() => {
+    let cancelled = false
+    getPmTabCounts()
+      .then((counts) => { if (!cancelled && counts) setTabCounts(counts) })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [view, plans.length])
+
+  useEffect(() => {
     const actions = (
       <>
         {view === 'plans' && (
@@ -133,7 +223,7 @@ export default function ScheduledWorkOrders() {
             onFileChange={handleBulkFile}
             addLabel="+ PM Plan"
             onAdd={() => setPlanModal({})}
-            title="Bulk upload PM plans"
+            title="Import PM plans"
             noun="PM plan"
             bulkError={bulkError}
             bulkResult={bulkResult}
@@ -146,7 +236,7 @@ export default function ScheduledWorkOrders() {
   }, [view, canAdd, setToolbar, clearToolbar, bulkBusy, bulkError, bulkResult, handleDownloadTemplate, handleBulkFile])
 
   const filteredOrders = useMemo(
-    () => applyWorkOrderFilters(orders, { search: '', locationFilter, sortBy, advancedRules, fieldFilter, locations }),
+    () => applyWorkOrderFilters(orders, { search: '', locationFilter, advancedRules, locations }),
     [orders, locationFilter, sortBy, advancedRules, fieldFilter, locations],
   )
 
@@ -156,10 +246,9 @@ export default function ScheduledWorkOrders() {
       locationFilter,
       sortBy,
       advancedRules,
-      fieldFilter,
       locations,
     }),
-    [plans, search, locationFilter, sortBy, advancedRules, fieldFilter, locations],
+    [plans, search, locationFilter, sortBy, advancedRules, locations],
   )
 
   const handleSavePlan = async (payload) => {
@@ -224,6 +313,7 @@ export default function ScheduledWorkOrders() {
             onClick={() => setView?.(tab.id)}
           >
             {tab.label}
+            <span className="wo-page__tab-count">{tabCounts[tab.id] ?? 0}</span>
           </button>
         ))}
       </div>
@@ -268,6 +358,12 @@ export default function ScheduledWorkOrders() {
             emptyHint="Activate a PM plan and the scheduler will generate work orders before each due date. You can also click Generate on a plan."
             onView={setSelectedId}
             paginationResetKey={`${search}|${locationFilter}|${fieldFilter?.field}|${fieldFilter?.value}|${sortBy}`}
+            headerSort={headerSort}
+            onHeaderSort={setHeaderSort}
+            columnFilters={columnFilters}
+            onColumnFilter={setColumnFilter}
+            statusFilters={statusFilters}
+            onToggleStatus={toggleStatus}
           />
         )
       )}
@@ -282,9 +378,9 @@ export default function ScheduledWorkOrders() {
 
       {planModal && (
         <PmPlanModal
-          plan={planModal.id ? planModal : null}
+          plan={planModal.id || planModal.equipment_id ? planModal : null}
           saving={saving}
-          onClose={() => setPlanModal(null)}
+          onClose={closePlanModal}
           onSave={handleSavePlan}
         />
       )}

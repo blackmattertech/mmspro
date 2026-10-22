@@ -1,8 +1,11 @@
 .table-filter-toolbar {
+  display: flex;
   width: 100%;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
+  gap: 10px;
   row-gap: 10px;
+  min-width: 0;
 }
 
 .table-filter-toolbar.wo-page__bar-controls {
@@ -15,7 +18,7 @@
 .table-filter-toolbar.wo-page__bar-controls .spellcheck-field--inline {
   flex: 1 1 auto;
   width: auto;
-  min-width: 200px;
+  min-width: 160px;
   max-width: 420px;
 }
 

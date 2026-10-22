@@ -56,9 +56,6 @@ export default function WorkOrderForm({ schema, values, onChange, disabled }) {
     return (
       <div className="wo-empty">
         <p>No fields are configured for this work order form.</p>
-        <p className="wo-empty__hint">
-          Add sections and parent fields under Masters → Assets, then use the settings button to choose which fields appear here.
-        </p>
       </div>
     )
   }

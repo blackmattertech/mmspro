@@ -9,6 +9,12 @@ import {
   REPORT_MODULE_KEYS,
   COMPANY_PAGE_MODULE_KEYS,
 } from '../lib/accessModules'
+import {
+  isEntitlementOnlyKey,
+  isPermissionKeyEnabled,
+  isProductModuleEnabled,
+  normalizeDisabledModules,
+} from '../lib/orgModules'
 import { useOrgBootstrap } from './useOrg'
 import { useAuth } from './useAuth'
 
@@ -28,11 +34,12 @@ export function PermissionsProvider({ children }) {
     loading: orgLoading,
     permissionSession: bootstrappedSession,
   } = useOrgBootstrap()
-  const [session, setSession] = useState(null)
-  const [loading, setLoading] = useState(true)
+  const [session, setSession] = useState(bootstrappedSession)
+  const [loading, setLoading] = useState(() => !bootstrappedSession)
   const [error, setError] = useState(null)
 
   const userId = user?.id ?? null
+  const resolvedSession = session || bootstrappedSession
 
   const load = useCallback(async () => {
     if (!userId || !org?.id) {
@@ -74,11 +81,17 @@ export function PermissionsProvider({ children }) {
   }, [orgLoading, load])
 
   const value = useMemo(() => {
-    const permissions = session?.permissions || emptyPermissions()
+    const permissions = resolvedSession?.permissions || emptyPermissions()
     const byModule = new Map(permissions.map((row) => [row.module_key, row]))
+    const disabledModules = normalizeDisabledModules(
+      resolvedSession?.disabled_modules ?? org?.disabled_modules,
+    )
 
     const can = (moduleKey, action) => {
-      if (session?.is_org_admin) return true
+      if (!isPermissionKeyEnabled(disabledModules, moduleKey)) return false
+      if (!resolvedSession) return false
+      if (isEntitlementOnlyKey(moduleKey)) return true
+      if (resolvedSession.is_org_admin) return true
       const column = ACTION_KEY[action]
       if (!column) return false
 
@@ -116,6 +129,7 @@ export function PermissionsProvider({ children }) {
         ['work_orders_assigned', 'work-orders/assigned'],
         ['work_orders_manual', 'work-orders/manual'],
         ['work_orders', 'work-orders'],
+        ['work_orders_scheduled', 'work-orders/scheduled'],
         ['calendar', 'calendar'],
         ['warranty_manager', 'warranty-manager'],
         ['tasks_followups', 'tasks-and-followups'],
@@ -126,34 +140,38 @@ export function PermissionsProvider({ children }) {
         ['areas', 'masters/equipment'],
         ['assets', 'masters/assets'],
         ['equipment', 'masters/equipment'],
+        ['vendors', 'masters/vendors'],
+        ['others', 'masters/others'],
         ['roles_access', 'configuration/roles'],
         ['settings', 'configuration/settings'],
       ]
       for (const [moduleKey, segment] of order) {
         if (can(moduleKey, 'read')) return `/${orgSlug}/${segment}`
       }
-      return `/${orgSlug}/dashboard`
+      return `/${orgSlug}/unavailable`
     }
 
     return {
-      loading: orgLoading || loading,
+      loading: orgLoading || (loading && !resolvedSession),
       error,
-      session,
-      isOrgAdmin: Boolean(session?.is_org_admin),
-      locationId: session?.location_id || null,
-      accessRole: session?.access_role || null,
+      session: resolvedSession,
+      isOrgAdmin: Boolean(resolvedSession?.is_org_admin),
+      locationId: resolvedSession?.location_id || null,
+      accessRole: resolvedSession?.access_role || null,
       permissions,
       modules: ACCESS_MODULES,
+      disabledModules,
       can,
       canRead: (moduleKey) => can(moduleKey, 'read'),
       canCreate: (moduleKey) => can(moduleKey, 'create'),
       canUpdate: (moduleKey) => can(moduleKey, 'update'),
       canDelete: (moduleKey) => can(moduleKey, 'delete'),
+      isProductEnabled: (productId) => isProductModuleEnabled(disabledModules, productId),
       companyPageKeys: COMPANY_PAGE_MODULE_KEYS,
       firstReadablePath,
       reload: load,
     }
-  }, [session, loading, orgLoading, error, load])
+  }, [resolvedSession, loading, orgLoading, error, load, org?.disabled_modules])
 
   return (
     <PermissionsContext.Provider value={value}>

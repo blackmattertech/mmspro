@@ -75,12 +75,6 @@ export default function Company() {
       </header>
 
       <div className="company-page__content">
-        {!canManageActive && (
-          <p className="company-readonly-note">
-            You have read-only access. Contact a company admin to make changes.
-          </p>
-        )}
-
         {visibleTab === 'details' && <CompanyDetailsTab canManage={canManageActive} />}
         {visibleTab === 'locations' && <LocationsTab canManage={canManageActive} />}
         {visibleTab === 'departments' && <DepartmentsTab canManage={canManageActive} />}

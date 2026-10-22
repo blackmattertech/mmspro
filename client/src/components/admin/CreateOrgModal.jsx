@@ -1,25 +1,69 @@
 import { useState, useEffect } from 'react'
 import { generateOrgSlug } from '../../lib/slug'
-import { LIMIT_ITEMS, PLAN_DEFAULTS, formatLimitValue } from '../../lib/orgLimits'
+import { getAdminPlans } from '../../lib/api'
 import FilterableSelect from '../ui/FilterableSelect'
 import PageBack from '../shared/PageBack'
 import SpellcheckInput from '../shared/SpellcheckInput'
 import '../../components/company/CompanyShared.css'
 import './CreateOrgModal.css'
 
-const PLANS = [
-  { value: 'free', label: 'Free' },
-  { value: 'pro', label: 'Pro' },
-  { value: 'enterprise', label: 'Enterprise' },
-]
+const INTERVAL_LABELS = {
+  monthly: 'Monthly',
+  quarterly: 'Quarterly',
+  half_yearly: 'Half yearly',
+  yearly: 'Yearly',
+  trial: 'Trial',
+  custom: 'Custom',
+}
+
+function planLabel(plan) {
+  if (plan.price == null || plan.price === '') return plan.name
+  const amount = Number(plan.price)
+  if (!Number.isFinite(amount)) return plan.name
+  const price = new Intl.NumberFormat('en-IN', {
+    style: 'currency',
+    currency: plan.currency || 'INR',
+    maximumFractionDigits: 0,
+  }).format(amount)
+  return `${plan.name} · ${price}`
+}
+
+function planHint(plan) {
+  if (!plan) return 'Choose a plan from the Plans page.'
+  const interval = INTERVAL_LABELS[plan.interval_type] || plan.interval_type
+  const days = plan.duration_days ? `${plan.duration_days} days` : null
+  return [interval, days, plan.description].filter(Boolean).join(' · ')
+}
 
 export default function CreateOrgModal({ onClose, onSubmit, saving }) {
   const [name, setName] = useState('')
   const [slug, setSlug] = useState('')
   const [slugTouched, setSlugTouched] = useState(false)
-  const [plan, setPlan] = useState('free')
+  const [plans, setPlans] = useState([])
+  const [plansLoading, setPlansLoading] = useState(true)
+  const [planId, setPlanId] = useState('')
   const [ownerEmail, setOwnerEmail] = useState('')
   const [error, setError] = useState(null)
+
+  useEffect(() => {
+    let cancelled = false
+    getAdminPlans()
+      .then((body) => {
+        if (cancelled) return
+        const active = (body.plans || []).filter((item) => item.is_active !== false)
+        setPlans(active)
+        setPlanId((current) => current || active[0]?.id || '')
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err.message || 'Could not load plans')
+      })
+      .finally(() => {
+        if (!cancelled) setPlansLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   useEffect(() => {
     if (!slugTouched) {
@@ -41,11 +85,16 @@ export default function CreateOrgModal({ onClose, onSubmit, saving }) {
       return
     }
 
+    if (!planId) {
+      setError(plans.length ? 'Choose a plan' : 'Create a plan before adding an organization')
+      return
+    }
+
     try {
       const result = await onSubmit({
         name: name.trim(),
         slug: slug.trim() || undefined,
-        plan,
+        planId,
         ownerEmail: ownerEmail.trim(),
       })
       onClose()
@@ -56,8 +105,13 @@ export default function CreateOrgModal({ onClose, onSubmit, saving }) {
   }
 
   return (
-    <div className="admin-modal-overlay" onClick={onClose}>
-      <div className="admin-modal" onClick={(e) => e.stopPropagation()}>
+    <div className="admin-modal-overlay admin-modal-overlay--popup" onClick={onClose}>
+      <div
+        className="admin-modal admin-modal--popup"
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+      >
         <div className="admin-modal__header">
           <div className="modal__header-main">
             <PageBack onClick={onClose} className="page-back--header" label="Organizations" />
@@ -101,21 +155,21 @@ export default function CreateOrgModal({ onClose, onSubmit, saving }) {
             <span className="admin-modal__label">Plan</span>
             <FilterableSelect
               inputClassName="admin-modal__input"
-              value={plan}
-              onChange={setPlan}
-              options={PLANS}
-              getOptionValue={(p) => p.value}
-              getOptionLabel={(p) => p.label}
+              value={planId}
+              onChange={setPlanId}
+              options={plans}
+              getOptionValue={(item) => item.id}
+              getOptionLabel={planLabel}
+              placeholder={plansLoading ? 'Loading plans...' : 'Select a plan'}
+              disabled={plansLoading || plans.length === 0}
               allowEmpty={false}
             />
             <span className="admin-modal__hint">
-              Default limits:{' '}
-              {LIMIT_ITEMS.map((item, index) => (
-                <span key={item.key}>
-                  {index > 0 ? ', ' : ''}
-                  {item.label} {formatLimitValue(PLAN_DEFAULTS[plan]?.[item.key])}
-                </span>
-              ))}
+              {plansLoading
+                ? 'Loading plans...'
+                : plans.length
+                  ? planHint(plans.find((item) => item.id === planId))
+                  : 'No active plans yet. Create one on the Plans page.'}
             </span>
           </label>
 

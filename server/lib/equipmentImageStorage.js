@@ -1,13 +1,14 @@
 import { supabaseAdmin } from '../services/supabase.js'
 
 const ORG_ASSETS_BUCKET = 'org-assets'
-const EQUIPMENT_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp'])
+const EQUIPMENT_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml'])
 const EQUIPMENT_IMAGE_MAX_BYTES = 3 * 1024 * 1024
 
 const EXT_BY_TYPE = {
   'image/png': 'png',
   'image/jpeg': 'jpg',
   'image/webp': 'webp',
+  'image/svg+xml': 'svg',
 }
 
 export function equipmentImageStoragePath(orgId, equipmentId, contentType) {
@@ -17,7 +18,7 @@ export function equipmentImageStoragePath(orgId, equipmentId, contentType) {
 
 export function decodeEquipmentImagePayload({ contentType, data }) {
   if (!EQUIPMENT_IMAGE_TYPES.has(contentType)) {
-    throw Object.assign(new Error('Image must be PNG, JPG, or WebP'), { status: 400 })
+    throw Object.assign(new Error('Image must be PNG, JPG, WebP, or SVG'), { status: 400 })
   }
   if (!data || typeof data !== 'string') {
     throw Object.assign(new Error('Image data is required'), { status: 400 })

@@ -64,6 +64,45 @@ async function getAccessToken({ forceRefresh = false } = {}) {
   return cachedAccessToken
 }
 
+export async function apiFetchBlob(path, options = {}) {
+  const { _retried, ...fetchOptions } = options
+  const token = await getAccessToken({ forceRefresh: Boolean(_retried) })
+  const url = `${API_URL}${path}`
+  const res = await fetch(url, {
+    ...fetchOptions,
+    headers: {
+      ...(token && { Authorization: `Bearer ${token}` }),
+      ...ngrokSkipHeaders(url),
+      ...fetchOptions.headers,
+    },
+  })
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}))
+    if (res.status === 401 && !_retried && token) {
+      clearAccessTokenCache()
+      return apiFetchBlob(path, { ...fetchOptions, _retried: true })
+    }
+    const err = new Error(data.error || `Request failed (${res.status})`)
+    err.status = res.status
+    throw err
+  }
+  const blob = await res.blob()
+  const disposition = res.headers.get('Content-Disposition') || ''
+  const match = disposition.match(/filename="([^"]+)"/)
+  return { blob, filename: match?.[1] || 'export.csv' }
+}
+
+export function downloadBlobFile({ blob, filename }) {
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename || 'download'
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(url)
+}
+
 export async function apiFetch(path, options = {}) {
   const { _retried, ...fetchOptions } = options
   const token = await getAccessToken({ forceRefresh: Boolean(_retried) })
@@ -87,7 +126,15 @@ export async function apiFetch(path, options = {}) {
       clearAccessTokenCache()
       return apiFetch(path, { ...fetchOptions, _retried: true })
     }
-    throw new Error(message)
+    const err = new Error(message)
+    err.status = res.status
+    if (data.code) err.code = data.code
+    if (data.resource) err.resource = data.resource
+    if (data.overflow != null) err.overflow = data.overflow
+    if (data.limit != null) err.limit = data.limit
+    if (data.usage != null) err.usage = data.usage
+    if (data.attempted != null) err.attempted = data.attempted
+    throw err
   }
   return data
 }
@@ -164,14 +211,19 @@ export async function updateCompanyDetails(data) {
   return companyDetailsCache.data
 }
 
-export async function getLocations({ forAssignment = false, search, limit = 200, offset = 0 } = {}) {
+export async function getLocations({ forAssignment = false, search, limit = 50, offset = 0, ...rest } = {}) {
   const data = await companyFetch(`/locations${listQueryParams({
     for_assignment: forAssignment ? '1' : undefined,
     search,
     limit,
     offset,
+    ...rest,
   })}`)
   return asListArray(data)
+}
+
+export function exportLocations(params = {}) {
+  return apiFetchBlob(`/api/company/locations${listQueryParams({ ...params, exportCsv: true })}`)
 }
 
 export function createLocation(data) {
@@ -186,14 +238,23 @@ export function deleteLocation(id) {
   return companyFetch(`/locations/${id}`, { method: 'DELETE' })
 }
 
-export async function getDepartments(locationId, { search, limit = 200, offset = 0 } = {}) {
+export async function getDepartments(locationId, { search, limit = 50, offset = 0, ...rest } = {}) {
   const data = await companyFetch(`/departments${listQueryParams({
     location_id: locationId || undefined,
     search,
     limit,
     offset,
+    ...rest,
   })}`)
   return asListArray(data)
+}
+
+export function exportDepartments(locationId, params = {}) {
+  return apiFetchBlob(`/api/company/departments${listQueryParams({
+    location_id: locationId || undefined,
+    ...params,
+    exportCsv: true,
+  })}`)
 }
 
 export function createDepartment(data) {
@@ -208,14 +269,19 @@ export function deleteDepartment(id) {
   return companyFetch(`/departments/${id}`, { method: 'DELETE' })
 }
 
-export async function getWorkCenters({ locationId, search, limit = 200, offset = 0 } = {}) {
+export async function getWorkCenters({ locationId, search, limit = 50, offset = 0, ...rest } = {}) {
   const data = await companyFetch(`/work-centers${listQueryParams({
     location_id: locationId || undefined,
     search,
     limit,
     offset,
+    ...rest,
   })}`)
   return asListArray(data)
+}
+
+export function exportWorkCenters(params = {}) {
+  return apiFetchBlob(`/api/company/work-centers${listQueryParams({ ...params, exportCsv: true })}`)
 }
 
 export function createWorkCenter(data) {
@@ -230,15 +296,20 @@ export function deleteWorkCenter(id) {
   return companyFetch(`/work-centers/${id}`, { method: 'DELETE' })
 }
 
-export async function getAreas({ locationId, departmentId, search, limit = 200, offset = 0 } = {}) {
+export async function getAreas({ locationId, departmentId, search, limit = 50, offset = 0, ...rest } = {}) {
   const data = await companyFetch(`/areas${listQueryParams({
     location_id: locationId,
     department_id: departmentId,
     search,
     limit,
     offset,
+    ...rest,
   })}`)
   return asListArray(data)
+}
+
+export function exportAreas(params = {}) {
+  return apiFetchBlob(`/api/company/areas${listQueryParams({ ...params, exportCsv: true })}`)
 }
 
 export function createArea(data) {
@@ -329,4 +400,54 @@ export function updateOrganization(id, data) {
 
 export function getAdminUsers({ limit = 50, offset = 0 } = {}) {
   return adminFetch(`/users?limit=${limit}&offset=${offset}`)
+}
+
+export function getAdminIntegrations() {
+  return adminFetch('/integrations')
+}
+
+export function saveAdminIntegration(provider, body) {
+  return adminFetch(`/integrations/${provider}`, {
+    method: 'PUT',
+    body: JSON.stringify(body),
+  })
+}
+
+export function testAdminIntegration(provider, body = {}) {
+  return adminFetch(`/integrations/${provider}/test`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
+export function getAdminPlans() {
+  return adminFetch('/plans')
+}
+
+export function createAdminPlan(body) {
+  return adminFetch('/plans', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
+export function updateAdminPlan(id, body) {
+  return adminFetch(`/plans/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(body),
+  })
+}
+
+export function deleteAdminPlan(id) {
+  return adminFetch(`/plans/${id}`, { method: 'DELETE' })
+}
+
+export function getAdminReport(params = {}) {
+  const search = new URLSearchParams()
+  for (const [key, value] of Object.entries(params)) {
+    if (value == null || value === '') continue
+    search.set(key, String(value))
+  }
+  const query = search.toString()
+  return adminFetch(`/reports${query ? `?${query}` : ''}`)
 }

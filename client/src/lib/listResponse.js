@@ -31,12 +31,32 @@ export function asListArray(data) {
 
 export function listQueryParams(params = {}) {
   const search = new URLSearchParams()
+  const filters = params.filters && typeof params.filters === 'object'
+    ? Object.fromEntries(
+      Object.entries(params.filters).filter(([, value]) => String(value ?? '').trim()),
+    )
+    : null
+  if (filters && Object.keys(filters).length) search.set('filters', JSON.stringify(filters))
+  if (Array.isArray(params.statuses) && params.statuses.length) {
+    search.set('statuses', params.statuses.join(','))
+  }
+  if (Array.isArray(params.excludeStatuses) && params.excludeStatuses.length) {
+    search.set('exclude_statuses', params.excludeStatuses.join(','))
+  }
+  if (params.sort) search.set('sort', params.sort)
+  if (params.sortDir) search.set('sort_dir', params.sortDir)
+  if (params.exportCsv) search.set('export', 'csv')
+
   Object.entries(params).forEach(([key, value]) => {
+    if ([
+      'filters', 'statuses', 'excludeStatuses', 'sort', 'sortDir', 'exportCsv',
+    ].includes(key)) return
     if (value === undefined || value === null || value === '') return
     if (typeof value === 'boolean') {
       search.set(key, value ? '1' : '0')
       return
     }
+    if (typeof value === 'object') return
     search.set(key, String(value))
   })
   const suffix = search.toString()

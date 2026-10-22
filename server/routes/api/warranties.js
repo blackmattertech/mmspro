@@ -12,7 +12,7 @@ import {
   updateWarranty,
   deleteWarranty,
   addWarrantyDocument,
-  updateWarrantyDocumentLabel,
+  updateWarrantyDocument,
   deleteWarrantyDocument,
 } from '../../lib/warrantyService.js'
 import {
@@ -21,6 +21,7 @@ import {
 } from '../../lib/warrantyBulkService.js'
 import { attachFailedFileToResult } from '../../lib/importErrorWorkbook.js'
 import { bufferFromBase64Upload, excelFilePayload } from '../../lib/excelTemplate.js'
+import { parseListControls } from '../../lib/listQuery.js'
 
 const router = Router()
 
@@ -42,8 +43,18 @@ function parsePagination(query) {
 router.get('/', canRead, async (req, res) => {
   try {
     const { limit, offset } = parsePagination(req.query)
+    const controls = parseListControls(req.query)
     const rows = await listWarranties(req.userProfile.org_id, {
       search: req.query.search || null,
+      filters: controls.filters,
+      warrantyStatus: req.query.warranty_status || null,
+      expiring: {
+        mode: req.query.expiring_mode || null,
+        minDays: req.query.expiring_min_days,
+        maxDays: req.query.expiring_max_days,
+        dateFrom: req.query.expiring_date_from || null,
+        dateTo: req.query.expiring_date_to || null,
+      },
       limit,
       offset,
     })
@@ -65,7 +76,12 @@ router.get('/template', canCreate, async (req, res) => {
 router.post('/import', canCreate, async (req, res) => {
   try {
     const buffer = bufferFromBase64Upload(req.body?.data)
-    const result = await bulkImportWarranties(req.userProfile.org_id, buffer)
+    const dryRun = req.body?.dry_run === true
+    const result = await bulkImportWarranties(req.userProfile.org_id, buffer, { dryRun })
+    if (dryRun) {
+      res.json(result)
+      return
+    }
     res.json(await attachFailedFileToResult(result, buffer, 'warranties-import-failed-rows.xlsx'))
   } catch (err) {
     res.status(err.status || 400).json({ error: err.message })
@@ -120,11 +136,11 @@ router.post('/:id/documents', canUpdate, assertOrgOwnership('warranties'), async
 
 router.patch('/:id/documents/:documentId', canUpdate, assertOrgOwnership('warranties'), async (req, res) => {
   try {
-    const row = await updateWarrantyDocumentLabel(
+    const row = await updateWarrantyDocument(
       req.userProfile.org_id,
       req.params.id,
       req.params.documentId,
-      req.body.label,
+      req.body,
     )
     res.json(row)
   } catch (err) {

@@ -4,8 +4,9 @@ import {
   getWarrantyDocumentSignedUrl,
   deleteWarrantyDocumentFile,
 } from './warrantyDocumentStorage.js'
-import { listEnvelope } from './listQuery.js'
-import { tallyStatusCounts } from './statusCounts.js'
+import { applyMappedFilters, ilikePattern, listEnvelope } from './listQuery.js'
+import { NO_MATCH_ID, restrictToIds } from './relationFilters.js'
+import { attachFormFieldValueMaps } from './orgFormLayouts.js'
 import { clipTrimmedToLimit, getTextFieldLimitsMap } from './textFieldLimits.js'
 
 const WARRANTY_SELECT = `
@@ -24,7 +25,11 @@ const WARRANTY_SELECT = `
 
 const WARRANTY_ITEMS_SELECT = `
   warranty_items (
-    id, line_number, product_name, model_part_no, value, remarks
+    id, line_number, product_name, model_part_no, value, remarks,
+    purchase_date, make, po_number, po_date,
+    invoice_number, invoice_date,
+    warranty_start, warranty_end,
+    warranty_period_months, expiry_notification_days
   )
 `
 
@@ -52,6 +57,26 @@ function parseDecimal(value) {
   return Number.isFinite(num) ? num : null
 }
 
+function itemHasContent(item) {
+  return Boolean(
+    item.product_name
+    || item.model_part_no
+    || item.value != null
+    || item.remarks
+    || item.purchase_date
+    || item.make
+    || item.po_number
+    || item.po_date
+    || item.invoice_number
+    || item.invoice_date
+    || item.warranty_start
+    || item.warranty_end
+    || item.warranty_period_months != null
+    || item.expiry_notification_days != null
+    || item.keep_line === true,
+  )
+}
+
 function normalizeItems(items, limits = null) {
   if (!Array.isArray(items)) return []
   return items
@@ -63,27 +88,55 @@ function normalizeItems(items, limits = null) {
       remarks: limits
         ? clipTrimmedToLimit(limits, 'remarks', item.remarks)
         : trimOrNull(item.remarks),
+      purchase_date: parseDate(item.purchase_date),
+      make: trimOrNull(item.make),
+      po_number: trimOrNull(item.po_number),
+      po_date: parseDate(item.po_date),
+      invoice_number: trimOrNull(item.invoice_number),
+      invoice_date: parseDate(item.invoice_date),
+      warranty_start: parseDate(item.warranty_start),
+      warranty_end: parseDate(item.warranty_end),
+      warranty_period_months: parseInteger(item.warranty_period_months),
+      expiry_notification_days: parseInteger(item.expiry_notification_days),
     }))
-    .filter((item) => (
-      item.product_name
-      || item.model_part_no
-      || item.value != null
-      || item.remarks
-    ))
+    .filter(itemHasContent)
+}
+
+/** Keep header commercial fields as rollups for list/status/calendar. */
+function rollupWarrantyFromItems(items = [], vendorPayload = {}) {
+  const ends = items
+    .map((item) => item.warranty_end)
+    .filter(Boolean)
+    .sort()
+  const starts = items
+    .map((item) => item.warranty_start)
+    .filter(Boolean)
+    .sort()
+  const purchases = items
+    .map((item) => item.purchase_date)
+    .filter(Boolean)
+    .sort()
+  const soonestEnd = ends[0] || null
+  const soonestItem = items.find((item) => item.warranty_end === soonestEnd) || items[0] || null
+  const firstWith = (key) => items.find((item) => item[key])?.[key] || null
+
+  return {
+    ...vendorPayload,
+    purchase_date: purchases[0] || null,
+    make: firstWith('make'),
+    po_number: firstWith('po_number'),
+    po_date: firstWith('po_date'),
+    invoice_number: firstWith('invoice_number'),
+    invoice_date: firstWith('invoice_date'),
+    warranty_start: starts[0] || null,
+    warranty_end: soonestEnd,
+    warranty_period_months: soonestItem?.warranty_period_months ?? null,
+    expiry_notification_days: soonestItem?.expiry_notification_days ?? null,
+  }
 }
 
 function normalizeWarrantyPayload(body) {
   return {
-    purchase_date: parseDate(body.purchase_date),
-    make: trimOrNull(body.make),
-    po_number: trimOrNull(body.po_number),
-    po_date: parseDate(body.po_date),
-    invoice_number: trimOrNull(body.invoice_number),
-    invoice_date: parseDate(body.invoice_date),
-    warranty_start: parseDate(body.warranty_start),
-    warranty_end: parseDate(body.warranty_end),
-    warranty_period_months: parseInteger(body.warranty_period_months),
-    expiry_notification_days: parseInteger(body.expiry_notification_days),
     vendor_id: trimOrNull(body.vendor_id) || null,
     vendor: trimOrNull(body.vendor),
     contact_name: trimOrNull(body.contact_name),
@@ -133,33 +186,49 @@ function warrantyStatusKey(row, now = new Date()) {
 }
 
 async function countWarrantyStatuses(orgId, { search = null } = {}) {
-  let query = supabaseAdmin
-    .from('warranties')
-    .select('warranty_end, expiry_notification_days')
-    .eq('org_id', orgId)
-
+  const map = new Map()
+  const pageSize = 1000
+  let from = 0
   const term = trimOrNull(search)
-  if (term) {
-    const q = term.replace(/%/g, '')
-    const itemWarrantyIds = await findWarrantyIdsByItemSearch(orgId, term)
-    const filters = [
-      `serial_number.ilike.%${q}%`,
-      `make.ilike.%${q}%`,
-      `vendor.ilike.%${q}%`,
-      `po_number.ilike.%${q}%`,
-      `invoice_number.ilike.%${q}%`,
-      `contact_name.ilike.%${q}%`,
-      `contact_email.ilike.%${q}%`,
-    ]
-    if (itemWarrantyIds.length) {
-      filters.push(`id.in.(${itemWarrantyIds.join(',')})`)
+  const itemWarrantyIds = term ? await findWarrantyIdsByItemSearch(orgId, term) : []
+
+  for (;;) {
+    let query = supabaseAdmin
+      .from('warranties')
+      .select('warranty_end, expiry_notification_days')
+      .eq('org_id', orgId)
+      .range(from, from + pageSize - 1)
+
+    if (term) {
+      const q = term.replace(/%/g, '')
+      const filters = [
+        `serial_number.ilike.%${q}%`,
+        `make.ilike.%${q}%`,
+        `vendor.ilike.%${q}%`,
+        `po_number.ilike.%${q}%`,
+        `invoice_number.ilike.%${q}%`,
+        `contact_name.ilike.%${q}%`,
+        `contact_email.ilike.%${q}%`,
+      ]
+      if (itemWarrantyIds.length) {
+        filters.push(`id.in.(${itemWarrantyIds.join(',')})`)
+      }
+      query = query.or(filters.join(','))
     }
-    query = query.or(filters.join(','))
+
+    const { data, error } = await query
+    if (error) throw error
+    const rows = data || []
+    for (const row of rows) {
+      const key = warrantyStatusKey(row)
+      map.set(key, (map.get(key) || 0) + 1)
+    }
+    if (rows.length < pageSize) break
+    from += pageSize
+    if (from >= 100_000) break
   }
 
-  const { data, error } = await query
-  if (error) throw error
-  return tallyStatusCounts(data, (row) => warrantyStatusKey(row))
+  return [...map.entries()].map(([status, count]) => ({ status, count }))
 }
 
 function enrichWarrantyRow(row) {
@@ -187,6 +256,9 @@ async function findWarrantyIdsByItemSearch(orgId, term) {
       `product_name.ilike.%${q}%`,
       `model_part_no.ilike.%${q}%`,
       `remarks.ilike.%${q}%`,
+      `make.ilike.%${q}%`,
+      `po_number.ilike.%${q}%`,
+      `invoice_number.ilike.%${q}%`,
     ].join(','))
 
   if (error) throw error
@@ -231,7 +303,7 @@ async function nextSerialNumber(orgId) {
 async function loadDocuments(orgId, warrantyId) {
   const { data, error } = await supabaseAdmin
     .from('warranty_documents')
-    .select('id, label, file_name, storage_path, file_size, content_type, sort_order, created_at')
+    .select('id, label, file_name, storage_path, file_size, content_type, sort_order, line_number, created_at')
     .eq('org_id', orgId)
     .eq('warranty_id', warrantyId)
     .order('sort_order', { ascending: true })
@@ -263,6 +335,13 @@ function normalizeDocumentLabel(label) {
   return text.slice(0, 120) || 'Other'
 }
 
+function parseDocumentLineNumber(value) {
+  if (value == null || value === '') return null
+  const num = Number(value)
+  if (!Number.isInteger(num) || num < 1 || num > 500) return null
+  return num
+}
+
 export async function addWarrantyDocument(orgId, warrantyId, body) {
   const label = normalizeDocumentLabel(body.label)
   const uploaded = await uploadWarrantyDocumentFile(orgId, warrantyId, body)
@@ -279,8 +358,9 @@ export async function addWarrantyDocument(orgId, warrantyId, body) {
       file_size: uploaded.fileSize,
       content_type: uploaded.contentType,
       sort_order,
+      line_number: parseDocumentLineNumber(body.line_number),
     })
-    .select('id, label, file_name, storage_path, file_size, content_type, sort_order, created_at')
+    .select('id, label, file_name, storage_path, file_size, content_type, sort_order, line_number, created_at')
     .single()
 
   if (error) throw error
@@ -291,14 +371,23 @@ export async function addWarrantyDocument(orgId, warrantyId, body) {
   }
 }
 
-export async function updateWarrantyDocumentLabel(orgId, warrantyId, documentId, label) {
+export async function updateWarrantyDocument(orgId, warrantyId, documentId, body = {}) {
+  const patch = {}
+  if (body.label != null) patch.label = normalizeDocumentLabel(body.label)
+  if (body.line_number != null) patch.line_number = parseDocumentLineNumber(body.line_number)
+  if (!Object.keys(patch).length) {
+    const err = new Error('Nothing to update')
+    err.status = 400
+    throw err
+  }
+
   const { data, error } = await supabaseAdmin
     .from('warranty_documents')
-    .update({ label: normalizeDocumentLabel(label) })
+    .update(patch)
     .eq('org_id', orgId)
     .eq('warranty_id', warrantyId)
     .eq('id', documentId)
-    .select('id, label, file_name, storage_path, file_size, content_type, sort_order, created_at')
+    .select('id, label, file_name, storage_path, file_size, content_type, sort_order, line_number, created_at')
     .single()
 
   if (error) throw error
@@ -358,7 +447,13 @@ async function deleteAllWarrantyDocuments(orgId, warrantyId) {
 async function loadItems(orgId, warrantyId) {
   const { data, error } = await supabaseAdmin
     .from('warranty_items')
-    .select('id, line_number, product_name, model_part_no, value, remarks')
+    .select(`
+      id, line_number, product_name, model_part_no, value, remarks,
+      purchase_date, make, po_number, po_date,
+      invoice_number, invoice_date,
+      warranty_start, warranty_end,
+      warranty_period_months, expiry_notification_days
+    `)
     .eq('org_id', orgId)
     .eq('warranty_id', warrantyId)
     .order('line_number', { ascending: true })
@@ -386,25 +481,99 @@ async function replaceItems(orgId, warrantyId, items) {
   const { data, error } = await supabaseAdmin
     .from('warranty_items')
     .insert(rows)
-    .select('id, line_number, product_name, model_part_no, value, remarks')
+    .select(`
+      id, line_number, product_name, model_part_no, value, remarks,
+      purchase_date, make, po_number, po_date,
+      invoice_number, invoice_date,
+      warranty_start, warranty_end,
+      warranty_period_months, expiry_notification_days
+    `)
 
   if (error) throw error
   return data || []
 }
 
-export async function listWarranties(orgId, { search = null, limit = 100, offset = 0 } = {}) {
+function localDateString(date = new Date()) {
+  const y = date.getFullYear()
+  const m = String(date.getMonth() + 1).padStart(2, '0')
+  const d = String(date.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
+}
+
+function addLocalDays(dateStr, days) {
+  const [y, m, d] = String(dateStr).split('-').map(Number)
+  const date = new Date(y, (m || 1) - 1, d || 1)
+  date.setDate(date.getDate() + days)
+  return localDateString(date)
+}
+
+async function warrantyIdsByProductName(orgId, term) {
+  const pattern = ilikePattern(term)
+  if (!pattern) return []
+  const { data, error } = await supabaseAdmin
+    .from('warranty_items')
+    .select('warranty_id')
+    .eq('org_id', orgId)
+    .ilike('product_name', pattern)
+  if (error) throw error
+  return [...new Set((data || []).map((row) => row.warranty_id).filter(Boolean))]
+}
+
+async function applyWarrantyFieldFilters(query, orgId, filters = {}) {
+  const rest = { ...(filters || {}) }
+  if (rest.products) {
+    query = restrictToIds(query, 'id', await warrantyIdsByProductName(orgId, rest.products))
+    delete rest.products
+  }
+  return {
+    query: applyMappedFilters(query, rest, {
+      serial_number: 'serial_number',
+      make: 'make',
+      vendor: 'vendor',
+      po_number: 'po_number',
+      invoice_number: 'invoice_number',
+      contact_name: 'contact_name',
+    }),
+  }
+}
+
+function applyWarrantyStatusFilter(query, status, expiring = {}) {
+  const today = localDateString()
+  if (status === 'expired') return query.lt('warranty_end', today)
+  if (status === 'active') return query.or(`warranty_end.is.null,warranty_end.gte.${today}`)
+  if (status !== 'expiring_soon') return query
+
+  if (expiring.mode === 'dates') {
+    const from = String(expiring.dateFrom || '').slice(0, 10)
+    const to = String(expiring.dateTo || '').slice(0, 10)
+    if (!from || !to) return query.not('warranty_end', 'is', null)
+    if (from > to) return query.eq('id', NO_MATCH_ID)
+    return query.gte('warranty_end', from).lte('warranty_end', to)
+  }
+
+  const minDays = Math.max(0, Number(expiring.minDays) || 0)
+  const maxDays = Math.max(minDays, Number(expiring.maxDays) || 0)
+  return query.gte('warranty_end', addLocalDays(today, minDays)).lte('warranty_end', addLocalDays(today, maxDays))
+}
+
+export async function listWarranties(orgId, {
+  search = null,
+  limit = 100,
+  offset = 0,
+  filters = {},
+  warrantyStatus = null,
+  expiring = {},
+} = {}) {
   let query = supabaseAdmin
     .from('warranties')
     .select(WARRANTY_LIST_SELECT, { count: 'exact' })
     .eq('org_id', orgId)
-    .order('serial_number', { ascending: false })
-    .range(offset, offset + limit - 1)
 
   const term = trimOrNull(search)
   if (term) {
     const q = term.replace(/%/g, '')
     const itemWarrantyIds = await findWarrantyIdsByItemSearch(orgId, term)
-    const filters = [
+    const searchFilters = [
       `serial_number.ilike.%${q}%`,
       `make.ilike.%${q}%`,
       `vendor.ilike.%${q}%`,
@@ -414,17 +583,26 @@ export async function listWarranties(orgId, { search = null, limit = 100, offset
       `contact_email.ilike.%${q}%`,
     ]
     if (itemWarrantyIds.length) {
-      filters.push(`id.in.(${itemWarrantyIds.join(',')})`)
+      searchFilters.push(`id.in.(${itemWarrantyIds.join(',')})`)
     }
-    query = query.or(filters.join(','))
+    query = query.or(searchFilters.join(','))
   }
+
+  query = (await applyWarrantyFieldFilters(query, orgId, filters)).query
+  query = applyWarrantyStatusFilter(query, warrantyStatus, expiring)
+  query = query.order('serial_number', { ascending: false }).range(offset, offset + limit - 1)
 
   const [{ data, error, count }, status_counts] = await Promise.all([
     query,
     countWarrantyStatuses(orgId, { search }),
   ])
   if (error) throw error
-  return listEnvelope((data || []).map(enrichWarrantyRow), { total: count || 0, limit, offset, status_counts })
+  const items = await attachFormFieldValueMaps(
+    orgId,
+    'warranty.warranty',
+    (data || []).map(enrichWarrantyRow),
+  )
+  return listEnvelope(items, { total: count || 0, limit, offset, status_counts })
 }
 
 export async function getWarrantyDetail(orgId, id) {
@@ -444,9 +622,10 @@ export async function getWarrantyDetail(orgId, id) {
 }
 
 export async function createWarranty(orgId, body) {
-  const payload = await resolveVendorFields(orgId, normalizeWarrantyPayload(body))
+  const vendorPayload = await resolveVendorFields(orgId, normalizeWarrantyPayload(body))
   const fieldLimits = await getTextFieldLimitsMap(orgId)
   const items = normalizeItems(body.items, fieldLimits)
+  const payload = rollupWarrantyFromItems(items, vendorPayload)
   const serial_number = await nextSerialNumber(orgId)
 
   const { data, error } = await supabaseAdmin
@@ -461,14 +640,20 @@ export async function createWarranty(orgId, body) {
 
   if (error) throw error
 
-  const savedItems = await replaceItems(orgId, data.id, items)
-  return enrichWarrantyRow({ ...data, items: savedItems })
+  try {
+    const savedItems = await replaceItems(orgId, data.id, items)
+    return enrichWarrantyRow({ ...data, items: savedItems })
+  } catch (itemError) {
+    await supabaseAdmin.from('warranties').delete().eq('org_id', orgId).eq('id', data.id)
+    throw itemError
+  }
 }
 
 export async function updateWarranty(orgId, id, body) {
-  const payload = await resolveVendorFields(orgId, normalizeWarrantyPayload(body))
+  const vendorPayload = await resolveVendorFields(orgId, normalizeWarrantyPayload(body))
   const fieldLimits = await getTextFieldLimitsMap(orgId)
   const items = normalizeItems(body.items, fieldLimits)
+  const payload = rollupWarrantyFromItems(items, vendorPayload)
 
   const { data, error } = await supabaseAdmin
     .from('warranties')
@@ -485,6 +670,92 @@ export async function updateWarranty(orgId, id, body) {
 
   const savedItems = await replaceItems(orgId, id, items)
   return enrichWarrantyRow({ ...data, items: savedItems })
+}
+
+function purchaseKey(value) {
+  return String(value ?? '').trim().toLowerCase()
+}
+
+function escapeLike(value) {
+  return String(value).replace(/[\\%_]/g, (char) => `\\${char}`)
+}
+
+/** Existing purchase for vendor + PO number + invoice number. */
+export async function findPurchaseWarranty(orgId, { vendorId = null, vendorName = null, poNumber, invoiceNumber } = {}) {
+  const po = trimOrNull(poNumber)
+  const invoice = trimOrNull(invoiceNumber)
+  if (!po || !invoice) return null
+
+  const { data, error } = await supabaseAdmin
+    .from('warranties')
+    .select('id, serial_number, vendor, vendor_id, po_number, invoice_number, created_at')
+    .eq('org_id', orgId)
+    .ilike('po_number', escapeLike(po))
+    .ilike('invoice_number', escapeLike(invoice))
+    .order('created_at', { ascending: true })
+    .limit(50)
+
+  if (error) throw error
+
+  const vendorKey = purchaseKey(vendorName)
+  return (data || []).find((row) => {
+    if (purchaseKey(row.po_number) !== purchaseKey(po)) return false
+    if (purchaseKey(row.invoice_number) !== purchaseKey(invoice)) return false
+    if (vendorId && row.vendor_id && row.vendor_id === vendorId) return true
+    return purchaseKey(row.vendor) === vendorKey
+  }) || null
+}
+
+/** Add line items without replacing items already stored on the purchase. */
+export async function appendWarrantyItems(orgId, warrantyId, extraItems) {
+  const existing = await getWarrantyDetail(orgId, warrantyId)
+  if (!existing) {
+    const err = new Error('Warranty record was not found')
+    err.status = 404
+    throw err
+  }
+
+  const fieldLimits = await getTextFieldLimitsMap(orgId)
+  const normalized = normalizeItems(extraItems, fieldLimits)
+  if (!normalized.length) return existing
+
+  const maxLine = (existing.items || []).reduce(
+    (max, item) => Math.max(max, Number(item.line_number) || 0),
+    0,
+  )
+  const rows = normalized.map((item, index) => ({
+    org_id: orgId,
+    warranty_id: warrantyId,
+    ...item,
+    line_number: maxLine + index + 1,
+  }))
+
+  const { error: insertError } = await supabaseAdmin
+    .from('warranty_items')
+    .insert(rows)
+
+  if (insertError) throw insertError
+
+  const items = await loadItems(orgId, warrantyId)
+  const payload = rollupWarrantyFromItems(items, {
+    vendor_id: existing.vendor_id || null,
+    vendor: existing.vendor || null,
+    contact_name: existing.contact_name || null,
+    contact_phone: existing.contact_phone || null,
+    contact_email: existing.contact_email || null,
+  })
+
+  const { error: updateError } = await supabaseAdmin
+    .from('warranties')
+    .update({
+      ...payload,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('org_id', orgId)
+    .eq('id', warrantyId)
+
+  if (updateError) throw updateError
+  return getWarrantyDetail(orgId, warrantyId)
 }
 
 export async function deleteWarranty(orgId, id) {

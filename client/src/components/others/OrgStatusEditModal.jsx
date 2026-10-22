@@ -56,11 +56,12 @@ export default function OrgStatusEditModal({
   }
 
   return (
-    <div className="company-modal-overlay" onMouseDown={handleBackdropClick}>
+    <div className="company-modal-overlay company-modal-overlay--popup" onMouseDown={handleBackdropClick}>
       <div
-        className="company-modal"
+        className="company-modal company-modal--popup"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
+        aria-modal="true"
         aria-labelledby="org-status-edit-title"
       >
         <div className="company-modal__header">
@@ -72,7 +73,7 @@ export default function OrgStatusEditModal({
           </div>
         </div>
 
-        <form className="company-form" onSubmit={handleSubmit}>
+        <form className="company-form company-modal__form" onSubmit={handleSubmit}>
           <div className="company-form__grid">
             <label className="company-form__field company-form__field--full">
               <span className="company-form__label">Name *</span>

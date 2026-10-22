@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { uploadOrgLogo, deleteOrgLogo, getOrgAssetSignedUrl, validateLogoFile } from '../../lib/orgAssets'
+import { IMAGE_ACCEPT } from '../../lib/imageFiles'
 import { updateCompanyDetails } from '../../lib/api'
 import './CompanyShared.css'
 
@@ -91,7 +92,7 @@ export default function LogoUpload({ orgId, logoPath, canManage, onLogoChange })
             <input
               ref={inputRef}
               type="file"
-              accept="image/jpeg,image/png,image/webp,image/gif"
+              accept={IMAGE_ACCEPT}
               className="company-logo__input"
               onChange={handleFile}
               disabled={uploading}
@@ -114,7 +115,7 @@ export default function LogoUpload({ orgId, logoPath, canManage, onLogoChange })
                 Remove
               </button>
             )}
-            <p className="company-logo__hint">JPEG, PNG, WebP or GIF. Max 5 MB.</p>
+            <p className="company-logo__hint">JPEG, PNG, WebP, GIF, or SVG. Max 5 MB.</p>
           </div>
         )}
       </div>

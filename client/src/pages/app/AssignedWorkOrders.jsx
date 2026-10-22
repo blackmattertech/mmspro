@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useMemo } from 'react'
 import { useOutletContext } from 'react-router-dom'
 import { getAssignedWorkOrders, getAssignedWorkOrder } from '../../lib/api-work-orders'
 import { useWorkOrderList } from '../../hooks/useWorkOrderList'
@@ -6,28 +6,42 @@ import { useDebouncedValue } from '../../hooks/useDebouncedValue'
 import { useTablePagination } from '../../hooks/useTablePagination'
 import { useOpenQueryId } from '../../hooks/useOpenQueryId'
 import { applyWorkOrderFilters } from '../../lib/workOrderFilters'
+import { buildServerListParams } from '../../lib/serverListParams'
 import ReceivedWorkOrderDetailModal from '../../components/workorders/ReceivedWorkOrderDetailModal'
 import WorkOrdersTable from '../../components/workorders/WorkOrdersTable'
 import '../../components/company/CompanyShared.css'
 import '../../components/workorders/WorkOrdersPage.css'
 
-const ASSIGNED_COLUMNS = ['wo_number', 'summary', 'assignees', 'created_at', 'status', 'progress']
+const ASSIGNED_COLUMNS = ['wo_number', 'summary', 'work_request', 'assignees', 'created_at', 'status', 'priority', 'progress']
 
 export default function AssignedWorkOrders() {
   const [selectedId, setSelectedId, closeSelected] = useOpenQueryId()
-  const { search, locationFilter, sortBy, advancedRules, fieldFilter, locations } = useOutletContext()
+  const {
+    search, locationFilter, sortBy, advancedRules, fieldFilter, locations,
+    columnFilters = {}, setColumnFilter, headerSort = null, setHeaderSort,
+    statusFilters = [], toggleStatus,
+  } = useOutletContext()
   const debouncedSearch = useDebouncedValue(search)
   const [listTotal, setListTotal] = useState(0)
+  const listFilters = useMemo(() => buildServerListParams({
+    columnFilters, fieldFilter, statusFilters, headerSort, sortBy, excludeDraft: true,
+  }).filters, [columnFilters, fieldFilter, statusFilters, headerSort, sortBy])
   const pagination = useTablePagination(listTotal, {
-    resetKey: `${debouncedSearch}|${locationFilter}|${fieldFilter?.field}|${fieldFilter?.value}|${sortBy}`,
+    resetKey: `${debouncedSearch}|${locationFilter}|${JSON.stringify(listFilters)}|${sortBy}|${headerSort?.id || ''}|${statusFilters.join(',')}`,
   })
   const fetchOrders = useCallback(
-    () => getAssignedWorkOrders({
+    () => getAssignedWorkOrders(buildServerListParams({
       search: debouncedSearch,
       limit: pagination.pageSize,
       offset: pagination.offset,
-    }),
-    [debouncedSearch, pagination.pageSize, pagination.offset],
+      columnFilters,
+      fieldFilter,
+      statusFilters,
+      headerSort,
+      sortBy,
+      excludeDraft: true,
+    })),
+    [debouncedSearch, pagination.pageSize, pagination.offset, columnFilters, fieldFilter, statusFilters, headerSort, sortBy],
   )
   const { orders, total, statusCounts, loading, error } = useWorkOrderList(fetchOrders)
   useEffect(() => { setListTotal(total) }, [total])
@@ -36,7 +50,7 @@ export default function AssignedWorkOrders() {
     return <div className="company-loading">Loading...</div>
   }
 
-  const filtered = applyWorkOrderFilters(orders, { search: '', locationFilter, sortBy, advancedRules, fieldFilter, locations })
+  const filtered = applyWorkOrderFilters(orders, { search: '', locationFilter, advancedRules, locations })
 
   return (
     <>
@@ -54,6 +68,12 @@ export default function AssignedWorkOrders() {
         emptyHint="Work orders you requested or created and assigned to someone else appear here."
         onView={setSelectedId}
         paginationResetKey={`${search}|${locationFilter}|${fieldFilter?.field}|${fieldFilter?.value}|${sortBy}`}
+        headerSort={headerSort}
+        onHeaderSort={setHeaderSort}
+        columnFilters={columnFilters}
+        onColumnFilter={setColumnFilter}
+        statusFilters={statusFilters}
+        onToggleStatus={toggleStatus}
       />
 
       {selectedId && (

@@ -85,6 +85,12 @@
   margin-bottom: 24px;
 }
 
+.limit-exceeded-card__count {
+  color: var(--color-primary);
+  font-size: 18px;
+  font-weight: 800;
+}
+
 .limit-exceeded-card__btn {
   height: 42px;
   padding: 0 28px;

@@ -415,9 +415,9 @@ export default function TaskMetaSettingsModal({ onClose }) {
                         <tr key={row.id}>
                           <td>{row.name}</td>
                           <td><ActiveBadge active={row.is_active} /></td>
-                          <td>
-                            <button type="button" className="company-btn company-btn--secondary company-btn--compact" onClick={() => openEdit('category', row)}>Edit</button>
-                            <button type="button" className="company-btn company-btn--danger company-btn--compact" onClick={() => handleDelete('category', row)}>Delete</button>
+                          <td className="company-table__actions">
+                            <button type="button" className="company-btn company-btn--secondary company-btn--compact company-btn--icon" onClick={() => openEdit('category', row)} aria-label={`Edit ${row.name}`} title="Edit"><EditIcon /></button>
+                            <button type="button" className="company-btn company-btn--danger company-btn--compact company-btn--icon" onClick={() => handleDelete('category', row)} aria-label={`Delete ${row.name}`} title="Delete"><TrashIcon /></button>
                           </td>
                         </tr>
                       ))}
@@ -444,9 +444,9 @@ export default function TaskMetaSettingsModal({ onClose }) {
                         <tr key={row.id}>
                           <td>{row.name}</td>
                           <td><ActiveBadge active={row.is_active} /></td>
-                          <td>
-                            <button type="button" className="company-btn company-btn--secondary company-btn--compact" onClick={() => openEdit('tag', row)}>Edit</button>
-                            <button type="button" className="company-btn company-btn--danger company-btn--compact" onClick={() => handleDelete('tag', row)}>Delete</button>
+                          <td className="company-table__actions">
+                            <button type="button" className="company-btn company-btn--secondary company-btn--compact company-btn--icon" onClick={() => openEdit('tag', row)} aria-label={`Edit ${row.name}`} title="Edit"><EditIcon /></button>
+                            <button type="button" className="company-btn company-btn--danger company-btn--compact company-btn--icon" onClick={() => handleDelete('tag', row)} aria-label={`Delete ${row.name}`} title="Delete"><TrashIcon /></button>
                           </td>
                         </tr>
                       ))}

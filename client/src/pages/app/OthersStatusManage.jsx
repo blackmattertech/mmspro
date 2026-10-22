@@ -153,12 +153,6 @@ export default function OthersStatusManage() {
         </div>
       </header>
 
-      {!canManage && (
-        <p className="company-readonly-note">
-          Only company admins can create or edit statuses. You can view the list.
-        </p>
-      )}
-
       {(error || actionError) && (
         <div className="company-alert">{error || actionError}</div>
       )}

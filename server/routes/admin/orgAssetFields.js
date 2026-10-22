@@ -17,8 +17,34 @@ import {
   uploadSectionIconFile,
   deleteSectionIconFile,
 } from '../../lib/sectionIconStorage.js'
+import {
+  buildSectionsTemplate,
+  bulkImportSections,
+  buildParentsTemplate,
+  bulkImportParents,
+  buildChildrenTemplate,
+  bulkImportChildren,
+} from '../../lib/assetFieldBulkService.js'
+import { attachFailedFileToResult } from '../../lib/importErrorWorkbook.js'
 
 const router = Router({ mergeParams: true })
+
+function parseBulkFile(req) {
+  const raw = req.body?.data
+  if (!raw || typeof raw !== 'string') {
+    const err = new Error('File data is required')
+    err.status = 400
+    throw err
+  }
+  const base64 = raw.includes(',') ? raw.split(',').pop() : raw
+  const buffer = Buffer.from(base64, 'base64')
+  if (!buffer.length) {
+    const err = new Error('File data is invalid')
+    err.status = 400
+    throw err
+  }
+  return buffer
+}
 
 async function requireOrg(req, res, next) {
   const { orgId } = req.params
@@ -36,6 +62,75 @@ async function requireOrg(req, res, next) {
 }
 
 router.use(requireOrg)
+
+router.get('/template/sections', async (req, res) => {
+  try {
+    const buffer = await buildSectionsTemplate(req.params.orgId)
+    res.json({
+      filename: 'sections-template.xlsx',
+      contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      data: buffer.toString('base64'),
+    })
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message })
+  }
+})
+
+router.get('/template/parents', async (req, res) => {
+  try {
+    const buffer = await buildParentsTemplate(req.params.orgId)
+    res.json({
+      filename: 'parent-fields-template.xlsx',
+      contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      data: buffer.toString('base64'),
+    })
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message })
+  }
+})
+
+router.post('/bulk/sections', async (req, res) => {
+  try {
+    const buffer = parseBulkFile(req)
+    const result = await bulkImportSections(req.params.orgId, buffer)
+    res.json(await attachFailedFileToResult(result, buffer, 'sections-import-failed-rows.xlsx'))
+  } catch (err) {
+    res.status(err.status || 400).json({ error: err.message })
+  }
+})
+
+router.post('/bulk/parents', async (req, res) => {
+  try {
+    const buffer = parseBulkFile(req)
+    const result = await bulkImportParents(req.params.orgId, buffer)
+    res.json(await attachFailedFileToResult(result, buffer, 'parent-fields-import-failed-rows.xlsx'))
+  } catch (err) {
+    res.status(err.status || 400).json({ error: err.message })
+  }
+})
+
+router.get('/template/children', async (req, res) => {
+  try {
+    const buffer = await buildChildrenTemplate(req.params.orgId)
+    res.json({
+      filename: 'child-values-template.xlsx',
+      contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      data: buffer.toString('base64'),
+    })
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message })
+  }
+})
+
+router.post('/bulk/children', async (req, res) => {
+  try {
+    const buffer = parseBulkFile(req)
+    const result = await bulkImportChildren(req.params.orgId, buffer)
+    res.json(await attachFailedFileToResult(result, buffer, 'child-values-import-failed-rows.xlsx'))
+  } catch (err) {
+    res.status(err.status || 400).json({ error: err.message })
+  }
+})
 
 router.get('/', async (req, res) => {
   try {

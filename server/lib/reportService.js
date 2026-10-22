@@ -172,7 +172,7 @@ function matchesSearch(haystack, search) {
   return String(haystack || '').toLowerCase().includes(search)
 }
 
-async function fetchAllPages(buildQuery, { pageSize = 1000, maxRows = 20000 } = {}) {
+async function fetchAllPages(buildQuery, { pageSize = 1000, maxRows = 10000 } = {}) {
   const rows = []
   let from = 0
   while (from < maxRows) {
@@ -239,7 +239,7 @@ async function loadOrgName(orgId) {
 export async function loadOrgLetterhead(orgId) {
   const { data, error } = await supabaseAdmin
     .from('organizations')
-    .select('name, address_line1, address_line2, city, state, postal_code, country, logo_url')
+    .select('name, email, phone, website, address_line1, address_line2, city, state, postal_code, country, logo_url')
     .eq('id', orgId)
     .maybeSingle()
   if (error) throw error
@@ -268,6 +268,9 @@ export async function loadOrgLetterhead(orgId) {
   return {
     name: data?.name || 'Organization',
     address,
+    email: data?.email || '',
+    phone: data?.phone || '',
+    website: data?.website || '',
     logo,
   }
 }
@@ -545,9 +548,17 @@ function kpiDelta(current, previous) {
 
 async function buildPlantReport(orgId, filters, now) {
   const prev = previousEqualRange(filters.dateFrom, filters.dateTo)
-  const [locations, workOrders, logs, prevLogs, pmPlans] = await Promise.all([
+  const [locations, openWorkOrders, periodWorkOrders, logs, prevLogs, pmPlans] = await Promise.all([
     loadLocations(orgId, filters.locationId),
-    loadWorkOrders(orgId, { locationId: filters.locationId }),
+    loadWorkOrders(orgId, {
+      locationId: filters.locationId,
+      statuses: WO_OPEN_STATUSES,
+    }),
+    loadWorkOrders(orgId, {
+      locationId: filters.locationId,
+      dateFrom: filters.dateFrom,
+      dateTo: filters.dateTo,
+    }),
     loadDailyLogs(orgId, { dateFrom: filters.dateFrom, dateTo: filters.dateTo }),
     prev
       ? loadDailyLogs(orgId, { dateFrom: prev.date_from, dateTo: prev.date_to })
@@ -561,7 +572,12 @@ async function buildPlantReport(orgId, filters, now) {
     )),
   ])
 
-  const woById = new Map(workOrders.map((row) => [row.id, row]))
+  const workOrdersById = new Map()
+  for (const row of [...openWorkOrders, ...periodWorkOrders]) {
+    workOrdersById.set(row.id, row)
+  }
+  const workOrders = [...workOrdersById.values()]
+  const woById = workOrdersById
   const logsForPlant = (list) => list.filter((log) => {
     const wo = woById.get(log.work_order_id)
     if (!wo) return false

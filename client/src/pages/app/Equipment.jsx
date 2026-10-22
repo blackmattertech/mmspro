@@ -1,10 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { VirtualTableBody } from '../../components/shared/VirtualTableBody'
 import { usePermissions } from '../../hooks/usePermissions'
+import { useOrg } from '../../hooks/useOrg'
 import { isCompanyAdmin } from '../../lib/accountRoles'
 import { useAuth } from '../../hooks/useAuth'
 import { useEquipment } from '../../hooks/useEquipment'
 import { useOrgEquipmentFields } from '../../hooks/useOrgEquipmentFields'
 import { getEquipment, getEquipmentTemplate, bulkUploadEquipment, deleteEquipment } from '../../lib/api-equipment'
+import { invalidateReferenceCache } from '../../lib/referenceDataCache'
 import EquipmentModal from '../../components/equipment/EquipmentModal'
 import AssetsFieldsPanel from '../../components/assets/AssetsFieldsPanel'
 import AreasTab from '../../components/company/AreasTab'
@@ -16,11 +19,13 @@ import TableColumnPicker from '../../components/shared/TableColumnPicker'
 import TableFilterToolbar from '../../components/shared/TableFilterToolbar'
 import { useTablePagination } from '../../hooks/useTablePagination'
 import { useTableColumnPrefs } from '../../hooks/useTableColumnPrefs'
+import { useCatalogFields } from '../../hooks/useCatalogFields'
+import { equipmentImageSrc, formatPickerValue, mergePickerColumns } from '../../lib/pickerFields'
 import { useDebouncedValue } from '../../hooks/useDebouncedValue'
-import { TABLE_SORT_OPTIONS, applyTableFilters } from '../../lib/tableFilters'
+import { TABLE_SORT_OPTIONS, compactFilters } from '../../lib/tableFilters'
 import { stopTableRowClick, tableRowClickProps } from '../../lib/clickableTableRow'
-import RecordDetailModal from '../../components/shared/RecordDetailModal'
-import { EquipmentDetailContent } from '../../components/company/CompanyRecordDetails'
+import EquipmentDetail from '../../components/equipment/EquipmentDetail'
+import { orgPath } from '../../config/navigation'
 import {
   useMasterBulkUpload,
   MasterBulkActions,
@@ -38,7 +43,10 @@ const EQUIPMENT_FILTER_FIELDS = [
   { value: 'location', label: 'Location' },
   { value: 'department', label: 'Department' },
   { value: 'area', label: 'Area' },
-  { value: 'status', label: 'Status', placeholder: 'active or inactive' },
+  { value: 'status', label: 'Status', type: 'select', emptyLabel: 'All Status', options: [
+    { value: 'active', label: 'Active' },
+    { value: 'inactive', label: 'Inactive' },
+  ] },
 ]
 
 function canPickAnyLocation({ isOrgAdmin, accessRole }) {
@@ -63,7 +71,9 @@ export default function Equipment() {
     locationId: myLocationId,
     accessRole,
   } = usePermissions()
+  const { org } = useOrg()
   const canManage = canCreate('equipment') || canUpdate('equipment') || canDelete('equipment')
+  const catalogFields = useCatalogFields()
   const equipmentColumnDefs = useMemo(() => {
     const cols = [
       { id: 'name', label: 'Name' },
@@ -72,16 +82,22 @@ export default function Equipment() {
       { id: 'department', label: 'Department' },
       { id: 'area', label: 'Area' },
       { id: 'active', label: 'Active' },
+      { id: 'created_at', label: 'Created', defaultVisible: false },
+      { id: 'updated_at', label: 'Updated', defaultVisible: false },
     ]
-    if (canManage) cols.push({ id: 'actions', label: 'Actions', locked: true })
-    return cols
-  }, [canManage])
+    const withFields = mergePickerColumns(cols, catalogFields, { source: 'equipment', includeImages: true })
+    if (canManage) withFields.push({ id: 'actions', label: 'Actions', locked: true })
+    return withFields
+  }, [canManage, catalogFields])
   const {
     isVisible: isEquipmentColumnVisible,
     toggleColumn: toggleEquipmentColumn,
     resetColumns: resetEquipmentColumns,
     columnDefs: equipmentPickerColumns,
     visibleColumnIds: equipmentVisibleColumnIds,
+    columnOrder: equipmentColumnOrder,
+    reorderColumns: reorderEquipmentColumns,
+    moveColumn: moveEquipmentColumn,
   } = useTableColumnPrefs('masters-equipment', equipmentColumnDefs)
   const canManageAreas = canCreate('areas') || canUpdate('areas') || canDelete('areas')
   const canManageFieldOptions = isCompanyAdmin(role) || canUpdate('equipment')
@@ -89,12 +105,11 @@ export default function Equipment() {
   const scopedLocationId = canSelectAnyLocation ? undefined : (myLocationId || undefined)
   const [view, setView] = useState(() => (canRead('equipment') ? 'records' : 'areas'))
   const [search, setSearch] = useState('')
-  const [filterField, setFilterField] = useState('')
-  const [filterValue, setFilterValue] = useState('')
+  const [columnFilters, setColumnFilters] = useState({})
   const [sortBy, setSortBy] = useState('name_asc')
   const debouncedSearch = useDebouncedValue(search.trim())
   const [listTotal, setListTotal] = useState(0)
-  const filterResetKey = `${debouncedSearch}|${filterField}|${filterValue}|${sortBy}|${scopedLocationId || ''}`
+  const filterResetKey = `${debouncedSearch}|${JSON.stringify(columnFilters)}|${sortBy}|${scopedLocationId || ''}`
   const equipmentPagination = useTablePagination(listTotal, { resetKey: filterResetKey })
 
   const filters = useMemo(
@@ -103,29 +118,24 @@ export default function Equipment() {
       locationId: scopedLocationId,
       limit: equipmentPagination.pageSize,
       offset: equipmentPagination.offset,
+      listFilters: compactFilters(columnFilters),
+      sortBy,
     }),
-    [debouncedSearch, scopedLocationId, equipmentPagination.pageSize, equipmentPagination.offset],
+    [
+      debouncedSearch,
+      scopedLocationId,
+      equipmentPagination.pageSize,
+      equipmentPagination.offset,
+      columnFilters,
+      sortBy,
+    ],
   )
   const { items, total, loading, saving, error, create, update, remove, reload } = useEquipment(filters)
   useEffect(() => { setListTotal(total) }, [total])
   const fieldsState = useOrgEquipmentFields({ enabled: view === 'fields' })
 
-  const filteredItems = useMemo(() => applyTableFilters(items, {
-    fieldFilter: { field: filterField, value: filterValue },
-    fieldFilterGetters: {
-      name: (row) => row.name,
-      code: (row) => row.code,
-      location: (row) => equipmentLocationName(row),
-      department: (row) => row.departments?.name,
-      area: (row) => row.areas?.name,
-      status: (row) => (row.is_active === false ? 'inactive' : 'active'),
-    },
-    sortBy,
-    getName: (row) => row.name || row.code,
-    getCreatedAt: (row) => row.created_at,
-  }), [items, filterField, filterValue, sortBy])
-
-  const pagedItems = filteredItems
+  const hasListQuery = Boolean(debouncedSearch || compactFilters(columnFilters))
+  const pagedItems = items
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState(null)
   const [viewing, setViewing] = useState(null)
@@ -155,6 +165,7 @@ export default function Equipment() {
     downloadTemplate: getEquipmentTemplate,
     upload: bulkUploadEquipment,
     onSuccess: async () => {
+      invalidateReferenceCache('areas')
       await reload({ silent: true })
     },
     defaultFilename: 'equipment-template.xlsx',
@@ -169,7 +180,15 @@ export default function Equipment() {
     setModalOpen(true)
   }
 
-  const openView = (row) => setViewing(row)
+  const openView = async (row) => {
+    setViewing(row)
+    try {
+      const detail = await getEquipment(row.id)
+      setViewing((current) => (current?.id === row.id ? detail : current))
+    } catch {
+      // Keep the list row if the detail request fails.
+    }
+  }
 
   const openEdit = async (row) => {
     try {
@@ -182,9 +201,16 @@ export default function Equipment() {
   }
 
   const handleSave = async (payload) => {
-    if (editing?.id) await update(editing.id, payload)
-    else await create(payload)
+    const saved = editing?.id ? await update(editing.id, payload) : await create(payload)
     setModalOpen(false)
+    if (viewing?.id && editing?.id === viewing.id && saved) setViewing(saved)
+    return saved
+  }
+
+  const handleReplaceImage = async (image) => {
+    if (!viewing?.id) return
+    const saved = await update(viewing.id, { image })
+    if (saved) setViewing(saved)
   }
 
   const handleDelete = async (row) => {
@@ -257,8 +283,11 @@ export default function Equipment() {
     )
   }
 
+  const showingDetail = Boolean(viewing) && view === 'records'
+
   return (
     <div className="company-page">
+      {!showingDetail && (
       <header className="company-page__header">
         <h1 className="company-page__title">Equipment</h1>
         <p className="company-page__subtitle">
@@ -294,20 +323,27 @@ export default function Equipment() {
           )}
         </nav>
       </header>
+      )}
 
       <div className="company-page__content">
+        {showingDetail && (
+          <EquipmentDetail
+            equipment={viewing}
+            canEdit={canUpdate('equipment')}
+            onClose={() => setViewing(null)}
+            onEdit={() => openEdit(viewing)}
+            onReplaceImage={handleReplaceImage}
+            links={{
+              workOrders: org?.slug ? orgPath(org.slug, 'work-orders/manual') : undefined,
+              pm: org?.slug ? orgPath(org.slug, 'work-orders/scheduled') : undefined,
+              warranty: org?.slug ? orgPath(org.slug, 'warranty-manager') : undefined,
+            }}
+          />
+        )}
         {view === 'areas' ? (
           <AreasTab canManage={canManageAreas} />
         ) : view === 'fields' ? (
           <>
-            <p className="company-readonly-note">
-              Equipment field structure is defined by Super Admin. Add dropdown option values for equipment fields (e.g. Equipment Details) here.
-            </p>
-            {!canManageFieldOptions && (
-              <p className="company-readonly-note">
-                You have read-only access. Contact a company admin to change option values.
-              </p>
-            )}
             <AssetsFieldsPanel
               fieldsState={fieldsState}
               canManageSchema={false}
@@ -317,12 +353,7 @@ export default function Equipment() {
           </>
         ) : (
           <>
-            {!canManage && (
-              <p className="company-readonly-note">
-                You have read-only access. Contact a company admin to make changes.
-              </p>
-            )}
-
+            {!showingDetail && (
             <div className="company-panel">
               <div className="company-panel__toolbar company-panel__toolbar--filters">
                 <TableFilterToolbar
@@ -334,10 +365,8 @@ export default function Equipment() {
                   }}
                   filter={{
                     fields: EQUIPMENT_FILTER_FIELDS,
-                    field: filterField,
-                    onFieldChange: setFilterField,
-                    value: filterValue,
-                    onValueChange: setFilterValue,
+                    values: columnFilters,
+                    onChange: setColumnFilters,
                   }}
                   sort={{ value: sortBy, onChange: setSortBy, options: TABLE_SORT_OPTIONS }}
                   actions={canManage && (
@@ -360,7 +389,7 @@ export default function Equipment() {
                         onFileChange={handleBulkFile}
                         addLabel="+ Add Equipment"
                         onAdd={openCreate}
-                        title="Bulk upload equipment"
+                        title="Import equipment"
                         bulkError={bulkError}
                         bulkResult={bulkResult}
                         noun="equipment"
@@ -371,8 +400,11 @@ export default function Equipment() {
                     <TableColumnPicker
                       columnDefs={equipmentPickerColumns}
                       visibleColumnIds={equipmentVisibleColumnIds}
+                      columnOrder={equipmentColumnOrder}
                       onToggle={toggleEquipmentColumn}
                       onReset={resetEquipmentColumns}
+                      onReorder={reorderEquipmentColumns}
+                      onMove={moveEquipmentColumn}
                     />
                   )}
                 />
@@ -387,10 +419,10 @@ export default function Equipment() {
                 <div className="company-loading">Loading equipment…</div>
               ) : items.length === 0 ? (
                 <div className="company-empty">
-                  No equipment yet. Create areas first, then add equipment records.
+                  {hasListQuery
+                    ? 'No equipment matches your filters.'
+                    : 'No equipment yet. Create areas first, then add equipment records.'}
                 </div>
-              ) : filteredItems.length === 0 ? (
-                <div className="company-empty">No equipment matches your filters.</div>
               ) : (
                 <>
                 <div className="company-table-wrap">
@@ -409,17 +441,16 @@ export default function Equipment() {
                             />
                           </th>
                         )}
-                        {isEquipmentColumnVisible('name') && <th>Name</th>}
-                        {isEquipmentColumnVisible('code') && <th>Code</th>}
-                        {isEquipmentColumnVisible('location') && <th>Location</th>}
-                        {isEquipmentColumnVisible('department') && <th>Department</th>}
-                        {isEquipmentColumnVisible('area') && <th>Area</th>}
-                        {isEquipmentColumnVisible('active') && <th>Active</th>}
-                        {canManage && isEquipmentColumnVisible('actions') && <th>Actions</th>}
+                        {equipmentVisibleColumnIds.map((columnId) => {
+                          if (columnId === 'actions') return canManage ? <th key={columnId}>Actions</th> : null
+                          const col = equipmentPickerColumns.find((item) => item.id === columnId)
+                          return <th key={columnId}>{col?.label || columnId}</th>
+                        })}
                       </tr>
                     </thead>
-                    <tbody>
-                      {pagedItems.map((row) => {
+                    <VirtualTableBody
+                      items={pagedItems}
+                      renderRow={(row) => {
                         const isActive = row.is_active !== false
                         return (
                         <tr
@@ -444,25 +475,42 @@ export default function Equipment() {
                               />
                             </td>
                           )}
-                          {isEquipmentColumnVisible('name') && (
-                            <td><span className="company-table__name">{row.name}</span></td>
-                          )}
-                          {isEquipmentColumnVisible('code') && (
-                            <td><code className="company-code">{row.code || '—'}</code></td>
-                          )}
-                          {isEquipmentColumnVisible('location') && <td>{equipmentLocationName(row) || '—'}</td>}
-                          {isEquipmentColumnVisible('department') && <td>{row.departments?.name || '—'}</td>}
-                          {isEquipmentColumnVisible('area') && <td>{row.areas?.name || '—'}</td>}
-                          {isEquipmentColumnVisible('active') && (
-                            <td onClick={stopTableRowClick}>
-                              <GooToggle
-                                checked={isActive}
-                                disabled={!canManage || saving}
-                                onChange={(checked) => handleToggle(row, checked)}
-                                ariaLabel={`${isActive ? 'Disable' : 'Enable'} ${row.name}`}
-                              />
-                            </td>
-                          )}
+                          {equipmentVisibleColumnIds.map((columnId) => {
+                            if (columnId === 'actions') return null
+                            if (columnId === 'name') {
+                              return <td key={columnId}><span className="company-table__name">{row.name}</span></td>
+                            }
+                            if (columnId === 'code') {
+                              return <td key={columnId}><code className="company-code">{row.code || '—'}</code></td>
+                            }
+                            if (columnId === 'location') return <td key={columnId}>{equipmentLocationName(row) || '—'}</td>
+                            if (columnId === 'department') return <td key={columnId}>{row.departments?.name || '—'}</td>
+                            if (columnId === 'area') return <td key={columnId}>{row.areas?.name || '—'}</td>
+                            if (columnId === 'active') {
+                              return (
+                                <td key={columnId} onClick={stopTableRowClick}>
+                                  <GooToggle
+                                    checked={isActive}
+                                    disabled={!canManage || saving}
+                                    onChange={(checked) => handleToggle(row, checked)}
+                                    ariaLabel={`${isActive ? 'Disable' : 'Enable'} ${row.name}`}
+                                  />
+                                </td>
+                              )
+                            }
+                            const col = equipmentPickerColumns.find((item) => item.id === columnId)
+                            const imageSrc = equipmentImageSrc(row, col)
+                            if (imageSrc || col?.fieldType === 'image' || col?.fieldType === 'file') {
+                              return (
+                                <td key={columnId}>
+                                  {imageSrc ? (
+                                    <img className="equipment-table__thumb" src={imageSrc} alt="" />
+                                  ) : '—'}
+                                </td>
+                              )
+                            }
+                            return <td key={columnId}>{formatPickerValue(row, col || { id: columnId })}</td>
+                          })}
                           {canManage && isEquipmentColumnVisible('actions') && (
                             <td onClick={stopTableRowClick}>
                               <div className="company-table__actions">
@@ -489,8 +537,8 @@ export default function Equipment() {
                           )}
                         </tr>
                         )
-                      })}
-                    </tbody>
+                      }}
+                    />
                   </table>
                   </div>
                 </div>
@@ -498,20 +546,6 @@ export default function Equipment() {
                 </>
               )}
             </div>
-
-            {viewing && (
-              <RecordDetailModal
-                title={viewing.name}
-                subtitle={viewing.code ? `Code ${viewing.code}` : undefined}
-                onClose={() => setViewing(null)}
-                onEdit={canManage ? () => {
-                  const record = viewing
-                  setViewing(null)
-                  openEdit(record)
-                } : undefined}
-              >
-                <EquipmentDetailContent equipment={viewing} />
-              </RecordDetailModal>
             )}
 
             {modalOpen && (

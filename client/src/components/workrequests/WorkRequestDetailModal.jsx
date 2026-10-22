@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useBackdropClose } from '../../hooks/useBackdropClose'
 import { useWorkOrderDetail } from '../../hooks/useWorkOrderList'
 import { useOrg } from '../../hooks/useOrg'
+import { useAuth } from '../../hooks/useAuth'
+import { usePermissions } from '../../hooks/usePermissions'
 import { useTextFieldLimits } from '../../hooks/useTextFieldLimits'
 import {
   approveWorkRequest,
@@ -10,7 +12,9 @@ import {
   requestWorkRequestInfo,
   replyToWorkRequest,
   getWorkRequestDepartmentEmployees,
+  saveWorkRequestChecklist,
 } from '../../lib/api-work-requests'
+import ChecklistExecution from '../pm/ChecklistExecution'
 import { getWorkCenters } from '../../lib/api'
 import { getWorkOrderFileSignedUrl, uploadWorkOrderFile } from '../../lib/workOrderAssets'
 import { downloadFromUrl } from '../../lib/fileDownload'
@@ -25,6 +29,55 @@ import WorkRequestAttachmentsField from './WorkRequestAttachmentsField'
 import TechnicianMultiSelect from './TechnicianMultiSelect'
 import SpellcheckInput from '../shared/SpellcheckInput'
 import FormLabel from '../shared/FormLabel'
+import OrderedFormLayout from '../forms/OrderedFormLayout'
+
+function WorkRequestChecklistPanel({ detail }) {
+  const fields = detail?.checklist_snapshot?.fields || []
+  const [values, setValues] = useState(detail?.checklist_values || {})
+  const [saving, setSaving] = useState(false)
+  const [message, setMessage] = useState('')
+
+  useEffect(() => {
+    setValues(detail?.checklist_values || {})
+  }, [detail?.id])
+
+  if (!fields.length) return null
+  const missing = fields.filter((field) => field.is_required && !String(values?.[field.id] ?? '').trim())
+
+  return (
+    <section className="wo-received-detail__section">
+      <h3>Checklist</h3>
+      <ChecklistExecution snapshot={detail.checklist_snapshot} values={values} onChange={setValues} disabled={saving} />
+      {missing.length > 0 && (
+        <p className="company-readonly-note">Required before save: {missing.map((field) => field.name).join(', ')}</p>
+      )}
+      <button
+        type="button"
+        className="company-btn company-btn--secondary"
+        disabled={saving || missing.length > 0}
+        onClick={async () => {
+          setSaving(true)
+          setMessage('')
+          try {
+            await saveWorkRequestChecklist(detail.id, values)
+            setMessage('Checklist saved.')
+          } catch (err) {
+            setMessage(err.message || 'Could not save checklist')
+          } finally {
+            setSaving(false)
+          }
+        }}
+      >
+        {saving ? 'Saving…' : 'Save checklist'}
+      </button>
+      {message && <p className="company-readonly-note">{message}</p>}
+    </section>
+  )
+}
+import { useFormLayout } from '../../hooks/useFormLayout'
+import { useFormFieldValues } from '../../hooks/useFormFieldValues'
+import { resolveFormActors, canEditFilledBy, validateRepeatableGroups } from '../../lib/formFillership'
+import { normalizeFilledBy } from '../../lib/formLayoutIds'
 import '../company/CompanyShared.css'
 import '../workorders/WorkOrdersPage.css'
 import '../workorders/ManualWorkOrder.css'
@@ -196,7 +249,13 @@ export default function WorkRequestDetailModal({
 }) {
   const { detail, loading, error, reload } = useWorkOrderDetail(requestId, fetchWorkRequest)
   const { org } = useOrg()
+  const { user } = useAuth()
+  const { isOrgAdmin, session, canUpdate } = usePermissions()
   const { maxLength } = useTextFieldLimits()
+  const { layout, catalogFields, hasLayout } = useFormLayout('work_request.create')
+  const extras = useFormFieldValues('work_request.create', requestId || null)
+  const [extrasSaving, setExtrasSaving] = useState(false)
+  const [extrasError, setExtrasError] = useState(null)
   const handleBackdropClick = useBackdropClose(onClose)
   const [employees, setEmployees] = useState([])
   const [assigneeIds, setAssigneeIds] = useState([])
@@ -276,7 +335,7 @@ export default function WorkRequestDetailModal({
     let cancelled = false
     ;(async () => {
       try {
-        const rows = await getWorkCenters({ limit: 200 })
+        const rows = await getWorkCenters({ limit: 50 })
         if (cancelled) return
         const active = (rows || []).filter((row) => row.is_active !== false)
         setWorkCenters(active)
@@ -335,6 +394,62 @@ export default function WorkRequestDetailModal({
 
   const hierarchy = detail?.asset_hierarchy || []
   const technicians = detail?.assigned_technicians || []
+  const layoutFields = detail?.layout_fields || []
+  const breakdownFields = detail?.breakdown_fields || []
+  const equipment = detail?.equipment
+
+  const formActors = useMemo(() => resolveFormActors({
+    formId: 'work_request.create',
+    isOrgAdmin,
+    profileId: user?.id,
+    employeeId: session?.employee_id,
+    isDepartmentHead: session?.is_department_head,
+    employeeDepartmentId: session?.department_id,
+    canApproveIncoming: canUpdate('work_request_approve') || canUpdate('work_request_incoming'),
+    isCreate: false,
+    record: detail ? {
+      requested_by: detail.requested_by || detail.requester?.id || detail.requester?.profile_id,
+      order_to_department_id: detail.order_to_department_id || detail.order_to?.id,
+      assignees: detail.assigned_technicians || [],
+    } : null,
+  }), [
+    isOrgAdmin,
+    user?.id,
+    session?.employee_id,
+    session?.is_department_head,
+    session?.department_id,
+    canUpdate,
+    detail,
+  ])
+
+  const canEditAnyFillershipSection = useMemo(() => {
+    if (!hasLayout || !layout) return false
+    return (layout.sections || []).some((section) => {
+      const filledBy = normalizeFilledBy(section.filledBy)
+      if (filledBy === 'any') return canEditFilledBy(filledBy, formActors)
+      return canEditFilledBy(filledBy, formActors)
+    })
+  }, [hasLayout, layout, formActors])
+
+  const saveLayoutExtras = useCallback(async () => {
+    if (!requestId || !hasLayout) return
+    setExtrasError(null)
+    const groupErrors = validateRepeatableGroups(layout, extras.values, { actors: formActors })
+    if (groupErrors.length) {
+      setExtrasError(groupErrors[0])
+      return
+    }
+    setExtrasSaving(true)
+    try {
+      await extras.save(requestId, extras.values)
+      await reload?.()
+      onUpdated?.()
+    } catch (err) {
+      setExtrasError(err.message || 'Could not save form fields')
+    } finally {
+      setExtrasSaving(false)
+    }
+  }, [requestId, hasLayout, layout, extras, formActors, reload, onUpdated])
 
   return (
     <div className="wr-detail-overlay" onClick={handleBackdropClick} role="presentation">
@@ -384,6 +499,18 @@ export default function WorkRequestDetailModal({
                   <MetaItem label="Job nature">{detail.job_nature || detail.job_nature_label || '—'}</MetaItem>
                   <MetaItem label="Order from">{detail.order_from?.name || '—'}</MetaItem>
                   <MetaItem label="Order to">{detail.order_to?.name || '—'}</MetaItem>
+                  {equipment && (
+                    <MetaItem label="Equipment">
+                      {[equipment.name, equipment.code].filter(Boolean).join(' · ') || '—'}
+                    </MetaItem>
+                  )}
+                  {(equipment?.area_name || hierarchy.some((step) => /^area$/i.test(step.field_name))) && (
+                    <MetaItem label="Area">
+                      {equipment?.area_name
+                        || hierarchy.find((step) => /^area$/i.test(step.field_name))?.value
+                        || '—'}
+                    </MetaItem>
+                  )}
                   <MetaItem label="Requested by">
                     {detail.requester ? (
                       <span className="wr-requester">
@@ -420,20 +547,80 @@ export default function WorkRequestDetailModal({
                   )}
                 </div>
 
-                {hierarchy.length > 0 && (
+                {(hierarchy.length > 0 || equipment) && (
                   <section className="wo-received-detail__section">
                     <h3>Equipment &amp; asset</h3>
                     <dl className="wo-received-detail__fields">
-                      {hierarchy
+                      {hierarchy.length > 0 ? hierarchy
                         .filter((step, i, list) => {
                           const name = String(step.field_name || '').trim().toLowerCase()
                           if (!name) return false
                           return list.findIndex((item) => String(item.field_name || '').trim().toLowerCase() === name) === i
                         })
                         .map((step, i) => (
-                        <div key={`${step.field_id}-${i}`} className="wo-received-detail__field">
+                        <div key={`${step.field_id || step.field_name}-${i}`} className="wo-received-detail__field">
                           <dt>{step.field_name}</dt>
                           <dd>{step.value || '—'}</dd>
+                        </div>
+                      )) : (
+                        <>
+                          {equipment?.area_name && (
+                            <div className="wo-received-detail__field">
+                              <dt>Area</dt>
+                              <dd>{equipment.area_name}</dd>
+                            </div>
+                          )}
+                          <div className="wo-received-detail__field">
+                            <dt>Equipment</dt>
+                            <dd>{[equipment?.name, equipment?.code].filter(Boolean).join(' · ') || '—'}</dd>
+                          </div>
+                        </>
+                      )}
+                    </dl>
+                  </section>
+                )}
+
+                {hasLayout ? (
+                  <section className="wo-received-detail__section">
+                    <h3>Form layout</h3>
+                    {(extrasError || extras.loading) && (
+                      <div className={extrasError ? 'wo-alert wo-alert--error' : 'wo-received-detail__status'}>
+                        {extrasError || 'Loading form fields…'}
+                      </div>
+                    )}
+                    <OrderedFormLayout
+                      formId="work_request.create"
+                      layout={layout}
+                      catalogLookup={catalogFields}
+                      catalogValues={extras.values}
+                      onCatalogChange={extras.setFieldValue}
+                      masterValues={extras.values}
+                      onMasterChange={extras.setFieldValue}
+                      disabled={extrasSaving}
+                      actors={formActors}
+                      renderField={() => null}
+                    />
+                    {canEditAnyFillershipSection && (
+                      <div className="wr-assign-block" style={{ marginTop: 12 }}>
+                        <button
+                          type="button"
+                          className="company-btn company-btn--primary"
+                          onClick={saveLayoutExtras}
+                          disabled={extrasSaving || extras.loading}
+                        >
+                          {extrasSaving ? 'Saving…' : 'Save form fields'}
+                        </button>
+                      </div>
+                    )}
+                  </section>
+                ) : layoutFields.length > 0 && (
+                  <section className="wo-received-detail__section">
+                    <h3>Form fields</h3>
+                    <dl className="wo-received-detail__fields">
+                      {layoutFields.map((field) => (
+                        <div key={field.id} className="wo-received-detail__field">
+                          <dt>{field.label}</dt>
+                          <dd style={{ whiteSpace: 'pre-wrap' }}>{field.value || '—'}</dd>
                         </div>
                       ))}
                     </dl>
@@ -441,32 +628,44 @@ export default function WorkRequestDetailModal({
                 )}
 
                 <section className="wo-received-detail__section">
-                  <h3>Maintenance</h3>
+                  <h3>Details</h3>
                   <dl className="wo-received-detail__fields">
-                    {detail.short_description ? (
-                      <div className="wo-received-detail__field wo-received-detail__field--full">
-                        <dt>Short description</dt>
-                        <dd>{detail.short_description}</dd>
-                      </div>
-                    ) : null}
+                    <div className="wo-received-detail__field wo-received-detail__field--full">
+                      <dt>Short description</dt>
+                      <dd>{detail.short_description || '—'}</dd>
+                    </div>
                     <div className="wo-received-detail__field wo-received-detail__field--full">
                       <dt>Problem description</dt>
                       <dd style={{ whiteSpace: 'pre-wrap' }}>{detail.problem_description || '—'}</dd>
                     </div>
-                    {detail.remarks && (
-                      <div className="wo-received-detail__field wo-received-detail__field--full">
-                        <dt>Remarks</dt>
-                        <dd style={{ whiteSpace: 'pre-wrap' }}>{detail.remarks}</dd>
-                      </div>
-                    )}
+                    <div className="wo-received-detail__field wo-received-detail__field--full">
+                      <dt>Remarks</dt>
+                      <dd style={{ whiteSpace: 'pre-wrap' }}>{detail.remarks || '—'}</dd>
+                    </div>
                     {technicians.length > 0 && (
-                      <div className="wo-received-detail__field">
+                      <div className="wo-received-detail__field wo-received-detail__field--full">
                         <dt>Assigned technicians</dt>
                         <dd>{technicians.map((t) => t.name).join(', ')}</dd>
                       </div>
                     )}
                   </dl>
                 </section>
+
+                <WorkRequestChecklistPanel detail={detail} />
+
+                {breakdownFields.length > 0 && (
+                  <section className="wo-received-detail__section">
+                    <h3>Breakdown</h3>
+                    <dl className="wo-received-detail__fields">
+                      {breakdownFields.map((field) => (
+                        <div key={field.id} className="wo-received-detail__field">
+                          <dt>{field.label}</dt>
+                          <dd style={{ whiteSpace: 'pre-wrap' }}>{field.value || '—'}</dd>
+                        </div>
+                      ))}
+                    </dl>
+                  </section>
+                )}
 
                 <WorkRequestAttachments attachments={detail.attachments} />
 

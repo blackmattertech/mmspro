@@ -6,6 +6,7 @@ import {
   sendOwnerAccessEmail,
 } from '../../lib/ensureOwnerUser.js'
 import {
+  PLAN_DEFAULTS,
   limitsForPlan,
   parseLimitUpdates,
   getBulkOrgUsage,
@@ -13,15 +14,35 @@ import {
 } from '../../lib/orgLimits.js'
 import { ACCOUNT_ROLES } from '../../lib/accountRoles.js'
 import { getSignedUrl } from '../../lib/signedUrlCache.js'
+import { parseDisabledModulesInput, isMissingDisabledModulesColumn } from '../../lib/orgModules.js'
+import { invalidatePermissionsCache } from '../../lib/requestCache.js'
+import { applyPlatformFormDefaults } from '../../lib/platformFormDefaults.js'
 
 const router = Router()
 const ORG_ASSETS_BUCKET = 'org-assets'
 const LIST_SIGNED_URL_LIMIT = 25
 
-const ORG_SELECT = `
+const ORG_SELECT_BASE = `
   id, name, slug, plan, is_active, created_at, logo_url,
   location_limit, department_limit, employee_limit, login_limit
 `
+const ORG_SELECT = `${ORG_SELECT_BASE},
+  disabled_modules
+`
+
+async function selectOrganizations(buildQuery) {
+  const withModules = await buildQuery(ORG_SELECT)
+  if (!withModules.error || !isMissingDisabledModulesColumn(withModules.error)) {
+    return withModules
+  }
+  const fallback = await buildQuery(ORG_SELECT_BASE)
+  if (Array.isArray(fallback.data)) {
+    fallback.data = fallback.data.map((row) => ({ ...row, disabled_modules: [] }))
+  } else if (fallback.data) {
+    fallback.data = { ...fallback.data, disabled_modules: [] }
+  }
+  return fallback
+}
 
 async function attachOrgLogoUrl(org) {
   if (!org?.logo_url) return org
@@ -44,6 +65,50 @@ function mergePlanLimits(plan, body) {
   return hasCustom ? { ...defaults, ...custom } : defaults
 }
 
+async function resolveOrganizationPlan(body) {
+  if (body.planId) {
+    const { data, error } = await supabaseAdmin
+      .from('platform_plans')
+      .select('id, name, is_active')
+      .eq('id', body.planId)
+      .maybeSingle()
+    if (error) throw new Error(error.message)
+    if (!data) {
+      const err = new Error('Choose a plan')
+      err.status = 400
+      throw err
+    }
+    if (data.is_active === false) {
+      const err = new Error('That plan is inactive')
+      err.status = 400
+      throw err
+    }
+    return data.name
+  }
+
+  const plan = String(body.plan || '').trim()
+  if (['free', 'pro', 'enterprise'].includes(plan)) return plan
+  if (!plan) {
+    const err = new Error('Choose a plan')
+    err.status = 400
+    throw err
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from('platform_plans')
+    .select('name, is_active')
+    .eq('name', plan)
+    .limit(1)
+  if (error) throw new Error(error.message)
+  const match = data?.[0]
+  if (!match || match.is_active === false) {
+    const err = new Error('Choose a plan')
+    err.status = 400
+    throw err
+  }
+  return match.name
+}
+
 function parsePagination(query, { defaultLimit = 50, maxLimit = 200 } = {}) {
   const rawLimit = Number(query.limit)
   const rawOffset = Number(query.offset)
@@ -56,41 +121,32 @@ function parsePagination(query, { defaultLimit = 50, maxLimit = 200 } = {}) {
 
 router.get('/', async (req, res) => {
   const { limit, offset } = parsePagination(req.query)
-  const { data: orgs, error } = await supabaseAdmin
-    .from('organizations')
-    .select(ORG_SELECT)
-    .order('created_at', { ascending: false })
-    .range(offset, offset + limit - 1)
+  const { data: orgs, error } = await selectOrganizations((cols) => (
+    supabaseAdmin
+      .from('organizations')
+      .select(cols)
+      .order('created_at', { ascending: false })
+      .range(offset, offset + limit - 1)
+  ))
 
   if (error) return res.status(500).json({ error: error.message })
 
   const orgIds = (orgs || []).map((org) => org.id)
-  const [usageByOrg, profilesResult] = await Promise.all([
-    getBulkOrgUsage(orgIds),
-    orgIds.length
-      ? supabaseAdmin.from('profiles').select('org_id').in('org_id', orgIds)
-      : Promise.resolve({ data: [], error: null }),
-  ])
+  const usageByOrg = await getBulkOrgUsage(orgIds)
 
-  if (profilesResult.error) {
-    return res.status(500).json({ error: profilesResult.error.message })
-  }
-
-  const memberCounts = (profilesResult.data || []).reduce((acc, row) => {
-    if (row.org_id) acc[row.org_id] = (acc[row.org_id] || 0) + 1
-    return acc
-  }, {})
-
-  const result = (orgs || []).map((org) => ({
-    ...org,
-    member_count: memberCounts[org.id] || 0,
-    usage: usageByOrg[org.id] || {
+  const result = (orgs || []).map((org) => {
+    const usage = usageByOrg[org.id] || {
       locations: 0,
       departments: 0,
       employees: 0,
       logins: 0,
-    },
-  }))
+    }
+    return {
+      ...org,
+      member_count: usage.logins || 0,
+      usage,
+    }
+  })
 
   const pageResult = await attachOrgLogoUrls(result.slice(0, LIST_SIGNED_URL_LIMIT))
   if (result.length <= LIST_SIGNED_URL_LIMIT) {
@@ -103,7 +159,7 @@ router.get('/', async (req, res) => {
 })
 
 router.post('/', async (req, res) => {
-  const { name, slug: slugInput, plan = 'free', ownerEmail } = req.body
+  const { name, slug: slugInput, ownerEmail } = req.body
 
   if (!name?.trim()) {
     return res.status(400).json({ error: 'Organization name is required' })
@@ -113,8 +169,11 @@ router.post('/', async (req, res) => {
     return res.status(400).json({ error: 'Owner email is required' })
   }
 
-  if (!['free', 'pro', 'enterprise'].includes(plan)) {
-    return res.status(400).json({ error: 'Invalid plan' })
+  let plan
+  try {
+    plan = await resolveOrganizationPlan(req.body)
+  } catch (err) {
+    return res.status(err.status || 500).json({ error: err.message })
   }
 
   try {
@@ -140,10 +199,11 @@ router.post('/', async (req, res) => {
         email: normalizedEmail,
         ...planLimits,
       })
-      .select(ORG_SELECT)
+      .select(ORG_SELECT_BASE)
       .single()
 
     if (orgError) return res.status(500).json({ error: orgError.message })
+    org.disabled_modules = []
 
     const { error: assignError } = await supabaseAdmin
       .from('profiles')
@@ -166,6 +226,14 @@ router.post('/', async (req, res) => {
       console.warn('org_invites insert failed:', inviteError.message)
     }
 
+    let defaultFormsApplied = 0
+    try {
+      const defaults = await applyPlatformFormDefaults(org.id)
+      defaultFormsApplied = defaults.applied || 0
+    } catch (defaultsErr) {
+      console.warn('Default forms were not copied:', defaultsErr.message)
+    }
+
     let emailSent = false
     try {
       emailSent = await sendOwnerAccessEmail(normalizedEmail, { orgName })
@@ -184,6 +252,7 @@ router.post('/', async (req, res) => {
     owner_created: owner.created,
     owner_email: normalizedEmail,
     email_sent: emailSent,
+    default_forms_applied: defaultFormsApplied,
   })
   } catch (err) {
     console.error('Create organization failed:', err.message)
@@ -193,11 +262,13 @@ router.post('/', async (req, res) => {
 })
 
 router.get('/:id', async (req, res) => {
-  const { data, error } = await supabaseAdmin
-    .from('organizations')
-    .select(ORG_SELECT)
-    .eq('id', req.params.id)
-    .maybeSingle()
+  const { data, error } = await selectOrganizations((cols) => (
+    supabaseAdmin
+      .from('organizations')
+      .select(cols)
+      .eq('id', req.params.id)
+      .maybeSingle()
+  ))
 
   if (error) return res.status(500).json({ error: error.message })
   if (!data) return res.status(404).json({ error: 'Organization not found' })
@@ -219,16 +290,29 @@ router.get('/:id', async (req, res) => {
 
 router.patch('/:id', async (req, res) => {
   const { id } = req.params
-  const { is_active, name, plan, apply_plan_limits } = req.body
+  const { is_active, name, plan, apply_plan_limits, disabled_modules } = req.body
 
   const updates = {}
   if (typeof is_active === 'boolean') updates.is_active = is_active
   if (name?.trim()) updates.name = name.trim()
-  if (plan && ['free', 'pro', 'enterprise'].includes(plan)) updates.plan = plan
+  if (req.body.planId || plan) {
+    try {
+      updates.plan = await resolveOrganizationPlan(req.body)
+    } catch (err) {
+      return res.status(err.status || 500).json({ error: err.message })
+    }
+  }
+  if (disabled_modules !== undefined) {
+    try {
+      updates.disabled_modules = parseDisabledModulesInput(disabled_modules)
+    } catch (err) {
+      return res.status(err.status || 400).json({ error: err.message })
+    }
+  }
 
   try {
-    if (apply_plan_limits && plan) {
-      Object.assign(updates, limitsForPlan(plan))
+    if (apply_plan_limits && updates.plan && PLAN_DEFAULTS[updates.plan]) {
+      Object.assign(updates, limitsForPlan(updates.plan))
     } else {
       Object.assign(updates, parseLimitUpdates(req.body))
     }
@@ -240,16 +324,34 @@ router.patch('/:id', async (req, res) => {
     return res.status(400).json({ error: 'No valid fields to update' })
   }
 
-  const { data, error } = await supabaseAdmin
-    .from('organizations')
-    .update(updates)
-    .eq('id', id)
-    .select(ORG_SELECT)
-    .single()
+  const { data, error } = updates.disabled_modules
+    ? await supabaseAdmin
+      .from('organizations')
+      .update(updates)
+      .eq('id', id)
+      .select(ORG_SELECT)
+      .single()
+    : await selectOrganizations((cols) => (
+      supabaseAdmin
+        .from('organizations')
+        .update(updates)
+        .eq('id', id)
+        .select(cols)
+        .single()
+    ))
 
   if (error) {
     if (error.code === 'PGRST116') return res.status(404).json({ error: 'Organization not found' })
+    if (isMissingDisabledModulesColumn(error) && updates.disabled_modules) {
+      return res.status(500).json({
+        error: 'Apply supabase-patches/79-org-disabled-modules.sql before changing modules.',
+      })
+    }
     return res.status(500).json({ error: error.message })
+  }
+
+  if (Object.prototype.hasOwnProperty.call(updates, 'disabled_modules')) {
+    invalidatePermissionsCache()
   }
 
   const [usage, { count }] = await Promise.all([

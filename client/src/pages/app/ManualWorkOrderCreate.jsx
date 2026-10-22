@@ -1,6 +1,7 @@
-import { useState, useEffect, useCallback } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useOrg } from '../../hooks/useOrg'
+import { useAuth } from '../../hooks/useAuth'
 import { useManualWorkOrderForm } from '../../hooks/useManualWorkOrderForm'
 import { useWorkOrderToolbar } from '../../hooks/useWorkOrderToolbar'
 import { usePermissions } from '../../hooks/usePermissions'
@@ -9,6 +10,11 @@ import WorkOrderForm from '../../components/workorders/WorkOrderForm'
 import WorkOrderAssignmentCard from '../../components/workorders/WorkOrderAssignmentCard'
 import WorkOrderFieldSettingsModal from '../../components/workorders/WorkOrderFieldSettingsModal'
 import PageBack from '../../components/shared/PageBack'
+import OrderedFormLayout from '../../components/forms/OrderedFormLayout'
+import ChecklistOptIn from '../../components/forms/ChecklistOptIn'
+import { useFormLayout } from '../../hooks/useFormLayout'
+import { useFormFieldValues } from '../../hooks/useFormFieldValues'
+import { resolveFormActors, validateRepeatableGroups } from '../../lib/formFillership'
 import '../../components/company/CompanyShared.css'
 import '../../components/workorders/ManualWorkOrder.css'
 import '../../components/workorders/WorkOrdersPage.css'
@@ -39,15 +45,20 @@ function WorkOrderSettingsIcon() {
 export default function ManualWorkOrderCreate() {
   const navigate = useNavigate()
   const { workOrderId } = useParams()
+  const [searchParams] = useSearchParams()
+  const initialEquipmentId = workOrderId ? '' : (searchParams.get('equipment_id') || '')
   const isEdit = Boolean(workOrderId)
   const { org, loading: orgLoading } = useOrg()
   const { setToolbar, clearToolbar } = useWorkOrderToolbar()
-  const { canCreate, canUpdate } = usePermissions()
+  const { canCreate, canUpdate, isOrgAdmin, session } = usePermissions()
+  const { user } = useAuth()
   const canManage = canUpdate('work_orders_manual') || canUpdate('work_orders')
   const canCreateWorkOrders = canCreate('work_orders_manual') || canCreate('work_orders')
   const canEditWorkOrders = canUpdate('work_orders_manual') || canUpdate('work_orders')
   const canUseForm = isEdit ? canEditWorkOrders : canCreateWorkOrders
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [checklistOn, setChecklistOn] = useState(false)
+  const [checklistId, setChecklistId] = useState('')
   const [settingsLoading, setSettingsLoading] = useState(false)
 
   const {
@@ -58,6 +69,7 @@ export default function ManualWorkOrderCreate() {
     setAssignedEmployeeIds,
     assignToDepartment,
     setAssignToDepartment,
+    linkedEquipment,
     setDepartmentTarget,
     existingStatus,
     loading,
@@ -68,7 +80,36 @@ export default function ManualWorkOrderCreate() {
     loadSettings,
     saveSettings,
     submit,
-  } = useManualWorkOrderForm({ workOrderId: workOrderId || null })
+  } = useManualWorkOrderForm({
+    workOrderId: workOrderId || null,
+    initialEquipmentId,
+  })
+  const { layout, hasLayout } = useFormLayout('work_orders.manual')
+  const extras = useFormFieldValues('work_orders.manual', workOrderId || null)
+  const formActors = useMemo(() => resolveFormActors({
+    formId: 'work_orders.manual',
+    isOrgAdmin,
+    profileId: user?.id,
+    employeeId: session?.employee_id,
+    isDepartmentHead: session?.is_department_head,
+    employeeDepartmentId: session?.department_id,
+    canApproveIncoming: canUpdate('work_request_approve') || canUpdate('work_request_incoming'),
+    isCreate: !isEdit,
+    record: isEdit ? {
+      created_by: values?.created_by,
+      assignees: (assignedEmployeeIds || []).map((id) => ({ id })),
+    } : null,
+  }), [
+    isOrgAdmin,
+    user?.id,
+    session?.employee_id,
+    session?.is_department_head,
+    session?.department_id,
+    canUpdate,
+    isEdit,
+    values?.created_by,
+    assignedEmployeeIds,
+  ])
 
   const goBack = useCallback(() => {
     if (org?.slug) {
@@ -88,7 +129,16 @@ export default function ManualWorkOrderCreate() {
 
   const handleSubmit = useCallback(async (status) => {
     try {
-      await submit(status)
+      if (hasLayout) {
+        const groupErrors = validateRepeatableGroups(layout, extras.values, { actors: formActors })
+        if (groupErrors.length) {
+          throw new Error(groupErrors[0])
+        }
+      }
+      const saved = await submit(status, {
+        checklistTemplateId: checklistOn ? checklistId : null,
+      })
+      if (saved?.id) await extras.save(saved.id, extras.values)
       if (org?.slug) {
         navigate(orgPath(org.slug, 'work-orders/manual'), {
           state: {
@@ -101,7 +151,7 @@ export default function ManualWorkOrderCreate() {
     } catch {
       // Error is surfaced by the form hook
     }
-  }, [navigate, org?.slug, submit, isEdit])
+  }, [checklistId, checklistOn, extras, navigate, org?.slug, submit, isEdit, hasLayout, layout, formActors])
 
   useEffect(() => {
     const toolbarLeft = (
@@ -188,11 +238,34 @@ export default function ManualWorkOrderCreate() {
     <>
       {error && <div className="wo-alert wo-alert--error" role="alert">{error}</div>}
 
-      <p className="wo-manual__intro">
-        {isEdit
-          ? 'Update the details below and save your changes.'
-          : 'Fill in the details below to create a new manual work order.'}
-      </p>
+      {linkedEquipment && (
+        <div className="wo-linked-equipment">
+          <strong>{linkedEquipment.name || 'Equipment'}</strong>
+          <p>
+            {[
+              linkedEquipment.code,
+              linkedEquipment.org_locations?.name,
+              linkedEquipment.departments?.name,
+              linkedEquipment.areas?.name,
+            ].filter(Boolean).join(' · ') || 'Equipment details will be saved with this work order.'}
+          </p>
+        </div>
+      )}
+
+      {hasLayout && (
+        <OrderedFormLayout
+          formId="work_orders.manual"
+          layout={layout}
+          catalogLookup={[]}
+          catalogValues={extras.values}
+          onCatalogChange={extras.setFieldValue}
+          masterValues={extras.values}
+          onMasterChange={extras.setFieldValue}
+          disabled={saving}
+          actors={formActors}
+          renderField={() => null}
+        />
+      )}
 
       <WorkOrderForm
         schema={schema}
@@ -201,18 +274,28 @@ export default function ManualWorkOrderCreate() {
         disabled={saving}
       />
 
-      <WorkOrderAssignmentCard
-        value={assignedEmployeeIds}
-        onChange={setAssignedEmployeeIds}
-        assignToDepartment={assignToDepartment}
-        onAssignToDepartmentChange={setAssignToDepartment}
-        onDepartmentTargetChange={setDepartmentTarget}
-        disabled={saving}
-      />
+      {schema?.show_assignment !== false && (
+        <WorkOrderAssignmentCard
+          value={assignedEmployeeIds}
+          onChange={setAssignedEmployeeIds}
+          assignToDepartment={assignToDepartment}
+          onAssignToDepartmentChange={setAssignToDepartment}
+          onDepartmentTargetChange={setDepartmentTarget}
+          disabled={saving}
+        />
+      )}
 
-      <p className="wo-footer__note wo-manual__note">
-        Fields shown are based on your company&apos;s asset field configuration.
-      </p>
+      {!isEdit && (
+        <ChecklistOptIn
+          formId="work_orders.manual"
+          moduleKey="work_order"
+          enabled={checklistOn}
+          onEnabledChange={setChecklistOn}
+          templateId={checklistId}
+          onTemplateChange={setChecklistId}
+          disabled={saving}
+        />
+      )}
 
       {settingsOpen && (
         <WorkOrderFieldSettingsModal
