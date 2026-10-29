@@ -280,7 +280,7 @@ function dailyLogSections(logs) {
 function equipmentLines(equipment) {
   if (!equipment) return []
   return compact([
-    maybeLine('Equipment', equipment.name || equipment.equipment_name),
+    maybeLine('Asset', equipment.name || equipment.equipment_name),
     maybeLine('Code', equipment.code || equipment.tag_number),
     maybeLine('QR code', equipment.qr_code),
     maybeLine('Location', equipment.location_name || equipment.org_locations?.name),
@@ -298,8 +298,13 @@ function assetLines(record) {
     const key = String(label).toLowerCase()
     if (key === 'qr code') return true
     if (labels.has(key)) return false
-    if (key === 'equipment' && (labels.has('equipment name') || labels.has('equipment'))) return false
-    if (key === 'code' && (labels.has('equipment code') || labels.has('code'))) return false
+    if ((key === 'asset' || key === 'equipment') && (
+      labels.has('asset name') || labels.has('asset')
+      || labels.has('equipment name') || labels.has('equipment')
+    )) return false
+    if (key === 'code' && (
+      labels.has('asset code') || labels.has('equipment code') || labels.has('code')
+    )) return false
     return true
   })
   return [...extras, ...hierarchy]
@@ -334,7 +339,7 @@ function workRequestSections(request) {
       maybeLine('Remarks', request.remarks),
       maybeLine('Assigned technicians', technicians),
     ]),
-    section('Equipment & asset information', assetLines(request)),
+    section('Asset information', assetLines(request)),
     section('Request form fields', [
       ...layoutFieldLines(request.layout_fields),
       ...layoutFieldLines(request.breakdown_fields),

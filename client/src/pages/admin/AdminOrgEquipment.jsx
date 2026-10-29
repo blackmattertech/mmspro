@@ -30,11 +30,11 @@ export default function AdminOrgEquipment() {
             <PageBack to="/admin/organizations" label="Organizations" />
           </p>
           <h1 className="admin-page__title">
-            {org ? `${org.name} — Equipment Fields` : 'Equipment Fields'}
+            {org ? `${org.name} — Assets` : 'Assets'}
           </h1>
           <p className="admin-page__subtitle">
-            Define parent fields and option values for this organization&apos;s equipment records.
-            Sections are shared with Assets.
+            Define parent fields and option values for this organization&apos;s asset records.
+            Sections are shared with Fields.
           </p>
         </div>
       </header>

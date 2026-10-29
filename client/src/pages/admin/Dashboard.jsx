@@ -886,8 +886,8 @@ export default function AdminDashboard() {
                           <RowMenu
                             label={`Actions for ${company.name}`}
                             items={[
-                              { label: 'Assets', to: `/admin/organizations/${company.id}/assets` },
-                              { label: 'Equipment', to: `/admin/organizations/${company.id}/equipment` },
+                              { label: 'Fields', to: `/admin/organizations/${company.id}/assets` },
+                              { label: 'Assets', to: `/admin/organizations/${company.id}/equipment` },
                             ]}
                           />
                         </div>

@@ -4,13 +4,37 @@ import { requireOrgAccess } from '../../middleware/orgAccess.js'
 import { loadOrgPermissions } from '../../middleware/modulePermission.js'
 import { hasModulePermission } from '../../lib/orgPermissions.js'
 import { getFormDef } from '../../lib/formRegistry.js'
+import { isWorkOrderProcessForm } from '../../lib/workOrderForms.js'
 import {
   loadRuntimeFormLayout,
+  loadRuntimeFormBundle,
   listFormFieldValues,
   upsertFormFieldValues,
   loadOrgCatalogFields,
 } from '../../lib/orgFormLayouts.js'
 import { parseLayoutId } from '../../lib/formLayoutIds.js'
+import {
+  applyCompanyOptionsToCatalog,
+  applyCompanyOptionsToLayout,
+  loadFormFieldOptionOverlays,
+} from '../../lib/formFieldMasters.js'
+import { applyLoadedCompanySkips } from '../../lib/formSkips.js'
+
+function attachCatalogDropdownOptions(parents, allRows) {
+  const byParent = new Map()
+  for (const row of allRows || []) {
+    if (row.kind !== 'child' || !row.parent_id) continue
+    const list = byParent.get(String(row.parent_id)) || []
+    if (row.name) list.push(row.name)
+    byParent.set(String(row.parent_id), list)
+  }
+  return (parents || []).map((row) => ({
+    ...row,
+    dropdown_options: Array.isArray(row.dropdown_options) && row.dropdown_options.length
+      ? row.dropdown_options
+      : (byParent.get(String(row.id)) || []),
+  }))
+}
 import {
   loadFillershipRecord,
   actorsFromRequest,
@@ -42,7 +66,19 @@ router.get('/:formId', async (req, res) => {
   try {
     const formDef = getFormDef(req.params.formId)
     if (!formDef) return res.status(404).json({ error: 'Unknown form' })
-    const layout = await loadRuntimeFormLayout(req.userProfile.org_id, req.params.formId)
+    const formId = req.params.formId
+    const orgId = req.userProfile.org_id
+    const { layout: rawLayout, catalogSource, platformCatalog } = await loadRuntimeFormBundle(
+      orgId,
+      formId,
+    )
+    const overlays = await loadFormFieldOptionOverlays(orgId, formId)
+    const withOptions = rawLayout
+      ? await applyCompanyOptionsToLayout(orgId, formId, rawLayout, { overlays })
+      : null
+    const layout = withOptions
+      ? await applyLoadedCompanySkips(orgId, formId, withOptions)
+      : null
     let catalogFields = []
     if (layout) {
       const ids = new Set(
@@ -52,11 +88,20 @@ router.get('/:formId', async (req, res) => {
           .map((parsed) => parsed.value),
       )
       if (ids.size) {
-        const all = await loadOrgCatalogFields(req.userProfile.org_id)
-        catalogFields = all.filter((row) => ids.has(row.id) && row.kind === 'parent')
+        const all = catalogSource === 'platform'
+          ? (platformCatalog || []).map((row) => ({
+            ...row,
+            field_source: row.source === 'equipment' ? 'equipment' : 'asset',
+          }))
+          : await loadOrgCatalogFields(orgId)
+        catalogFields = attachCatalogDropdownOptions(
+          all.filter((row) => ids.has(row.id) && row.kind === 'parent'),
+          all,
+        )
+        catalogFields = applyCompanyOptionsToCatalog(formId, catalogFields, overlays)
       }
     }
-    res.json({ formId: req.params.formId, layout, catalogFields })
+    res.json({ formId, layout, catalogFields })
   } catch (err) {
     res.status(err.status || 500).json({ error: err.message })
   }
@@ -76,9 +121,13 @@ router.get('/:formId/values/:recordId', async (req, res) => {
         || hasModulePermission(req.orgPermissions, 'work_orders', 'read')
         || hasModulePermission(req.orgPermissions, 'work_orders_assigned', 'read')
       ))
-      || (formId === 'work_orders.manual' && (
+      || (isWorkOrderProcessForm(formId) && (
         hasModulePermission(req.orgPermissions, 'work_orders', 'read')
         || hasModulePermission(req.orgPermissions, 'work_orders_assigned', 'read')
+        || hasModulePermission(req.orgPermissions, 'work_orders_received', 'read')
+        || hasModulePermission(req.orgPermissions, 'work_orders_scheduled', 'read')
+        || hasModulePermission(req.orgPermissions, 'work_request_approve', 'update')
+        || hasModulePermission(req.orgPermissions, 'work_request_incoming', 'read')
       ))
     )
     if (!canRead) {
@@ -112,9 +161,13 @@ router.put('/:formId/values/:recordId', async (req, res) => {
         || hasModulePermission(req.orgPermissions, 'work_orders', 'update')
         || hasModulePermission(req.orgPermissions, 'work_orders_assigned', 'update')
       ))
-      || (formId === 'work_orders.manual' && (
+      || (isWorkOrderProcessForm(formId) && (
         hasModulePermission(req.orgPermissions, 'work_orders', 'update')
         || hasModulePermission(req.orgPermissions, 'work_orders_assigned', 'update')
+        || hasModulePermission(req.orgPermissions, 'work_orders_received', 'update')
+        || hasModulePermission(req.orgPermissions, 'work_orders_scheduled', 'update')
+        || hasModulePermission(req.orgPermissions, 'work_request_approve', 'update')
+        || hasModulePermission(req.orgPermissions, 'work_request_incoming', 'update')
       ))
     )
     if (!canWrite) {

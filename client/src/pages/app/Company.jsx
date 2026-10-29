@@ -3,8 +3,9 @@ import { usePermissions } from '../../hooks/usePermissions'
 import CompanyDetailsTab from '../../components/company/CompanyDetailsTab'
 import LocationsTab from '../../components/company/LocationsTab'
 import DepartmentsTab from '../../components/company/DepartmentsTab'
-import WorkCentersTab from '../../components/company/WorkCentersTab'
 import EmployeesTab from '../../components/company/EmployeesTab'
+import WorkCentersTab from '../../components/company/WorkCentersTab'
+import MastersBack from '../../components/company/MastersBack'
 import './Company.css'
 
 const ALL_TABS = [
@@ -55,8 +56,9 @@ export default function Company() {
   }
 
   return (
-    <div className="company-page">
+    <div className={`company-page${visibleTab === 'employees' || visibleTab === 'work_centers' ? ' company-page--fill' : ''}`}>
       <header className="company-page__header">
+        <MastersBack />
         <h1 className="company-page__title">Company</h1>
         <p className="company-page__subtitle">Manage your organization settings, sites, departments, work centers, and employees</p>
 

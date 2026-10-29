@@ -12,6 +12,7 @@ import { DynamicPickerCells, DynamicPickerHeaders } from '../../components/share
 import { ExportCsvButton, TableColumnHead } from '../../components/shared/ListTableChrome'
 import { useTableColumnPrefs } from '../../hooks/useTableColumnPrefs'
 import { downloadClientCsv } from '../../lib/clientCsv'
+import { uniqueNameOptions, selectFilterField, ACTIVE_STATUS_FILTER } from '../../lib/tableFilters'
 import { useTablePagination } from '../../hooks/useTablePagination'
 import { LIMIT_ITEMS, formatUsage, isAtOrOverLimit } from '../../lib/orgLimits'
 import '../../components/company/CompanyShared.css'
@@ -22,12 +23,6 @@ import './Organizations.css'
 
 const OrgConfigureModal = lazy(() => import('../../components/admin/OrgConfigureModal'))
 
-const ORG_FILTER_FIELDS = [
-  { value: 'name', label: 'Name' },
-  { value: 'slug', label: 'Slug' },
-  { value: 'plan', label: 'Plan' },
-  { value: 'status', label: 'Status', placeholder: 'active or inactive' },
-]
 
 const ORG_SORT_OPTIONS = [
   { value: 'newest', label: 'Newest' },
@@ -317,6 +312,12 @@ export default function Organizations() {
     () => filterAndSort(organizations, { search, sortBy, columnFilters, headerSort }),
     [organizations, search, sortBy, columnFilters, headerSort],
   )
+  const orgFilterFields = useMemo(() => ([
+    selectFilterField('name', 'Name', uniqueNameOptions(organizations), 'All names'),
+    selectFilterField('slug', 'Slug', uniqueNameOptions(organizations, (row) => row.slug), 'All slugs'),
+    selectFilterField('plan', 'Plan', uniqueNameOptions(organizations, (row) => row.plan), 'All plans'),
+    ACTIVE_STATUS_FILTER,
+  ]), [organizations])
 
   const {
     visibleColumnIds,
@@ -326,6 +327,7 @@ export default function Organizations() {
     resetColumns,
     reorderColumns,
     moveColumn,
+    saveColumns,
   } = useTableColumnPrefs('admin-organizations', ORG_COLUMNS)
 
   const paginationResetKey = `${search}|${JSON.stringify(columnFilters)}|${sortBy}`
@@ -403,7 +405,7 @@ export default function Organizations() {
                 ariaLabel: 'Search organizations',
               }}
               filter={{
-                fields: ORG_FILTER_FIELDS,
+                fields: orgFilterFields,
                 values: columnFilters,
                 onChange: (next) => {
                   setColumnFilters(next)
@@ -439,6 +441,7 @@ export default function Organizations() {
                   onReset={resetColumns}
                   onReorder={reorderColumns}
                   onMove={moveColumn}
+                  onSave={saveColumns}
                 />
               )}
             />

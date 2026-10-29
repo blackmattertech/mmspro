@@ -80,6 +80,12 @@
   background: var(--color-off-white);
 }
 
+.detail-view__table td.company-empty {
+  padding: 28px 16px;
+  text-align: center;
+  color: var(--color-gray-blue);
+}
+
 .detail-view__table tr:last-child td {
   border-bottom: none;
 }

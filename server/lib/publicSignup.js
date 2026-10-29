@@ -7,7 +7,7 @@ import { limitsForPlan } from './orgLimits.js'
 import { getPublicAppUrl } from './appUrl.js'
 import { validatePhoneE164, normalizePhoneE164, validatePostalCode } from './contactValidation.js'
 import { isEmailConfigured, sendCompanyWelcomeEmail } from '../services/email.js'
-import { applyPlatformFormDefaults } from './platformFormDefaults.js'
+import { applyPlatformFormDefaults, applyPlatformHierarchyDefault } from './platformFormDefaults.js'
 
 function fail(status, message) {
   const error = new Error(message)
@@ -213,6 +213,7 @@ export async function registerLandingCompany(body = {}) {
 
     try {
       await applyPlatformFormDefaults(org.id)
+      await applyPlatformHierarchyDefault(org.id)
     } catch (defaultsErr) {
       console.warn('Default forms were not copied:', defaultsErr.message)
     }

@@ -12,9 +12,10 @@ export function useEmployees(filters = {}) {
     offset = 0,
     enabled = true,
     listFilters,
+    sortBy,
   } = filters
   const filterKey = JSON.stringify(listFilters || {})
-  const initial = peekCachedList('employees', { departmentId, locationId, forAssignment, search, limit, offset, filters: filterKey })
+  const initial = peekCachedList('employees', { departmentId, locationId, forAssignment, search, limit, offset, filters: filterKey, sortBy })
   const [employees, setEmployees] = useState(() => initial?.items || [])
   const [total, setTotal] = useState(() => initial?.total || 0)
   const [loading, setLoading] = useState(() => !initial)
@@ -28,7 +29,7 @@ export function useEmployees(filters = {}) {
       setLoading(false)
       return
     }
-    const cacheParams = { departmentId, locationId, forAssignment, search, limit, offset, filters: filterKey }
+    const cacheParams = { departmentId, locationId, forAssignment, search, limit, offset, filters: filterKey, sortBy }
     if (!silent && !peekReferenceData('employees', cacheParams)) setLoading(true)
     setError(null)
     try {
@@ -43,6 +44,7 @@ export function useEmployees(filters = {}) {
           limit,
           offset,
           filters: listFilters,
+          sortBy,
         }),
         { force },
       )
@@ -53,7 +55,7 @@ export function useEmployees(filters = {}) {
     } finally {
       if (!silent) setLoading(false)
     }
-  }, [departmentId, locationId, forAssignment, search, limit, offset, enabled, filterKey])
+  }, [departmentId, locationId, forAssignment, search, limit, offset, enabled, filterKey, sortBy])
 
   useEffect(() => {
     load()

@@ -8,6 +8,8 @@ import {
 } from './formLayoutIds.js'
 import {
   getSavedFormLayout,
+  invalidateOrgFormCaches,
+  invalidatePlatformFormDefaultCache,
   loadOrgCatalogFields,
   upsertFormLayout,
 } from './orgFormLayouts.js'
@@ -23,6 +25,11 @@ function httpError(message, status = 400) {
 export function isMissingPlatformDefaultsTable(error) {
   const msg = String(error?.message || '')
   return /platform_form_defaults/i.test(msg) && /does not exist|schema cache/i.test(msg)
+}
+
+export function isMissingHierarchyDefaultsTable(error) {
+  const msg = String(error?.message || '')
+  return /platform_hierarchy_defaults/i.test(msg) && /does not exist|schema cache/i.test(msg)
 }
 
 function addCatalogRef(ids, id) {
@@ -49,7 +56,7 @@ function collectCatalogIds(layout) {
   return ids
 }
 
-function compactCatalogRow(row) {
+export function compactCatalogRow(row) {
   return {
     source: row.field_source === 'equipment' ? 'equipment' : 'asset',
     id: row.id,
@@ -183,7 +190,7 @@ function insertPayload(row, idMap, orgId) {
   }
 }
 
-async function insertCatalogRows(rows, idMap, orgId) {
+export async function insertCatalogRows(rows, idMap, orgId) {
   const groups = [
     ['asset_fields', rows.filter((row) => targetTable(row) === 'asset_fields' && row.kind === 'section')],
     ['asset_fields', orderByDependency(rows.filter((row) => targetTable(row) === 'asset_fields' && row.kind === 'parent'))],
@@ -291,10 +298,11 @@ export async function markFormAsDefault(orgId, formId) {
     }
     throw error
   }
+  invalidatePlatformFormDefaultCache()
   return data
 }
 
-function dedupeCatalog(rows) {
+export function dedupeCatalog(rows) {
   const byId = new Map()
   for (const row of rows || []) {
     if (!row?.id) continue
@@ -336,4 +344,148 @@ export async function applyPlatformFormDefaults(orgId) {
   }
 
   return { applied: pending.length }
+}
+
+export async function getPlatformFormDefault(formId) {
+  const { data, error } = await supabaseAdmin
+    .from('platform_form_defaults')
+    .select('form_id, module_id, layout, catalog, source_org_id, updated_at')
+    .eq('form_id', formId)
+    .maybeSingle()
+
+  if (error) {
+    if (isMissingPlatformDefaultsTable(error)) return null
+    throw error
+  }
+  return data || null
+}
+
+const HIERARCHY_FIELD_SELECT = [
+  'id',
+  'name',
+  'kind',
+  'parent_id',
+  'section_id',
+  'field_type',
+  'sort_order',
+  'is_active',
+  'is_required',
+  'depends_on_parent_id',
+  'depends_on_option',
+  'icon_path',
+].join(', ')
+
+export async function snapshotOrgHierarchy(orgId) {
+  const [equipmentResult, sectionResult] = await Promise.all([
+    supabaseAdmin
+      .from('equipment_fields')
+      .select(HIERARCHY_FIELD_SELECT)
+      .eq('org_id', orgId)
+      .order('sort_order')
+      .order('name'),
+    supabaseAdmin
+      .from('asset_fields')
+      .select(HIERARCHY_FIELD_SELECT)
+      .eq('org_id', orgId)
+      .eq('kind', 'section')
+      .order('sort_order')
+      .order('name'),
+  ])
+  if (equipmentResult.error) throw equipmentResult.error
+  if (sectionResult.error) throw sectionResult.error
+
+  const equipmentRows = (equipmentResult.data || []).filter((row) => row.kind !== 'section')
+  const sectionIds = new Set(equipmentRows.map((row) => row.section_id).filter(Boolean))
+  const sections = (sectionResult.data || []).filter((row) => sectionIds.has(row.id))
+  return [...sections, ...equipmentRows].map((row) => compactCatalogRow({
+    ...row,
+    field_source: row.kind === 'section' ? 'asset' : 'equipment',
+  }))
+}
+
+export async function getPlatformHierarchyDefault() {
+  const { data, error } = await supabaseAdmin
+    .from('platform_hierarchy_defaults')
+    .select('id, catalog, source_org_id, updated_at')
+    .eq('id', 'equipment')
+    .maybeSingle()
+
+  if (error) {
+    if (isMissingHierarchyDefaultsTable(error)) return null
+    throw error
+  }
+  return data || null
+}
+
+export async function markHierarchyAsDefault(orgId) {
+  const catalog = await snapshotOrgHierarchy(orgId)
+  if (!catalog.some((row) => row.kind === 'parent')) {
+    throw httpError('This company has no asset hierarchy to mark as the default.')
+  }
+  const now = new Date().toISOString()
+  const { data, error } = await supabaseAdmin
+    .from('platform_hierarchy_defaults')
+    .upsert({
+      id: 'equipment',
+      catalog,
+      source_org_id: orgId,
+      updated_at: now,
+    }, { onConflict: 'id' })
+    .select('id, source_org_id, updated_at')
+    .single()
+
+  if (error) {
+    if (isMissingHierarchyDefaultsTable(error)) {
+      throw httpError('Default hierarchy is not available yet. Restart the server and try again.', 503)
+    }
+    throw error
+  }
+  return data
+}
+
+async function orgHasEquipmentParents(orgId) {
+  const { count, error } = await supabaseAdmin
+    .from('equipment_fields')
+    .select('id', { count: 'exact', head: true })
+    .eq('org_id', orgId)
+    .eq('kind', 'parent')
+  if (error) throw error
+  return (count || 0) > 0
+}
+
+const hierarchyApplyInflight = new Map()
+
+export async function applyPlatformHierarchyDefault(orgId) {
+  if (!orgId) return { applied: false }
+  const pending = hierarchyApplyInflight.get(orgId)
+  if (pending) return pending
+
+  const run = (async () => {
+    if (await orgHasEquipmentParents(orgId)) return { applied: false }
+    const row = await getPlatformHierarchyDefault()
+    if (!row?.catalog?.length) return { applied: false }
+    if (await orgHasEquipmentParents(orgId)) return { applied: false }
+
+    const catalog = dedupeCatalog(row.catalog)
+    const idMap = new Map(catalog.map((item) => [String(item.id), randomUUID()]))
+    await insertCatalogRows(catalog, idMap, orgId)
+    await copySectionIcons(catalog, idMap, orgId)
+
+    const formDefault = await getPlatformFormDefault('equipment.create')
+    if (formDefault?.layout) {
+      const existing = await getSavedFormLayout(orgId, 'equipment.create')
+      const catalogIds = collectCatalogIds(formDefault.layout)
+      const canRemap = [...catalogIds].every((id) => idMap.has(String(id)))
+      if (!existing?.layout && canRemap) {
+        await upsertFormLayout(orgId, 'equipment.create', remapLayoutIds(formDefault.layout, idMap))
+      }
+    }
+    invalidateOrgFormCaches(orgId)
+    return { applied: true }
+  })().finally(() => {
+    hierarchyApplyInflight.delete(orgId)
+  })
+
+  hierarchyApplyInflight.set(orgId, run)
+  return run
 }

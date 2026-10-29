@@ -60,13 +60,13 @@ export default function AppLayout() {
         ? { id: parsed.equipmentId }
         : await lookupEquipment(text)
       if (!row?.id || !org?.slug) {
-        throw new Error('This code is not an equipment record in your organization.')
+        throw new Error('This code is not an asset record in your organization.')
       }
       setScannerOpen(false)
       setScanNotice(null)
       navigate(orgPath(org.slug, `scan/equipment/${row.id}`))
     } catch (err) {
-      setScanNotice(err.message || 'This code is not an equipment record in your organization.')
+      setScanNotice(err.message || 'This code is not an asset record in your organization.')
       setScanSession((value) => value + 1)
       throw err
     }

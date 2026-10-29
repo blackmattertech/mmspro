@@ -565,10 +565,7 @@ export function TaskDetailContent({
               </button>
             )}
           >
-            {referenceRows.length === 0 ? (
-              <div className="company-empty task-detail-empty">No references or links.</div>
-            ) : (
-              <div className="task-detail-table-wrap">
+            <div className="task-detail-table-wrap">
                 <table className="task-detail-table">
                   <thead>
                     <tr>
@@ -579,7 +576,11 @@ export function TaskDetailContent({
                     </tr>
                   </thead>
                   <tbody>
-                    {visibleReferences.map((row) => (
+                    {referenceRows.length === 0 ? (
+                      <tr>
+                        <td colSpan={4} className="company-empty">No references or links.</td>
+                      </tr>
+                    ) : visibleReferences.map((row) => (
                       <tr key={row.id}>
                         <td>{row.type}</td>
                         <td>{row.number}</td>
@@ -601,7 +602,6 @@ export function TaskDetailContent({
                   </tbody>
                 </table>
               </div>
-            )}
           </DetailCard>
         </div>
 

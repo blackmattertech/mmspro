@@ -10,6 +10,7 @@ import {
 } from './assetFieldService.js'
 import { invalidateOrgFormCaches, getSavedFormLayout, saveOrgFormLayout } from './orgFormLayouts.js'
 import { catalogId, defaultColSpanForType } from './formLayoutIds.js'
+import { applyPlatformHierarchyDefault } from './platformFormDefaults.js'
 
 const EQUIPMENT_CREATE_FORM = 'equipment.create'
 
@@ -164,6 +165,8 @@ function enrichFields(rows) {
 
     const children = row.kind === 'parent'
       ? (childrenByParent.get(row.id) || [])
+        .slice()
+        .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0) || a.name.localeCompare(b.name))
       : []
 
     const dependsOnParent = row.depends_on_parent_id ? byId.get(row.depends_on_parent_id) : null
@@ -188,13 +191,19 @@ function enrichFields(rows) {
       dropdown_options: OPTION_FIELD_TYPES.has(row.field_type)
         ? children.map((c) => c.name)
         : undefined,
+      option_bindings: OPTION_FIELD_TYPES.has(row.field_type)
+        ? children.map((child) => ({
+          value: child.name,
+          parent_value: parseDependsOnOptions(child.depends_on_option)[0] || '',
+        }))
+        : undefined,
       depends_on_parent_name: dependsOnParent?.name || null,
       depends_on_section_name: dependsOnSection?.name || null,
     }
   })
 }
 
-export async function loadOrgFields(orgId) {
+async function fetchOrgFields(orgId) {
   const [equipmentResult, assetSectionsResult] = await Promise.all([
     supabaseAdmin
       .from('equipment_fields')
@@ -214,10 +223,18 @@ export async function loadOrgFields(orgId) {
   if (equipmentResult.error) throw equipmentResult.error
   if (assetSectionsResult.error) throw assetSectionsResult.error
 
-  // Equipment and assets share the same sections (stored in asset_fields).
   const equipmentRows = (equipmentResult.data || []).filter((row) => row.kind !== 'section')
   const sections = assetSectionsResult.data || []
   return attachSectionIconUrls(enrichFields([...sections, ...equipmentRows]))
+}
+
+export async function loadOrgFields(orgId) {
+  let fields = await fetchOrgFields(orgId)
+  if (!fields.some((row) => row.kind === 'parent')) {
+    const applied = await applyPlatformHierarchyDefault(orgId)
+    if (applied?.applied) fields = await fetchOrgFields(orgId)
+  }
+  return fields
 }
 
 export async function getFieldById(orgId, id) {
@@ -230,39 +247,100 @@ function resolveKind(body) {
   return 'parent'
 }
 
-export async function syncDropdownChildren(orgId, parentId, options) {
-  const normalized = normalizeDropdownOptions(options)
+function optionBindingKey(value, parentValue) {
+  return `${String(parentValue || '').trim().toLowerCase()}::${String(value || '').trim().toLowerCase()}`
+}
 
-  const { data: existing } = await supabaseAdmin
+function storedParentValue(row) {
+  return parseDependsOnOptions(row?.depends_on_option)[0] || ''
+}
+
+export function normalizeOptionBindings(bindings) {
+  const seen = new Set()
+  const out = []
+  for (const raw of bindings || []) {
+    const value = String(raw?.value ?? raw?.name ?? '').trim()
+    const parentValue = String(raw?.parent_value ?? raw?.parentValue ?? '').trim()
+    if (!value) continue
+    const key = optionBindingKey(value, parentValue)
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push({ value, parentValue })
+  }
+  return out
+}
+
+function entriesFromNames(names, existingRows) {
+  const wanted = new Set(names.map((name) => name.toLowerCase()))
+  const entries = []
+  const seen = new Set()
+  for (const row of existingRows) {
+    if (!wanted.has(row.name.toLowerCase())) continue
+    const parentValue = storedParentValue(row)
+    const key = optionBindingKey(row.name, parentValue)
+    if (seen.has(key)) continue
+    seen.add(key)
+    entries.push({ value: row.name, parentValue })
+  }
+  for (const value of names) {
+    const already = entries.some((entry) => entry.value.toLowerCase() === value.toLowerCase())
+    if (already) continue
+    entries.push({ value, parentValue: '' })
+  }
+  return entries
+}
+
+export async function syncDropdownChildren(orgId, parentId, options, { bindings = null } = {}) {
+  const { data: existing, error: readError } = await supabaseAdmin
     .from('equipment_fields')
-    .select('id, name')
+    .select('id, name, depends_on_option')
     .eq('org_id', orgId)
     .eq('parent_id', parentId)
     .eq('kind', 'child')
+  if (readError) throw readError
 
   const existingRows = existing || []
+  const entries = Array.isArray(bindings)
+    ? normalizeOptionBindings(bindings)
+    : entriesFromNames(normalizeDropdownOptions(options), existingRows)
   const keptIds = new Set()
 
-  for (let i = 0; i < normalized.length; i++) {
-    const name = normalized[i]
-    const match = existingRows.find((row) => row.name.toLowerCase() === name.toLowerCase())
+  for (let i = 0; i < entries.length; i++) {
+    const { value, parentValue } = entries[i]
+    const match = existingRows.find((row) => (
+      !keptIds.has(row.id)
+      && row.name.toLowerCase() === value.toLowerCase()
+      && storedParentValue(row).toLowerCase() === parentValue.toLowerCase()
+    )) || existingRows.find((row) => (
+      !keptIds.has(row.id)
+      && row.name.toLowerCase() === value.toLowerCase()
+      && !storedParentValue(row)
+    ))
+    const stored = parentValue || null
     if (match) {
       keptIds.add(match.id)
-      await supabaseAdmin
+      const { error } = await supabaseAdmin
         .from('equipment_fields')
-        .update({ name, sort_order: i, updated_at: new Date().toISOString() })
+        .update({
+          name: value,
+          sort_order: i,
+          depends_on_option: stored,
+          updated_at: new Date().toISOString(),
+        })
         .eq('id', match.id)
         .eq('org_id', orgId)
+      if (error) throw error
     } else {
       const { data, error } = await supabaseAdmin
         .from('equipment_fields')
         .insert({
           org_id: orgId,
-          name,
+          name: value,
           kind: 'child',
           parent_id: parentId,
           field_type: 'text',
           sort_order: i,
+          depends_on_option: stored,
         })
         .select('id')
         .single()
@@ -273,7 +351,12 @@ export async function syncDropdownChildren(orgId, parentId, options) {
 
   for (const row of existingRows) {
     if (!keptIds.has(row.id)) {
-      await supabaseAdmin.from('equipment_fields').delete().eq('id', row.id).eq('org_id', orgId)
+      const { error } = await supabaseAdmin
+        .from('equipment_fields')
+        .delete()
+        .eq('id', row.id)
+        .eq('org_id', orgId)
+      if (error) throw error
     }
   }
 }
@@ -298,8 +381,8 @@ async function validateFieldDependency(allFields, {
     return { depends_on_parent_id: null, depends_on_option: null }
   }
 
-  if (!dependsOnParentId || !requestedOptions.length) {
-    throw new Error('Select both a parent field and at least one child value for the dependency')
+  if (!dependsOnParentId) {
+    throw new Error('Select the previous level for this field')
   }
 
   if (fieldId && dependsOnParentId === fieldId) {
@@ -308,21 +391,10 @@ async function validateFieldDependency(allFields, {
 
   const dependsOn = allFields.find((f) => f.id === dependsOnParentId)
   if (!dependsOn || dependsOn.kind !== 'parent') {
-    throw new Error('Invalid dependency field')
-  }
-  if (!OPTION_FIELD_TYPES.has(dependsOn.field_type)) {
-    throw new Error('Dependencies must reference a parent field with child values')
+    throw new Error('Invalid previous level')
   }
   if (dependsOn.is_active === false) {
-    throw new Error('Dependency field is inactive')
-  }
-
-  const options = dependsOn.dropdown_options || []
-  const resolved = []
-  for (const option of requestedOptions) {
-    const match = options.find((value) => value.toLowerCase() === option.toLowerCase())
-    if (!match) throw new Error(`Invalid dependency option: ${option}`)
-    resolved.push(match)
+    throw new Error('The previous level is inactive')
   }
 
   let currentId = dependsOnParentId
@@ -334,6 +406,18 @@ async function validateFieldDependency(allFields, {
     visited.add(currentId)
     const node = allFields.find((f) => f.id === currentId)
     currentId = node?.depends_on_parent_id || null
+  }
+
+  if (!requestedOptions.length) {
+    return { depends_on_parent_id: dependsOnParentId, depends_on_option: null }
+  }
+
+  const options = dependsOn.dropdown_options || []
+  const resolved = []
+  for (const option of requestedOptions) {
+    const match = options.find((value) => value.toLowerCase() === option.toLowerCase())
+    if (!match) throw new Error(`Invalid dependency option: ${option}`)
+    resolved.push(match)
   }
 
   return {
@@ -526,6 +610,56 @@ export async function assertDropdownOptionsRemovable(orgId, parentId, newOptions
         throw new Error(`Cannot remove "${option}" — "${dep.name}" depends on it`)
       }
     }
+    for (const binding of dep.option_bindings || []) {
+      const parentValue = String(binding.parent_value || '').trim()
+      if (!parentValue) continue
+      if (!normalized.some((option) => option.toLowerCase() === parentValue.toLowerCase())) {
+        throw new Error(`Cannot remove "${parentValue}" — "${dep.name}" uses it for "${binding.value}"`)
+      }
+    }
+  }
+}
+
+async function assertLevelOptionBindings(orgId, parentFieldId, entries) {
+  const tagged = entries.filter((entry) => entry.parentValue)
+  if (!tagged.length) return
+  const allFields = await loadOrgFields(orgId)
+  const parent = allFields.find((field) => field.id === parentFieldId && field.kind === 'parent')
+  if (!parent) throw new Error('Invalid previous level')
+  const allowed = parent.dropdown_options || []
+  if (!SINGLE_OPTION_FIELD_TYPES.has(parent.field_type) || !allowed.length) {
+    for (const entry of entries) entry.parentValue = ''
+    return
+  }
+  for (const entry of tagged) {
+    const match = allowed.find((value) => value.toLowerCase() === entry.parentValue.toLowerCase())
+    if (!match) throw new Error(`"${entry.parentValue}" is not an option on ${parent.name}`)
+    entry.parentValue = match
+  }
+}
+
+async function persistFieldOptions(orgId, fieldId, { fieldType, dropdownOptions, bindings, dependsOnParentId }) {
+  if (!OPTION_FIELD_TYPES.has(fieldType)) return
+  const entries = Array.isArray(bindings) ? normalizeOptionBindings(bindings) : null
+  if (entries && !entries.length) {
+    await clearDropdownChildren(orgId, fieldId)
+    return
+  }
+  if (dependsOnParentId && entries?.length) {
+    await assertLevelOptionBindings(orgId, dependsOnParentId, entries)
+    const names = [...new Set(entries.map((entry) => entry.value))]
+    if (names.length) await assertDropdownOptionsRemovable(orgId, fieldId, names)
+    await syncDropdownChildren(orgId, fieldId, null, { bindings: entries })
+    return
+  }
+  const names = entries
+    ? [...new Set(entries.map((entry) => entry.value))]
+    : normalizeDropdownOptions(dropdownOptions)
+  if (names.length) await assertDropdownOptionsRemovable(orgId, fieldId, names)
+  if (entries) {
+    await syncDropdownChildren(orgId, fieldId, null, { bindings: entries })
+  } else if (names.length) {
+    await syncDropdownChildren(orgId, fieldId, names)
   }
 }
 
@@ -553,8 +687,13 @@ export async function createEquipmentField(orgId, body) {
 
   if (error) throw error
 
-  if (OPTION_FIELD_TYPES.has(insertPayload.field_type) && dropdownOptions?.length) {
-    await syncDropdownChildren(orgId, id, dropdownOptions)
+  if (OPTION_FIELD_TYPES.has(insertPayload.field_type) && (dropdownOptions?.length || body.option_bindings)) {
+    await persistFieldOptions(orgId, id, {
+      fieldType: insertPayload.field_type,
+      dropdownOptions,
+      bindings: body.option_bindings,
+      dependsOnParentId: insertPayload.depends_on_parent_id,
+    })
   }
 
   invalidateOrgFormCaches(orgId)
@@ -658,13 +797,14 @@ export async function updateEquipmentFieldSchema(orgId, id, body) {
   } else if (
     existing.kind === 'parent'
     && OPTION_FIELD_TYPES.has(updates.field_type)
-    && body.dropdown_options !== undefined
+    && (body.dropdown_options !== undefined || body.option_bindings !== undefined)
   ) {
-    const options = normalizeDropdownOptions(body.dropdown_options)
-    if (options.length) {
-      await assertDropdownOptionsRemovable(orgId, id, options)
-      await syncDropdownChildren(orgId, id, options)
-    }
+    await persistFieldOptions(orgId, id, {
+      fieldType: updates.field_type,
+      dropdownOptions: body.dropdown_options,
+      bindings: body.option_bindings,
+      dependsOnParentId: updates.depends_on_parent_id,
+    })
   }
 
   invalidateOrgFormCaches(orgId)

@@ -20,7 +20,7 @@ export default function MobileTopBar({ title = 'MMS PRO', onMenuClick, menuOpen 
           type="button"
           className="mobile-topbar__scan"
           onClick={onScan}
-          aria-label="Scan equipment QR code"
+          aria-label="Scan asset QR code"
         >
           <NavIcon name="scan" />
         </button>

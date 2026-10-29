@@ -172,17 +172,39 @@ async function resolveVendorFields(orgId, payload) {
   }
 }
 
+const WARRANTY_STATUS_KEYS = ['in_warranty', 'out_of_warranty', 'expiring_soon', 'expired']
+const WARRANTY_SOON_WINDOW_DAYS = 30
+
+function startOfLocalDay(date = new Date()) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate())
+}
+
+function normalizeWarrantyStatus(status) {
+  if (status === 'active') return 'in_warranty'
+  return status || null
+}
+
+function hasExpiringRange(expiring = {}) {
+  if (expiring.mode === 'dates') {
+    return Boolean(String(expiring.dateFrom || '').slice(0, 10) && String(expiring.dateTo || '').slice(0, 10))
+  }
+  if (expiring.mode === 'days') {
+    return String(expiring.minDays ?? '').trim() !== '' || String(expiring.maxDays ?? '').trim() !== ''
+  }
+  return false
+}
+
 function warrantyStatusKey(row, now = new Date()) {
-  if (!row?.warranty_end) return 'active'
+  if (!row?.warranty_end) return 'out_of_warranty'
   const end = new Date(`${String(row.warranty_end).slice(0, 10)}T23:59:59`)
-  if (Number.isNaN(end.getTime())) return 'active'
-  if (end < now) return 'expired'
-  const notifyDays = Number(row.expiry_notification_days)
-  const windowDays = Number.isFinite(notifyDays) && notifyDays >= 0 ? notifyDays : 30
-  const soon = new Date(now)
-  soon.setDate(soon.getDate() + windowDays)
+  if (Number.isNaN(end.getTime())) return 'out_of_warranty'
+  const today = startOfLocalDay(now)
+  if (end < today) return 'expired'
+  const soon = new Date(today)
+  soon.setDate(soon.getDate() + WARRANTY_SOON_WINDOW_DAYS)
+  soon.setHours(23, 59, 59, 999)
   if (end <= soon) return 'expiring_soon'
-  return 'active'
+  return 'in_warranty'
 }
 
 async function countWarrantyStatuses(orgId, { search = null } = {}) {
@@ -228,7 +250,10 @@ async function countWarrantyStatuses(orgId, { search = null } = {}) {
     if (from >= 100_000) break
   }
 
-  return [...map.entries()].map(([status, count]) => ({ status, count }))
+  return WARRANTY_STATUS_KEYS.map((status) => ({
+    status,
+    count: map.get(status) || 0,
+  }))
 }
 
 function enrichWarrantyRow(row) {
@@ -539,21 +564,29 @@ async function applyWarrantyFieldFilters(query, orgId, filters = {}) {
 
 function applyWarrantyStatusFilter(query, status, expiring = {}) {
   const today = localDateString()
-  if (status === 'expired') return query.lt('warranty_end', today)
-  if (status === 'active') return query.or(`warranty_end.is.null,warranty_end.gte.${today}`)
-  if (status !== 'expiring_soon') return query
+  const normalized = normalizeWarrantyStatus(status)
+  if (normalized === 'out_of_warranty') return query.is('warranty_end', null)
+  if (normalized === 'expired') return query.not('warranty_end', 'is', null).lt('warranty_end', today)
+  if (normalized === 'in_warranty') {
+    return query.gt('warranty_end', addLocalDays(today, WARRANTY_SOON_WINDOW_DAYS))
+  }
+  if (normalized !== 'expiring_soon') return query
 
-  if (expiring.mode === 'dates') {
+  if (hasExpiringRange(expiring) && expiring.mode === 'dates') {
     const from = String(expiring.dateFrom || '').slice(0, 10)
     const to = String(expiring.dateTo || '').slice(0, 10)
-    if (!from || !to) return query.not('warranty_end', 'is', null)
+    if (!from || !to) return query.gte('warranty_end', today).lte('warranty_end', addLocalDays(today, WARRANTY_SOON_WINDOW_DAYS))
     if (from > to) return query.eq('id', NO_MATCH_ID)
     return query.gte('warranty_end', from).lte('warranty_end', to)
   }
 
-  const minDays = Math.max(0, Number(expiring.minDays) || 0)
-  const maxDays = Math.max(minDays, Number(expiring.maxDays) || 0)
-  return query.gte('warranty_end', addLocalDays(today, minDays)).lte('warranty_end', addLocalDays(today, maxDays))
+  if (hasExpiringRange(expiring) && expiring.mode === 'days') {
+    const minDays = Math.max(0, Number(expiring.minDays) || 0)
+    const maxDays = Math.max(minDays, Number(expiring.maxDays) || WARRANTY_SOON_WINDOW_DAYS)
+    return query.gte('warranty_end', addLocalDays(today, minDays)).lte('warranty_end', addLocalDays(today, maxDays))
+  }
+
+  return query.gte('warranty_end', today).lte('warranty_end', addLocalDays(today, WARRANTY_SOON_WINDOW_DAYS))
 }
 
 export async function listWarranties(orgId, {

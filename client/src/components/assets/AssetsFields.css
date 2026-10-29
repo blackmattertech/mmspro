@@ -87,6 +87,24 @@
   min-width: 180px;
 }
 
+.asset-field-filters--inline {
+  flex-wrap: nowrap;
+  align-items: center;
+}
+
+.asset-field-filters--inline .asset-field-filters__search,
+#root .asset-field-filters--inline .asset-field-filters__search {
+  width: 220px;
+  min-width: 0;
+  max-width: 220px;
+  flex: 0 0 220px;
+}
+
+.asset-field-filters--inline .company-panel__count {
+  margin: 0 0 0 4px;
+  white-space: nowrap;
+}
+
 .asset-fields-panel--compact .company-panel__count {
   margin: 0;
   white-space: nowrap;

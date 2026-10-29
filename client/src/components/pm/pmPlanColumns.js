@@ -7,7 +7,7 @@ export const PM_PLAN_COLUMNS = [
   { id: 'priority', label: 'Priority' },
   { id: 'location', label: 'Plant / Facility' },
   { id: 'area', label: 'Area' },
-  { id: 'equipment', label: 'Equipment' },
+  { id: 'equipment', label: 'Asset' },
   { id: 'schedule', label: 'Schedule' },
   { id: 'schedule_type', label: 'Schedule type', defaultVisible: false },
   { id: 'calendar_unit', label: 'Interval type', defaultVisible: false },

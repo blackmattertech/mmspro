@@ -80,6 +80,12 @@
   color: var(--color-gray-blue);
 }
 
+.table-column-picker__menu-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+}
+
 .table-column-picker__reset {
   padding: 0;
   font-size: 12px;

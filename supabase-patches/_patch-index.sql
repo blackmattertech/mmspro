@@ -106,6 +106,11 @@
 --   102-list-status-aggregates.sql                   → 102-list-status-aggregates — WR/WO status GROUP BY + list indexes
 --   103-equipment-meter-readings.sql                 → 103-equipment-meter-readings — Equipment meter logbook
 --   104-meter-reading-logger-role.sql                → 104-meter-reading-logger-role — Logger department and designation
+--   105-equipment-label-sizes.sql                    → 105-equipment-label-sizes — Saved QR label paper sizes
+--   106-platform-hierarchy-defaults.sql              → 106-platform-hierarchy-defaults — Default asset hierarchy
+--   107-org-form-field-options.sql                   → 107-org-form-field-options — Company form dropdown option lists
+--   108-org-form-skips.sql                           → 108-org-form-skips — Company skip overlay for optional form fields
+--   109-open-work-order-pool.sql                     → 109-open-work-order-pool — Unclaimed work orders in every received inbox
 
 --
 -- OTHER:

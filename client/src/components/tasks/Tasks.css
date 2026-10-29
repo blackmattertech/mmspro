@@ -1054,6 +1054,13 @@
   border-bottom: none;
 }
 
+.task-detail-table td.company-empty {
+  padding: 20px 0;
+  text-align: center;
+  color: var(--color-gray-blue);
+  border-bottom: none;
+}
+
 .task-detail-comments {
   display: flex;
   flex-direction: column;

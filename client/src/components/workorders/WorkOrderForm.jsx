@@ -1,57 +1,34 @@
-import { useState } from 'react'
 import WorkOrderFieldInput from './WorkOrderFieldInput'
-import SectionIcon, { sectionFallbackColor } from './SectionIcon'
 import { filterVisibleFields } from '../../lib/assetFieldDependencies'
+import '../workrequests/WorkRequests.css'
 import './ManualWorkOrder.css'
 
-function WorkOrderSection({ section, color, values, onChange, disabled, defaultOpen = true }) {
-  const [open, setOpen] = useState(defaultOpen)
+function WorkOrderSection({ section, values, onChange, disabled }) {
   const visibleFields = filterVisibleFields(section.fields, values)
 
   return (
-    <section className="wo-section">
-      <button
-        type="button"
-        className="wo-section__header"
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
-      >
-        <div className="wo-section__header-left">
-          <SectionIcon iconUrl={section.icon_signed_url} color={color} />
-          <div>
-            <h2 className="wo-section__title">{section.name}</h2>
-            <p className="wo-section__desc">
-              {visibleFields.length} field{visibleFields.length === 1 ? '' : 's'}
-            </p>
-          </div>
+    <section className="wr-form-section">
+      <header className="wr-form-section__head">
+        <h3 className="wr-form-section__title">{section.name}</h3>
+      </header>
+      <div className="wr-form-section__body">
+        <div className="company-form__grid">
+          {visibleFields.map((field) => (
+            <WorkOrderFieldInput
+              key={field.id}
+              field={field}
+              value={values[field.id]}
+              onChange={(val) => onChange(field.id, val)}
+              disabled={disabled}
+            />
+          ))}
         </div>
-        <span className={`wo-section__chevron${open ? ' wo-section__chevron--open' : ''}`} aria-hidden="true">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-            <path d="M4 6L8 10L12 6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </span>
-      </button>
-
-      {open && (
-        <div className="wo-section__body">
-          <div className="company-form__grid">
-            {visibleFields.map((field) => (
-              <WorkOrderFieldInput
-                key={field.id}
-                field={field}
-                value={values[field.id]}
-                onChange={(val) => onChange(field.id, val)}
-                disabled={disabled}
-              />
-            ))}
-          </div>
-        </div>
-      )}
+      </div>
     </section>
   )
 }
 
-export default function WorkOrderForm({ schema, values, onChange, disabled }) {
+export default function WorkOrderForm({ schema, values, onChange, disabled, renderSection }) {
   if (!schema?.sections?.length) {
     return (
       <div className="wo-empty">
@@ -61,17 +38,20 @@ export default function WorkOrderForm({ schema, values, onChange, disabled }) {
   }
 
   return (
-    <div className="wo-form">
-      {schema.sections.map((section, index) => (
-        <WorkOrderSection
-          key={section.id}
-          section={section}
-          color={sectionFallbackColor(index)}
-          values={values}
-          onChange={onChange}
-          disabled={disabled}
-        />
-      ))}
+    <div className="wo-form wr-create-form">
+      {schema.sections.map((section) => {
+        const custom = renderSection?.(section)
+        if (custom != null) return custom
+        return (
+          <WorkOrderSection
+            key={section.id}
+            section={section}
+            values={values}
+            onChange={onChange}
+            disabled={disabled}
+          />
+        )
+      })}
     </div>
   )
 }

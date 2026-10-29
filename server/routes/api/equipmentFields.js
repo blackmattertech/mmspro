@@ -46,7 +46,7 @@ router.patch('/:id', canUpdate, assertOrgOwnership('equipment_fields'), async (r
     if (isActiveOnlyUpdate(req.body)) {
       if (existing.kind !== 'child' || !canManageChildren(req)) {
         return res.status(403).json({
-          error: 'Equipment field schema is managed from the Super Admin panel',
+          error: 'Asset field schema is managed from the Super Admin panel',
         })
       }
       const field = await updateEquipmentFieldActive(orgId, req.params.id, req.body.is_active)
@@ -66,7 +66,7 @@ router.patch('/:id', canUpdate, assertOrgOwnership('equipment_fields'), async (r
     }
 
     return res.status(403).json({
-      error: 'Equipment field schema is managed from the Super Admin panel',
+      error: 'Asset field schema is managed from the Super Admin panel',
     })
   } catch (err) {
     res.status(err.status || 400).json({ error: err.message })

@@ -6,8 +6,17 @@ import { getDepartments, getLocations } from '../../lib/api'
 import { fetchReferenceData, PICKER_LIMIT } from '../../lib/referenceDataCache'
 import { seedDateFieldDefaults } from '../../lib/dateInputDefaults'
 import { useFormLayout } from '../../hooks/useFormLayout'
+import { usePermissions } from '../../hooks/usePermissions'
+import { useFormFieldValues } from '../../hooks/useFormFieldValues'
 import { buildEquipmentFormSections } from '../../lib/equipmentFormLayout'
-import { parseLayoutId } from '../../lib/formLayoutIds'
+import {
+  applyHierarchyFieldChange,
+  hierarchyLevelRevealed,
+  optionsForHierarchyField,
+  orderedHierarchyFields,
+} from '../../lib/assetHierarchy'
+import { layoutWithoutCatalogFields, parseLayoutId } from '../../lib/formLayoutIds'
+import OrderedFormLayout from '../forms/OrderedFormLayout'
 import { resolveImageMime } from '../../lib/imageFiles'
 import { readFileAsDataUrl } from '../../config/warrantyDocuments'
 import DateField from '../ui/DateField'
@@ -28,11 +37,6 @@ function isImageField(field) {
 
 function isImageUrl(value) {
   return /^(https?:|data:image\/)/i.test(String(value || '').trim())
-}
-
-function isAreaCatalogField(field) {
-  const name = String(field?.name || '').trim().toLowerCase()
-  return name === 'area' || name === 'equipment area'
 }
 
 function departmentLabel(dept) {
@@ -104,7 +108,7 @@ function MasterSelect({ label, value, options, onChange, placeholder, getLabel }
   )
 }
 
-function ImageUpload({ field, preview, onPick, onRemove }) {
+function ImageUpload({ field, preview, onPick, onRemove, disabled = false }) {
   const inputRef = useRef(null)
   return (
     <div className="equipment-image-upload">
@@ -118,6 +122,7 @@ function ImageUpload({ field, preview, onPick, onRemove }) {
           type="button"
           className="company-btn company-btn--ghost"
           onClick={() => inputRef.current?.click()}
+          disabled={disabled}
         >
           {preview ? 'Replace image' : 'Upload image'}
         </button>
@@ -130,6 +135,7 @@ function ImageUpload({ field, preview, onPick, onRemove }) {
               event.stopPropagation()
               onRemove()
             }}
+            disabled={disabled}
           >
             Remove
           </button>
@@ -168,6 +174,9 @@ export default function EquipmentModal({
   const [locations, setLocations] = useState([])
   const [departments, setDepartments] = useState([])
   const { layout, loading: layoutLoading } = useFormLayout('equipment.create')
+  const { session } = usePermissions()
+  const extras = useFormFieldValues('equipment.create', equipment?.id || null)
+  const sharedLayout = useMemo(() => layoutWithoutCatalogFields(layout), [layout])
   const [error, setError] = useState(null)
   const handleBackdropClick = useBackdropClose(onClose)
 
@@ -230,17 +239,16 @@ export default function EquipmentModal({
     return () => { cancelled = true }
   }, [])
 
-  const sections = useMemo(
-    () => buildEquipmentFormSections(fieldDefs, layout),
-    [fieldDefs, layout],
-  )
-
-  const areaFieldId = useMemo(() => {
-    const match = sections
-      .flatMap((section) => section.items)
-      .find((item) => isAreaCatalogField(item.field))
-    return match?.field.id || null
-  }, [sections])
+  const sections = useMemo(() => {
+    const built = buildEquipmentFormSections(fieldDefs, layout)
+    const order = new Map(orderedHierarchyFields(fieldDefs).map((field, index) => [field.id, index]))
+    return built.map((section) => ({
+      ...section,
+      items: [...section.items].sort((left, right) => (
+        (order.get(left.field.id) ?? 0) - (order.get(right.field.id) ?? 0)
+      )),
+    }))
+  }, [fieldDefs, layout])
 
   const locationOptions = useMemo(
     () => keepCurrent(locations, locationId),
@@ -349,13 +357,19 @@ export default function EquipmentModal({
     payload.reading_required = readingRequired
 
     try {
-      await onSave(payload)
+      const saved = await onSave(payload)
+      if (saved?.id && sharedLayout) await extras.save(saved.id)
     } catch (err) {
       setError(err.message)
     }
   }
 
-  const renderField = (field) => (
+  const renderField = (field) => {
+    if (!hierarchyLevelRevealed(field, fieldDefs, values)) return null
+    const locked = false
+    const write = (next) => setValues((current) => applyHierarchyFieldChange(field.id, next, current, fieldDefs))
+    const configuredOptions = (field.dropdown_options || []).map((option) => String(option).trim()).filter(Boolean)
+    return (
     <div key={field.id} className="equipment-field">
       <div className="company-form__field">
         <span className="company-form__label">{field.is_required ? `${field.name} *` : field.name}</span>
@@ -368,6 +382,7 @@ export default function EquipmentModal({
               ...current,
               [field.id]: { removed: true },
             }))}
+            disabled={locked}
           />
         ) : field.field_type === 'textarea' ? (
           <SpellcheckInput
@@ -375,26 +390,37 @@ export default function EquipmentModal({
             className="company-form__input"
             rows={3}
             value={values[field.id] || ''}
-            onChange={(e) => setValues((v) => ({ ...v, [field.id]: e.target.value }))}
+            onChange={(e) => write(e.target.value)}
+            disabled={locked}
+          />
+        ) : (field.field_type === 'dropdown' || field.field_type === 'radio') && !configuredOptions.length ? (
+          <SpellcheckInput
+            className="company-form__input"
+            value={values[field.id] || ''}
+            onChange={(e) => write(e.target.value)}
+            disabled={locked}
+            placeholder="Type a value…"
           />
         ) : field.field_type === 'dropdown' ? (
           <FilterableSelect
             value={values[field.id] || ''}
-            onChange={(next) => setValues((v) => ({ ...v, [field.id]: next }))}
-            options={field.dropdown_options || []}
-            placeholder="Select…"
+            onChange={write}
+            options={optionsForHierarchyField(field, values)}
+            placeholder={`Select ${field.name}`}
+            disabled={locked}
             className="company-form__input--select"
           />
         ) : field.field_type === 'radio' ? (
           <div className="asset-field-dependency__options" role="radiogroup" aria-label={field.name}>
-            {(field.dropdown_options || []).map((opt) => (
+            {optionsForHierarchyField(field, values).map((opt) => (
               <label key={opt} className="asset-field-dependency__option">
                 <input
                   type="radio"
                   name={`eq-field-${field.id}`}
                   value={opt}
                   checked={values[field.id] === opt}
-                  onChange={() => setValues((v) => ({ ...v, [field.id]: opt }))}
+                  disabled={locked}
+                  onChange={() => write(opt)}
                 />
                 <span>{opt}</span>
               </label>
@@ -429,29 +455,30 @@ export default function EquipmentModal({
           <input
             type="checkbox"
             checked={values[field.id] === 'true' || values[field.id] === true}
-            onChange={(e) => setValues((v) => ({
-              ...v,
-              [field.id]: e.target.checked ? 'true' : 'false',
-            }))}
+            disabled={locked}
+            onChange={(e) => write(e.target.checked ? 'true' : 'false')}
           />
         ) : field.field_type === 'date' || field.field_type === 'datetime' ? (
           <DateField
             value={values[field.id] || ''}
-            onChange={(val) => setValues((v) => ({ ...v, [field.id]: val }))}
+            onChange={write}
             withTime={field.field_type === 'datetime'}
+            disabled={locked}
           />
         ) : field.field_type === 'number' ? (
           <input
             className="company-form__input"
             type="number"
             value={values[field.id] || ''}
-            onChange={(e) => setValues((v) => ({ ...v, [field.id]: e.target.value }))}
+            onChange={(e) => write(e.target.value)}
+            disabled={locked}
           />
         ) : (
           <SpellcheckInput
             className="company-form__input"
             value={values[field.id] || ''}
-            onChange={(e) => setValues((v) => ({ ...v, [field.id]: e.target.value }))}
+            onChange={(e) => write(e.target.value)}
+            disabled={locked}
           />
         )}
       </div>
@@ -463,27 +490,28 @@ export default function EquipmentModal({
         />
       )}
     </div>
-  )
+    )
+  }
 
   return (
     <div className="company-modal-overlay" onMouseDown={handleBackdropClick} role="presentation">
       <div className="company-modal company-modal--wide" onClick={(e) => e.stopPropagation()} role="dialog">
         <div className="company-modal__header">
           <div className="modal__header-main">
-            <PageBack onClick={onClose} className="page-back--header" label="Equipment" />
-            <h2>{isEdit ? 'Edit Equipment' : 'Add Equipment'}</h2>
+            <PageBack onClick={onClose} className="page-back--header" label="Assets" />
+            <h2>{isEdit ? 'Edit Asset' : 'Add Asset'}</h2>
           </div>
           <button type="button" className="company-modal__close" onClick={onClose} aria-label="Close">×</button>
         </div>
         <form className="company-modal__form" onSubmit={handleSubmit}>
           {layoutLoading && <p className="company-empty">Loading form…</p>}
           {!layoutLoading && sections.length === 0 && (
-            <p className="company-empty">No equipment fields yet. A super admin adds them under Configure → Equipment.</p>
+            <p className="company-empty">No asset fields yet. A super admin adds them under Configure → Assets.</p>
           )}
           {!layoutLoading && sections.map((section, sectionIndex) => (
             <div key={section.id} className="equipment-dynamic-section">
               <h3 className="equipment-dynamic-section__title">{section.title}</h3>
-              {sectionIndex === 0 && !areaFieldId && (
+              {sectionIndex === 0 && (
                 <PlacementFields
                   locationId={locationId}
                   departmentId={departmentId}
@@ -493,23 +521,34 @@ export default function EquipmentModal({
                   onDepartment={setDepartmentId}
                 />
               )}
-              {section.items.map((item) => (
-                <div key={item.field.id}>
-                  {item.field.id === areaFieldId && (
-                    <PlacementFields
-                      locationId={locationId}
-                      departmentId={departmentId}
-                      locations={locationOptions}
-                      departments={departmentOptions}
-                      onLocation={setLocationId}
-                      onDepartment={setDepartmentId}
-                    />
-                  )}
-                  {renderField(item.field)}
-                </div>
-              ))}
+              {section.items.map((item) => {
+                const node = renderField(item.field)
+                if (!node) return null
+                return <div key={item.field.id}>{node}</div>
+              })}
             </div>
           ))}
+
+          {sharedLayout && (
+            <OrderedFormLayout
+              formId="equipment.create"
+              layout={sharedLayout}
+              catalogValues={extras.values}
+              onCatalogChange={extras.setFieldValue}
+              masterValues={extras.values}
+              onMasterChange={extras.setFieldValue}
+              disabled={saving}
+              currentEmployeeId={!isEdit ? (session?.employee_id || null) : null}
+              omitField={(item) => {
+                const parsed = parseLayoutId(item?.id)
+                return (parsed.kind === 'master' && parsed.value === 'areas')
+                  || item?.masterSource === 'areas'
+                  || (parsed.kind === 'system' && parsed.value === 'area_id')
+                  || item?.bindKey === 'area_id'
+              }}
+              renderField={() => null}
+            />
+          )}
 
           <div className="company-form__field">
             <span className="company-form__label">Reading required</span>
@@ -519,7 +558,7 @@ export default function EquipmentModal({
               ariaLabel="Reading required"
             />
             <p className="company-form__hint">
-              When this is on, the equipment appears in Logbook so meter readings can be recorded.
+              When this is on, the asset appears in Meter reading so readings can be recorded.
             </p>
           </div>
 
@@ -527,7 +566,7 @@ export default function EquipmentModal({
           <div className="company-modal__actions">
             <button type="button" className="company-btn company-btn--ghost" onClick={onClose}>Cancel</button>
             <button type="submit" className="company-btn company-btn--primary" disabled={saving || layoutLoading || sections.length === 0}>
-              {saving ? 'Saving…' : isEdit ? 'Save changes' : 'Create equipment'}
+              {saving ? 'Saving…' : isEdit ? 'Save changes' : 'Create asset'}
             </button>
           </div>
         </form>

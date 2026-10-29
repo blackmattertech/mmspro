@@ -31,9 +31,13 @@ import {
   loadWorkOrderTimeline,
   WO_OPEN_LIST_STATUSES,
   WO_ASSIGNED_LIST_STATUSES,
-  PERMIT_TYPES,
+  allowedPermitTypeValues,
 } from '../../lib/workOrderService.js'
 import { getAllowedNextWorkOrderStatuses } from '../../lib/orgStatusService.js'
+import { loadOrgProcessSkips, maybePromoteAssignedToAccepted } from '../../lib/formSkips.js'
+import { workOrderFormIdForSource } from '../../lib/workOrderForms.js'
+import { actorsFromRequest, loadFillershipRecord } from '../../lib/formFillershipRecord.js'
+import { buildAssetHierarchy } from '../../lib/workRequestService.js'
 import {
   listWorkOrderDailyLogs,
   startWorkOrderDay,
@@ -65,7 +69,10 @@ const canManageFormSettings = requireModulePermission('work_orders', 'update')
 const canApproveWorkOrders = requireAnyModulePermission([
   ['work_orders_approve', 'update'],
   ['work_orders_received', 'update'],
+  ['work_orders_received', 'read'],
   ['work_orders', 'update'],
+  ['work_orders', 'read'],
+  ['work_request_approve', 'update'],
 ])
 const OPTION_FIELD_TYPES = new Set(['dropdown', 'radio', 'checkbox'])
 
@@ -428,7 +435,8 @@ async function listVisibleReceivedWorkOrderIds(orgId, profile, employee, session
   if (error) throw error
 
   const candidates = (data || []).filter((row) => !isOutgoingWorkOrder(row, profileId))
-  return candidates.map((row) => row.id)
+  const poolIds = await listUnclaimedWorkRequestPoolIds(orgId)
+  return [...new Set([...candidates.map((row) => row.id), ...poolIds])]
 }
 
 async function pageVisibleReceivedWorkOrderIds(orgId, profile, employee, session, {
@@ -491,8 +499,41 @@ async function countVisibleReceivedWorkOrders(orgId, profile, employee, session,
   return Number(data) || 0
 }
 
+async function isUnclaimedWorkRequestPool(orgId, workOrder) {
+  if (!workOrder?.work_request_id) return false
+  if (!['assigned', 'accepted'].includes(workOrder.status)) return false
+  const { count, error } = await supabaseAdmin
+    .from('manual_work_order_assignees')
+    .select('work_order_id', { count: 'exact', head: true })
+    .eq('org_id', orgId)
+    .eq('work_order_id', workOrder.id)
+  if (error) throw error
+  return (count || 0) === 0
+}
+
+async function listUnclaimedWorkRequestPoolIds(orgId) {
+  const { data: orders, error } = await supabaseAdmin
+    .from('manual_work_orders')
+    .select('id')
+    .eq('org_id', orgId)
+    .not('work_request_id', 'is', null)
+    .in('status', ['assigned', 'accepted'])
+  if (error) throw error
+  const ids = (orders || []).map((row) => row.id)
+  if (!ids.length) return []
+  const { data: assignees, error: assigneeError } = await supabaseAdmin
+    .from('manual_work_order_assignees')
+    .select('work_order_id')
+    .eq('org_id', orgId)
+    .in('work_order_id', ids)
+  if (assigneeError) throw assigneeError
+  const taken = new Set((assignees || []).map((row) => row.work_order_id))
+  return ids.filter((id) => !taken.has(id))
+}
+
 async function employeeCanViewReceivedWorkOrder(orgId, employee, workOrder, profile, session) {
   if (!employee || !workOrder) return false
+  if (await isUnclaimedWorkRequestPool(orgId, workOrder)) return true
   if (isOutgoingWorkOrder(workOrder, profile?.id || profile)) return false
 
   const myAssigneeIds = await listReceivedWorkOrderIds(orgId, employee)
@@ -503,12 +544,31 @@ async function employeeCanViewReceivedWorkOrder(orgId, employee, workOrder, prof
   return isLocationHeadFor(orgId, employee, workOrder.assigned_location_id, session)
 }
 
-async function validateAssignedDepartment(orgId, departmentId, locationId) {
+async function validateAssignedDepartment(orgId, departmentId, locationId, { fallbackLocationId = null } = {}) {
   if (!departmentId && !locationId) return null
 
-  // Department requires location; location-only is allowed.
+  // Order To department can be saved without a location picker.
+  // Use the department's location, or the creator's location for all-location departments.
   if (departmentId && !locationId) {
-    throw new Error('Department assignment requires a location')
+    const { data: department, error: deptLookupError } = await supabaseAdmin
+      .from('departments')
+      .select('id, location_id, all_locations, is_active')
+      .eq('org_id', orgId)
+      .eq('id', departmentId)
+      .maybeSingle()
+
+    if (deptLookupError) throw deptLookupError
+    if (!department || department.is_active === false) {
+      throw new Error('Order to department is invalid')
+    }
+
+    locationId = department.location_id
+      || (department.all_locations ? fallbackLocationId : null)
+      || null
+
+    if (!locationId) {
+      throw new Error('Order to department must belong to a location')
+    }
   }
 
   const { data: location, error: locError } = await supabaseAdmin
@@ -654,24 +714,39 @@ async function isLocationHeadFor(orgId, employee, locationId, session = null) {
   return false
 }
 
+async function actorsForWorkOrder(req, workOrderId) {
+  const formId = 'work_orders.manual'
+  const record = await loadFillershipRecord(req.userProfile.org_id, formId, workOrderId)
+  return actorsFromRequest(req, record, { formId })
+}
+
 async function buildAssignmentActions(orgId, detail, employee, session = null) {
   if (!detail || !employee) {
     return {
       can_reassign_as_location_head: false,
+      can_assign_department_technicians: false,
       can_claim_self: false,
       employee_id: employee?.id || null,
     }
   }
 
   const canApprove = session?.is_org_admin
+    || session?.is_department_head
     || hasModulePermission(session, 'work_orders_approve', 'update')
     || hasModulePermission(session, 'work_orders_received', 'update')
     || hasModulePermission(session, 'work_orders', 'update')
+    || hasModulePermission(session, 'work_request_approve', 'update')
 
   if (!canApprove) {
+    const unclaimedPool = Boolean(
+      detail.work_request_id
+      && !(detail.assignees || []).length
+      && ['assigned', 'accepted'].includes(detail.status),
+    )
     return {
       can_reassign_as_location_head: false,
-      can_claim_self: false,
+      can_assign_department_technicians: false,
+      can_claim_self: unclaimedPool,
       employee_id: employee.id,
     }
   }
@@ -683,12 +758,32 @@ async function buildAssignmentActions(orgId, detail, employee, session = null) {
     && detail.assigned_location_id === employee.location_id,
   )
   const alreadyAssignee = (detail.assignees || []).some((a) => a.id === employee.id)
+  const unclaimedPool = Boolean(
+    detail.work_request_id
+    && !(detail.assignees || []).length
+    && ['assigned', 'accepted'].includes(detail.status),
+  )
+
+  const canAssignDepartmentTechnicians = Boolean(
+    (inDeptPool || unclaimedPool)
+    && (
+      session?.is_org_admin
+      || session?.is_department_head
+      || hasModulePermission(session, 'work_orders_approve', 'update')
+      || hasModulePermission(session, 'work_request_approve', 'update')
+    ),
+  )
 
   return {
     can_reassign_as_location_head: Boolean(isLH && locationPool),
+    can_assign_department_technicians: canAssignDepartmentTechnicians,
     can_claim_self: Boolean(
-      (inDeptPool || (locationPool && !detail.assigned_department_id))
-      && !alreadyAssignee,
+      !alreadyAssignee
+      && (
+        unclaimedPool
+        || inDeptPool
+        || (locationPool && !detail.assigned_department_id)
+      ),
     ),
     employee_id: employee.id,
   }
@@ -946,8 +1041,50 @@ function applyWorkOrderStatusFilter(query, status) {
   return query.eq('status', normalized)
 }
 
+async function assertWorkOrderEditor(req, workOrderId) {
+  const session = req.orgPermissions
+  const canEdit = session?.is_org_admin
+    || hasModulePermission(session, 'work_orders', 'update')
+    || hasModulePermission(session, 'work_orders_received', 'update')
+    || hasModulePermission(session, 'work_orders_approve', 'update')
+  if (canEdit) return
+
+  const employee = await getEmployeeByProfile(req.userProfile.org_id, req.userProfile.id, {
+    email: req.userProfile.email,
+  })
+  if (!employee) {
+    const err = new Error('You do not have permission to update this work order')
+    err.status = 403
+    throw err
+  }
+  const { data, error } = await supabaseAdmin
+    .from('manual_work_order_assignees')
+    .select('employee_id')
+    .eq('org_id', req.userProfile.org_id)
+    .eq('work_order_id', workOrderId)
+    .eq('employee_id', employee.id)
+    .maybeSingle()
+  if (error) throw error
+  if (!data) {
+    const err = new Error('You do not have permission to update this work order')
+    err.status = 403
+    throw err
+  }
+}
+
 function isAssignableStatus(status) {
   return status === 'assigned' || status === 'returned_rework'
+}
+
+function assignmentDetailsFromBody(body) {
+  const patch = {}
+  if (!body || typeof body !== 'object') return patch
+  if (body.work_center !== undefined) patch.work_center = body.work_center || null
+  if (body.priority !== undefined) patch.priority = body.priority || null
+  if (body.planned_start_at !== undefined) patch.planned_start_at = body.planned_start_at || null
+  if (body.planned_end_at !== undefined) patch.planned_end_at = body.planned_end_at || null
+  if (body.special_instructions !== undefined) patch.special_instructions = body.special_instructions || null
+  return patch
 }
 
 async function attachSummaries(_orgId, workOrders) {
@@ -1020,12 +1157,24 @@ async function buildWorkOrderListResponse(orgId, rows, existingAssigneesByWo = n
 
   const withValues = await attachFieldValues(withSummaries)
 
+  const processSkips = await loadOrgProcessSkips(orgId)
   return withValues.map((row) => ({
     ...row,
     progress_percent: progressPercentForStatus(row.status),
     assignees: assigneesByWo.get(row.id) || [],
     creator: creatorById.get(row.created_by) || null,
+    skip_technician_acceptance: Boolean(processSkips.get(workOrderFormIdForSource(row.source_type))),
   }))
+}
+
+async function promoteIfAcceptanceSkipped(orgId, workOrder, hasAssignees) {
+  const status = await maybePromoteAssignedToAccepted(orgId, {
+    formId: workOrderFormIdForSource(workOrder.source_type),
+    workOrderId: workOrder.id,
+    currentStatus: workOrder.status,
+    hasAssignees: Boolean(hasAssignees),
+  })
+  return { ...workOrder, status }
 }
 
 async function countReceivedWorkOrdersByStatus(orgId, profile, employee, session, { search = null } = {}) {
@@ -1289,21 +1438,89 @@ async function loadWorkOrderDetail(orgId, workOrderId, { employee = null, profil
 
   let jobNature = workOrder.job_nature || null
   let workRequestNumber = null
+  let workRequestSnapshot = null
   if (workOrder.work_request_id) {
-    const { data: wr } = await supabaseAdmin
+    const { data: wr, error: wrError } = await supabaseAdmin
       .from('work_requests')
-      .select('request_number, job_nature, is_breakdown, short_description')
+      .select(`
+        id, request_number, request_type, request_date, job_nature, is_breakdown,
+        short_description, problem_description, remarks, priority, attachments, asset_hierarchy,
+        requested_by, order_from_department_id, order_to_department_id,
+        order_from:departments!work_requests_order_from_department_id_fkey(id, name),
+        order_to:departments!work_requests_order_to_department_id_fkey(id, name),
+        requester:profiles!work_requests_requested_by_fkey(id, full_name, email),
+        equipment(
+          id, name, code, qr_code, location_id, department_id, area_id,
+          areas(id, name, code)
+        )
+      `)
       .eq('org_id', orgId)
       .eq('id', workOrder.work_request_id)
       .maybeSingle()
-    workRequestNumber = wr?.request_number || null
-    if (!jobNature) {
-      jobNature = wr?.job_nature || (wr?.is_breakdown ? 'Breakdown' : null)
-    }
-    const wrShort = String(wr?.short_description || '').trim()
-    if (wrShort) {
-      enriched.short_description = wrShort
-      enriched.summary = wrShort
+    const linked = wrError ? null : wr
+    if (!linked && wrError) {
+      const { data: fallback } = await supabaseAdmin
+        .from('work_requests')
+        .select('request_number, job_nature, is_breakdown, short_description')
+        .eq('org_id', orgId)
+        .eq('id', workOrder.work_request_id)
+        .maybeSingle()
+      workRequestNumber = fallback?.request_number || null
+      if (!jobNature) {
+        jobNature = fallback?.job_nature || (fallback?.is_breakdown ? 'Breakdown' : null)
+      }
+      const wrShort = String(fallback?.short_description || '').trim()
+      if (wrShort) {
+        enriched.short_description = wrShort
+        enriched.summary = wrShort
+      }
+    } else if (linked) {
+      workRequestNumber = linked.request_number || null
+      if (!jobNature) {
+        jobNature = linked.job_nature || (linked.is_breakdown ? 'Breakdown' : null)
+      }
+      const wrShort = String(linked.short_description || '').trim()
+      if (wrShort) {
+        enriched.short_description = wrShort
+        enriched.summary = wrShort
+      }
+      const equipment = linked.equipment || null
+      workRequestSnapshot = {
+        id: linked.id,
+        request_number: linked.request_number || null,
+        request_type: linked.request_type || null,
+        request_date: linked.request_date || null,
+        job_nature: linked.job_nature || null,
+        job_nature_label: linked.job_nature || null,
+        is_breakdown: Boolean(linked.is_breakdown),
+        short_description: linked.short_description || null,
+        problem_description: linked.problem_description || null,
+        remarks: linked.remarks || null,
+        priority: linked.priority || null,
+        requested_by: linked.requested_by || null,
+        requester: linked.requester ? {
+          id: linked.requester.id,
+          full_name: linked.requester.full_name || null,
+          email: linked.requester.email || null,
+          name: linked.requester.full_name || linked.requester.email || null,
+        } : null,
+        order_from_department_id: linked.order_from_department_id || null,
+        order_to_department_id: linked.order_to_department_id || null,
+        order_from: linked.order_from || null,
+        order_to: linked.order_to || null,
+        asset_hierarchy: Array.isArray(linked.asset_hierarchy) ? linked.asset_hierarchy : [],
+        attachments: Array.isArray(linked.attachments) ? linked.attachments : [],
+        equipment: equipment ? {
+          id: equipment.id,
+          name: equipment.name || null,
+          code: equipment.code || null,
+          qr_code: equipment.qr_code || null,
+          location_id: equipment.location_id || null,
+          department_id: equipment.department_id || null,
+          area_id: equipment.area_id || null,
+          area_name: equipment.areas?.name || null,
+        } : null,
+      }
     }
   }
   if (!jobNature && workOrder.is_breakdown) jobNature = 'Breakdown'
@@ -1320,18 +1537,41 @@ async function loadWorkOrderDetail(orgId, workOrderId, { employee = null, profil
     // Table may not exist until patch 71 is applied — keep detail usable.
   }
 
+  let assetHierarchy = Array.isArray(workOrder.asset_hierarchy) ? workOrder.asset_hierarchy : []
+  if (workOrder.equipment_id) {
+    try {
+      const live = await buildAssetHierarchy(orgId, workOrder.equipment_id)
+      if (live.length) assetHierarchy = live
+    } catch {
+      // Keep the hierarchy saved on the work order.
+    }
+  }
+
+  if (workRequestSnapshot && !workRequestSnapshot.asset_hierarchy.length && assetHierarchy.length) {
+    workRequestSnapshot = { ...workRequestSnapshot, asset_hierarchy: assetHierarchy }
+  }
+
+  const skipTechnicianAcceptance = Boolean(
+    (await loadOrgProcessSkips(orgId)).get(workOrderFormIdForSource(workOrder.source_type)),
+  )
+
   return {
     ...enriched,
+    asset_hierarchy: assetHierarchy,
     source_type: displaySourceType,
     source_type_raw: workOrder.source_type,
     job_nature: jobNature,
     work_request_id: workOrder.work_request_id || null,
     work_request_number: workRequestNumber,
+    work_request: workRequestSnapshot,
     wo_number: resolveDisplayWoNumber(workOrder),
     sections,
     timeline,
-    permit_type_options: PERMIT_TYPES,
-    allowed_next_statuses: await getAllowedNextWorkOrderStatuses(orgId, workOrder.status),
+    permit_type_options: await allowedPermitTypeValues(orgId, workOrder.source_type),
+    skip_technician_acceptance: skipTechnicianAcceptance,
+    allowed_next_statuses: await getAllowedNextWorkOrderStatuses(orgId, workOrder.status, {
+      skipTechnicianAcceptance,
+    }),
     daily_logs: dailyLogsPayload.logs,
     daily_log_open: dailyLogsPayload.open_log,
     material_summary: dailyLogsPayload.material_summary,
@@ -1519,19 +1759,18 @@ router.post('/manual', canCreateWorkOrders, async (req, res) => {
     ])
     const schema = buildFormSchema(fields, settingsMap)
     const allowedFields = buildAllowedFieldsMap(schema)
-    const assignedLocationId = req.body?.assigned_location_id || null
-    const departmentAssignment = await validateAssignedDepartment(
+    const creator = await getEmployeeByProfile(orgId, userId, { email: req.userProfile.email })
+    let departmentAssignment = await validateAssignedDepartment(
       orgId,
-      req.body?.assigned_department_id || null,
-      assignedLocationId,
-    )
-    const assignedEmployeeIds = await validateAssignedEmployees(
-      orgId,
-      req.body?.assigned_employee_ids ?? req.body?.assigned_to ?? [],
-      { locationId: departmentAssignment?.assigned_location_id || assignedLocationId },
+      req.body?.assigned_department_id || creator?.department_id || null,
+      req.body?.assigned_location_id || creator?.location_id || null,
+      { fallbackLocationId: creator?.location_id || null },
     )
 
     const departmentId = departmentAssignment?.assigned_department_id || null
+    if (status === 'assigned' && !departmentId) {
+      return res.status(400).json({ error: 'Select an Order to department.' })
+    }
     let woNumber = null
     if (status === 'assigned' && departmentId) {
       woNumber = await generateWorkOrderNumber(orgId, departmentId)
@@ -1575,7 +1814,7 @@ router.post('/manual', canCreateWorkOrders, async (req, res) => {
 
     if (woError) return res.status(500).json({ error: woError.message })
 
-    await syncWorkOrderAssignees(orgId, workOrder.id, assignedEmployeeIds)
+    await syncWorkOrderAssignees(orgId, workOrder.id, [])
 
     const valueCount = await upsertWorkOrderValues(orgId, workOrder.id, values, allowedFields)
 
@@ -1617,7 +1856,7 @@ router.patch('/manual/:id/assignment', canApproveWorkOrders, assertOrgOwnership(
 
     const { data: workOrder, error: woError } = await supabaseAdmin
       .from('manual_work_orders')
-      .select('id, status, assigned_department_id, assigned_location_id, created_by')
+      .select('id, status, assigned_department_id, assigned_location_id, created_by, source_type, work_request_id')
       .eq('org_id', orgId)
       .eq('id', workOrderId)
       .maybeSingle()
@@ -1640,6 +1879,7 @@ router.patch('/manual/:id/assignment', canApproveWorkOrders, assertOrgOwnership(
       && workOrder.assigned_location_id === employee.location_id,
     )
     const locationOnlyPool = atLocation && !workOrder.assigned_department_id
+    const unclaimedPool = await isUnclaimedWorkRequestPool(orgId, workOrder)
 
     const respondWithDetail = async () => {
       const detail = await loadWorkOrderDetail(orgId, workOrderId)
@@ -1652,14 +1892,52 @@ router.patch('/manual/:id/assignment', canApproveWorkOrders, assertOrgOwnership(
       return res.json({ ...detail, assignment_actions })
     }
 
-    // Self-claim from department or location pool
+    // Self-claim from the open work-request pool, or a department / location pool
     if (claimSelf) {
-      if (!inDeptPool && !locationOnlyPool) {
+      if (!unclaimedPool && !inDeptPool && !locationOnlyPool) {
         return res.status(403).json({ error: 'You can only claim work orders assigned to your location or department' })
       }
-      const current = (await loadAssigneesForWorkOrders(orgId, [workOrderId])).get(workOrderId) || []
+      const current = unclaimedPool
+        ? []
+        : ((await loadAssigneesForWorkOrders(orgId, [workOrderId])).get(workOrderId) || [])
       const ids = [...new Set([...current.map((a) => a.id), employee.id])]
       await syncWorkOrderAssignees(orgId, workOrderId, ids)
+      const promoted = await promoteIfAcceptanceSkipped(orgId, workOrder, ids.length)
+
+      const assignmentPatch = {}
+      if (req.body?.work_center !== undefined) assignmentPatch.work_center = req.body.work_center || null
+      if (req.body?.priority !== undefined) assignmentPatch.priority = req.body.priority || null
+      if (req.body?.planned_start_at !== undefined) assignmentPatch.planned_start_at = req.body.planned_start_at || null
+      if (req.body?.planned_end_at !== undefined) assignmentPatch.planned_end_at = req.body.planned_end_at || null
+      if (req.body?.special_instructions !== undefined) {
+        assignmentPatch.special_instructions = req.body.special_instructions || null
+      }
+
+      if (req.body?.start) {
+        const actors = await actorsForWorkOrder(req, workOrderId)
+        let status = promoted.status
+        if (status === 'assigned') {
+          const accepted = await updateWorkOrderLifecycle(orgId, profileId, workOrderId, {
+            status: 'accepted',
+            ...assignmentPatch,
+          }, { actors })
+          status = accepted.status
+        }
+        if (status !== 'started') {
+          await updateWorkOrderLifecycle(orgId, profileId, workOrderId, {
+            status: 'started',
+            ...assignmentPatch,
+          }, { actors })
+        }
+      } else if (Object.keys(assignmentPatch).length) {
+        await updateWorkOrderLifecycle(
+          orgId,
+          profileId,
+          workOrderId,
+          assignmentPatch,
+          { actors: await actorsForWorkOrder(req, workOrderId) },
+        )
+      }
       return respondWithDetail()
     }
 
@@ -1693,6 +1971,7 @@ router.patch('/manual/:id/assignment', canApproveWorkOrders, assertOrgOwnership(
       const updates = {
         assigned_department_id: departmentAssignment?.assigned_department_id ?? null,
         assigned_location_id: departmentAssignment?.assigned_location_id || workOrder.assigned_location_id,
+        ...assignmentDetailsFromBody(req.body),
         updated_at: new Date().toISOString(),
       }
       const { error: updateError } = await supabaseAdmin
@@ -1702,11 +1981,46 @@ router.patch('/manual/:id/assignment', canApproveWorkOrders, assertOrgOwnership(
         .eq('org_id', orgId)
       if (updateError) throw updateError
 
-      if (employeeIds) await syncWorkOrderAssignees(orgId, workOrderId, employeeIds)
+      if (employeeIds) {
+        await syncWorkOrderAssignees(orgId, workOrderId, employeeIds)
+        await promoteIfAcceptanceSkipped(orgId, workOrder, employeeIds.length)
+      }
       return respondWithDetail()
     }
 
-    // Same-dept employee may only claim self (handled above)
+    // Order To department head, or someone in that department who can approve,
+    // assigns technicians inside the department. Department and location stay put.
+    const canAssignDepartmentTechnicians = Boolean(
+      (inDeptPool || unclaimedPool)
+      && (
+        req.orgPermissions?.is_org_admin
+        || req.orgPermissions?.is_department_head
+        || hasModulePermission(req.orgPermissions, 'work_orders_approve', 'update')
+        || hasModulePermission(req.orgPermissions, 'work_request_approve', 'update')
+      ),
+    )
+    if (canAssignDepartmentTechnicians) {
+      if (!hasEmployeeIds || req.body.assigned_employee_ids.length === 0) {
+        return res.status(400).json({ error: 'Assign at least one technician.' })
+      }
+      const employeeIds = await validateAssignedEmployees(orgId, req.body.assigned_employee_ids, {
+        locationId: workOrder.assigned_location_id,
+        departmentId: workOrder.assigned_department_id,
+      })
+      await syncWorkOrderAssignees(orgId, workOrderId, employeeIds)
+      await promoteIfAcceptanceSkipped(orgId, workOrder, employeeIds.length)
+      const details = assignmentDetailsFromBody(req.body)
+      if (Object.keys(details).length) {
+        const { error: detailsError } = await supabaseAdmin
+          .from('manual_work_orders')
+          .update({ ...details, updated_at: new Date().toISOString() })
+          .eq('id', workOrderId)
+          .eq('org_id', orgId)
+        if (detailsError) throw detailsError
+      }
+      return respondWithDetail()
+    }
+
     return res.status(403).json({ error: 'You do not have permission to reassign this work order' })
   } catch (err) {
     res.status(400).json({ error: err.message })
@@ -1730,11 +2044,14 @@ router.patch('/manual/:id/values', canUpdateWorkOrders, assertOrgOwnership('manu
   }
 })
 
-router.patch('/:id/lifecycle', canUpdateWorkOrders, assertOrgOwnership('manual_work_orders'), async (req, res) => {
+router.patch('/:id/lifecycle', canReadWorkOrders, assertOrgOwnership('manual_work_orders'), async (req, res) => {
   const orgId = req.userProfile.org_id
   const profileId = req.userProfile.id
   try {
-    const updated = await updateWorkOrderLifecycle(orgId, profileId, req.params.id, req.body || {})
+    await assertWorkOrderEditor(req, req.params.id)
+    const updated = await updateWorkOrderLifecycle(orgId, profileId, req.params.id, req.body || {}, {
+      actors: await actorsForWorkOrder(req, req.params.id),
+    })
     const detail = await loadWorkOrderDetail(orgId, updated.id)
     res.json(detail)
   } catch (err) {
@@ -1742,11 +2059,14 @@ router.patch('/:id/lifecycle', canUpdateWorkOrders, assertOrgOwnership('manual_w
   }
 })
 
-router.patch('/manual/:id/lifecycle', canUpdateWorkOrders, assertOrgOwnership('manual_work_orders'), async (req, res) => {
+router.patch('/manual/:id/lifecycle', canReadWorkOrders, assertOrgOwnership('manual_work_orders'), async (req, res) => {
   const orgId = req.userProfile.org_id
   const profileId = req.userProfile.id
   try {
-    const updated = await updateWorkOrderLifecycle(orgId, profileId, req.params.id, req.body || {})
+    await assertWorkOrderEditor(req, req.params.id)
+    const updated = await updateWorkOrderLifecycle(orgId, profileId, req.params.id, req.body || {}, {
+      actors: await actorsForWorkOrder(req, req.params.id),
+    })
     const detail = await loadWorkOrderDetail(orgId, updated.id)
     res.json(detail)
   } catch (err) {
@@ -1764,10 +2084,11 @@ router.get('/manual/:id/daily-logs', canReadWorkOrders, assertOrgOwnership('manu
   }
 })
 
-router.post('/manual/:id/daily-logs/start-day', canUpdateWorkOrders, assertOrgOwnership('manual_work_orders'), async (req, res) => {
+router.post('/manual/:id/daily-logs/start-day', canReadWorkOrders, assertOrgOwnership('manual_work_orders'), async (req, res) => {
   const orgId = req.userProfile.org_id
   const profileId = req.userProfile.id
   try {
+    await assertWorkOrderEditor(req, req.params.id)
     await startWorkOrderDay(orgId, profileId, req.params.id, {
       timeZone: req.body?.time_zone || req.body?.timeZone,
     })
@@ -1778,10 +2099,11 @@ router.post('/manual/:id/daily-logs/start-day', canUpdateWorkOrders, assertOrgOw
   }
 })
 
-router.patch('/manual/:id/daily-logs/:logId', canUpdateWorkOrders, assertOrgOwnership('manual_work_orders'), async (req, res) => {
+router.patch('/manual/:id/daily-logs/:logId', canReadWorkOrders, assertOrgOwnership('manual_work_orders'), async (req, res) => {
   const orgId = req.userProfile.org_id
   const profileId = req.userProfile.id
   try {
+    await assertWorkOrderEditor(req, req.params.id)
     await updateWorkOrderDailyLog(
       orgId,
       profileId,
@@ -1796,10 +2118,11 @@ router.patch('/manual/:id/daily-logs/:logId', canUpdateWorkOrders, assertOrgOwne
   }
 })
 
-router.post('/manual/:id/daily-logs/:logId/end-day', canUpdateWorkOrders, assertOrgOwnership('manual_work_orders'), async (req, res) => {
+router.post('/manual/:id/daily-logs/:logId/end-day', canReadWorkOrders, assertOrgOwnership('manual_work_orders'), async (req, res) => {
   const orgId = req.userProfile.org_id
   const profileId = req.userProfile.id
   try {
+    await assertWorkOrderEditor(req, req.params.id)
     await endWorkOrderDay(
       orgId,
       profileId,
@@ -1821,7 +2144,7 @@ router.patch('/manual/:id', canUpdateWorkOrders, assertOrgOwnership('manual_work
   try {
     const { data: existing, error: loadError } = await supabaseAdmin
       .from('manual_work_orders')
-      .select('id, status, wo_number, assigned_department_id, assigned_location_id')
+      .select('id, status, wo_number, assigned_department_id, assigned_location_id, source_type')
       .eq('org_id', orgId)
       .eq('id', workOrderId)
       .maybeSingle()
@@ -1834,22 +2157,28 @@ router.patch('/manual/:id', canUpdateWorkOrders, assertOrgOwnership('manual_work
     if (requestedStatus === 'draft') nextStatus = 'draft'
     else if (requestedStatus === 'created' || requestedStatus === 'assigned') nextStatus = 'assigned'
     else if (typeof requestedStatus === 'string' && requestedStatus !== existing.status) {
-      const allowed = await getAllowedNextWorkOrderStatuses(orgId, existing.status)
+      const processSkips = await loadOrgProcessSkips(orgId)
+      const allowed = await getAllowedNextWorkOrderStatuses(orgId, existing.status, {
+        skipTechnicianAcceptance: Boolean(processSkips.get(workOrderFormIdForSource(existing.source_type))),
+      })
       if (!allowed.includes(requestedStatus)) {
         return res.status(400).json({ error: `Invalid status transition to ${requestedStatus}` })
       }
       nextStatus = requestedStatus
     }
 
+    const editor = await getEmployeeByProfile(orgId, req.userProfile.id, { email: req.userProfile.email })
+    const requestedDepartmentId = req.body?.assigned_department_id !== undefined
+      ? (req.body.assigned_department_id || null)
+      : existing.assigned_department_id
     const assignedLocationId = req.body?.assigned_location_id !== undefined
       ? (req.body.assigned_location_id || null)
       : existing.assigned_location_id
     const departmentAssignment = await validateAssignedDepartment(
       orgId,
-      req.body?.assigned_department_id !== undefined
-        ? (req.body.assigned_department_id || null)
-        : existing.assigned_department_id,
+      requestedDepartmentId,
       assignedLocationId,
+      { fallbackLocationId: editor?.location_id || existing.assigned_location_id || null },
     )
 
     const hasEmployeeIds = Array.isArray(req.body?.assigned_employee_ids)
@@ -1861,9 +2190,15 @@ router.patch('/manual/:id', canUpdateWorkOrders, assertOrgOwnership('manual_work
       )
       : null
 
+    const nextDepartmentId = departmentAssignment?.assigned_department_id || null
+    if (nextStatus === 'assigned' && !nextDepartmentId) {
+      return res.status(400).json({ error: 'Select an Order to department.' })
+    }
+    const departmentChanged = nextDepartmentId !== (existing.assigned_department_id || null)
+
     const updates = {
       status: nextStatus,
-      assigned_department_id: departmentAssignment?.assigned_department_id || null,
+      assigned_department_id: nextDepartmentId,
       assigned_location_id: departmentAssignment?.assigned_location_id || assignedLocationId || null,
       updated_at: new Date().toISOString(),
     }
@@ -1888,6 +2223,9 @@ router.patch('/manual/:id', canUpdateWorkOrders, assertOrgOwnership('manual_work
 
     if (assignedEmployeeIds) {
       await syncWorkOrderAssignees(orgId, workOrderId, assignedEmployeeIds)
+      await promoteIfAcceptanceSkipped(orgId, workOrder, assignedEmployeeIds.length)
+    } else if (departmentChanged) {
+      await syncWorkOrderAssignees(orgId, workOrderId, [])
     }
 
     let valueCount = 0
@@ -2445,11 +2783,15 @@ router.get('/received/:id', canReadWorkOrders, async (req, res) => {
 
     const scopedLocationId = getScopedLocationId(req.orgPermissions)
     const isAssignee = (detail.assignees || []).some((row) => row.id === employee.id)
+    const unclaimedPool = Boolean(detail.work_request_id)
+      && !(detail.assignees || []).length
+      && ['assigned', 'accepted'].includes(detail.status)
     if (
       scopedLocationId
       && detail.assigned_location_id
       && detail.assigned_location_id !== scopedLocationId
       && !isAssignee
+      && !unclaimedPool
     ) {
       return res.status(404).json({ error: 'Not found' })
     }

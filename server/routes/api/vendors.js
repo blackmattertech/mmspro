@@ -15,6 +15,9 @@ import { attachFailedFileToResult } from '../../lib/importErrorWorkbook.js'
 import { parseListControls } from '../../lib/listQuery.js'
 
 const router = Router()
+const canCreate = requireModulePermission('vendors', 'create')
+const canUpdate = requireModulePermission('vendors', 'update')
+const canDelete = requireModulePermission('vendors', 'delete')
 
 router.use(verifyAuth, requireOrgAccess, requireModulePermission('vendors', 'read'))
 
@@ -51,7 +54,7 @@ router.get('/', async (req, res) => {
   }
 })
 
-router.get('/template', async (req, res) => {
+router.get('/template', canCreate, async (req, res) => {
   try {
     const buffer = await buildVendorsTemplate()
     res.json({
@@ -64,7 +67,7 @@ router.get('/template', async (req, res) => {
   }
 })
 
-router.post('/bulk', async (req, res) => {
+router.post('/bulk', canCreate, async (req, res) => {
   try {
     const raw = req.body?.data
     if (!raw || typeof raw !== 'string') {
@@ -93,7 +96,7 @@ router.get('/:id', assertOrgOwnership('vendors'), async (req, res) => {
   }
 })
 
-router.post('/', async (req, res) => {
+router.post('/', canCreate, async (req, res) => {
   try {
     const row = await createVendor(req.userProfile.org_id, req.body)
     res.status(201).json(row)
@@ -102,7 +105,7 @@ router.post('/', async (req, res) => {
   }
 })
 
-router.patch('/:id', assertOrgOwnership('vendors'), async (req, res) => {
+router.patch('/:id', canUpdate, assertOrgOwnership('vendors'), async (req, res) => {
   try {
     const row = await updateVendor(req.userProfile.org_id, req.params.id, req.body)
     res.json(row)
@@ -111,7 +114,7 @@ router.patch('/:id', assertOrgOwnership('vendors'), async (req, res) => {
   }
 })
 
-router.delete('/:id', assertOrgOwnership('vendors'), async (req, res) => {
+router.delete('/:id', canDelete, assertOrgOwnership('vendors'), async (req, res) => {
   try {
     const result = await deleteVendor(req.userProfile.org_id, req.params.id)
     res.json(result)

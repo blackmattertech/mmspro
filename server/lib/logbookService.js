@@ -66,7 +66,7 @@ async function getEquipmentRow(orgId, equipmentId) {
     .eq('id', equipmentId)
     .maybeSingle()
   if (error) throw error
-  if (!data) throw httpError('Equipment not found', 404)
+  if (!data) throw httpError('Asset not found', 404)
   return data
 }
 
@@ -208,7 +208,7 @@ export async function listMeterReadings(orgId, equipmentId) {
 export async function addMeterReading(orgId, equipmentId, body, userId) {
   const equipment = await getEquipmentRow(orgId, equipmentId)
   if (equipment.reading_required !== true) {
-    throw httpError('Turn on Reading required for this equipment before logging a meter reading.')
+    throw httpError('Turn on Reading required for this asset before logging a meter reading.')
   }
 
   const reading = asReading(body?.reading)

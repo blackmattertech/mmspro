@@ -10,7 +10,9 @@ export default function WarrantyExpiringFilter({
   onChange,
   onApply,
   onCancel,
+  onClear,
   applyDisabled = false,
+  clearDisabled = false,
 }) {
   const setField = (key, fieldValue) => {
     onChange?.({ ...value, [key]: fieldValue })
@@ -32,8 +34,8 @@ export default function WarrantyExpiringFilter({
   )
 
   return (
-    <div className="warranty-expiring-filter" role="region" aria-label="Expiring soon filter">
-      <span className="warranty-expiring-filter__title">Expiring soon</span>
+    <div className="warranty-expiring-filter" role="region" aria-label="Soon to Expired filter">
+      <span className="warranty-expiring-filter__title">Soon to Expired</span>
 
       <div className="warranty-expiring-filter__mode" role="tablist" aria-label="Filter mode">
         <button
@@ -112,6 +114,16 @@ export default function WarrantyExpiringFilter({
       )}
 
       <div className="warranty-expiring-filter__actions">
+        {onClear && (
+          <button
+            type="button"
+            className="company-btn company-btn--secondary company-btn--compact"
+            onClick={onClear}
+            disabled={clearDisabled}
+          >
+            Reset
+          </button>
+        )}
         <button
           type="button"
           className="company-btn company-btn--secondary company-btn--compact"

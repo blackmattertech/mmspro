@@ -27,6 +27,7 @@ import rolesRoutes from './routes/api/roles.js'
 import internalRoutes from './routes/api/internal.js'
 import reportsRoutes from './routes/api/reports.js'
 import formLayoutsRoutes from './routes/api/formLayouts.js'
+import formMastersRoutes from './routes/api/formMasters.js'
 import dashboardRoutes from './routes/api/dashboard.js'
 import calendarRoutes from './routes/api/calendar.js'
 import integrationPublicRoutes from './routes/api/integrationsPublic.js'
@@ -130,6 +131,7 @@ app.use('/api/tasks', tasksRoutes)
 app.use('/api/profile', profileRoutes)
 app.use('/api/reports', reportsRoutes)
 app.use('/api/form-layouts', formLayoutsRoutes)
+app.use('/api/form-masters', formMastersRoutes)
 app.use('/api/dashboard', dashboardRoutes)
 app.use('/api/calendar', calendarRoutes)
 app.use('/api/integrations', integrationPublicRoutes)

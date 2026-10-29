@@ -21,6 +21,9 @@ import { loadRuntimeFormLayout, attachFormFieldValueMaps } from './orgFormLayout
 import { applyMappedFilters, ilikePattern } from './listQuery.js'
 import { idsByIlike, NO_MATCH_ID, restrictToIds } from './relationFilters.js'
 import { shouldRequire, systemId } from './formLayoutIds.js'
+import { assignedStatusForTechnicians, maybePromoteAssignedToAccepted } from './formSkips.js'
+import { WORK_ORDER_FORM_IDS } from './workOrderForms.js'
+import { buildAssetHierarchy as buildEquipmentAssetHierarchy } from './workRequestService.js'
 import {
   computeNextDueDate,
   formatDateOnly,
@@ -581,38 +584,8 @@ async function resolveLocationId(orgId, payload) {
 }
 
 async function buildAssetHierarchy(orgId, payload) {
-  const steps = []
-  if (payload.location_id) {
-    const { data } = await supabaseAdmin
-      .from('org_locations')
-      .select('name')
-      .eq('id', payload.location_id)
-      .maybeSingle()
-    if (data?.name) steps.push({ field_name: 'Plant / Facility', value: data.name })
-  }
-  if (payload.area_id) {
-    const { data } = await supabaseAdmin
-      .from('areas')
-      .select('name')
-      .eq('id', payload.area_id)
-      .maybeSingle()
-    if (data?.name) steps.push({ field_name: 'Area', value: data.name })
-  }
-  if (payload.equipment_id) {
-    const { data } = await supabaseAdmin
-      .from('equipment')
-      .select('name, code')
-      .eq('org_id', orgId)
-      .eq('id', payload.equipment_id)
-      .maybeSingle()
-    if (data?.name) {
-      steps.push({
-        field_name: 'Equipment',
-        value: data.code ? `${data.code} — ${data.name}` : data.name,
-      })
-    }
-  }
-  return steps
+  if (!payload?.equipment_id) return []
+  return buildEquipmentAssetHierarchy(orgId, payload.equipment_id)
 }
 
 async function applyPmPlanFieldFilters(query, orgId, filters = {}) {
@@ -746,7 +719,7 @@ export async function createPmPlan(orgId, profileId, body = {}, { lean = false }
   }
   payload.location_id = await resolveLocationId(orgId, payload)
   if (shouldRequire(layout, systemId('equipment_id'), true) && !payload.equipment_id) {
-    throw httpError('Asset / equipment is required.')
+    throw httpError('Asset is required.')
   }
 
   const nextDue = initialDueDate(payload)
@@ -803,7 +776,7 @@ export async function updatePmPlan(orgId, profileId, planId, body = {}) {
   }
   payload.location_id = await resolveLocationId(orgId, payload)
   if (shouldRequire(layout, systemId('equipment_id'), true) && !payload.equipment_id) {
-    throw httpError('Asset / equipment is required.')
+    throw httpError('Asset is required.')
   }
 
   const wasActive = existing.status === 'active' || existing.status === 'overdue'
@@ -991,11 +964,16 @@ export async function generateScheduledWorkOrder(orgId, planId, {
   const fieldLimits = await getTextFieldLimitsMap(orgId)
   const pmSummary = `${plan.name} — ${activityName}`
 
+  const initialStatus = await assignedStatusForTechnicians(
+    orgId,
+    WORK_ORDER_FORM_IDS.FROM_PM,
+    Boolean(technicianIds.length),
+  )
   const { data: workOrder, error } = await supabaseAdmin
     .from('manual_work_orders')
     .insert({
       org_id: orgId,
-      status: 'assigned',
+      status: initialStatus,
       wo_number: woNumber,
       source_type: 'preventive_maintenance',
       created_by: actorId || plan.created_by || null,
@@ -1023,8 +1001,15 @@ export async function generateScheduledWorkOrder(orgId, planId, {
 
   if (error) throw error
 
+  let status = workOrder.status
   if (technicianIds.length) {
     await syncWorkOrderAssignees(orgId, workOrder.id, technicianIds)
+    status = await maybePromoteAssignedToAccepted(orgId, {
+      formId: WORK_ORDER_FORM_IDS.FROM_PM,
+      workOrderId: workOrder.id,
+      currentStatus: status,
+      hasAssignees: true,
+    })
   }
 
   await addWorkOrderTimelineEvent(
@@ -1033,7 +1018,7 @@ export async function generateScheduledWorkOrder(orgId, planId, {
     'work_order_generated',
     `Scheduled work order ${woNumber} generated from ${plan.plan_number}.`,
     actorId,
-    { newStatus: 'assigned', metadata: { pm_plan_id: plan.id } },
+    { newStatus: status, metadata: { pm_plan_id: plan.id } },
   )
 
   if (technicianIds.length) {
@@ -1043,7 +1028,7 @@ export async function generateScheduledWorkOrder(orgId, planId, {
       'technician_assigned',
       'Default technician(s) assigned from the PM plan.',
       actorId,
-      { newStatus: 'assigned', metadata: { assignee_ids: technicianIds } },
+      { newStatus: status, metadata: { assignee_ids: technicianIds } },
     )
   }
 

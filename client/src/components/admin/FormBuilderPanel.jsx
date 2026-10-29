@@ -146,6 +146,11 @@ export default function FormBuilderPanel({ org, onGoToSections }) {
           onSave={handleSave}
           onMarkDefault={handleMarkDefault}
           onGoToSections={onGoToSections}
+          formChoices={enabledGroups.flatMap((group) => group.forms.map((item) => ({
+            formId: item.formId,
+            label: item.label,
+            moduleLabel: group.label,
+          })))}
         />
       </div>
     )
@@ -196,7 +201,7 @@ export default function FormBuilderPanel({ org, onGoToSections }) {
       <div className="form-builder__intro">
         <h3 className="form-builder__heading">Form Builder</h3>
         <p className="form-builder__sub">
-          Configure Work Request, Work Orders, PM Schedule, and Warranty Manager forms.
+          Configure Work Request, Work Order processes (WR→WO, PM→WO, Manual, User Self), PM Schedule, and Warranty Manager forms.
           Open a card to choose sections and fields, then drag, resize, and save.
           Mark a form as the default so every new company starts with it.
         </p>

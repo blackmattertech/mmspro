@@ -24,6 +24,7 @@
     "node-mailjet": "^6.0.5",
     "pdfkit": "^0.20.2",
     "postgres": "^3.4.9",
+    "qrcode": "^1.5.4",
     "swagger-ui-express": "^5.0.1",
     "ws": "^8.21.0",
     "yaml": "^2.9.0"

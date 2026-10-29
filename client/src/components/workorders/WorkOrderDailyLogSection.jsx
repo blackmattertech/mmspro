@@ -55,9 +55,9 @@ function draftFromLog(log) {
   }
 }
 
-export default function WorkOrderDailyLogSection({ detail, onUpdated }) {
+export default function WorkOrderDailyLogSection({ detail, onUpdated, canEdit: canEditProp }) {
   const { maxLength } = useTextFieldLimits()
-  const canEdit = Boolean(detail?.daily_log_can_edit)
+  const canEdit = canEditProp != null ? Boolean(canEditProp) : Boolean(detail?.daily_log_can_edit)
   const logs = detail?.daily_logs || []
   const openLog = detail?.daily_log_open || logs.find((row) => row.day_status === 'open') || null
   const [activeLogId, setActiveLogId] = useState(openLog?.id || null)

@@ -70,6 +70,8 @@ export default function OthersChecklistBuilder() {
   const canManage = (
     isCompanyAdmin(role)
     || canManageOrg(role)
+    || canCreate('others')
+    || canUpdate('others')
     || canCreate('work_orders_scheduled')
     || canUpdate('work_orders_scheduled')
     || canCreate('work_orders')

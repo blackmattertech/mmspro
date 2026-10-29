@@ -181,7 +181,8 @@
   flex-shrink: 0;
 }
 
-.advanced-filter__field .company-form__input--select {
+.advanced-filter__field .company-form__input--select,
+.advanced-filter__field .filterable-select {
   width: 100%;
   min-width: 0;
 }

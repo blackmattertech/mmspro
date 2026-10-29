@@ -72,10 +72,12 @@ const canReadCompany = requireAnyModulePermission([
 const canUpdateCompany = requireModulePermission('company', 'update')
 const canReadSettings = requireAnyModulePermission([
   ['settings', 'read'],
+  ['approvals', 'read'],
   ['company', 'read'],
 ])
 const canUpdateSettings = requireAnyModulePermission([
   ['settings', 'update'],
+  ['approvals', 'update'],
   ['company', 'update'],
 ])
 
@@ -117,6 +119,12 @@ const canReadAreas = requireAnyModulePermission([
   ['equipment', 'read'],
   ['equipment', 'create'],
   ['employees', 'read'],
+  ['work_orders', 'read'],
+  ['work_orders', 'create'],
+  ['work_orders_manual', 'read'],
+  ['work_orders_manual', 'create'],
+  ['work_request_create', 'read'],
+  ['work_request_create', 'create'],
 ])
 const canCreateAreas = requireModulePermission('areas', 'create')
 const canUpdateAreas = requireModulePermission('areas', 'update')
@@ -128,6 +136,8 @@ const canListEmployees = requireAnyModulePermission([
   ['employees', 'update'],
   ['work_orders', 'read'],
   ['work_orders', 'create'],
+  ['work_orders_approve', 'update'],
+  ['work_orders_received', 'update'],
   ['roles_access', 'read'],
   ['roles_access', 'create'],
   ['roles_access', 'update'],
@@ -731,7 +741,7 @@ router.delete('/locations/:id', canDeleteLocations, assertOrgOwnership('org_loca
   if (equipmentError) return res.status(500).json({ error: equipmentError.message })
   if (equipmentCount) {
     return res.status(409).json({
-      error: 'This location has equipment. Move or delete that equipment first.',
+      error: 'This location has assets. Move or delete those assets first.',
     })
   }
 
@@ -1135,7 +1145,7 @@ router.delete('/departments/:id', canDeleteDepartments, assertOrgOwnership('depa
   if (equipmentError) return res.status(500).json({ error: equipmentError.message })
   if (equipmentCount) {
     return res.status(409).json({
-      error: 'This department has equipment. Move or delete that equipment first.',
+      error: 'This department has assets. Move or delete those assets first.',
     })
   }
 
@@ -1529,6 +1539,28 @@ async function validateEmployeeRefs(orgId, refs) {
   }
 }
 
+function applyEmployeeSort(query, sortBy) {
+  switch (String(sortBy || '')) {
+    case 'department_desc':
+      return query
+        .order('departments(name)', { ascending: false, nullsFirst: false })
+        .order('name', { ascending: true })
+    case 'oldest':
+      return query.order('created_at', { ascending: true })
+    case 'newest':
+      return query.order('created_at', { ascending: false })
+    case 'name_desc':
+      return query.order('name', { ascending: false })
+    case 'name_asc':
+      return query.order('name', { ascending: true })
+    case 'department_asc':
+    default:
+      return query
+        .order('departments(name)', { ascending: true, nullsFirst: false })
+        .order('name', { ascending: true })
+  }
+}
+
 router.get('/employees', canListEmployees, async (req, res) => {
   const { limit, offset } = parsePagination(req.query, { defaultLimit: 50, maxLimit: 200 })
   const controls = parseListControls(req.query)
@@ -1543,7 +1575,11 @@ router.get('/employees', canListEmployees, async (req, res) => {
 
   const scopedLocationId = getScopedLocationId(req.orgPermissions)
   const forAssignment = req.query.for_assignment === '1'
-    && hasModulePermission(req.orgPermissions, 'work_orders', 'create')
+    && (
+      hasModulePermission(req.orgPermissions, 'work_orders', 'create')
+      || hasModulePermission(req.orgPermissions, 'work_orders_approve', 'update')
+      || hasModulePermission(req.orgPermissions, 'work_orders_received', 'update')
+    )
   if (scopedLocationId && !forAssignment) {
     query = query.eq('location_id', scopedLocationId)
   } else if (req.query.location_id) {
@@ -1557,11 +1593,7 @@ router.get('/employees', canListEmployees, async (req, res) => {
     email: 'email',
     mobile: 'mobile',
   })
-  query = applyMappedSort(query, controls.sort, controls.sortDir, {
-    name: 'name',
-    emp_id: 'emp_id',
-    email: 'email',
-  }, (sorted) => sorted.order('name'))
+  query = applyEmployeeSort(query, req.query.sort_by || controls.sort)
   query = query.range(pageOffset, pageOffset + pageLimit - 1)
 
   const { data, error, count } = await query
@@ -2267,7 +2299,7 @@ router.delete('/areas/:id', canDeleteAreas, assertOrgOwnership('areas'), async (
 
   if (countError) return res.status(500).json({ error: countError.message })
   if (count > 0) {
-    return res.status(400).json({ error: 'Remove or reassign equipment in this area first' })
+    return res.status(400).json({ error: 'Remove or reassign assets in this area first' })
   }
 
   const { error } = await supabaseAdmin

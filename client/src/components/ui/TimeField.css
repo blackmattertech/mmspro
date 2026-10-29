@@ -25,7 +25,7 @@
 
 .time-field__popover {
   position: fixed;
-  z-index: 1400;
+  z-index: 1600;
   width: 220px;
   background: var(--color-white);
   border: 1px solid var(--color-light-gray-2);

@@ -4,7 +4,8 @@ import { useDebouncedValue } from '../../hooks/useDebouncedValue'
 import EmployeeAvatar from '../company/EmployeeAvatar'
 import PageBack from '../shared/PageBack'
 import TableFilterToolbar from '../shared/TableFilterToolbar'
-import { TABLE_SORT_OPTIONS, applyTableFilters, compactFilters } from '../../lib/tableFilters'
+import TableEmptyRow from '../shared/TableEmptyRow'
+import { TABLE_SORT_OPTIONS, applyTableFilters, compactFilters, uniqueNameOptions, ACTIVE_STATUS_FILTER, selectFilterField } from '../../lib/tableFilters'
 import { formatPhoneDisplay } from '../shared/PhoneInput'
 import '../company/CompanyShared.css'
 import '../shared/PageBack.css'
@@ -12,17 +13,6 @@ import '../shared/TableFilterToolbar.css'
 import '../workorders/WorkOrdersPage.css'
 import './AssignEmployeesModal.css'
 
-const EMPLOYEE_FILTER_FIELDS = [
-  { value: 'name', label: 'Name' },
-  { value: 'emp_id', label: 'Emp ID' },
-  { value: 'department', label: 'Department' },
-  { value: 'location', label: 'Location' },
-  { value: 'email', label: 'Email' },
-  { value: 'mobile', label: 'Mobile' },
-  { value: 'manager', label: 'Manager' },
-  { value: 'role', label: 'Current role' },
-  { value: 'status', label: 'Status', placeholder: 'active or inactive' },
-]
 
 export default function AssignEmployeesModal({
   role,
@@ -41,6 +31,18 @@ export default function AssignEmployeesModal({
   const handleBackdropClick = useBackdropClose(onClose)
   const debouncedSearch = useDebouncedValue(search.trim())
   const seededRoleId = useRef(null)
+
+  const employeeFilterFields = useMemo(() => ([
+    selectFilterField('name', 'Name', uniqueNameOptions(employees), 'All names'),
+    selectFilterField('emp_id', 'Emp ID', uniqueNameOptions(employees, (row) => row.emp_id), 'All Emp IDs'),
+    selectFilterField('department', 'Department', uniqueNameOptions(employees, (row) => row.departments?.name), 'All departments'),
+    selectFilterField('location', 'Location', uniqueNameOptions(employees, (row) => row.org_locations?.name), 'All locations'),
+    selectFilterField('email', 'Email', uniqueNameOptions(employees, (row) => row.email), 'All emails'),
+    selectFilterField('mobile', 'Mobile', uniqueNameOptions(employees, (row) => row.mobile), 'All mobile numbers'),
+    selectFilterField('manager', 'Manager', uniqueNameOptions(employees, (row) => row.manager?.name), 'All managers'),
+    selectFilterField('role', 'Current role', uniqueNameOptions(employees, (row) => row.access_role?.name), 'All roles'),
+    ACTIVE_STATUS_FILTER,
+  ]), [employees])
 
   const assignedIds = useMemo(
     () => (selectionEmployees || employees)
@@ -114,7 +116,7 @@ export default function AssignEmployeesModal({
               ariaLabel: 'Search employees',
             }}
             filter={{
-              fields: EMPLOYEE_FILTER_FIELDS,
+              fields: employeeFilterFields,
               values: columnFilters,
               onChange: setColumnFilters,
             }}
@@ -122,9 +124,6 @@ export default function AssignEmployeesModal({
           />
 
           <div className="assign-employees-modal__table-wrap">
-            {filtered.length === 0 ? (
-              <p className="company-empty">No employees found.</p>
-            ) : (
               <table className="company-table assign-employees-modal__table">
                 <thead>
                   <tr>
@@ -139,7 +138,9 @@ export default function AssignEmployeesModal({
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.map((employee) => {
+                  {filtered.length === 0 ? (
+                    <TableEmptyRow colSpan={8}>No employees found.</TableEmptyRow>
+                  ) : filtered.map((employee) => {
                     const checked = selected.has(employee.id)
 
                     return (
@@ -183,7 +184,6 @@ export default function AssignEmployeesModal({
                   })}
                 </tbody>
               </table>
-            )}
           </div>
 
           <div className="company-modal__footer">

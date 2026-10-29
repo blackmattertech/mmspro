@@ -14,12 +14,13 @@ import EditIcon from '../ui/EditIcon'
 import DepartmentModal, { formatDepartmentLocation } from './DepartmentModal'
 import LimitExceededCard from '../shared/LimitExceededCard'
 import TablePagination from '../shared/TablePagination'
+import TableEmptyRow from '../shared/TableEmptyRow'
 import TableColumnPicker from '../shared/TableColumnPicker'
 import { DynamicPickerCells, DynamicPickerHeaders } from '../shared/DynamicPickerCells'
 import TableFilterToolbar from '../shared/TableFilterToolbar'
 import { useTablePagination } from '../../hooks/useTablePagination'
 import { useTableColumnPrefs } from '../../hooks/useTableColumnPrefs'
-import { TABLE_SORT_OPTIONS, applyTableFilters, compactFilters } from '../../lib/tableFilters'
+import { TABLE_SORT_OPTIONS, applyTableFilters, compactFilters, uniqueNameOptions, ACTIVE_STATUS_FILTER, selectFilterField } from '../../lib/tableFilters'
 import { stopTableRowClick, tableRowClickProps } from '../../lib/clickableTableRow'
 import RecordDetailModal from '../shared/RecordDetailModal'
 import { DepartmentDetailContent } from './CompanyRecordDetails'
@@ -39,16 +40,6 @@ function canPickAnyLocation({ isOrgAdmin, accessRole }) {
   return roleName === 'admin'
 }
 
-const DEPARTMENT_FILTER_FIELDS = [
-  { value: 'name', label: 'Name' },
-  { value: 'code', label: 'Code' },
-  { value: 'location', label: 'Location' },
-  { value: 'headcount', label: 'Headcount' },
-  { value: 'status', label: 'Status', type: 'select', emptyLabel: 'All Status', options: [
-    { value: 'active', label: 'Active' },
-    { value: 'inactive', label: 'Inactive' },
-  ] },
-]
 
 export default function DepartmentsTab({ canManage }) {
   const { isOrgAdmin, locationId: myLocationId, accessRole } = usePermissions()
@@ -73,6 +64,12 @@ export default function DepartmentsTab({ canManage }) {
     },
   )
   useEffect(() => { setListTotal(total) }, [total])
+  const departmentFilterFields = useMemo(() => ([
+    selectFilterField('name', 'Name', uniqueNameOptions(departments), 'All names'),
+    selectFilterField('code', 'Code', uniqueNameOptions(departments, (row) => row.code), 'All codes'),
+    selectFilterField('location', 'Location', uniqueNameOptions(locations.filter((row) => row.is_active !== false)), 'All locations'),
+    ACTIVE_STATUS_FILTER,
+  ]), [departments, locations])
   const { isResourceAtLimit, reload: reloadLimits } = useOrgLimits()
   const { visible: limitVisible, resource: limitResource, overflow: limitOverflow, trigger: triggerLimit, tryHandleLimitError, dismiss: dismissLimit } = useLimitExceeded()
   const [modalOpen, setModalOpen] = useState(false)
@@ -151,6 +148,7 @@ export default function DepartmentsTab({ canManage }) {
     columnOrder: departmentColumnOrder,
     reorderColumns: reorderDepartmentColumns,
     moveColumn: moveDepartmentColumn,
+    saveColumns: saveDepartmentColumns,
   } = useTableColumnPrefs('company-departments-v2', departmentColumnDefs)
 
   const openCreate = () => {
@@ -284,7 +282,7 @@ export default function DepartmentsTab({ canManage }) {
             ariaLabel: 'Search departments',
           }}
           filter={{
-            fields: DEPARTMENT_FILTER_FIELDS,
+            fields: departmentFilterFields,
             values: columnFilters,
             onChange: setColumnFilters,
           }}
@@ -326,6 +324,7 @@ export default function DepartmentsTab({ canManage }) {
               onReset={resetDepartmentColumns}
               onReorder={reorderDepartmentColumns}
               onMove={moveDepartmentColumn}
+              onSave={saveDepartmentColumns}
             />
           )}
         />
@@ -338,10 +337,6 @@ export default function DepartmentsTab({ canManage }) {
 
       {loading ? (
         <div className="company-loading">Loading departments...</div>
-      ) : departments.length === 0 ? (
-        <div className="company-empty">No departments yet. Create teams like Maintenance, Operations, etc.</div>
-      ) : filteredDepartments.length === 0 ? (
-        <div className="company-empty">No departments match your filters.</div>
       ) : (
         <div className="company-table-wrap">
           <div className="company-table-scroll">
@@ -374,7 +369,13 @@ export default function DepartmentsTab({ canManage }) {
               </tr>
             </thead>
             <tbody>
-              {pagedDepartments.map((dept) => {
+              {pagedDepartments.length === 0 ? (
+                <TableEmptyRow colSpan={(canManage ? 1 : 0) + departmentVisibleColumnIds.length}>
+                  {departments.length === 0
+                    ? 'No departments yet. Create teams like Maintenance, Operations, etc.'
+                    : 'No departments match your filters.'}
+                </TableEmptyRow>
+              ) : pagedDepartments.map((dept) => {
                 const isActive = dept.is_active !== false
                 return (
                   <tr

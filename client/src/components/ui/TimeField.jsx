@@ -224,6 +224,7 @@ export default function TimeField({
         aria-label="Choose time"
         data-fixed-popover=""
         style={{ top: coords.top, left: coords.left }}
+        onMouseDown={(event) => event.stopPropagation()}
       >
         <div className="time-field__head">
           <span className="time-field__head-label">Select time</span>

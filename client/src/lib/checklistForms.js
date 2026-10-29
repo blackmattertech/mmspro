@@ -4,7 +4,10 @@
  */
 export const CHECKLIST_FORMS = [
   { formId: 'work_request.create', label: 'Work request', moduleKey: 'work_request', moduleId: 'work_request' },
+  { formId: 'work_orders.from_work_request', label: 'Work Request to Work Order', moduleKey: 'work_order', moduleId: 'work_orders' },
+  { formId: 'work_orders.from_pm', label: 'PM Schedule to Work Order', moduleKey: 'work_order', moduleId: 'work_orders' },
   { formId: 'work_orders.manual', label: 'Manual work order', moduleKey: 'work_order', moduleId: 'work_orders' },
+  { formId: 'work_orders.user_self', label: 'User Self Request', moduleKey: 'work_order', moduleId: 'work_orders' },
   { formId: 'pm.plan', label: 'PM plan', moduleKey: 'pm_plan', moduleId: 'work_orders_scheduled' },
 ]
 

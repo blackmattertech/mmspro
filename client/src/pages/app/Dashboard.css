@@ -596,6 +596,12 @@
   vertical-align: middle;
 }
 
+.dash-table td.company-empty {
+  padding: 24px 8px;
+  text-align: center;
+  border-top: none;
+}
+
 .dash-table__id {
   font-weight: 600;
   color: var(--color-dark-navy);

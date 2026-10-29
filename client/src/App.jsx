@@ -1,5 +1,6 @@
 import { Suspense, useEffect } from 'react'
 import { WORK_REQUEST_MODULE_KEYS, REPORT_MODULE_KEYS } from './lib/accessModules'
+import { MASTER_HUB_MODULE_KEYS } from './config/navigation'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { lazyPage } from './lib/lazyPage'
 import { AuthProvider, useAuth } from './hooks/useAuth'
@@ -14,7 +15,6 @@ const ResetPassword = lazyPage(() => import('./pages/auth/ResetPassword'))
 const Dashboard = lazyPage(() => import('./pages/app/Dashboard'))
 const Calendar = lazyPage(() => import('./pages/app/Calendar'))
 const Company = lazyPage(() => import('./pages/app/Company'))
-const Assets = lazyPage(() => import('./pages/app/Assets'))
 const Equipment = lazyPage(() => import('./pages/app/Equipment'))
 const EquipmentScan = lazyPage(() => import('./pages/app/EquipmentScan'))
 const Logbook = lazyPage(() => import('./pages/app/Logbook'))
@@ -34,10 +34,13 @@ const TasksManager = lazyPage(() => import('./pages/app/TasksManager'))
 const TaskDetailPage = lazyPage(() => import('./pages/app/TaskDetailPage'))
 const TaskFormPage = lazyPage(() => import('./pages/app/TaskFormPage'))
 const WarrantyManager = lazyPage(() => import('./pages/app/WarrantyManager'))
+const WarrantyManagerLayout = lazyPage(() => import('./components/warranty/WarrantyManagerLayout'))
 const WarrantyDetailPage = lazyPage(() => import('./pages/app/WarrantyDetailPage'))
 const WarrantyFormPage = lazyPage(() => import('./pages/app/WarrantyFormPage'))
 const Vendors = lazyPage(() => import('./pages/app/Vendors'))
 const VendorDetailPage = lazyPage(() => import('./pages/app/VendorDetailPage'))
+const Masters = lazyPage(() => import('./pages/app/Masters'))
+const FormMasters = lazyPage(() => import('./pages/app/FormMasters'))
 const Others = lazyPage(() => import('./pages/app/Others'))
 const OthersStatusTypes = lazyPage(() => import('./pages/app/OthersStatusTypes'))
 const OthersStatusManage = lazyPage(() => import('./pages/app/OthersStatusManage'))
@@ -59,6 +62,7 @@ const AdminUsers = lazyPage(() => import('./pages/admin/Users'))
 const AdminIntegrations = lazyPage(() => import('./pages/admin/Integrations'))
 const AdminPlans = lazyPage(() => import('./pages/admin/Plans'))
 const AdminReports = lazyPage(() => import('./pages/admin/Reports'))
+const AdminDefaults = lazyPage(() => import('./pages/admin/Defaults'))
 
 const masterRoutes = ['order', 'activity']
 const companyPageModules = ['company', 'locations', 'departments', 'work_centers', 'employees']
@@ -118,6 +122,7 @@ export default function App() {
               <Route path="integrations" element={withSuspense(<AdminIntegrations />)} />
               <Route path="plans" element={withSuspense(<AdminPlans />)} />
               <Route path="reports" element={withSuspense(<AdminReports />)} />
+              <Route path="default" element={withSuspense(<AdminDefaults />)} />
             </Route>
 
             <Route path="/:orgSlug" element={<OrgRoute>{withSuspense(<AppLayout />)}</OrgRoute>}>
@@ -128,7 +133,7 @@ export default function App() {
                 path="work-request"
                 element={withModule([...WORK_REQUEST_MODULE_KEYS, 'work_request'], <WorkRequestsRouteLayout />)}
               >
-                <Route index element={<Navigate to="create" replace />} />
+                <Route index element={<Navigate to="incoming" replace />} />
                 <Route path="create" element={withSuspense(<WorkRequestCreate />)} />
                 <Route
                   path="my"
@@ -168,18 +173,28 @@ export default function App() {
                 />
               </Route>
               <Route path="calendar" element={withModule('calendar', <Calendar />)} />
-              <Route path="warranty-manager" element={withModule('warranty_manager', <WarrantyManager />)} />
-              <Route path="warranty-manager/create" element={withModule('warranty_manager', <WarrantyFormPage />)} />
-              <Route path="warranty-manager/:warrantyId/edit" element={withModule('warranty_manager', <WarrantyFormPage />)} />
-              <Route path="warranty-manager/:warrantyId" element={withModule('warranty_manager', <WarrantyDetailPage />)} />
+              <Route path="warranty-manager" element={withModule('warranty_manager', <WarrantyManagerLayout />)}>
+                <Route index element={<Navigate to="in-warranty" replace />} />
+                <Route path="in-warranty" element={withSuspense(<WarrantyManager />)} />
+                <Route path="out-of-warranty" element={withSuspense(<WarrantyManager />)} />
+                <Route path="soon-to-expired" element={withSuspense(<WarrantyManager />)} />
+                <Route path="expired" element={withSuspense(<WarrantyManager />)} />
+                <Route path="create" element={withSuspense(<WarrantyFormPage />)} />
+                <Route path=":warrantyId/edit" element={withSuspense(<WarrantyFormPage />)} />
+                <Route path=":warrantyId" element={withSuspense(<WarrantyDetailPage />)} />
+              </Route>
               <Route path="tasks-and-followups" element={withModule('tasks_followups', <TasksRouteLayout />)}>
                 <Route index element={withSuspense(<TasksManager />)} />
                 <Route path="create" element={withSuspense(<TaskFormPage />)} />
                 <Route path=":taskId/edit" element={withSuspense(<TaskFormPage />)} />
                 <Route path=":taskId" element={withSuspense(<TaskDetailPage />)} />
               </Route>
+              <Route path="masters" element={withModule(MASTER_HUB_MODULE_KEYS, <Masters />)} />
+              <Route path="masters/forms/:formId/:fieldId" element={withModule('assets', <FormMasters />)} />
+              <Route path="masters/forms/:formId" element={withModule('assets', <FormMasters />)} />
+              <Route path="masters/forms" element={withModule('assets', <FormMasters />)} />
               <Route path="masters/company" element={withModule(companyPageModules, <Company />)} />
-              <Route path="masters/assets" element={withModule('assets', <Assets />)} />
+              <Route path="masters/assets" element={<Navigate to="../forms" relative="path" replace />} />
               <Route path="masters/equipment" element={withModule(['equipment', 'areas'], <Equipment />)} />
               <Route path="scan/equipment/:equipmentId" element={withSuspense(<EquipmentScan />)} />
               <Route path="masters/vendors" element={withModule('vendors', <Vendors />)} />
@@ -226,7 +241,7 @@ export default function App() {
               />
               <Route
                 path="configuration/approvals"
-                element={withModule('settings', <Approvals />)}
+                element={withModule('approvals', <Approvals />)}
               />
               <Route
                 path="configuration/settings"
@@ -234,11 +249,11 @@ export default function App() {
               />
               <Route
                 path="configuration/import"
-                element={withModule('settings', <ConfigurationImport />)}
+                element={withModule('import', <ConfigurationImport />)}
               />
               <Route
                 path="configuration/export"
-                element={withModule('settings', <PlaceholderPage title="Export" />)}
+                element={withModule('export', <PlaceholderPage title="Export" />)}
               />
             </Route>
 

@@ -58,7 +58,7 @@ export default function MeterReadingModal({
         </div>
         <form className="company-modal__form" onSubmit={handleSubmit}>
           <p className="company-modal__hint">
-            {equipment?.name || 'Equipment'}
+            {equipment?.name || 'Asset'}
             {equipment?.code ? ` · ${equipment.code}` : ''}
           </p>
           {lastReading != null && (

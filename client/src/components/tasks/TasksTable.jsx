@@ -10,6 +10,7 @@ import TrashIcon from '../ui/TrashIcon'
 import TaskAssigneeAvatars from './TaskAssigneeAvatars'
 import './TaskAssigneeAvatars.css'
 import TablePagination from '../shared/TablePagination'
+import TableEmptyRow from '../shared/TableEmptyRow'
 import TableColumnPicker from '../shared/TableColumnPicker'
 import { useTablePagination } from '../../hooks/useTablePagination'
 import { useTableColumnPrefs } from '../../hooks/useTableColumnPrefs'
@@ -60,6 +61,7 @@ export default function TasksTable({
     columnOrder,
     reorderColumns,
     moveColumn,
+    saveColumns,
   } = useTableColumnPrefs('tasks-manager', TASK_COLUMNS)
 
   const localPagination = useTablePagination(totalCount ?? tasks.length, { resetKey: paginationResetKey })
@@ -126,10 +128,6 @@ export default function TasksTable({
     }
   }
 
-  if (!tasks.length) {
-    return <div className="company-empty">No tasks match your filters.</div>
-  }
-
   return (
     <div className="company-table-wrap">
       <div className="company-table-scroll">
@@ -142,6 +140,7 @@ export default function TasksTable({
             onReset={resetColumns}
             onReorder={reorderColumns}
             onMove={moveColumn}
+            onSave={saveColumns}
           />
         </div>
         <table className="company-table master-table">
@@ -154,7 +153,11 @@ export default function TasksTable({
             </tr>
           </thead>
           <tbody>
-            {pagedTasks.map((task) => (
+            {pagedTasks.length === 0 ? (
+              <TableEmptyRow colSpan={visibleColumnIds.length}>
+                No tasks match your filters.
+              </TableEmptyRow>
+            ) : pagedTasks.map((task) => (
               <tr
                 key={task.id}
                 {...tableRowClickProps({

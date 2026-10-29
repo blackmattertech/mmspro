@@ -9,6 +9,7 @@ import reportRoutes from './reports.js'
 import orgAssetFieldsRoutes from './orgAssetFields.js'
 import orgEquipmentFieldsRoutes from './orgEquipmentFields.js'
 import orgFormLayoutsRoutes from './orgFormLayouts.js'
+import defaultsRoutes from './defaults.js'
 import { loadSubscriptionDashboard, scheduleSubscriptionSync } from '../../lib/platformSubscriptions.js'
 import { getSignedUrls } from '../../lib/signedUrlCache.js'
 
@@ -174,6 +175,7 @@ router.get('/stats', async (_req, res) => {
 router.use('/integrations', integrationRoutes)
 router.use('/plans', planRoutes)
 router.use('/reports', reportRoutes)
+router.use('/defaults', defaultsRoutes)
 router.use('/organizations/:orgId/asset-fields', orgAssetFieldsRoutes)
 router.use('/organizations/:orgId/equipment-fields', orgEquipmentFieldsRoutes)
 router.use('/organizations/:orgId/form-layouts', orgFormLayoutsRoutes)

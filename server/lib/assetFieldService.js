@@ -381,7 +381,7 @@ export async function validateDeactivate(orgId, existing, isActive) {
       .eq('section_id', existing.id)
       .limit(1)
     if (equipmentError) throw equipmentError
-    if (equipmentLinked?.length) throw new Error('Remove or delete equipment fields from this section first')
+    if (equipmentLinked?.length) throw new Error('Remove or delete asset fields from this section first')
   }
   if (existing.kind === 'parent') {
     const hasChildren = allFields.some((f) => f.parent_id === existing.id)
@@ -561,7 +561,7 @@ export async function deleteAssetField(orgId, id) {
       .limit(1)
     if (equipmentError) throw equipmentError
     if (equipmentLinked?.length) {
-      throw new Error('Remove equipment fields from this section first')
+      throw new Error('Remove asset fields from this section first')
     }
     if (existing.icon_path) {
       await supabaseAdmin.storage.from(ORG_ASSETS_BUCKET).remove([existing.icon_path])

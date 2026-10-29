@@ -1,15 +1,18 @@
 import { useEffect, useState } from 'react'
-import { formatAssignees } from '../../lib/workOrderTableUtils'
 import { useBackdropClose } from '../../hooks/useBackdropClose'
 import { useWorkOrderDetail } from '../../hooks/useWorkOrderList'
 import { getReceivedWorkOrder } from '../../lib/api-work-orders'
+import { notifyTabCountsChanged } from '../../lib/tabCountEvents'
 import { getWorkOrderFileSignedUrl } from '../../lib/workOrderAssets'
 import { getStoredWorkOrderFiles } from '../../lib/workOrderFileValues'
 import { useOrgStatusOptions } from '../../hooks/useOrgStatusOptions'
 import PageBack from '../shared/PageBack'
 import EditIcon from '../ui/EditIcon'
+import EmployeeAvatar from '../company/EmployeeAvatar'
 import WorkOrderAssignmentActions from './WorkOrderAssignmentActions'
 import WorkOrderLifecyclePanel, { formatStatus } from './WorkOrderLifecyclePanel'
+import WorkRequestFormSections from './WorkRequestFormSections'
+import { requestTypeLabel } from '../workrequests/WorkRequestDetailModal'
 import { progressPercentForStatus } from '../../lib/statusProgress'
 import '../shared/RecordDetailLayout.css'
 import '../dashboard/CreateWorkOrderModal.css'
@@ -28,6 +31,15 @@ function formatDate(value) {
 
 function creatorLabel(creator) {
   return creator?.display_name || creator?.full_name || creator?.email || '—'
+}
+
+function MetaItem({ label, children }) {
+  return (
+    <div className="wr-detail-meta__item">
+      <span className="wo-received-detail__label">{label}</span>
+      <div className="wr-detail-meta__value">{children}</div>
+    </div>
+  )
 }
 
 function fieldHasDisplayValue(field) {
@@ -131,6 +143,7 @@ export default function ReceivedWorkOrderDetailModal({
 
   const handleUpdated = (updated) => {
     setLocalDetail(updated)
+    notifyTabCountsChanged('work_orders')
     onAssignmentUpdated?.(updated)
     reload()
   }
@@ -141,6 +154,8 @@ export default function ReceivedWorkOrderDetailModal({
   const departmentName = view?.assigned_department?.name || null
   const assigneeNames = (view?.assignees || []).map((a) => a.name).filter(Boolean)
   const sections = visibleDetailSections(view?.sections, view?.asset_hierarchy)
+  const workRequest = view?.work_request || null
+  const wrEquipment = workRequest?.equipment
 
   return (
     <div className="wr-detail-overlay" onClick={handleBackdropClick} role="presentation">
@@ -155,9 +170,13 @@ export default function ReceivedWorkOrderDetailModal({
           <div className="wr-detail-sheet__header-main">
             <PageBack onClick={onClose} label="Back to Work Orders" />
             <div>
-              <p className="wr-detail-sheet__eyebrow">Work order</p>
+              <p className="wr-detail-sheet__eyebrow">
+                {workRequest ? 'Work request' : 'Work order'}
+              </p>
               <h2 id="wo-received-detail-title" className="wr-detail-sheet__title">
-                {view?.wo_number || (loading ? 'Loading…' : '—')}
+                {workRequest
+                  ? (workRequest.request_number || view?.work_request_number || (loading ? 'Loading…' : '—'))
+                  : (view?.wo_number || (loading ? 'Loading…' : '—'))}
               </h2>
             </div>
           </div>
@@ -185,6 +204,47 @@ export default function ReceivedWorkOrderDetailModal({
 
           {view && (
             <div className="wr-detail-main">
+              {workRequest ? (
+                <div className="wr-detail-meta">
+                  <MetaItem label="Status">
+                    <span className={`wo-status wo-status--${view.status}`}>
+                      {formatStatus(view.status, statusLabels)}
+                    </span>
+                  </MetaItem>
+                  <MetaItem label="Priority">
+                    <span style={{ textTransform: 'capitalize' }}>
+                      {workRequest.priority || view.priority || '—'}
+                    </span>
+                  </MetaItem>
+                  <MetaItem label="Request type">
+                    {requestTypeLabel(workRequest.request_type) || (workRequest.request_type || '').replace(/_/g, ' ') || '—'}
+                  </MetaItem>
+                  <MetaItem label="Job nature">
+                    {workRequest.job_nature_label || workRequest.job_nature || view.job_nature || '—'}
+                  </MetaItem>
+                  <MetaItem label="Order from">{workRequest.order_from?.name || '—'}</MetaItem>
+                  <MetaItem label="Order to">{workRequest.order_to?.name || '—'}</MetaItem>
+                  {wrEquipment && (
+                    <MetaItem label="Asset">
+                      {[wrEquipment.name, wrEquipment.code].filter(Boolean).join(' · ') || '—'}
+                    </MetaItem>
+                  )}
+                  <MetaItem label="Requested by">
+                    {workRequest.requester ? (
+                      <span className="wr-requester">
+                        <EmployeeAvatar employee={workRequest.requester} size="sm" />
+                        <span className="wr-requester__copy">
+                          <span className="wr-requester__name">
+                            {workRequest.requester.name || workRequest.requester.full_name || workRequest.requester.email || '—'}
+                          </span>
+                        </span>
+                      </span>
+                    ) : '—'}
+                  </MetaItem>
+                  <MetaItem label="Request date">{formatDate(workRequest.request_date)}</MetaItem>
+                  <MetaItem label="Work order">{view.wo_number || '—'}</MetaItem>
+                </div>
+              ) : (
               <div className="wo-received-detail__meta">
                 <div>
                   <span className="wo-received-detail__label">Received</span>
@@ -209,7 +269,7 @@ export default function ReceivedWorkOrderDetailModal({
                   <span>
                     {assigneeNames.length
                       ? assigneeNames.join(', ')
-                      : formatAssignees([], view.assigned_department, view.assigned_location)}
+                      : <span className="wo-status wo-status--unassigned">Unassigned</span>}
                   </span>
                 </div>
                 <div>
@@ -235,16 +295,27 @@ export default function ReceivedWorkOrderDetailModal({
                   </div>
                 </div>
               </div>
+              )}
 
-              {view.summary && !view.problem_description && (
+              {view.summary && !view.problem_description && !view.work_request && (
                 <p className="wo-received-detail__summary">{view.summary}</p>
               )}
+
+              {workRequest ? (
+                <WorkRequestFormSections workRequest={workRequest} />
+              ) : null}
 
               {view.assignment_actions && (
                 <WorkOrderAssignmentActions detail={view} onUpdated={handleUpdated} />
               )}
 
-              <WorkOrderLifecyclePanel key={view.id} detail={view} onUpdated={handleUpdated} />
+              <WorkOrderLifecyclePanel
+                key={view.id}
+                detail={view}
+                onUpdated={handleUpdated}
+                hideHeader={Boolean(workRequest)}
+                hideWorkRequestForm={Boolean(workRequest)}
+              />
 
               {sections.map((section) => (
                 <section key={section.id} className="wo-received-detail__section">

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
 import { useOrg } from '../../hooks/useOrg'
+import { usePermissions } from '../../hooks/usePermissions'
 import { useOrgStatuses } from '../../hooks/useOrgStatuses'
 import { isCompanyAdmin, canManageOrg } from '../../lib/accountRoles'
 import { orgPath } from '../../config/navigation'
@@ -38,7 +39,14 @@ export default function OthersStatusManage() {
   const { entityType } = useParams()
   const { org } = useOrg()
   const { role } = useAuth()
-  const canManage = isCompanyAdmin(role) || canManageOrg(role)
+  const { canCreate, canUpdate, canDelete } = usePermissions()
+  const canManage = (
+    isCompanyAdmin(role)
+    || canManageOrg(role)
+    || canCreate('others')
+    || canUpdate('others')
+    || canDelete('others')
+  )
   const label = TYPE_LABELS[entityType] || entityType
   const {
     statuses,

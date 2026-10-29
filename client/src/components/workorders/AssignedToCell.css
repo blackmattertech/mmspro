@@ -10,6 +10,18 @@
   color: var(--color-gray-blue);
 }
 
+.wo-assigned .wo-status--unassigned {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: none;
+  border-radius: var(--radius-pill);
+  color: #b54708;
+  background: #fffaeb;
+}
+
 .wo-assigned__person {
   position: relative;
   display: inline-flex;

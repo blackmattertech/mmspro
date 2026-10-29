@@ -57,7 +57,7 @@ export const REFERENCE_TYPE_OPTIONS = [
   { value: 'contract', label: 'Contract No.' },
   { value: 'amc', label: 'AMC No.' },
   { value: 'document', label: 'Document No.' },
-  { value: 'equipment', label: 'Equipment' },
+  { value: 'equipment', label: 'Asset' },
   { value: 'custom', label: 'Other Reference' },
 ]
 

@@ -6,6 +6,8 @@ const LABEL_ALIASES = {
   jobstatus: 'status',
   plantfacility: 'location',
   equipmentname: 'equipment',
+  asset: 'equipment',
+  assetname: 'equipment',
 }
 
 function canonicalLabel(label) {

@@ -14,9 +14,33 @@ const POPOVER_GAP = 6
 
 const pad = (n) => String(n).padStart(2, '0')
 
+function formatClock(time) {
+  if (!time) return ''
+  const [hourPart, minutePart] = String(time).split(':')
+  const hour24 = Number(hourPart)
+  const minute = Number(minutePart)
+  if (Number.isNaN(hour24) || Number.isNaN(minute)) return ''
+  const period = hour24 >= 12 ? 'PM' : 'AM'
+  let hour12 = hour24 % 12
+  if (hour12 === 0) hour12 = 12
+  return `${pad(hour12)}:${pad(minute)} ${period}`
+}
+
 function parseValue(value) {
   if (!value) return null
-  const [datePart, timePart] = String(value).split('T')
+  const text = String(value).trim()
+  // Stored timestamps are UTC. Show the viewer's local date and time.
+  if (/[zZ]$|[+-]\d{2}:?\d{2}$/.test(text)) {
+    const date = new Date(text)
+    if (Number.isNaN(date.getTime())) return null
+    return {
+      y: date.getFullYear(),
+      m: date.getMonth(),
+      d: date.getDate(),
+      time: `${pad(date.getHours())}:${pad(date.getMinutes())}`,
+    }
+  }
+  const [datePart, timePart] = text.split('T')
   const [y, m, d] = datePart.split('-').map(Number)
   if (!y || !m || !d) return null
   return { y, m: m - 1, d, time: timePart ? timePart.slice(0, 5) : '' }
@@ -97,7 +121,8 @@ export default function DateField({
     const handleClick = (event) => {
       const inTrigger = wrapRef.current?.contains(event.target)
       const inPopover = popoverRef.current?.contains(event.target)
-      if (!inTrigger && !inPopover) setOpen(false)
+      const inTimePopover = event.target?.closest?.('.time-field__popover')
+      if (!inTrigger && !inPopover && !inTimePopover) setOpen(false)
     }
     const handleKey = (event) => {
       if (event.key === 'Escape') setOpen(false)
@@ -165,7 +190,7 @@ export default function DateField({
   }
 
   const label = parsed
-    ? `${pad(parsed.d)}/${pad(parsed.m + 1)}/${parsed.y}${withTime && parsed.time ? ` ${parsed.time}` : ''}`
+    ? `${pad(parsed.d)}/${pad(parsed.m + 1)}/${parsed.y}${withTime && parsed.time ? ` ${formatClock(parsed.time)}` : ''}`
     : ''
 
   const isToday = (cell) => (

@@ -53,9 +53,11 @@ export default function TableColumnPicker({
   onReset,
   onReorder,
   onMove,
+  onSave,
   className = '',
 }) {
   const [open, setOpen] = useState(false)
+  const [savedFlash, setSavedFlash] = useState(false)
   const [menuStyle, setMenuStyle] = useState(null)
   const [dragId, setDragId] = useState(null)
   const [overId, setOverId] = useState(null)
@@ -182,13 +184,29 @@ export default function TableColumnPicker({
         >
           <div className="table-column-picker__menu-head">
             <span>{canReorder ? 'Show & reorder' : 'Show columns'}</span>
-            <button
-              type="button"
-              className="table-column-picker__reset"
-              onClick={() => onReset?.()}
-            >
-              Reset
-            </button>
+            <span className="table-column-picker__menu-actions">
+              {onSave ? (
+                <button
+                  type="button"
+                  className="table-column-picker__reset"
+                  onClick={() => {
+                    const saved = onSave()
+                    if (saved === false) return
+                    setSavedFlash(true)
+                    window.setTimeout(() => setSavedFlash(false), 1200)
+                  }}
+                >
+                  {savedFlash ? 'Saved' : 'Save'}
+                </button>
+              ) : null}
+              <button
+                type="button"
+                className="table-column-picker__reset"
+                onClick={() => onReset?.()}
+              >
+                Reset
+              </button>
+            </span>
           </div>
           {canReorder ? (
             <p className="table-column-picker__hint">Drag to reorder, or send a column to the top or bottom</p>

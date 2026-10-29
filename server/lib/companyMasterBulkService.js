@@ -61,6 +61,39 @@ function normalizeName(value) {
   return String(value ?? '').trim().toLowerCase()
 }
 
+function sameText(a, b) {
+  return String(a ?? '').trim() === String(b ?? '').trim()
+}
+
+function sameEmail(a, b) {
+  return normalizeName(a) === normalizeName(b)
+}
+
+function sameId(a, b) {
+  return (a || null) === (b || null)
+}
+
+function employeeImportUnchanged(existing, incoming) {
+  return sameText(existing.name, incoming.name)
+    && String(existing.mobile || '') === String(incoming.mobile || '')
+    && sameEmail(existing.email, incoming.email)
+    && sameId(existing.location_id, incoming.location_id)
+    && sameId(existing.department_id, incoming.department_id)
+    && sameId(existing.access_role_id, incoming.access_role_id)
+}
+
+function mergeEmployeeImport(existing, incoming) {
+  return {
+    ...incoming,
+    name: incoming.name || existing.name,
+    mobile: incoming.mobile || existing.mobile || null,
+    email: incoming.email || existing.email || null,
+    location_id: incoming.location_id || existing.location_id || null,
+    department_id: incoming.department_id || existing.department_id || null,
+    access_role_id: incoming.access_role_id || existing.access_role_id || null,
+  }
+}
+
 function cellToString(value) {
   if (value == null) return ''
   if (value instanceof Date) return value.toISOString()
@@ -394,7 +427,7 @@ export async function bulkImportEmployees(orgId, buffer) {
   const workbook = new ExcelJS.Workbook()
   await workbook.xlsx.load(buffer)
   const rows = readTemplateRows(workbook, EMPLOYEE_COLUMNS)
-  const results = { created: 0, failed: 0, errors: [], preview: [] }
+  const results = { created: 0, updated: 0, failed: 0, errors: [], preview: [] }
   const MAX_PREVIEW = 250
 
   const pending = []
@@ -480,8 +513,81 @@ export async function bulkImportEmployees(orgId, buffer) {
     }
   }
 
-  await assertBulkCreatesAllowed(orgId, 'employee', pending.length)
-  await insertChunked('org_employees', pending, results, MAX_PREVIEW, 'Employee ID already exists')
+  const { data: existingEmployees, error: existingError } = await supabaseAdmin
+    .from('org_employees')
+    .select('id, emp_id, name, mobile, email, location_id, department_id, access_role_id')
+    .eq('org_id', orgId)
+  if (existingError) throw existingError
+
+  const byEmpId = new Map()
+  for (const emp of existingEmployees || []) {
+    const key = normalizeName(emp.emp_id)
+    if (key) byEmpId.set(key, { type: 'db', emp })
+  }
+
+  const creates = []
+  const updates = []
+  for (const item of pending) {
+    const key = normalizeName(item.row.emp_id)
+    const found = byEmpId.get(key)
+    if (!found) {
+      creates.push(item)
+      byEmpId.set(key, { type: 'create', item })
+      continue
+    }
+
+    const current = found.type === 'create' ? found.item.row : found.emp
+    const merged = mergeEmployeeImport(current, item.row)
+    if (employeeImportUnchanged(current, merged)) {
+      results.failed += 1
+      results.errors.push({
+        row: item.rowNumber,
+        message: 'Employee ID already exists and nothing is new',
+      })
+      continue
+    }
+
+    const nextItem = { ...item, row: merged }
+    if (found.type === 'create') {
+      found.item.row = merged
+      found.item.preview = item.preview
+      continue
+    }
+
+    updates.push({ id: found.emp.id, item: nextItem })
+    byEmpId.set(key, { type: 'db', emp: { ...found.emp, ...merged } })
+  }
+
+  await assertBulkCreatesAllowed(orgId, 'employee', creates.length)
+  await insertChunked('org_employees', creates, results, MAX_PREVIEW, 'Employee ID already exists')
+
+  for (const { id, item } of updates) {
+    const { error } = await supabaseAdmin
+      .from('org_employees')
+      .update({
+        name: item.row.name,
+        mobile: item.row.mobile,
+        email: item.row.email,
+        location_id: item.row.location_id,
+        department_id: item.row.department_id,
+        access_role_id: item.row.access_role_id,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', id)
+      .eq('org_id', orgId)
+
+    if (error) {
+      results.failed += 1
+      results.errors.push({
+        row: item.rowNumber,
+        message: error.code === '23505' ? 'Employee ID already exists' : error.message,
+      })
+      continue
+    }
+
+    results.updated += 1
+    if (results.preview.length < MAX_PREVIEW) results.preview.push(item.preview)
+  }
 
   return results
 }

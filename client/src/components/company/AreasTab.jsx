@@ -10,12 +10,13 @@ import TrashIcon from '../ui/TrashIcon'
 import EditIcon from '../ui/EditIcon'
 import AreaModal from './AreaModal'
 import TablePagination from '../shared/TablePagination'
+import TableEmptyRow from '../shared/TableEmptyRow'
 import TableColumnPicker from '../shared/TableColumnPicker'
 import { DynamicPickerCells, DynamicPickerHeaders } from '../shared/DynamicPickerCells'
 import TableFilterToolbar from '../shared/TableFilterToolbar'
 import { useTablePagination } from '../../hooks/useTablePagination'
 import { useTableColumnPrefs } from '../../hooks/useTableColumnPrefs'
-import { TABLE_SORT_OPTIONS, applyTableFilters, compactFilters } from '../../lib/tableFilters'
+import { TABLE_SORT_OPTIONS, applyTableFilters, compactFilters, uniqueNameOptions, ACTIVE_STATUS_FILTER, selectFilterField } from '../../lib/tableFilters'
 import { stopTableRowClick, tableRowClickProps } from '../../lib/clickableTableRow'
 import RecordDetailModal from '../shared/RecordDetailModal'
 import { AreaDetailContent } from './CompanyRecordDetails'
@@ -48,16 +49,6 @@ function areaSearchHaystack(area) {
   return parts.filter(Boolean).join(' ').toLowerCase()
 }
 
-const AREA_FILTER_FIELDS = [
-  { value: 'name', label: 'Name' },
-  { value: 'code', label: 'Code' },
-  { value: 'location', label: 'Location' },
-  { value: 'department', label: 'Department' },
-  { value: 'status', label: 'Status', type: 'select', emptyLabel: 'All Status', options: [
-    { value: 'active', label: 'Active' },
-    { value: 'inactive', label: 'Inactive' },
-  ] },
-]
 
 export default function AreasTab({ canManage }) {
   const { isOrgAdmin, locationId: myLocationId, accessRole } = usePermissions()
@@ -91,6 +82,13 @@ export default function AreasTab({ canManage }) {
 
   const activeLocations = locations.filter((l) => l.is_active !== false)
   const activeDepartments = departments.filter((d) => d.is_active !== false)
+  const areaFilterFields = useMemo(() => ([
+    selectFilterField('name', 'Name', uniqueNameOptions(areas), 'All names'),
+    selectFilterField('code', 'Code', uniqueNameOptions(areas, (row) => row.code), 'All codes'),
+    selectFilterField('location', 'Location', uniqueNameOptions(activeLocations), 'All locations'),
+    selectFilterField('department', 'Department', uniqueNameOptions(activeDepartments), 'All departments'),
+    ACTIVE_STATUS_FILTER,
+  ]), [areas, activeLocations, activeDepartments])
 
   const filteredAreas = useMemo(() => applyTableFilters(areas, {
     sortBy,
@@ -153,6 +151,7 @@ export default function AreasTab({ canManage }) {
     columnOrder: areaColumnOrder,
     reorderColumns: reorderAreaColumns,
     moveColumn: moveAreaColumn,
+    saveColumns: saveAreaColumns,
   } = useTableColumnPrefs('company-areas', areaColumnDefs)
 
   const openCreate = () => {
@@ -251,7 +250,7 @@ export default function AreasTab({ canManage }) {
             ariaLabel: 'Search areas',
           }}
           filter={{
-            fields: AREA_FILTER_FIELDS,
+            fields: areaFilterFields,
             values: columnFilters,
             onChange: setColumnFilters,
           }}
@@ -292,6 +291,7 @@ export default function AreasTab({ canManage }) {
               onReset={resetAreaColumns}
               onReorder={reorderAreaColumns}
               onMove={moveAreaColumn}
+              onSave={saveAreaColumns}
             />
           )}
         />
@@ -304,10 +304,6 @@ export default function AreasTab({ canManage }) {
 
       {loading ? (
         <div className="company-loading">Loading areas…</div>
-      ) : areas.length === 0 ? (
-        <div className="company-empty">No areas yet. Add an area under a location and department.</div>
-      ) : filteredAreas.length === 0 ? (
-        <div className="company-empty">No areas match your filters.</div>
       ) : (
         <>
         <div className="company-table-wrap">
@@ -340,7 +336,13 @@ export default function AreasTab({ canManage }) {
               </tr>
             </thead>
             <tbody>
-              {pagedAreas.map((area) => {
+              {pagedAreas.length === 0 ? (
+                <TableEmptyRow colSpan={(canManage ? 1 : 0) + areaVisibleColumnIds.length}>
+                  {areas.length === 0
+                    ? 'No areas yet. Add an area under a location and department.'
+                    : 'No areas match your filters.'}
+                </TableEmptyRow>
+              ) : pagedAreas.map((area) => {
                 const isActive = area.is_active !== false
                 return (
                 <tr

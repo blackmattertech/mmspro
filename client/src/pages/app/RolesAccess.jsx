@@ -12,12 +12,13 @@ import EmployeeAvatar from '../../components/company/EmployeeAvatar'
 import TrashIcon from '../../components/ui/TrashIcon'
 import EditIcon from '../../components/ui/EditIcon'
 import TablePagination from '../../components/shared/TablePagination'
+import TableEmptyRow from '../../components/shared/TableEmptyRow'
 import TableColumnPicker from '../../components/shared/TableColumnPicker'
 import { DynamicPickerCells, DynamicPickerHeaders } from '../../components/shared/DynamicPickerCells'
 import TableFilterToolbar from '../../components/shared/TableFilterToolbar'
 import { useTablePagination } from '../../hooks/useTablePagination'
 import { useTableColumnPrefs } from '../../hooks/useTableColumnPrefs'
-import { TABLE_SORT_OPTIONS, applyTableFilters, compactFilters, matchesFieldFilter } from '../../lib/tableFilters'
+import { TABLE_SORT_OPTIONS, applyTableFilters, compactFilters, matchesFieldFilter, uniqueNameOptions, selectFilterField } from '../../lib/tableFilters'
 import '../../components/shared/TableColumnPicker.css'
 import '../../components/shared/TableFilterToolbar.css'
 import '../../components/workorders/WorkOrdersPage.css'
@@ -39,10 +40,6 @@ const EMPTY_CAPS = {
   can_assign_approval: false,
 }
 
-const ROLE_FILTER_FIELDS = [
-  { value: 'name', label: 'Name' },
-  { value: 'description', label: 'Description' },
-]
 
 export default function RolesAccess() {
   const { org, loading: orgLoading } = useOrg()
@@ -61,6 +58,10 @@ export default function RolesAccess() {
     remove,
     assignEmployees,
   } = useRoles()
+  const roleFilterFields = useMemo(() => ([
+    selectFilterField('name', 'Name', uniqueNameOptions(roles), 'All names'),
+    selectFilterField('description', 'Description', uniqueNameOptions(roles, (row) => row.description), 'All descriptions'),
+  ]), [roles])
   const [selectedId, setSelectedId] = useState(null)
   const [search, setSearch] = useState('')
   const [columnFilters, setColumnFilters] = useState({})
@@ -145,6 +146,7 @@ export default function RolesAccess() {
     columnOrder: roleColumnOrder,
     reorderColumns: reorderRoleColumns,
     moveColumn: moveRoleColumn,
+    saveColumns: saveRoleColumns,
   } = useTableColumnPrefs('roles-access', roleColumnDefs)
 
   const selectedRole = useMemo(
@@ -320,7 +322,7 @@ export default function RolesAccess() {
                   ariaLabel: 'Search roles',
                 }}
                 filter={{
-                  fields: ROLE_FILTER_FIELDS,
+                  fields: roleFilterFields,
                   values: columnFilters,
                   onChange: setColumnFilters,
                 }}
@@ -344,6 +346,7 @@ export default function RolesAccess() {
                     onReset={resetRoleColumns}
                     onReorder={reorderRoleColumns}
                     onMove={moveRoleColumn}
+                    onSave={saveRoleColumns}
                   />
                 )}
               />
@@ -355,12 +358,6 @@ export default function RolesAccess() {
               <div className="company-empty">
                 You do not have permission to view roles.
               </div>
-            ) : activeRoles.length === 0 ? (
-              <div className="company-empty">
-                No roles yet. Create a role to define what each team member can access.
-              </div>
-            ) : filteredRoles.length === 0 ? (
-              <div className="company-empty">No roles match your filters.</div>
             ) : (
               <div className="company-table-wrap">
                 <div className="company-table-scroll">
@@ -379,7 +376,13 @@ export default function RolesAccess() {
                     </tr>
                   </thead>
                   <tbody>
-                    {pagedRoles.map((role) => {
+                    {pagedRoles.length === 0 ? (
+                      <TableEmptyRow colSpan={roleVisibleColumnIds.length}>
+                        {activeRoles.length === 0
+                          ? 'No roles yet. Create a role to define what each team member can access.'
+                          : 'No roles match your filters.'}
+                      </TableEmptyRow>
+                    ) : pagedRoles.map((role) => {
                       const isSelected = selectedId === role.id
                       const samples = role.sample_employees || []
                       const total = role.employee_count || 0

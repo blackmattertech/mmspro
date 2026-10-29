@@ -7,7 +7,8 @@ import {
   defaultColSpanForType,
   parseLayoutId,
 } from './formLayoutIds.js'
-import { fieldValuesFromEquipment, getEquipmentFieldRole } from './workRequestAssetPicker.js'
+import { fieldValuesFromEquipment } from './workRequestAssetPicker.js'
+import { orderedHierarchyFields } from './assetHierarchy.js'
 
 export function isEquipmentMasterField(field) {
   if (!field) return false
@@ -34,8 +35,8 @@ export function equipmentCatalogParents(catalogFields = []) {
 }
 
 /**
- * Append missing equipment catalog parents after the Equipment master field.
- * Skips Area / redundant Equipment labels (already covered by master pickers).
+ * Append missing equipment catalog parents after the Equipment master field,
+ * in the superadmin level order.
  */
 export function augmentLayoutWithEquipmentCatalog(layout, catalogFields = []) {
   if (!layout || !layoutHasEquipmentMaster(layout)) return layout
@@ -57,11 +58,9 @@ export function augmentLayoutWithEquipmentCatalog(layout, catalogFields = []) {
   let nextOrder = sectionOrders.length ? Math.max(...sectionOrders) + 1 : (equipmentField.order ?? 0) + 1
 
   const extras = []
-  for (const parent of equipmentCatalogParents(catalogFields)) {
+  for (const parent of orderedHierarchyFields(equipmentCatalogParents(catalogFields))) {
     const id = catalogId(parent.id)
     if (used.has(id)) continue
-    const role = getEquipmentFieldRole(parent)
-    if (role === 'area' || role === 'redundant') continue
     extras.push({
       id,
       sectionId,
@@ -92,6 +91,73 @@ export function catalogRowFromEquipmentDetail(detail) {
 
 function fieldNameKey(value) {
   return String(value || '').trim().toLowerCase()
+}
+
+function masterSourceOf(field) {
+  if (!field) return ''
+  if (field.masterSource) return field.masterSource
+  const parsed = parseLayoutId(field.id)
+  return parsed.kind === 'master' ? parsed.value : ''
+}
+
+/**
+ * Values to write when an equipment record is chosen: area (and location /
+ * department, when those pickers sit in the same section) plus catalog and
+ * custom fields such as code, name, type, and image.
+ */
+export function valuesFromEquipmentSelection(detail, layout, catalogFields = []) {
+  if (!detail || !layout) return {}
+  const equipmentField = (layout.fields || []).find(isEquipmentMasterField)
+  const sectionId = equipmentField?.sectionId
+  const sectionFields = (layout.fields || []).filter((field) => (
+    !sectionId || field.sectionId === sectionId
+  ))
+  const out = {}
+
+  for (const field of sectionFields) {
+    const source = masterSourceOf(field)
+    if (source === 'areas' && detail.area_id) out[field.id] = detail.area_id
+    if (source === 'locations' && detail.location_id) out[field.id] = detail.location_id
+    if (source === 'departments' && detail.department_id) out[field.id] = detail.department_id
+  }
+
+  const catalogById = new Map((catalogFields || []).map((row) => [String(row.id), row]))
+  const fillTargets = []
+  for (const field of sectionFields) {
+    if (isEquipmentMasterField(field)) continue
+    const parsed = parseLayoutId(field.id)
+    if (parsed.kind === 'catalog') {
+      const row = catalogById.get(parsed.value)
+      if (row) fillTargets.push(row)
+    } else if (parsed.kind === 'field') {
+      fillTargets.push({
+        id: field.id,
+        name: field.label || '',
+        field_type: field.fieldType || 'text',
+      })
+    }
+  }
+
+  const filled = prefillValuesForFields(detail, fillTargets)
+  for (const [id, value] of Object.entries(filled)) {
+    if (value) out[id] = value
+  }
+
+  const imageUrl = detail.image_signed_url || detail.image_url || ''
+  if (imageUrl) {
+    for (const field of sectionFields) {
+      const parsed = parseLayoutId(field.id)
+      const catalog = parsed.kind === 'catalog' ? catalogById.get(parsed.value) : null
+      const type = field.fieldType || catalog?.field_type || ''
+      const name = field.label || catalog?.name || ''
+      const isImage = type === 'image' || /image/i.test(name)
+      if (!isImage) continue
+      const key = catalog?.id || field.id
+      if (!out[key]) out[key] = imageUrl
+    }
+  }
+
+  return out
 }
 
 /** Fill form fields from an equipment detail: same field id, then the same field name. */

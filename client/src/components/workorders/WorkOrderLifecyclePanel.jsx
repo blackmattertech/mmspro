@@ -1,6 +1,15 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { createManualWorkOrder, updateWorkOrderLifecycle } from '../../lib/api-work-orders'
+import { useFormFieldValues } from '../../hooks/useFormFieldValues'
+import { canEditFilledBy, resolveFormActors } from '../../lib/formFillership'
+import { formFieldClassName } from '../../lib/formLayoutIds'
+import {
+  layoutHasSystemKey,
+  lifecycleStagesForStatus,
+  workOrderFormIdForSource,
+} from '../../lib/workOrderForms'
+import WorkOrderProcessLayout, { useWorkOrderProcessLayout } from './WorkOrderProcessLayout'
 import { uploadWorkOrderFile } from '../../lib/workOrderAssets'
 import { useOrg } from '../../hooks/useOrg'
 import { useProfile } from '../../hooks/useProfile'
@@ -14,10 +23,13 @@ import WorkOrderAttachmentsField from './WorkOrderAttachmentsField'
 import WorkOrderDailyLogSection from './WorkOrderDailyLogSection'
 import WorkOrderMaterialDetailsModal from './WorkOrderMaterialDetailsModal'
 import WorkOrderMaterialRowsTable, { normalizeMaterialRows } from './WorkOrderMaterialRowsTable'
+import WorkRequestFormSections from './WorkRequestFormSections'
 import ChecklistExecution from '../pm/ChecklistExecution'
 import SpellcheckInput from '../shared/SpellcheckInput'
 import FormLabel from '../shared/FormLabel'
 import { progressPercentForStatus } from '../../lib/statusProgress'
+import { AssetHierarchySummary } from '../workrequests/WorkRequestAssetFields'
+import { hierarchyDisplaySteps } from '../../lib/assetHierarchy'
 import './ManualWorkOrder.css'
 import '../shared/StatusCountBar.css'
 
@@ -101,6 +113,19 @@ function toPendingFile(file) {
     type: file.type,
     previewUrl: file.type?.startsWith('image/') ? URL.createObjectURL(file) : null,
   }
+}
+
+function captureNowStamp() {
+  const now = new Date()
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`
+}
+
+function formatCapturedStamp(value) {
+  if (!value) return ''
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return String(value)
+  return parsed.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
 }
 
 function Field({ label, children, full = false, maxLength }) {
@@ -262,11 +287,17 @@ function formFromDetail(detail) {
   }
 }
 
-export default function WorkOrderLifecyclePanel({ detail, onUpdated, canUpdate = true }) {
+export default function WorkOrderLifecyclePanel({
+  detail,
+  onUpdated,
+  canUpdate = true,
+  hideHeader = false,
+  hideWorkRequestForm = false,
+}) {
   const navigate = useNavigate()
   const { org } = useOrg()
   const { profile, employee } = useProfile()
-  const { isOrgAdmin, canUpdate: canUpdateModule, canCreate } = usePermissions()
+  const { isOrgAdmin, canUpdate: canUpdateModule, canCreate, session } = usePermissions()
   const { labelByKey: statusLabels } = useOrgStatusOptions('work_order', { includeInactive: true })
   const { maxLength } = useTextFieldLimits()
   const { requestFiles, executionFiles } = splitWorkOrderAttachments(detail?.attachments)
@@ -285,6 +316,7 @@ export default function WorkOrderLifecyclePanel({ detail, onUpdated, canUpdate =
     problem_description: '',
     priority: 'medium',
   })
+  const [showRequestForm, setShowRequestForm] = useState(() => Boolean(detail?.work_request))
 
   const hasDailyLogs = (detail?.daily_logs || []).length > 0
   const materialSummaryRows = useMemo(() => {
@@ -338,7 +370,31 @@ export default function WorkOrderLifecyclePanel({ detail, onUpdated, canUpdate =
     || detail?.supervisor_id === profile?.id
     || detail?.assignment_actions?.can_reassign_as_location_head,
   )
+  const processFormId = workOrderFormIdForSource(detail?.source_type)
+  const processStages = lifecycleStagesForStatus(detail?.status)
+  const { layout: processLayout } = useWorkOrderProcessLayout(processFormId, processStages)
+  const processExtras = useFormFieldValues(processFormId, detail?.id || null)
+  const processActors = resolveFormActors({
+    formId: processFormId,
+    isOrgAdmin,
+    profileId: profile?.id,
+    employeeId: employee?.id,
+    isDepartmentHead: Boolean(session?.is_department_head || employee?.is_department_head),
+    employeeDepartmentId: session?.department_id || employee?.department_id,
+    isSupervisor: canSupervise,
+    record: {
+      created_by: detail?.created_by,
+      assigned_department_id: detail?.assigned_department_id,
+      order_to_department_id: detail?.assigned_department_id,
+      supervisor_id: detail?.supervisor_id,
+      assignees: detail?.assignees,
+    },
+  })
+  const skipTechnicianAcceptance = Boolean(
+    detail?.skip_technician_acceptance || processLayout?.processSkips?.technician_acceptance,
+  )
   const visibleStatuses = nextStatuses.filter((status) => {
+    if (status === 'accepted' && skipTechnicianAcceptance) return false
     if (SUPERVISOR_STATUSES.has(status)) return canSupervise
     return isTechnician || canSupervise
   })
@@ -474,6 +530,9 @@ export default function WorkOrderLifecyclePanel({ detail, onUpdated, canUpdate =
         execution_attachments: [...keptExecutionFiles, ...uploaded],
       }
       const updated = await updateWorkOrderLifecycle(detail.id, payload)
+      if (Object.keys(processExtras.values || {}).length) {
+        await processExtras.save(detail.id)
+      }
       pendingFiles.forEach((item) => {
         if (item.previewUrl) URL.revokeObjectURL(item.previewUrl)
       })
@@ -556,14 +615,13 @@ export default function WorkOrderLifecyclePanel({ detail, onUpdated, canUpdate =
 
   const isPmScheduled = detail.source_type === 'preventive_maintenance' || Boolean(detail.pm_plan_id)
   const hasChecklist = (detail.checklist_snapshot?.fields || []).some((field) => field.section_id)
-  const showLifecycleForms = canUpdate && !isPmScheduled
 
   const checklistBlock = hasChecklist ? (
     <ChecklistExecution
       snapshot={detail.checklist_snapshot}
       values={form.checklist_values}
       onChange={(next) => setField('checklist_values', next)}
-      disabled={!canUpdate}
+      disabled={!canUpdate || !canEditFilledBy('technician', processActors)}
     />
   ) : null
 
@@ -642,7 +700,298 @@ export default function WorkOrderLifecyclePanel({ detail, onUpdated, canUpdate =
     </div>
   )
 
-  const statusActionsBlock = canUpdate ? (
+  const renderLifecycleField = (key, props = {}) => {
+    const className = props.className || formFieldClassName(props.field)
+    const requiredMark = props.required ? ' *' : ''
+    const locked = saving || !canUpdate || Boolean(props.disabled)
+
+    if (key === 'permit_details') {
+      return (
+        <div key={key} className={[className, 'wo-permit'].filter(Boolean).join(' ')}>
+          <div className="company-form__field">
+            <span className="company-form__label">Permit required{requiredMark}</span>
+            <FilterableSelect
+              value={form.permit_required ? 'yes' : 'no'}
+              onChange={(next) => setPermitRequired(next === 'yes')}
+              options={[
+                { value: 'yes', label: 'Yes' },
+                { value: 'no', label: 'No' },
+              ]}
+              getOptionValue={(opt) => opt.value}
+              getOptionLabel={(opt) => opt.label}
+              allowEmpty={false}
+              className="company-form__input--select"
+              aria-label="Permit required"
+              disabled={locked}
+            />
+          </div>
+          {form.permit_required && (
+            <div className="wo-permit__entries">
+              {permitRows.map((permitRow, index) => {
+                const usedTypes = new Set(
+                  permitRows
+                    .map((row, rowIndex) => (rowIndex === index ? '' : row.type))
+                    .filter(Boolean),
+                )
+                const typeOptions = permitTypeOptions.filter(
+                  (type) => !usedTypes.has(type) || type === permitRow.type,
+                )
+                return (
+                  <div key={`permit-${index}`} className="wo-permit__entry">
+                    <div className="wo-permit__row">
+                      <div className="wo-permit__cell wo-permit__cell--type">
+                        <span className="company-form__label">Permit type</span>
+                        <FilterableSelect
+                          value={permitRow.type}
+                          onChange={(nextType) => changePermitType(index, nextType)}
+                          options={typeOptions}
+                          getOptionValue={(type) => type}
+                          getOptionLabel={(type) => PERMIT_LABELS[type] || type}
+                          placeholder="Select permit type"
+                          className="company-form__input--select"
+                          aria-label={`Permit type ${index + 1}`}
+                          disabled={locked}
+                        />
+                      </div>
+                      {Boolean(permitRow.type) && (
+                        <>
+                          <label className="wo-permit__cell wo-permit__cell--number">
+                            <span className="company-form__label">Permit number</span>
+                            <input
+                              className="company-form__input"
+                              value={permitRow.number}
+                              onChange={(e) => updatePermitDetail(index, 'number', e.target.value)}
+                              placeholder="Enter permit number"
+                              disabled={locked}
+                            />
+                          </label>
+                          <label className="wo-permit__cell wo-permit__cell--date">
+                            <span className="company-form__label">Date</span>
+                            <DateField
+                              value={permitRow.issue_at}
+                              onChange={(v) => updatePermitDetail(index, 'issue_at', v)}
+                              disabled={locked}
+                            />
+                          </label>
+                          <label className="wo-permit__cell wo-permit__cell--date">
+                            <span className="company-form__label">Expiry date</span>
+                            <DateField
+                              value={permitRow.expiry_at}
+                              onChange={(v) => updatePermitDetail(index, 'expiry_at', v)}
+                              disabled={locked}
+                            />
+                          </label>
+                        </>
+                      )}
+                      {permitRows.length > 1 && (
+                        <div className="wo-permit__cell wo-permit__cell--actions">
+                          <button
+                            type="button"
+                            className="company-btn company-btn--ghost company-btn--compact"
+                            onClick={() => removePermit(index)}
+                            disabled={locked}
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
+              {permitTypeOptions.some((type) => !permitRows.some((row) => row.type === type)) && (
+                <button type="button" className="wo-permit__add" onClick={addPermit} disabled={locked}>
+                  + Add permit
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      )
+    }
+
+    if (key === 'work_stamps') {
+      return (
+        <div key={key} className="company-form__grid" style={{ gridColumn: '1 / -1' }}>
+          <div className="company-form__field">
+            <FormLabel>Work start{requiredMark}</FormLabel>
+            <div className="wo-stamp">
+              {form.work_start_at ? (
+                <span className="wo-stamp__time">{formatCapturedStamp(form.work_start_at)}</span>
+              ) : (
+                <button
+                  type="button"
+                  className="company-btn company-btn--primary"
+                  disabled={locked}
+                  onClick={() => setField('work_start_at', captureNowStamp())}
+                >
+                  Start
+                </button>
+              )}
+            </div>
+          </div>
+          <div className="company-form__field">
+            <FormLabel>Work end{requiredMark}</FormLabel>
+            <div className="wo-stamp">
+              {form.work_end_at ? (
+                <span className="wo-stamp__time">{formatCapturedStamp(form.work_end_at)}</span>
+              ) : (
+                <button
+                  type="button"
+                  className="company-btn company-btn--primary"
+                  disabled={locked || !form.work_start_at}
+                  onClick={() => setField('work_end_at', captureNowStamp())}
+                >
+                  End
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )
+    }
+
+    if (key === 'labour_count') {
+      return (
+        <label key={key} className={className}>
+          <span className="company-form__label">Labour count{requiredMark}</span>
+          <input
+            type="number"
+            min="0"
+            className="company-form__input"
+            value={form.labour_count}
+            onChange={(e) => setField('labour_count', e.target.value)}
+            disabled={locked}
+          />
+        </label>
+      )
+    }
+
+    if (key === 'vendor_expense') {
+      return (
+        <label key={key} className={className}>
+          <span className="company-form__label">Vendor expense{requiredMark}</span>
+          <input
+            type="number"
+            min="0"
+            step="0.01"
+            className="company-form__input"
+            value={form.vendor_expense}
+            onChange={(e) => setField('vendor_expense', e.target.value)}
+            disabled={locked}
+          />
+        </label>
+      )
+    }
+
+    if (key === 'breakdown_times') {
+      if (!isBreakdownJobNature(detail)) return null
+      return (
+        <div key={key} className="company-form__grid" style={{ gridColumn: '1 / -1' }}>
+          <Field label="Breakdown start">
+            <DateField
+              value={form.breakdown_start_at}
+              onChange={(v) => setField('breakdown_start_at', v)}
+              withTime
+              disabled={locked}
+            />
+          </Field>
+          <Field label="Breakdown end">
+            <DateField
+              value={form.breakdown_end_at}
+              onChange={(v) => setField('breakdown_end_at', v)}
+              withTime
+              disabled={locked}
+            />
+          </Field>
+        </div>
+      )
+    }
+
+    if (key === 'daily_logs') {
+      if (!(detail.daily_log_visible || (detail.daily_logs || []).length > 0 || detail.daily_log_can_edit)) {
+        return null
+      }
+      return (
+        <div key={key} className={className}>
+          <WorkOrderDailyLogSection detail={detail} onUpdated={onUpdated} />
+        </div>
+      )
+    }
+
+    if (key === 'material_consumed') return <div key={key} className={className}>{materialConsumedField}</div>
+    if (key === 'dos_and_donts') return <div key={key} className={className}>{dosDontsField}</div>
+    if (key === 'checklist_execution') return <div key={key} className={className}>{checklistBlock}</div>
+
+    const textMap = {
+      job_description: ['Detailed job description', 'job_description'],
+      root_cause: ['Root cause analysis', 'root_cause'],
+      action_taken: ['Action taken', 'action_taken'],
+      special_tools_used: ['Special tools used', 'special_tools_used'],
+      safety_precautions: ['Safety precautions', 'safety_precautions'],
+      lessons_learned: ['Lessons learned', 'lessons_learned'],
+      execution_remarks: ['Remarks', 'execution_remarks'],
+      verification_remarks: ['Verification remarks', 'verification_remarks'],
+    }
+    if (textMap[key]) {
+      const [label, formKey] = textMap[key]
+      return (
+        <label key={key} className={className}>
+          <FormLabel limit={maxLength(formKey)}>{label}{requiredMark}</FormLabel>
+          <SpellcheckInput
+            multiline
+            className="company-form__input company-form__textarea"
+            rows={2}
+            value={form[formKey]}
+            onChange={(e) => setField(formKey, e.target.value)}
+            maxLength={maxLength(formKey)}
+            disabled={locked}
+          />
+        </label>
+      )
+    }
+
+    if (key === 'execution_files') {
+      return (
+        <div key={key} className={className}>
+          <span className="company-form__label">Technician photos &amp; files{requiredMark}</span>
+          <p className="wo-permit__hint">
+            Assigned technicians can attach images and documents of the work performed.
+          </p>
+          <WorkOrderAttachmentsField
+            files={keptExecutionFiles}
+            pendingFiles={pendingFiles}
+            disabled={locked}
+            onAddPending={(files) => setPendingFiles((prev) => [
+              ...prev,
+              ...files.map(toPendingFile),
+            ])}
+            onRemovePending={(index) => setPendingFiles((prev) => {
+              const next = [...prev]
+              const [removed] = next.splice(index, 1)
+              if (removed?.previewUrl) URL.revokeObjectURL(removed.previewUrl)
+              return next
+            })}
+            onRemoveFile={(file) => {
+              if (file?.path) setRemovedPaths((prev) => [...prev, file.path])
+            }}
+          />
+        </div>
+      )
+    }
+
+    return null
+  }
+
+  const openForPickup = !(detail?.assignees || []).length
+    && Boolean(detail?.work_request_id)
+    && ['assigned', 'accepted'].includes(detail?.status)
+
+  const canEditExecution = canEditFilledBy('technician', processActors)
+  const canEditCloseout = canEditFilledBy('supervisor', processActors)
+  const canSaveLifecycle = canUpdate && (canEditExecution || canEditCloseout)
+
+  const statusActionsBlock = canSaveLifecycle && !openForPickup ? (
     <section className={`wo-received-detail__section wo-assignment-actions${isPmScheduled ? ' wo-assignment-actions--pm' : ''}`}>
       {!isPmScheduled && (
         <h3>{canSupervise && !isTechnician ? 'Supervisor actions' : 'Status actions'}</h3>
@@ -777,6 +1126,7 @@ export default function WorkOrderLifecyclePanel({ detail, onUpdated, canUpdate =
 
   return (
     <div className="wo-lifecycle">
+      {hideHeader ? null : (
       <section className="wo-received-detail__section">
         <h3>Header</h3>
         <dl className="wo-received-detail__fields">
@@ -824,310 +1174,61 @@ export default function WorkOrderLifecyclePanel({ detail, onUpdated, canUpdate =
           </div>
         </dl>
       </section>
+      )}
 
-      {Array.isArray(detail.asset_hierarchy) && detail.asset_hierarchy.length > 0 && (
+      {!hideWorkRequestForm && detail.work_request && (
+        <WorkRequestFormSections
+          workRequest={detail.work_request}
+          onHasSections={setShowRequestForm}
+        />
+      )}
+
+      {!hideWorkRequestForm && !showRequestForm && hierarchyDisplaySteps(detail.asset_hierarchy).length > 0 && (
         <section className="wo-received-detail__section">
           <h3>Asset information</h3>
-          <dl className="wo-received-detail__fields">
-            {detail.asset_hierarchy
-              .filter((step, i, list) => {
-                const name = String(step.field_name || '').trim().toLowerCase()
-                if (!name) return false
-                return list.findIndex((item) => String(item.field_name || '').trim().toLowerCase() === name) === i
-              })
-              .map((step, i) => (
-              <div key={`${step.field_id}-${i}`} className="wo-received-detail__field">
-                <dt>{step.field_name}</dt>
-                <dd>{step.value || '—'}</dd>
-              </div>
-            ))}
-          </dl>
+          <AssetHierarchySummary steps={detail.asset_hierarchy} />
         </section>
       )}
 
-      {requestFiles.length > 0 && (
+      {!hideWorkRequestForm && requestFiles.length > 0 && (
         <section className="wo-received-detail__section">
           <h3>Request attachments</h3>
           <WorkOrderAttachmentsField files={requestFiles} readOnly />
         </section>
       )}
 
-      {showLifecycleForms && (
-        <>
-          <section className="wo-received-detail__section">
-            <h3>Permit details</h3>
-            <div className="wo-permit">
-              <div className="company-form__field">
-                <span className="company-form__label">Permit required</span>
-                <FilterableSelect
-                  value={form.permit_required ? 'yes' : 'no'}
-                  onChange={(next) => setPermitRequired(next === 'yes')}
-                  options={[
-                    { value: 'yes', label: 'Yes' },
-                    { value: 'no', label: 'No' },
-                  ]}
-                  getOptionValue={(opt) => opt.value}
-                  getOptionLabel={(opt) => opt.label}
-                  allowEmpty={false}
-                  className="company-form__input--select"
-                  aria-label="Permit required"
-                />
-              </div>
-              {form.permit_required && (
-                <div className="wo-permit__entries">
-                  {permitRows.map((permitRow, index) => {
-                    const usedTypes = new Set(
-                      permitRows
-                        .map((row, rowIndex) => (rowIndex === index ? '' : row.type))
-                        .filter(Boolean),
-                    )
-                    const typeOptions = permitTypeOptions.filter(
-                      (type) => !usedTypes.has(type) || type === permitRow.type,
-                    )
-                    return (
-                      <div key={`permit-${index}`} className="wo-permit__entry">
-                        <div className="wo-permit__row">
-                          <div className="wo-permit__cell wo-permit__cell--type">
-                            <span className="company-form__label">Permit type</span>
-                            <FilterableSelect
-                              value={permitRow.type}
-                              onChange={(nextType) => changePermitType(index, nextType)}
-                              options={typeOptions}
-                              getOptionValue={(type) => type}
-                              getOptionLabel={(type) => PERMIT_LABELS[type] || type}
-                              placeholder="Select permit type"
-                              className="company-form__input--select"
-                              aria-label={`Permit type ${index + 1}`}
-                            />
-                          </div>
-                          {Boolean(permitRow.type) && (
-                            <>
-                              <label className="wo-permit__cell wo-permit__cell--number">
-                                <span className="company-form__label">Permit number</span>
-                                <input
-                                  className="company-form__input"
-                                  value={permitRow.number}
-                                  onChange={(e) => updatePermitDetail(index, 'number', e.target.value)}
-                                  placeholder="Enter permit number"
-                                  aria-label={`${PERMIT_LABELS[permitRow.type] || permitRow.type} permit number`}
-                                />
-                              </label>
-                              <label className="wo-permit__cell wo-permit__cell--date">
-                                <span className="company-form__label">Date</span>
-                                <DateField
-                                  value={permitRow.issue_at}
-                                  onChange={(v) => updatePermitDetail(index, 'issue_at', v)}
-                                />
-                              </label>
-                              <label className="wo-permit__cell wo-permit__cell--date">
-                                <span className="company-form__label">Expiry date</span>
-                                <DateField
-                                  value={permitRow.expiry_at}
-                                  onChange={(v) => updatePermitDetail(index, 'expiry_at', v)}
-                                />
-                              </label>
-                            </>
-                          )}
-                          {permitRows.length > 1 && (
-                            <div className="wo-permit__cell wo-permit__cell--actions">
-                              <button
-                                type="button"
-                                className="company-btn company-btn--ghost company-btn--compact"
-                                onClick={() => removePermit(index)}
-                              >
-                                Remove
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    )
-                  })}
-                  {permitTypeOptions.some((type) => !permitRows.some((row) => row.type === type)) && (
-                    <button type="button" className="wo-permit__add" onClick={addPermit}>
-                      + Add permit
-                    </button>
-                  )}
-                </div>
-              )}
-            </div>
-          </section>
-
-          <section className="wo-received-detail__section">
-            <h3>Work execution</h3>
-            <div className="company-form__grid">
-              <Field label="Work start">
-                <DateField
-                  value={form.work_start_at}
-                  onChange={(v) => setField('work_start_at', v)}
-                  withTime
-                />
-              </Field>
-              <Field label="Work end">
-                <DateField
-                  value={form.work_end_at}
-                  onChange={(v) => setField('work_end_at', v)}
-                  withTime
-                />
-              </Field>
-              <Field label="Labour count">
-                <input
-                  type="number"
-                  min="0"
-                  className="company-form__input"
-                  value={form.labour_count}
-                  onChange={(e) => setField('labour_count', e.target.value)}
-                />
-              </Field>
-              <Field label="Vendor expense">
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  className="company-form__input"
-                  value={form.vendor_expense}
-                  onChange={(e) => setField('vendor_expense', e.target.value)}
-                />
-              </Field>
-              {isBreakdownJobNature(detail) && (
-                <>
-                  <Field label="Breakdown start">
-                    <DateField
-                      value={form.breakdown_start_at}
-                      onChange={(v) => setField('breakdown_start_at', v)}
-                      withTime
-                    />
-                  </Field>
-                  <Field label="Breakdown end">
-                    <DateField
-                      value={form.breakdown_end_at}
-                      onChange={(v) => setField('breakdown_end_at', v)}
-                      withTime
-                    />
-                  </Field>
-                </>
-              )}
-            </div>
-          </section>
-
-          {(detail.daily_log_visible || (detail.daily_logs || []).length > 0 || detail.daily_log_can_edit) && (
-            <WorkOrderDailyLogSection detail={detail} onUpdated={onUpdated} />
-          )}
-
-          {MAINTENANCE_DOC_STATUSES.has(detail.status) && (
-          <section className="wo-received-detail__section">
-            <h3>Maintenance documentation</h3>
-            <div className="company-form__grid">
-              {[
-                ['job_description', 'Detailed job description'],
-                ['root_cause', 'Root cause analysis'],
-                ['action_taken', 'Action taken'],
-              ].map(([key, label]) => (
-                <Field key={key} label={label} full maxLength={maxLength(key)}>
-                  <SpellcheckInput
-                    multiline
-                    className="company-form__input company-form__textarea"
-                    rows={2}
-                    value={form[key]}
-                    onChange={(e) => setField(key, e.target.value)}
-                    maxLength={maxLength(key)}
-                  />
-                </Field>
-              ))}
-
-              {materialConsumedField}
-
-              {[
-                ['special_tools_used', 'Special tools used'],
-                ['safety_precautions', 'Safety precautions'],
-              ].map(([key, label]) => (
-                <Field key={key} label={label} full maxLength={maxLength(key)}>
-                  <SpellcheckInput
-                    multiline
-                    className="company-form__input company-form__textarea"
-                    rows={2}
-                    value={form[key]}
-                    onChange={(e) => setField(key, e.target.value)}
-                  />
-                </Field>
-              ))}
-
-              {dosDontsField}
-
-              {[
-                ['lessons_learned', 'Lessons learned'],
-                ['execution_remarks', 'Remarks'],
-              ].map(([key, label]) => (
-                <Field key={key} label={label} full maxLength={maxLength(key)}>
-                  <SpellcheckInput
-                    multiline
-                    className="company-form__input company-form__textarea"
-                    rows={2}
-                    value={form[key]}
-                    onChange={(e) => setField(key, e.target.value)}
-                    maxLength={maxLength(key)}
-                  />
-                </Field>
-              ))}
-              <div className="company-form__field company-form__field--full">
-                <span className="company-form__label">Technician photos &amp; files</span>
-                <p className="wo-permit__hint">
-                  Assigned technicians can attach images and documents of the work performed.
-                </p>
-                <WorkOrderAttachmentsField
-                  files={keptExecutionFiles}
-                  pendingFiles={pendingFiles}
-                  disabled={saving}
-                  onAddPending={(files) => setPendingFiles((prev) => [
-                    ...prev,
-                    ...files.map(toPendingFile),
-                  ])}
-                  onRemovePending={(index) => setPendingFiles((prev) => {
-                    const next = [...prev]
-                    const [removed] = next.splice(index, 1)
-                    if (removed?.previewUrl) URL.revokeObjectURL(removed.previewUrl)
-                    return next
-                  })}
-                  onRemoveFile={(file) => {
-                    if (file?.path) setRemovedPaths((prev) => [...prev, file.path])
-                  }}
-                />
-              </div>
-            </div>
-          </section>
-          )}
-
-          {['completed', 'verified'].includes(detail.status) && (
-            <section className="wo-received-detail__section">
-              <h3>Supervisor verification</h3>
-              <Field label="Verification remarks" full maxLength={maxLength('verification_remarks')}>
-                <SpellcheckInput
-                  multiline
-                  className="company-form__input company-form__textarea"
-                  rows={2}
-                  value={form.verification_remarks}
-                  onChange={(e) => setField('verification_remarks', e.target.value)}
-                  maxLength={maxLength('verification_remarks')}
-                />
-              </Field>
-            </section>
-          )}
-        </>
+      {!openForPickup && (
+        <WorkOrderProcessLayout
+          formId={processFormId}
+          stages={processStages}
+          extrasValues={processExtras.values}
+          onExtraChange={canEditExecution ? processExtras.setFieldValue : () => {}}
+          actors={processActors}
+          disabled={saving}
+          renderField={renderLifecycleField}
+        />
       )}
 
-      {checklistBlock}
+      {!openForPickup && !layoutHasSystemKey(processLayout, 'daily_logs')
+        && (detail.daily_log_visible || (detail.daily_logs || []).length > 0 || detail.daily_log_can_edit)
+        && (
+          <WorkOrderDailyLogSection
+            detail={detail}
+            onUpdated={onUpdated}
+            canEdit={Boolean(detail.daily_log_can_edit && canEditExecution)}
+          />
+        )}
 
-      {isPmScheduled && canUpdate && (
-        <section className="wo-received-detail__section">
-          <h3>Material consumed &amp; Do&apos;s / Don&apos;ts</h3>
-          <div className="company-form__grid">
-            {materialConsumedField}
-            {dosDontsField}
-          </div>
-        </section>
+      {!openForPickup && !layoutHasSystemKey(processLayout, 'checklist_execution') && checklistBlock}
+
+      {openForPickup && (
+        <p className="wo-permit__hint">
+          This work order is unassigned. Pick it in Assignment above to assign yourself and start. After that you can record the job here.
+        </p>
       )}
 
       {statusActionsBlock}
+
 
       {!canUpdate && executionFiles.length > 0 && (
         <section className="wo-received-detail__section">

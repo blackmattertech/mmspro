@@ -7,6 +7,8 @@ import {
   clipTrimmedToLimit,
   getTextFieldLimitsMap,
 } from './textFieldLimits.js'
+import { completionRequiredFromLayout, filledByForNativeKey, layoutHasSystemKey, workOrderFormIdForSource } from './workOrderForms.js'
+import { canEditFilledBy } from './formFillership.js'
 
 export const WO_STATUSES = [
   'draft',
@@ -72,15 +74,6 @@ export const STATUS_TRANSITIONS = {
   verified: ['closed', 'returned_rework'],
   closed: [],
 }
-
-const COMPLETION_REQUIRED_FIELDS = [
-  ['work_start_at', 'Work start time'],
-  ['work_end_at', 'Work end time'],
-  ['job_description', 'Detailed job description'],
-  ['root_cause', 'Root cause analysis'],
-  ['action_taken', 'Action taken'],
-  ['material_consumed', 'Material consumed'],
-]
 
 function formatSeqDate(date = new Date()) {
   const yy = String(date.getUTCFullYear()).slice(-2)
@@ -242,6 +235,21 @@ export function isPermitComplete(workOrder) {
   )
 }
 
+export async function allowedPermitTypeValues(orgId, sourceType) {
+  try {
+    const { workOrderFormIdForSource } = await import('./workOrderForms.js')
+    const { resolvePermitTypeChoiceList } = await import('./formFieldMasters.js')
+    const formId = workOrderFormIdForSource(sourceType)
+    const choice = await resolvePermitTypeChoiceList(orgId, formId)
+    const values = (choice.options || [])
+      .map((item) => String(item?.value || item?.label || '').trim())
+      .filter(Boolean)
+    return values.length ? values : [...PERMIT_TYPES]
+  } catch {
+    return [...PERMIT_TYPES]
+  }
+}
+
 function sanitizePermitDetails(raw, allowedTypes = PERMIT_TYPES) {
   const allowed = new Set(allowedTypes)
   const list = Array.isArray(raw) ? raw : []
@@ -269,9 +277,10 @@ export function validatePermitForStart(workOrder) {
   }
 }
 
-export function validateCompletionFields(workOrder) {
+export function validateCompletionFields(workOrder, layout = null) {
   const missing = []
-  for (const [key, label] of COMPLETION_REQUIRED_FIELDS) {
+  const required = completionRequiredFromLayout(layout)
+  for (const [key, label] of required) {
     const value = workOrder?.[key]
     if (value == null || (typeof value === 'string' && !value.trim())) {
       missing.push(label)
@@ -283,7 +292,8 @@ export function validateCompletionFields(workOrder) {
     // ok — will compute on save
   }
 
-  if (workOrder?.permit_required && !isPermitComplete(workOrder)) {
+  const permitOnLayout = !layout || layoutHasSystemKey(layout, 'permit_details')
+  if (permitOnLayout && workOrder?.permit_required && !isPermitComplete(workOrder)) {
     missing.push('Permit details')
   }
 
@@ -366,7 +376,17 @@ export async function loadWorkOrderTimeline(orgId, workOrderId) {
   }))
 }
 
-export async function updateWorkOrderLifecycle(orgId, profileId, workOrderId, body = {}) {
+const UNRESTRICTED_LIFECYCLE_KEYS = new Set([
+  'status',
+  'updated_at',
+  'verified_by',
+  'verified_at',
+  'closed_by',
+  'closed_at',
+  'planned_duration_hours',
+])
+
+export async function updateWorkOrderLifecycle(orgId, profileId, workOrderId, body = {}, { actors } = {}) {
   const { data: existing, error } = await supabaseAdmin
     .from('manual_work_orders')
     .select('*')
@@ -384,7 +404,13 @@ export async function updateWorkOrderLifecycle(orgId, profileId, workOrderId, bo
   const nextStatus = body.status || existing.status
   if (nextStatus !== existing.status) {
     const { assertWorkOrderStatusChange } = await import('./orgStatusService.js')
-    await assertWorkOrderStatusChange(orgId, existing.status, nextStatus)
+    const { workOrderFormIdForSource } = await import('./workOrderForms.js')
+    const { shouldSkipTechnicianAcceptance } = await import('./formSkips.js')
+    const skipTechnicianAcceptance = await shouldSkipTechnicianAcceptance(
+      orgId,
+      workOrderFormIdForSource(existing.source_type),
+    )
+    await assertWorkOrderStatusChange(orgId, existing.status, nextStatus, { skipTechnicianAcceptance })
   }
 
   const fieldLimits = await getTextFieldLimitsMap(orgId)
@@ -447,10 +473,12 @@ export async function updateWorkOrderLifecycle(orgId, profileId, workOrderId, bo
   }
 
   if (body.permit_types !== undefined || body.permit_details !== undefined) {
+    const allowedTypes = await allowedPermitTypeValues(orgId, existing.source_type)
+    const allowedSet = new Set(allowedTypes)
     const existingTypes = Array.isArray(existing.permit_types) ? existing.permit_types : []
     const nextTypes = body.permit_types !== undefined
       ? (Array.isArray(body.permit_types)
-        ? body.permit_types.filter((t) => PERMIT_TYPES.includes(t))
+        ? body.permit_types.filter((t) => allowedSet.has(t))
         : [])
       : existingTypes
     const nextDetails = sanitizePermitDetails(
@@ -496,12 +524,39 @@ export async function updateWorkOrderLifecycle(orgId, profileId, workOrderId, bo
 
   patch = computeDurations(patch, existing)
 
+  if (actors) {
+    const { loadRuntimeFormLayout } = await import('./orgFormLayouts.js')
+    const formId = workOrderFormIdForSource(existing.source_type)
+    const layout = await loadRuntimeFormLayout(orgId, formId)
+    const reserved = []
+    for (const key of Object.keys(patch)) {
+      if (UNRESTRICTED_LIFECYCLE_KEYS.has(key)) continue
+      const filledBy = filledByForNativeKey(layout, key)
+      if (canEditFilledBy(filledBy, actors)) continue
+      const previous = existing[key]
+      if (JSON.stringify(previous ?? null) === JSON.stringify(patch[key] ?? null)) {
+        delete patch[key]
+        continue
+      }
+      reserved.push(key)
+    }
+    if (reserved.length) {
+      const err = new Error('Only the assigned technician can edit technician sections on this work order.')
+      err.status = 403
+      throw err
+    }
+  }
+
   if (nextStatus !== existing.status) {
     if (['started', 'in_progress'].includes(nextStatus) && existing.status !== 'started') {
       validatePermitForStart({ ...existing, ...patch })
     }
     if (nextStatus === 'completed') {
-      validateCompletionFields({ ...existing, ...patch, status: nextStatus })
+      const { workOrderFormIdForSource, layoutForStages } = await import('./workOrderForms.js')
+      const { loadRuntimeFormLayout } = await import('./orgFormLayouts.js')
+      const formId = workOrderFormIdForSource(existing.source_type)
+      const layout = layoutForStages(await loadRuntimeFormLayout(orgId, formId), ['execution', 'closeout'], { includeUnstaged: false })
+      validateCompletionFields({ ...existing, ...patch, status: nextStatus }, layout)
     }
     if (nextStatus === 'verified') {
       patch.verified_by = profileId

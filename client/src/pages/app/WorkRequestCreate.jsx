@@ -11,6 +11,7 @@ import {
   getWorkRequestEquipmentCatalog,
   createWorkRequest,
 } from '../../lib/api-work-requests'
+import { notifyTabCountsChanged } from '../../lib/tabCountEvents'
 import WorkRequestAssetFields from '../../components/workrequests/WorkRequestAssetFields'
 import WorkRequestSectionHead from '../../components/workrequests/WorkRequestSectionHead'
 import WorkRequestBreakdownFields from '../../components/workrequests/WorkRequestBreakdownFields'
@@ -35,7 +36,7 @@ import { useFormLayout } from '../../hooks/useFormLayout'
 import { useFormFieldValues } from '../../hooks/useFormFieldValues'
 import OrderedFormLayout from '../../components/forms/OrderedFormLayout'
 import ChecklistOptIn from '../../components/forms/ChecklistOptIn'
-import { findLayoutField, layoutHasSection, shouldRequire, systemId, parseLayoutId } from '../../lib/formLayoutIds'
+import { findLayoutField, layoutHasSection, layoutWithoutAreasMaster, shouldRequire, systemId, parseLayoutId } from '../../lib/formLayoutIds'
 import { missingRequiredLayoutValues, splitBoundValues } from '../../lib/formFieldSources'
 import { layoutHasOptionRules, isInterDepartmentRequestType, isSameDepartmentRequestType } from '../../lib/formOptionRules'
 import { resolveFormActors, validateRepeatableGroups } from '../../lib/formFillership'
@@ -47,10 +48,60 @@ import {
   isEquipmentMasterField,
 } from '../../lib/equipmentLayoutFields'
 import { getEquipment } from '../../lib/api-equipment'
-import { fieldValuesFromEquipment, flattenAssetSections, getEquipmentFieldRole } from '../../lib/workRequestAssetPicker'
+import { fieldValuesFromEquipment, flattenAssetSections } from '../../lib/workRequestAssetPicker'
+
+const ASSET_PICKER_KEYS = new Set(['asset_picker', 'area_id', 'equipment_id'])
+
+function isAssetPickerLayoutField(field) {
+  if (!field) return false
+  const parsed = parseLayoutId(field.id)
+  if (parsed.kind === 'system' && ASSET_PICKER_KEYS.has(parsed.value)) return true
+  if (field.masterSource === 'areas' || field.masterSource === 'equipment') return true
+  if (field.bindKey === 'area_id' || field.bindKey === 'equipment_id') return true
+  return false
+}
+
+function selectedLayoutPriority(layout, values, fallback) {
+  for (const field of layout?.fields || []) {
+    const parsed = parseLayoutId(field?.id)
+    const key = field?.bindKey || (parsed.kind === 'system' ? parsed.value : '')
+    const label = String(field?.label || '').toLowerCase().replace(/[^a-z0-9]+/g, '')
+    if (key !== 'priority' && label !== 'priority' && label !== 'jobpriority') continue
+    const text = String(values?.[field.id] ?? '').trim().toLowerCase()
+    if (text === 'high' || text === 'medium' || text === 'low') return text
+  }
+  return fallback
+}
+
+function isAssetLayoutSection(sectionId, section, layout) {
+  if (/asset/i.test(String(section?.label || ''))) return true
+  return (layout?.fields || []).some((field) => (
+    field.sectionId === sectionId && isAssetPickerLayoutField(field)
+  ))
+}
 
 function formatEquipmentLabel(row) {
   return row?.name || row?.id || ''
+}
+
+function routingFieldValues(layout, { requestType, orderFromId, orderToId }) {
+  const patch = {}
+  for (const field of layout?.fields || []) {
+    if (!field?.id) continue
+    const parsed = parseLayoutId(field.id)
+    const key = field.bindKey || (parsed.kind === 'system' ? parsed.value : '')
+    const label = String(field.label || '')
+    if ((key === 'request_type' || /request\s*type/i.test(label)) && requestType) {
+      patch[field.id] = requestType
+    }
+    if ((key === 'order_from_department_id' || /order\s*from/i.test(label)) && orderFromId) {
+      patch[field.id] = orderFromId
+    }
+    if ((key === 'order_to_department_id' || /order\s*to/i.test(label)) && orderToId) {
+      patch[field.id] = orderToId
+    }
+  }
+  return patch
 }
 
 function departmentSearchLabel(department) {
@@ -138,6 +189,7 @@ export default function WorkRequestCreate() {
   const [orderFromId, setOrderFromId] = useState('')
   const [orderToId, setOrderToId] = useState('')
   const [catalogEquipment, setCatalogEquipment] = useState([])
+  const [catalogSections, setCatalogSections] = useState([])
   const [equipmentQuery, setEquipmentQuery] = useState('')
   const debouncedEquipmentQuery = useDebouncedValue(equipmentQuery.trim())
   const [equipmentLoading, setEquipmentLoading] = useState(false)
@@ -155,18 +207,24 @@ export default function WorkRequestCreate() {
   const attachmentFilesRef = useRef(attachmentFiles)
   attachmentFilesRef.current = attachmentFiles
 
-  const assetSections = ctx?.asset_sections || []
+  const assetSections = useMemo(() => {
+    const fromCtx = ctx?.asset_sections || ctx?.assetSections || []
+    if (fromCtx.some((section) => (section.fields || []).length > 0)) return fromCtx
+    return catalogSections
+  }, [ctx, catalogSections])
   const maintenanceSchema = ctx?.maintenance_form_schema || { sections: [] }
   const jobNatureOptions = ctx?.job_natures || []
   const hasAssetFields = assetSections.some((s) => (s.fields || []).length > 0)
   const isBreakdown = String(jobNature || '').trim().toLowerCase() === 'breakdown'
 
   const effectiveLayout = useMemo(() => {
-    const augmented = augmentLayoutWithEquipmentCatalog(layout, catalogFields)
+    const augmented = layoutWithoutAreasMaster(augmentLayoutWithEquipmentCatalog(layout, catalogFields))
     if (!augmented?.fields?.length) return augmented
     const hasAssetPicker = augmented.fields.some((field) => {
       const parsed = parseLayoutId(field.id)
-      return parsed.kind === 'system' && parsed.value === 'asset_picker'
+      return parsed.kind === 'system' && (
+        parsed.value === 'asset_picker' || parsed.value === 'equipment_id' || parsed.value === 'area_id'
+      )
     })
     if (!hasAssetPicker) return augmented
     const catalogById = new Map((catalogFields || []).map((row) => [String(row.id), row]))
@@ -174,15 +232,9 @@ export default function WorkRequestCreate() {
       ...augmented,
       fields: augmented.fields.filter((field) => {
         const parsed = parseLayoutId(field.id)
-        if (parsed.kind === 'master' && parsed.value === 'areas') return false
-        if (field.bindKey === 'area_id') return false
-        if (parsed.kind === 'catalog') {
-          const source = catalogById.get(String(parsed.value))
-          if (getEquipmentFieldRole(source) === 'area') return false
-        }
-        const label = String(field.label || '').trim().toLowerCase()
-        if (label === 'area' && parsed.kind !== 'system') return false
-        return true
+        if (parsed.kind !== 'catalog') return true
+        const source = catalogById.get(String(parsed.value))
+        return source?.field_source !== 'equipment'
       }),
     }
   }, [layout, catalogFields])
@@ -389,6 +441,7 @@ export default function WorkRequestCreate() {
     if (!previous || previous === orderToId) {
       if (!orderToId) {
         setCatalogEquipment([])
+        setCatalogSections([])
         setEquipmentEmpty(false)
       }
       return
@@ -408,10 +461,13 @@ export default function WorkRequestCreate() {
       try {
         const catalog = await getWorkRequestEquipmentCatalog(orderToId, {
           search: debouncedEquipmentQuery || undefined,
-          limit: 50,
+          limit: 500,
         })
         if (cancelled) return
-        setCatalogEquipment(catalog.equipment || [])
+        setCatalogEquipment((catalog.equipment || []).filter((row) => (
+          !row.department_id || String(row.department_id) === String(orderToId)
+        )))
+        setCatalogSections(Array.isArray(catalog.sections) ? catalog.sections : [])
         setEquipmentEmpty(!catalog.has_assets)
       } catch (err) {
         if (!cancelled) setError(err.message)
@@ -590,7 +646,7 @@ export default function WorkRequestCreate() {
             return
           }
           if (!equipmentId) {
-            setError('Select an asset / equipment before submitting.')
+            setError('Select an asset before submitting.')
             return
           }
         }
@@ -637,6 +693,7 @@ export default function WorkRequestCreate() {
         }
         const created = await createWorkRequest({
           ...buildPayload(saveAs, uploaded),
+          priority: selectedLayoutPriority(effectiveLayout || layout, extras.values, priority),
           equipment_id: equipmentId || native.equipment_id || null,
           order_from_department_id: fromId,
           order_to_department_id: toId,
@@ -645,12 +702,20 @@ export default function WorkRequestCreate() {
         })
         if (created?.id) {
           const uploadedExtras = await persistFormFileValues(org.id, created.id, extraValues, 'work-requests')
-          await extras.save(created.id, uploadedExtras)
+          await extras.save(created.id, {
+            ...uploadedExtras,
+            ...routingFieldValues(effectiveLayout || layout, {
+              requestType: requestType || native.request_type,
+              orderFromId: fromId,
+              orderToId: toId,
+            }),
+          })
         }
         if (org?.slug) {
           const message = saveAs === 'draft'
             ? 'Work request saved as draft.'
             : 'Work request submitted successfully.'
+          notifyTabCountsChanged('work_requests')
           navigate(orgPath(org.slug, 'work-request/my'), { state: { success: message } })
         }
       } catch (err) {
@@ -682,6 +747,7 @@ export default function WorkRequestCreate() {
       orderToId,
       org?.id,
       org?.slug,
+      priority,
       problem,
       requestType,
       shortDescription,
@@ -708,6 +774,56 @@ export default function WorkRequestCreate() {
     return <div className="wo-alert wo-alert--error">{error || 'Unable to load form.'}</div>
   }
 
+  const renderAssetPickerBody = (required = false) => {
+    if (!orderToId) {
+      return (
+        <p className="wo-manual__intro" style={{ margin: 0 }}>
+          Select Order to to see assets for that department.
+        </p>
+      )
+    }
+    return (
+      <>
+        {equipmentLoading && (
+          <p className="wo-manual__intro" style={{ marginTop: 0 }}>Loading assets…</p>
+        )}
+        {!equipmentLoading && equipmentEmpty && !hasPinnedEquipment && (
+          <div className="wo-alert wo-alert--error" role="alert">
+            No assets are available for the selected department.
+          </div>
+        )}
+        {hasAssetFields ? (
+          <WorkRequestAssetFields
+            sections={assetSections}
+            equipment={equipmentOptions}
+            fieldValues={assetFieldValues}
+            onFieldValuesChange={setAssetFieldValues}
+            equipmentId={equipmentId}
+            onEquipmentIdChange={setEquipmentId}
+            loading={equipmentLoading}
+            disabled={saving}
+          />
+        ) : (
+          <label className="company-form__field company-form__field--full">
+            <span className="company-form__label">Asset</span>
+            <FilterableSelect
+              value={equipmentId}
+              onChange={setEquipmentId}
+              options={equipmentOptions}
+              getOptionValue={(row) => row.id}
+              getOptionLabel={formatEquipmentLabel}
+              placeholder="Select asset"
+              className="company-form__input--select"
+              onQueryChange={setEquipmentQuery}
+              required={required}
+            />
+          </label>
+        )}
+      </>
+    )
+  }
+
+  let assetPickerShown = false
   const renderWrField = (key, meta = {}) => {
     const className = meta.className || fieldClass(key)
     const required = Boolean(meta.required)
@@ -782,46 +898,12 @@ export default function WorkRequestCreate() {
         </label>
       )
     }
-    if (key === 'asset_picker') {
+    if (key === 'asset_picker' || key === 'area_id' || key === 'equipment_id') {
+      if (assetPickerShown) return <span key={`${key}-asset`} hidden />
+      assetPickerShown = true
       return (
-        <div key={key} className={`wr-asset-picker${className ? ` ${className}` : ''}`}>
-          {equipmentLoading && (
-            <p className="wo-manual__intro" style={{ marginTop: 0 }}>Loading assets…</p>
-          )}
-          {!equipmentLoading && equipmentEmpty && orderToId && !hasPinnedEquipment && (
-            <div className="wo-alert wo-alert--error" role="alert">
-              No assets are available for the selected department.
-            </div>
-          )}
-          {!equipmentLoading && (!equipmentEmpty || hasPinnedEquipment) && hasAssetFields && (
-            <WorkRequestAssetFields
-              sections={assetSections}
-              equipment={equipmentOptions}
-              fieldValues={assetFieldValues}
-              onFieldValuesChange={setAssetFieldValues}
-              equipmentId={equipmentId}
-              onEquipmentIdChange={setEquipmentId}
-              seedAreaId={pinnedEquipment?.id === equipmentId ? (pinnedEquipment.area_id || '') : ''}
-              loading={equipmentLoading}
-              disabled={saving}
-            />
-          )}
-          {!equipmentLoading && (!equipmentEmpty || hasPinnedEquipment) && !hasAssetFields && (
-            <label className="company-form__field company-form__field--full">
-              <span className="company-form__label">Equipment / asset</span>
-              <FilterableSelect
-                value={equipmentId}
-                onChange={setEquipmentId}
-                options={equipmentOptions}
-                getOptionValue={(row) => row.id}
-                getOptionLabel={formatEquipmentLabel}
-                placeholder="Select asset"
-                className="company-form__input--select"
-                onQueryChange={setEquipmentQuery}
-                required={required}
-              />
-            </label>
-          )}
+        <div key={key} className={`wr-asset-picker company-form__field company-form__field--full${className ? ` ${className}` : ''}`}>
+          {renderAssetPickerBody(required)}
         </div>
       )
     }
@@ -970,20 +1052,29 @@ export default function WorkRequestCreate() {
               }}
               disabled={saving}
               actors={formActors}
+              currentEmployeeId={session?.employee_id || null}
               renderField={renderWrField}
-              renderSection={(id, children, section) => (
-                <section key={id} className="wr-form-section" aria-labelledby={`${id}-title`}>
-                  {section.label ? (
-                    <header className="wr-form-section__head" id={`${id}-title`}>
-                      <h3 className="wr-form-section__title">{section.label}</h3>
-                      {section.badge}
-                    </header>
-                  ) : null}
-                  <div className="wr-form-section__body">
-                    <div className="company-form__grid company-form__grid--12">{children}</div>
-                  </div>
-                </section>
-              )}
+              omitField={(item) => isAssetPickerLayoutField(item)}
+              renderSection={(id, children, section) => {
+                const showAssetPicker = isAssetLayoutSection(id, section, effectiveLayout)
+                return (
+                  <section key={id} className="wr-form-section" aria-labelledby={`${id}-title`}>
+                    {section.label ? (
+                      <header className="wr-form-section__head" id={`${id}-title`}>
+                        <h3 className="wr-form-section__title">{section.label}</h3>
+                        {section.badge}
+                      </header>
+                    ) : null}
+                    <div className="wr-form-section__body">
+                      {showAssetPicker ? (
+                        <div className="wr-asset-picker">{renderAssetPickerBody(true)}</div>
+                      ) : (
+                        <div className="company-form__grid company-form__grid--12">{children}</div>
+                      )}
+                    </div>
+                  </section>
+                )
+              }}
             />
           ) : (
           <>
@@ -1073,44 +1164,7 @@ export default function WorkRequestCreate() {
               title="Asset information"
             />
             <div className="wo-section__body">
-              {equipmentLoading && (
-                <p className="wo-manual__intro" style={{ marginTop: 0 }}>Loading assets…</p>
-              )}
-              {!equipmentLoading && equipmentEmpty && orderToId && !hasPinnedEquipment && (
-                <div className="wo-alert wo-alert--error" role="alert">
-                  No assets are available for the selected department.
-                </div>
-              )}
-              {!equipmentLoading && (!equipmentEmpty || hasPinnedEquipment) && hasAssetFields && (
-                <WorkRequestAssetFields
-                  sections={assetSections}
-                  equipment={equipmentOptions}
-                  fieldValues={assetFieldValues}
-                  onFieldValuesChange={setAssetFieldValues}
-                  equipmentId={equipmentId}
-                  onEquipmentIdChange={setEquipmentId}
-                  seedAreaId={pinnedEquipment?.id === equipmentId ? (pinnedEquipment.area_id || '') : ''}
-                  loading={equipmentLoading}
-                  disabled={saving}
-                />
-              )}
-              {!equipmentLoading && (!equipmentEmpty || hasPinnedEquipment) && !hasAssetFields && (
-                <>
-                  <label className="company-form__field company-form__field--full">
-                    <span className="company-form__label">Equipment / asset</span>
-                    <FilterableSelect
-                      value={equipmentId}
-                      onChange={setEquipmentId}
-                      options={equipmentOptions}
-                      getOptionValue={(row) => row.id}
-                      getOptionLabel={formatEquipmentLabel}
-                      placeholder="Select asset"
-                      className="company-form__input--select"
-                      onQueryChange={setEquipmentQuery}
-                    />
-                  </label>
-                </>
-              )}
+              {renderAssetPickerBody()}
             </div>
           </section>
           )}

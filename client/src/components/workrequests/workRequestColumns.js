@@ -8,7 +8,7 @@ export const WORK_REQUEST_COLUMNS = [
   { id: 'status', label: 'Status' },
   { id: 'job_nature', label: 'Job nature', defaultVisible: false },
   { id: 'requester', label: 'Requested by', defaultVisible: false },
-  { id: 'equipment', label: 'Equipment', defaultVisible: false },
+  { id: 'equipment', label: 'Asset', defaultVisible: false },
   { id: 'remarks', label: 'Remarks', defaultVisible: false },
   { id: 'assigned', label: 'Assigned technicians', defaultVisible: false },
   { id: 'work_order', label: 'Work order', defaultVisible: false },

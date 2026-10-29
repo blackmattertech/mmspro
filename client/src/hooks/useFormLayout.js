@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { getFormLayout } from '../lib/api-form-layouts'
-import { formFieldClassName, parseLayoutId, systemId, normalizeColSpan } from '../lib/formLayoutIds'
-import { getFormDef } from '../lib/formRegistry'
+import { formFieldClassName, parseLayoutId, normalizeColSpan } from '../lib/formLayoutIds'
+import { buildDefaultLayout, getFormDef } from '../lib/formRegistry'
 
-export function useFormLayout(formId) {
+export function useFormLayout(formId, { fallbackToDefault = false } = {}) {
   const [layout, setLayout] = useState(null)
   const [catalogFields, setCatalogFields] = useState([])
   const [loading, setLoading] = useState(Boolean(formId))
@@ -38,6 +38,7 @@ export function useFormLayout(formId) {
     if (!layout) return null
     const keys = new Set()
     for (const field of layout.fields || []) {
+      if (field.skipped) continue
       const parsed = parseLayoutId(field.id)
       if (parsed.kind === 'system') keys.add(parsed.value)
     }
@@ -46,7 +47,7 @@ export function useFormLayout(formId) {
 
   const isVisible = useCallback((key) => {
     if (!layout) return true
-    return visibleKeys?.has(key) || layout.fields?.some((field) => field.id === systemId(key))
+    return Boolean(visibleKeys?.has(key))
   }, [layout, visibleKeys])
 
   const colSpan = useCallback((key, fallback = 25) => {
@@ -60,18 +61,48 @@ export function useFormLayout(formId) {
   }, [colSpan, layout])
 
   const formDef = formId ? getFormDef(formId) : null
+  const resolvedLayout = layout || (formDef && fallbackToDefault
+    ? buildDefaultLayout(formDef, catalogFields)
+    : null)
+
+  const resolvedVisibleKeys = useMemo(() => {
+    if (!resolvedLayout) return null
+    const keys = new Set()
+    for (const field of resolvedLayout.fields || []) {
+      if (field.skipped) continue
+      const parsed = parseLayoutId(field.id)
+      if (parsed.kind === 'system') keys.add(parsed.value)
+    }
+    return keys
+  }, [resolvedLayout])
+
+  const resolvedIsVisible = useCallback((key) => {
+    if (!resolvedLayout) return true
+    return Boolean(resolvedVisibleKeys?.has(key))
+  }, [resolvedLayout, resolvedVisibleKeys])
+
+  const resolvedColSpan = useCallback((key, fallback = 25) => {
+    if (!resolvedLayout) return fallback
+    const match = (resolvedLayout.fields || []).find((field) => parseLayoutId(field.id).value === key)
+    return match ? normalizeColSpan(match.colSpan, fallback) : fallback
+  }, [resolvedLayout])
+
+  const resolvedFieldClass = useCallback((key, extras = '', fallbackSpan = 25) => {
+    return formFieldClassName({ colSpan: resolvedLayout ? resolvedColSpan(key, fallbackSpan) : undefined }, extras)
+  }, [resolvedColSpan, resolvedLayout])
 
   return {
     formId,
     formDef,
-    layout,
+    layout: resolvedLayout,
     catalogFields,
     loading,
     error,
-    hasLayout: Boolean(layout),
-    isVisible,
-    colSpan,
-    fieldClass,
+    hasLayout: Boolean(resolvedLayout),
+    isDefaultFallback: !layout && Boolean(resolvedLayout),
+    isVisible: fallbackToDefault ? resolvedIsVisible : isVisible,
+    colSpan: fallbackToDefault ? resolvedColSpan : colSpan,
+    fieldClass: fallbackToDefault ? resolvedFieldClass : fieldClass,
     reload: load,
   }
 }

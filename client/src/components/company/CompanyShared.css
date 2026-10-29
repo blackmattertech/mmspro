@@ -408,6 +408,10 @@
   grid-column: span 4;
 }
 
+.company-form__grid--12 .company-form__field--w-50 {
+  grid-column: span 6;
+}
+
 .company-form__grid--12 .company-form__field--span-2,
 .company-form__grid--12 .company-form__field--w-75 {
   grid-column: span 9;
@@ -479,6 +483,16 @@
   font-weight: 650;
   color: var(--color-gray-1, #6b7280);
   white-space: nowrap;
+}
+
+.company-form__equipment-image {
+  display: block;
+  width: 100%;
+  max-height: 160px;
+  object-fit: contain;
+  border: 1px solid var(--color-light-gray-2);
+  border-radius: var(--radius-sm);
+  background: var(--color-off-white);
 }
 
 .company-form__input {
@@ -574,6 +588,63 @@
   min-width: 0;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
+}
+
+.company-page--fill {
+  height: calc(100dvh - var(--mobile-topbar-height, 0px));
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.company-page--fill .company-page__header {
+  flex-shrink: 0;
+}
+
+.company-page--fill .company-page__content {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  padding-bottom: 16px;
+}
+
+.company-page--fill .company-panel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.company-table-wrap--freeze {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: calc(100dvh - 20rem);
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.company-page--fill .company-table-wrap--freeze {
+  max-height: none;
+}
+
+.company-page--fill .table-pagination {
+  flex-shrink: 0;
+}
+
+.company-table-wrap--freeze .master-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+}
+
+@media (max-width: 1024px) {
+  .company-table-wrap--freeze {
+    max-height: calc(100dvh - 16rem);
+  }
 }
 
 .company-table-scroll {
@@ -865,6 +936,21 @@
   text-align: center;
   font-size: 14px;
   color: var(--color-gray-blue);
+}
+
+.company-table td.company-empty,
+.admin-table td.company-empty,
+.admin-table td.admin-table__empty,
+.detail-view__table td.company-empty,
+.board-table td.company-empty,
+.dash-table td.company-empty,
+.task-detail-table td.company-empty,
+.assign-employees-modal__table td.company-empty {
+  padding: 28px 16px;
+  text-align: center;
+  color: var(--color-gray-blue);
+  font-size: 13px;
+  background: transparent;
 }
 
 .company-checkbox {
@@ -1431,6 +1517,47 @@
   vertical-align: middle;
 }
 
+.wr-asset-with-qr {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 20px 28px;
+  align-items: start;
+}
+
+.wr-asset-with-qr .equipment-qr {
+  margin: 0;
+  padding: 0;
+  border: none;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 8px;
+}
+
+.wr-asset-with-qr .equipment-qr__image,
+.wr-asset-with-qr .equipment-qr__image--empty {
+  width: 112px;
+  height: 112px;
+}
+
+.wr-asset-with-qr .equipment-qr__meta {
+  align-items: center;
+}
+
+.wr-asset-with-qr .equipment-qr__value {
+  font-size: 13px;
+}
+
+.wr-asset-with-qr .equipment-qr .company-btn {
+  display: none;
+}
+
+@media (max-width: 1100px) {
+  .wr-asset-with-qr {
+    grid-template-columns: 1fr;
+  }
+}
+
 .equipment-qr {
   display: flex;
   align-items: center;
@@ -1537,6 +1664,7 @@
   .company-form__grid--12 .company-form__field--span-2,
   .company-form__grid--12 .company-form__field--w-25,
   .company-form__grid--12 .company-form__field--w-33,
+  .company-form__grid--12 .company-form__field--w-50,
   .company-form__grid--12 .company-form__field--w-75,
   .company-form__grid--12 .company-form__field--w-100 {
     grid-column: 1 / -1;

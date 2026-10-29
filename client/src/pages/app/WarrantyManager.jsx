@@ -1,13 +1,22 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useOrg } from '../../hooks/useOrg'
 import { usePermissions } from '../../hooks/usePermissions'
 import { useWarranties } from '../../hooks/useWarranties'
 import { useDebouncedValue } from '../../hooks/useDebouncedValue'
 import { orgPath } from '../../config/navigation'
+import {
+  WARRANTY_TABS,
+  getWarrantyActiveTab,
+  warrantyTabEmptyHint,
+} from '../../config/warranty'
+import NavIcon from '../../components/layout/NavIcon'
+import PageBreadcrumbs from '../../components/shared/PageBreadcrumbs'
 import EditIcon from '../../components/ui/EditIcon'
 import TrashIcon from '../../components/ui/TrashIcon'
+import SettingsIcon from '../../components/ui/SettingsIcon'
 import TablePagination from '../../components/shared/TablePagination'
+import TableEmptyRow from '../../components/shared/TableEmptyRow'
 import TableColumnPicker from '../../components/shared/TableColumnPicker'
 import RecordPdfButton from '../../components/shared/RecordPdfButton'
 import TableFilterToolbar from '../../components/shared/TableFilterToolbar'
@@ -15,7 +24,7 @@ import { useTablePagination } from '../../hooks/useTablePagination'
 import { useTableColumnPrefs } from '../../hooks/useTableColumnPrefs'
 import { useCatalogFields } from '../../hooks/useCatalogFields'
 import { mergePickerColumns, readCatalogText } from '../../lib/pickerFields'
-import { TABLE_SORT_OPTIONS, applyTableFilters, compactFilters } from '../../lib/tableFilters'
+import { TABLE_SORT_OPTIONS, applyTableFilters, compactFilters, uniqueNameOptions, selectFilterField } from '../../lib/tableFilters'
 import { stopTableRowClick, tableRowClickProps } from '../../lib/clickableTableRow'
 import { getWarrantiesTemplate, bulkUploadWarranties, previewWarrantyImport } from '../../lib/api-warranties'
 import {
@@ -26,11 +35,10 @@ import WarrantyBulkNote from '../../components/warranty/WarrantyBulkNote'
 import '../../components/shared/TableColumnPicker.css'
 import '../../components/shared/TableFilterToolbar.css'
 import WarrantyExpiringFilter from '../../components/warranty/WarrantyExpiringFilter'
-import StatusCountBar from '../../components/shared/StatusCountBar'
 import { DEFAULT_WARRANTY_EXPIRING_FILTER, isWarrantyExpiringFilterValid, warrantyExpiringFilterSummary } from '../../lib/warrantyExpiringFilter'
 import '../../components/warranty/WarrantyExpiringFilter.css'
-import '../../components/shared/StatusCountBar.css'
 import '../../components/workorders/WorkOrdersPage.css'
+import '../../components/workrequests/WorkRequests.css'
 import '../../components/company/CompanyShared.css'
 import '../../components/warranty/WarrantyManager.css'
 
@@ -61,31 +69,6 @@ const WARRANTY_COLUMNS = [
   { id: 'updated_at', label: 'Updated', defaultVisible: false },
   { id: 'actions', label: 'Actions', locked: true },
 ]
-
-const WARRANTY_FILTER_FIELDS = [
-  { value: 'serial_number', label: 'S.No' },
-  { value: 'make', label: 'Make' },
-  { value: 'vendor', label: 'Vendor' },
-  { value: 'po_number', label: 'PO Number' },
-  { value: 'invoice_number', label: 'Invoice Number' },
-  { value: 'contact_name', label: 'Contact' },
-  { value: 'products', label: 'Products' },
-  { value: 'status', label: 'Status', type: 'select', emptyLabel: 'All Status', options: [
-    { value: 'active', label: 'Active' },
-    { value: 'expired', label: 'Expired' },
-    { value: 'expiring soon', label: 'Expiring soon' },
-  ] },
-]
-
-function resolveWarrantyStatusFilter(field, value) {
-  if (field !== 'status') return 'all'
-  const query = String(value || '').trim().toLowerCase()
-  if (!query) return 'all'
-  if (query.includes('expiring') || query.includes('soon')) return 'expiring_soon'
-  if (query.includes('expired')) return 'expired'
-  if (query.includes('active')) return 'active'
-  return 'all'
-}
 
 function formatDate(value) {
   if (!value) return '—'
@@ -200,70 +183,65 @@ function renderWarrantyCell(row, columnId) {
 
 export default function WarrantyManager() {
   const navigate = useNavigate()
+  const location = useLocation()
   const { org } = useOrg()
   const { canCreate, canUpdate, canDelete } = usePermissions()
   const canManage = canCreate('warranty_manager') || canUpdate('warranty_manager') || canDelete('warranty_manager')
+  const activeTab = getWarrantyActiveTab(location.pathname) || WARRANTY_TABS[0]
+  const warrantyStatusFilter = activeTab.status
+  const isSoonTab = warrantyStatusFilter === 'expiring_soon'
   const [search, setSearch] = useState('')
   const [columnFilters, setColumnFilters] = useState({})
   const [expiringFilterDraft, setExpiringFilterDraft] = useState(DEFAULT_WARRANTY_EXPIRING_FILTER)
-  const [expiringFilterApplied, setExpiringFilterApplied] = useState(DEFAULT_WARRANTY_EXPIRING_FILTER)
+  const [expiringFilterApplied, setExpiringFilterApplied] = useState(null)
   const [expiringPanelOpen, setExpiringPanelOpen] = useState(false)
   const [sortBy, setSortBy] = useState('newest')
   const debouncedSearch = useDebouncedValue(search.trim())
-  const warrantyStatusFilter = useMemo(
-    () => resolveWarrantyStatusFilter(columnFilters.status ? 'status' : '', columnFilters.status || ''),
-    [columnFilters.status],
-  )
-  const applyStatusFilter = warrantyStatusFilter !== 'all' && !(
-    warrantyStatusFilter === 'expiring_soon' && expiringPanelOpen
-  )
+  const applyExpiringRange = isSoonTab && Boolean(expiringFilterApplied) && !expiringPanelOpen
   const [listTotal, setListTotal] = useState(0)
   const filterResetKey = [
+    activeTab.id,
     debouncedSearch,
     JSON.stringify(columnFilters),
     sortBy,
-    applyStatusFilter ? warrantyStatusFilter : '',
-    expiringFilterApplied.mode,
-    expiringFilterApplied.minDays,
-    expiringFilterApplied.maxDays,
-    expiringFilterApplied.dateFrom,
-    expiringFilterApplied.dateTo,
+    applyExpiringRange ? JSON.stringify(expiringFilterApplied) : '',
   ].join('|')
   const pagination = useTablePagination(listTotal, { resetKey: filterResetKey })
+
+  useEffect(() => {
+    setExpiringPanelOpen(false)
+  }, [activeTab.id])
 
   const filters = useMemo(() => ({
     search: debouncedSearch || undefined,
     limit: pagination.pageSize,
     offset: pagination.offset,
-    filters: compactFilters(Object.fromEntries(
-      Object.entries(columnFilters).filter(([key]) => key !== 'status'),
-    )),
-    warranty_status: applyStatusFilter ? warrantyStatusFilter : undefined,
-    expiring_mode: applyStatusFilter && warrantyStatusFilter === 'expiring_soon'
-      ? expiringFilterApplied.mode
-      : undefined,
-    expiring_min_days: applyStatusFilter && warrantyStatusFilter === 'expiring_soon'
-      ? expiringFilterApplied.minDays
-      : undefined,
-    expiring_max_days: applyStatusFilter && warrantyStatusFilter === 'expiring_soon'
-      ? expiringFilterApplied.maxDays
-      : undefined,
-    expiring_date_from: applyStatusFilter && warrantyStatusFilter === 'expiring_soon'
-      ? expiringFilterApplied.dateFrom
-      : undefined,
-    expiring_date_to: applyStatusFilter && warrantyStatusFilter === 'expiring_soon'
-      ? expiringFilterApplied.dateTo
-      : undefined,
+    filters: compactFilters(columnFilters),
+    warranty_status: warrantyStatusFilter,
+    expiring_mode: applyExpiringRange ? expiringFilterApplied.mode : undefined,
+    expiring_min_days: applyExpiringRange ? expiringFilterApplied.minDays : undefined,
+    expiring_max_days: applyExpiringRange ? expiringFilterApplied.maxDays : undefined,
+    expiring_date_from: applyExpiringRange ? expiringFilterApplied.dateFrom : undefined,
+    expiring_date_to: applyExpiringRange ? expiringFilterApplied.dateTo : undefined,
   }), [
     debouncedSearch,
     pagination.pageSize,
     pagination.offset,
     columnFilters,
-    applyStatusFilter,
     warrantyStatusFilter,
+    applyExpiringRange,
     expiringFilterApplied,
   ])
   const { items, total, statusCounts, loading, saving, error, remove, reload } = useWarranties(filters)
+  const warrantyFilterFields = useMemo(() => ([
+    selectFilterField('serial_number', 'S.No', uniqueNameOptions(items, (row) => row.serial_number), 'All serial numbers'),
+    selectFilterField('make', 'Make', uniqueNameOptions(items, (row) => row.make), 'All makes'),
+    selectFilterField('vendor', 'Vendor', uniqueNameOptions(items, (row) => row.vendor), 'All vendors'),
+    selectFilterField('po_number', 'PO Number', uniqueNameOptions(items, (row) => row.po_number), 'All PO numbers'),
+    selectFilterField('invoice_number', 'Invoice Number', uniqueNameOptions(items, (row) => row.invoice_number), 'All invoice numbers'),
+    selectFilterField('contact_name', 'Contact', uniqueNameOptions(items, (row) => row.contact_name), 'All contacts'),
+    selectFilterField('products', 'Products', uniqueNameOptions(items, (row) => joinItemField(row, 'product_name') === '—' ? '' : joinItemField(row, 'product_name')), 'All products'),
+  ]), [items])
   useEffect(() => { setListTotal(total) }, [total])
   const {
     bulkInputRef,
@@ -285,16 +263,13 @@ export default function WarrantyManager() {
 
   const handleWarrantyFilters = (next) => {
     setColumnFilters(next)
-    const nextStatus = resolveWarrantyStatusFilter('status', next.status || '')
-    if (nextStatus === 'expiring_soon') {
-      setExpiringFilterDraft({ ...expiringFilterApplied })
-      setExpiringPanelOpen(true)
-      return
-    }
-    setExpiringPanelOpen(false)
-    setExpiringFilterDraft(DEFAULT_WARRANTY_EXPIRING_FILTER)
-    setExpiringFilterApplied(DEFAULT_WARRANTY_EXPIRING_FILTER)
   }
+
+  const tabCounts = useMemo(() => {
+    const map = Object.fromEntries((statusCounts || []).map((row) => [row.status, Number(row.count) || 0]))
+    if (map.active != null && map.in_warranty == null) map.in_warranty = map.active
+    return map
+  }, [statusCounts])
 
   const filteredItems = useMemo(() => applyTableFilters(items, {
     sortBy,
@@ -318,6 +293,7 @@ export default function WarrantyManager() {
     columnOrder,
     reorderColumns,
     moveColumn,
+    saveColumns,
   } = useTableColumnPrefs('warranty-manager', columnDefs)
 
   const openCreate = () => {
@@ -341,16 +317,77 @@ export default function WarrantyManager() {
     await remove(row.id)
   }
 
-  const showTable = !loading && items.length > 0 && filteredItems.length > 0
+  const emptyMessage = loading
+    ? 'Loading warranties…'
+    : (search.trim() || compactFilters(columnFilters)
+      ? 'No warranties match your filters.'
+      : (isSoonTab && expiringFilterApplied
+        ? `No warranties match the Soon to Expired range (${warrantyExpiringFilterSummary(expiringFilterApplied)}).`
+        : warrantyTabEmptyHint(activeTab.id, canCreate('warranty_manager'))))
+
+  const toggleSoonSettings = () => {
+    setExpiringFilterDraft(expiringFilterApplied || DEFAULT_WARRANTY_EXPIRING_FILTER)
+    setExpiringPanelOpen((open) => !open)
+  }
 
   return (
-    <div className="company-page">
-      <header className="company-page__header">
-        <h1 className="company-page__title">Warranty Manager</h1>
-        <p className="company-page__subtitle">
-          Track purchase details, warranty periods, and product line items.
-        </p>
+    <div className="company-page wo-page">
+      <header className="wo-page__top">
+        <div className="wo-page__intro">
+          <PageBreadcrumbs />
+          <h1 className="wo-page__title">Warranty Manager</h1>
+          <p className="wo-page__subtitle">
+            Track purchase details, warranty periods, and product line items.
+          </p>
+        </div>
       </header>
+
+      <div className="wr-page__toolbar">
+        <div className="wr-page__toolbar-row wr-page__toolbar-row--tabs">
+          <div className="warranty-tabs-cluster">
+            <nav className="wo-page__tabs" aria-label="Warranty views">
+              {WARRANTY_TABS.map((tab) => (
+                <NavLink
+                  key={tab.id}
+                  to={org?.slug ? orgPath(org.slug, tab.segment) : '#'}
+                  end
+                  className={({ isActive }) =>
+                    `wo-page__tab${isActive ? ' wo-page__tab--active' : ''}`
+                  }
+                >
+                  {tab.icon ? <NavIcon name={tab.icon} /> : null}
+                  {tab.label}
+                  <span className="wo-page__tab-count">{tabCounts[tab.status] ?? 0}</span>
+                </NavLink>
+              ))}
+            </nav>
+            <div className="warranty-soon-settings">
+              <button
+                type="button"
+                className={`warranty-soon-settings__btn${expiringPanelOpen ? ' is-open' : ''}${expiringFilterApplied ? ' is-applied' : ''}`}
+                aria-label="Soon to Expired range settings"
+                aria-expanded={expiringPanelOpen}
+                onClick={toggleSoonSettings}
+              >
+                <SettingsIcon size={18} />
+                <span className="warranty-soon-settings__tooltip" role="tooltip">
+                  Set the Soon to Expired range (days or dates)
+                </span>
+              </button>
+            </div>
+          </div>
+          {canCreate('warranty_manager') && (
+            <button
+              type="button"
+              className="wo-page__tab wr-page__create-tab"
+              onClick={openCreate}
+            >
+              <NavIcon name="addSquare" />
+              New Warranty
+            </button>
+          )}
+        </div>
+      </div>
 
       <div className="company-page__content">
         <div className="company-panel">
@@ -364,7 +401,7 @@ export default function WarrantyManager() {
                 ariaLabel: 'Search warranties',
               }}
               filter={{
-                fields: WARRANTY_FILTER_FIELDS,
+                fields: warrantyFilterFields,
                 values: columnFilters,
                 onChange: handleWarrantyFilters,
               }}
@@ -376,8 +413,6 @@ export default function WarrantyManager() {
                     bulkBusy={bulkBusy}
                     bulkInputRef={bulkInputRef}
                     onFileChange={handleBulkFile}
-                    addLabel="New Warranty"
-                    onAdd={openCreate}
                     title="Import warranties"
                     description={<WarrantyBulkNote />}
                     noun="warranty"
@@ -389,7 +424,7 @@ export default function WarrantyManager() {
                   />
                 </div>
               )}
-              columnPicker={showTable && (
+              columnPicker={(
                 <TableColumnPicker
                   columnDefs={pickerColumns}
                   visibleColumnIds={visibleColumnIds}
@@ -398,12 +433,13 @@ export default function WarrantyManager() {
                   onReset={resetColumns}
                   onReorder={reorderColumns}
                   onMove={moveColumn}
+                  onSave={saveColumns}
                 />
               )}
             />
           </div>
 
-          {warrantyStatusFilter === 'expiring_soon' && expiringPanelOpen && (
+          {expiringPanelOpen && (
             <WarrantyExpiringFilter
               value={expiringFilterDraft}
               onChange={setExpiringFilterDraft}
@@ -413,119 +449,90 @@ export default function WarrantyManager() {
                 setExpiringPanelOpen(false)
               }}
               onCancel={() => {
-                setExpiringFilterDraft({ ...expiringFilterApplied })
+                setExpiringFilterDraft(expiringFilterApplied || DEFAULT_WARRANTY_EXPIRING_FILTER)
+                setExpiringPanelOpen(false)
+              }}
+              onClear={() => {
+                setExpiringFilterDraft(DEFAULT_WARRANTY_EXPIRING_FILTER)
+                setExpiringFilterApplied(null)
                 setExpiringPanelOpen(false)
               }}
               applyDisabled={!isWarrantyExpiringFilterValid(expiringFilterDraft)}
+              clearDisabled={!expiringFilterApplied}
             />
-          )}
-
-          {warrantyStatusFilter === 'expiring_soon' && !expiringPanelOpen && (
-            <div className="warranty-expiring-filter__applied">
-              <span className="warranty-expiring-filter__applied-label">
-                Showing warranties expiring: <strong>{warrantyExpiringFilterSummary(expiringFilterApplied)}</strong>
-              </span>
-              <button
-                type="button"
-                className="company-btn company-btn--secondary company-btn--compact"
-                onClick={() => {
-                  setExpiringFilterDraft({ ...expiringFilterApplied })
-                  setExpiringPanelOpen(true)
-                }}
-              >
-                Edit range
-              </button>
-            </div>
           )}
 
           {error && <div className="company-alert" role="alert">{error}</div>}
 
-          <StatusCountBar
-            counts={statusCounts}
-            labelByKey={{
-              active: 'Active',
-              expired: 'Expired',
-              expiring_soon: 'Expiring soon',
-            }}
-            ariaLabel="Warranty status counts"
-          />
-
-          {loading ? (
-            <div className="company-loading">Loading warranties…</div>
-          ) : items.length === 0 ? (
-            <div className="company-empty">
-              No warranty records yet.
-              {canCreate('warranty_manager') && ' Click "New Warranty" to add one.'}
-            </div>
-          ) : filteredItems.length === 0 ? (
-            <div className="company-empty">No warranties match your filters.</div>
-          ) : (
-            <div className="company-table-wrap">
-              <div className="company-table-scroll">
-                <table className="company-table master-table">
-                  <thead>
-                    <tr>
+          <div className="company-table-wrap">
+            <div className="company-table-scroll">
+              <table className="company-table master-table">
+                <thead>
+                  <tr>
+                    {visibleColumnIds.map((columnId) => {
+                      const col = columnDefs.find((item) => item.id === columnId)
+                      return <th key={columnId}>{col?.label || columnId}</th>
+                    })}
+                  </tr>
+                </thead>
+                <tbody>
+                  {pagedItems.length === 0 ? (
+                    <TableEmptyRow colSpan={visibleColumnIds.length}>
+                      {emptyMessage}
+                    </TableEmptyRow>
+                  ) : pagedItems.map((row) => (
+                    <tr
+                      key={row.id}
+                      {...tableRowClickProps({
+                        onOpen: () => openView(row),
+                        label: `View warranty ${row.serial_number}`,
+                      })}
+                    >
                       {visibleColumnIds.map((columnId) => {
-                        const col = columnDefs.find((item) => item.id === columnId)
-                        return <th key={columnId}>{col?.label || columnId}</th>
+                        if (columnId === 'actions') {
+                          return (
+                            <td key={columnId} onClick={stopTableRowClick}>
+                              <div className="company-table__actions">
+                                <RecordPdfButton moduleKey="warranty" recordId={row.id} filename={`${row.serial_number || 'warranty'}.pdf`} />
+                                {canUpdate('warranty_manager') && (
+                                  <button
+                                    type="button"
+                                    className="company-btn company-btn--secondary company-btn--compact company-btn--icon"
+                                    onClick={() => openEdit(row)}
+                                    aria-label={`Edit warranty ${row.serial_number}`}
+                                    title="Edit"
+                                  >
+                                    <EditIcon />
+                                  </button>
+                                )}
+                                {canDelete('warranty_manager') && (
+                                  <button
+                                    type="button"
+                                    className="company-btn company-btn--secondary company-btn--compact company-btn--icon company-btn--danger"
+                                    onClick={() => handleDelete(row)}
+                                    disabled={saving}
+                                    aria-label={`Delete warranty ${row.serial_number}`}
+                                    title="Delete"
+                                  >
+                                    <TrashIcon />
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          )
+                        }
+
+                        return (
+                          <td key={columnId}>{renderWarrantyCell(row, columnId)}</td>
+                        )
                       })}
                     </tr>
-                  </thead>
-                  <tbody>
-                    {pagedItems.map((row) => (
-                      <tr
-                        key={row.id}
-                        {...tableRowClickProps({
-                          onOpen: () => openView(row),
-                          label: `View warranty ${row.serial_number}`,
-                        })}
-                      >
-                        {visibleColumnIds.map((columnId) => {
-                          if (columnId === 'actions') {
-                            return (
-                              <td key={columnId} onClick={stopTableRowClick}>
-                                <div className="company-table__actions">
-                                  <RecordPdfButton moduleKey="warranty" recordId={row.id} filename={`${row.serial_number || 'warranty'}.pdf`} />
-                                  {canUpdate('warranty_manager') && (
-                                    <button
-                                      type="button"
-                                      className="company-btn company-btn--secondary company-btn--compact company-btn--icon"
-                                      onClick={() => openEdit(row)}
-                                      aria-label={`Edit warranty ${row.serial_number}`}
-                                      title="Edit"
-                                    >
-                                      <EditIcon />
-                                    </button>
-                                  )}
-                                  {canDelete('warranty_manager') && (
-                                    <button
-                                      type="button"
-                                      className="company-btn company-btn--secondary company-btn--compact company-btn--icon company-btn--danger"
-                                      onClick={() => handleDelete(row)}
-                                      disabled={saving}
-                                      aria-label={`Delete warranty ${row.serial_number}`}
-                                      title="Delete"
-                                    >
-                                      <TrashIcon />
-                                    </button>
-                                  )}
-                                </div>
-                              </td>
-                            )
-                          }
-
-                          return (
-                            <td key={columnId}>{renderWarrantyCell(row, columnId)}</td>
-                          )
-                        })}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              <TablePagination {...pagination} />
+                  ))}
+                </tbody>
+              </table>
             </div>
-          )}
+            <TablePagination {...pagination} />
+          </div>
         </div>
       </div>
     </div>

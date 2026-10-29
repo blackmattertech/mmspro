@@ -27,7 +27,7 @@ const CORE_COLUMNS = [
   'Priority',
   'Location',
   'Department',
-  'Equipment',
+  'Asset',
   'Work Center',
   'Assigned To',
   'Status',
@@ -145,7 +145,7 @@ export async function bulkImportWorkOrders(orgId, profileId, buffer) {
 
     const location = optionalMatch(masters.locations, row.Location, 'Location', ['name'])
     const department = optionalMatch(masters.departments, row.Department, 'Department', ['name', 'code'])
-    const equipment = optionalMatch(masters.equipment, row.Equipment, 'Equipment', ['name', 'code'])
+    const equipment = optionalMatch(masters.equipment, row.Asset || row.Equipment, 'Asset', ['name', 'code'])
     const assignees = row['Assigned To'] ? matchEmployees(masters.employees, row['Assigned To']) : []
     const priority = matchChoice(row.Priority, PRIORITIES) || 'medium'
     const status = matchChoice(row.Status, STATUSES) || (assignees.length ? 'assigned' : 'draft')
@@ -200,5 +200,5 @@ export async function bulkImportWorkOrders(orgId, profileId, buffer) {
       location: location?.name || '',
       status,
     }
-  }, { extraColumns })
+  }, { extraColumns, aliases: { Asset: ['Equipment'] } })
 }

@@ -23,7 +23,7 @@ const COLUMNS = [
   'Status',
   'Location',
   'Area',
-  'Equipment',
+  'Asset',
   'Schedule Type',
   'Interval Type',
   'Interval Value',
@@ -99,7 +99,7 @@ export async function bulkImportPmPlans(orgId, profileId, buffer) {
   return runBulkImport(buffer, COLUMNS, async (row) => {
     const department = requireMatch(masters.departments, row.Department, 'Department', ['name', 'code'])
     const activity = requireMatch(masters.activityTypes, row['Activity Type'], 'Activity type', ['name'])
-    const equipment = requireMatch(masters.equipment, row.Equipment, 'Equipment', ['name', 'code'])
+    const equipment = requireMatch(masters.equipment, row.Asset || row.Equipment, 'Asset', ['name', 'code'])
     const location = optionalMatch(masters.locations, row.Location, 'Location', ['name'])
     const area = optionalMatch(masters.areas, row.Area, 'Area', ['name'])
     const checklist = optionalMatch(masters.checklists, row['Checklist Template'], 'Checklist template', ['name'])
@@ -139,5 +139,5 @@ export async function bulkImportPmPlans(orgId, profileId, buffer) {
       equipment: equipment.name,
       status,
     }
-  })
+  }, { aliases: { Asset: ['Equipment'] } })
 }

@@ -61,7 +61,9 @@ export default function ReceivedWorkOrders() {
   )
 
   const canApproveOrder = useCallback((order) => (
-    canUpdateReceived && APPROVABLE_STATUSES.has(order.status)
+    canUpdateReceived
+    && APPROVABLE_STATUSES.has(order.status)
+    && !order.skip_technician_acceptance
   ), [canUpdateReceived])
 
   const handleApprove = useCallback(async (order) => {

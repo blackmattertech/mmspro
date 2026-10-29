@@ -2,6 +2,7 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useFixedPopover } from '../../hooks/useFixedPopover'
 import { assetUrl } from '../../lib/assets'
+import FilterableSelect from '../ui/FilterableSelect'
 import './ListTableChrome.css'
 
 const FILTER_ICON_URL = assetUrl('Assets/icons/filter3-outline.svg')
@@ -114,7 +115,9 @@ export function AdvancedFilterMenu({
   useEffect(() => {
     if (!open) return undefined
     const onKeyDown = (event) => {
-      if (event.key === 'Escape') setOpen(false)
+      if (event.key !== 'Escape') return
+      if (document.querySelector('.filterable-select__menu')) return
+      setOpen(false)
     }
     document.addEventListener('keydown', onKeyDown)
     return () => document.removeEventListener('keydown', onKeyDown)
@@ -221,33 +224,19 @@ export function AdvancedFilterMenu({
                     </label>
                   )
                 }
-                if (field.type === 'select') {
-                  return (
-                    <label key={id} className="advanced-filter__field">
-                      <span>{field.label}</span>
-                      <select
-                        className="company-form__input company-form__input--select"
-                        value={draft[id] || ''}
-                        onChange={(event) => setDraftValue(id, event.target.value)}
-                      >
-                        <option value="">{field.emptyLabel || `All ${field.label}`}</option>
-                        {(field.options || []).map((option) => (
-                          <option key={optionValue(option)} value={optionValue(option)}>
-                            {optionLabel(option)}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  )
-                }
+                const emptyLabel = field.emptyLabel || `All ${field.label}`
                 return (
                   <label key={id} className="advanced-filter__field">
                     <span>{field.label}</span>
-                    <input
-                      className="company-form__input"
+                    <FilterableSelect
                       value={draft[id] || ''}
-                      placeholder={field.placeholder || 'Contains…'}
-                      onChange={(event) => setDraftValue(id, event.target.value)}
+                      onChange={(value) => setDraftValue(id, value)}
+                      options={field.options || []}
+                      emptyLabel={emptyLabel}
+                      placeholder={emptyLabel}
+                      aria-label={field.label}
+                      onCreate={(value) => setDraftValue(id, value)}
+                      createLabel="Use this value"
                     />
                   </label>
                 )

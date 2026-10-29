@@ -30,7 +30,7 @@ export default function AdminOrgAssets() {
             <PageBack to="/admin/organizations" label="Organizations" />
           </p>
           <h1 className="admin-page__title">
-            {org ? `${org.name} — Assets` : 'Organization Assets'}
+            {org ? `${org.name} — Fields` : 'Organization Fields'}
           </h1>
           <p className="admin-page__subtitle">
             Define sections, parent fields, and dropdown child values for this organization.

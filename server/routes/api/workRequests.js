@@ -12,6 +12,7 @@ import {
   listWorkRequests,
   countWorkRequestTabs,
   getWorkRequestById,
+  loadWorkRequestAssignmentOptions,
   assertWorkRequestAccessible,
   listWorkRequestTechnicians,
   approveWorkRequest,
@@ -192,7 +193,7 @@ const WR_CSV_COLUMNS = [
   { id: 'execution_status', label: 'Execution status', value: (row) => row.execution_status || '' },
   { id: 'job_nature', label: 'Job nature', value: (row) => row.job_nature || '' },
   { id: 'requester', label: 'Requested by', value: (row) => row.requester?.full_name || row.requester?.name || row.requester?.email || '' },
-  { id: 'equipment', label: 'Equipment', value: (row) => row.equipment?.name || row.equipment?.code || '' },
+  { id: 'equipment', label: 'Asset', value: (row) => row.equipment?.name || row.equipment?.code || '' },
   { id: 'remarks', label: 'Remarks', value: (row) => row.remarks || '' },
   { id: 'assigned', label: 'Assigned technicians', value: (row) => (row.assigned_technicians || []).map((tech) => tech.name).join(', ') },
   { id: 'work_order', label: 'Work order', value: (row) => row.linked_work_order?.wo_number || '' },
@@ -298,9 +299,12 @@ router.patch('/:id/checklist', canReadAny, async (req, res) => {
 router.get('/:id', canReadAny, async (req, res) => {
   try {
     const row = await loadAccessibleWorkRequest(req)
+    const assignmentOptions = await loadWorkRequestAssignmentOptions(req.userProfile.org_id)
     res.json({
       ...row,
       can_reply: row.status === 'need_info' && row.requested_by === req.userProfile.id,
+      work_center_options: assignmentOptions.work_centers,
+      priority_options: assignmentOptions.priorities,
     })
   } catch (err) {
     sendError(res, err)

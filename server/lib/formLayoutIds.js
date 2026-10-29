@@ -6,12 +6,22 @@ export const FIELD_PREFIX = 'field:'
 export const GROUP_PREFIX = 'group:'
 export const LAYOUT_VERSION = 1
 
-export const FILLED_BY_VALUES = ['any', 'creator', 'order_to_dept_head', 'technician']
+export const FILLED_BY_VALUES = ['any', 'creator', 'order_to_dept_head', 'technician', 'supervisor']
 export const FILLED_BY_LABELS = {
   any: 'Anyone',
   creator: 'Creator',
   order_to_dept_head: 'Order To Department Head',
   technician: 'Technician',
+  supervisor: 'Supervisor',
+}
+
+export const SECTION_STAGE_VALUES = ['', 'create', 'assignment', 'execution', 'closeout']
+export const SECTION_STAGE_LABELS = {
+  '': 'Any stage',
+  create: 'Create',
+  assignment: 'Assignment',
+  execution: 'Execution',
+  closeout: 'Closeout',
 }
 
 const KNOWN_PREFIXES = [
@@ -112,6 +122,12 @@ export function normalizeFilledBy(value) {
   return 'any'
 }
 
+export function normalizeStage(value) {
+  const raw = String(value || '').trim()
+  if (raw && SECTION_STAGE_VALUES.includes(raw)) return raw
+  return ''
+}
+
 export function fieldLayoutId(field) {
   if (!field) return null
   if (field.layout_id) return field.layout_id
@@ -128,7 +144,7 @@ export function cloneLayout(layout) {
   return JSON.parse(JSON.stringify(layout || emptyLayout()))
 }
 
-export const FIELD_WIDTHS = [25, 33, 75, 100]
+export const FIELD_WIDTHS = [25, 33, 50, 75, 100]
 
 export function normalizeColSpan(value, fallback = 25) {
   const n = Number(value)
@@ -164,6 +180,8 @@ function fieldSignatureEntry(field) {
     field.dependsOnFieldId || '',
     Array.isArray(field.dependsOnOptions) ? field.dependsOnOptions.join('|') : '',
     field.filterByFieldId || '',
+    field.defaultToCurrentUser ? '1' : '',
+    field.equipmentColumnId || '',
   ]
 }
 
@@ -175,6 +193,8 @@ export function layoutSignature(layout) {
       section.order,
       section.label || '',
       normalizeFilledBy(section.filledBy),
+      normalizeStage(section.stage),
+      [...(section.sharedWith || [])].sort().join(','),
     ]),
     fields: (layout.fields || []).map((field) => fieldSignatureEntry(field)),
     groups: (layout.groups || []).map((group) => [
@@ -225,7 +245,8 @@ export function findLayoutField(layout, id) {
 
 export function layoutFieldIsRequired(layout, id) {
   const field = findLayoutField(layout, id)
-  return Boolean(field?.required)
+  if (!field || field.skipped) return false
+  return Boolean(field.required)
 }
 
 export function shouldRequire(layout, id, defaultWhenNoLayout = false) {

@@ -22,7 +22,7 @@ function printQrLabel({ dataUrl, title, caption }) {
       p { margin: 0; color: #6b7280; }
       strong { display: block; margin-top: 8px; font-size: 18px; color: #111827; }
     </style></head><body>
-    <img src="${dataUrl}" alt="Equipment QR code" />
+    <img src="${dataUrl}" alt="Asset QR code" />
     <h1>${escapeHtml(title)}</h1>
     <p>${escapeHtml(caption?.label || 'QR code')}</p>
     <strong>${escapeHtml(caption?.value || '')}</strong>
@@ -59,7 +59,7 @@ function PrintIcon() {
   )
 }
 
-export default function EquipmentQrCode({ value, caption, fileName = 'equipment-qr', variant = 'inline' }) {
+export default function EquipmentQrCode({ value, caption, fileName = 'asset-qr', variant = 'inline' }) {
   const [dataUrl, setDataUrl] = useState('')
   const [error, setError] = useState(null)
 
@@ -91,19 +91,19 @@ export default function EquipmentQrCode({ value, caption, fileName = 'equipment-
       <section className="equipment-detail__card equipment-detail__qr">
         <h2 className="equipment-detail__card-title">
           <QrTitleIcon />
-          Equipment QR code
+          Asset QR code
         </h2>
         <div className="equipment-detail__qr-body">
           {dataUrl ? (
-            <img className="equipment-detail__qr-image" src={dataUrl} alt="Equipment QR code" />
+            <img className="equipment-detail__qr-image" src={dataUrl} alt="Asset QR code" />
           ) : (
             <div className="equipment-detail__qr-image equipment-detail__qr-image--empty">
               {error || 'Preparing QR code…'}
             </div>
           )}
           <div className="equipment-detail__qr-copy">
-            <h3>Scan to access equipment</h3>
-            <p>Scan this QR code to view equipment details, work orders, PM schedule and more.</p>
+            <h3>Scan to access this asset</h3>
+            <p>Scan this QR code to view asset details, work orders, PM schedule and more.</p>
             <span>{caption?.label || 'QR code'}</span>
             <strong>{caption?.value || '—'}</strong>
             <div className="equipment-detail__qr-actions">
@@ -132,7 +132,7 @@ export default function EquipmentQrCode({ value, caption, fileName = 'equipment-
   return (
     <div className="equipment-qr">
       {dataUrl ? (
-        <img className="equipment-qr__image" src={dataUrl} alt="Equipment QR code" />
+        <img className="equipment-qr__image" src={dataUrl} alt="Asset QR code" />
       ) : (
         <div className="equipment-qr__image equipment-qr__image--empty">
           {error || 'Preparing QR code…'}

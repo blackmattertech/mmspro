@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { usePermissions } from '../../hooks/usePermissions'
 import { useWorkCenters } from '../../hooks/useWorkCenters'
+import { useLocations } from '../../hooks/useLocations'
 import { useDebouncedValue } from '../../hooks/useDebouncedValue'
 import { deleteWorkCenter } from '../../lib/api'
 import { invalidateReferenceCache } from '../../lib/referenceDataCache'
@@ -9,12 +10,13 @@ import TrashIcon from '../ui/TrashIcon'
 import EditIcon from '../ui/EditIcon'
 import WorkCenterModal from './WorkCenterModal'
 import TablePagination from '../shared/TablePagination'
+import TableEmptyRow from '../shared/TableEmptyRow'
 import TableColumnPicker from '../shared/TableColumnPicker'
 import { DynamicPickerCells, DynamicPickerHeaders } from '../shared/DynamicPickerCells'
 import TableFilterToolbar from '../shared/TableFilterToolbar'
 import { useTablePagination } from '../../hooks/useTablePagination'
 import { useTableColumnPrefs } from '../../hooks/useTableColumnPrefs'
-import { TABLE_SORT_OPTIONS, applyTableFilters, compactFilters } from '../../lib/tableFilters'
+import { TABLE_SORT_OPTIONS, applyTableFilters, compactFilters, uniqueNameOptions, ACTIVE_STATUS_FILTER, selectFilterField } from '../../lib/tableFilters'
 import { stopTableRowClick, tableRowClickProps } from '../../lib/clickableTableRow'
 import RecordDetailModal from '../shared/RecordDetailModal'
 import { WorkCenterDetailContent } from './CompanyRecordDetails'
@@ -29,15 +31,6 @@ function canPickAnyLocation({ isOrgAdmin, accessRole }) {
   return roleName === 'admin'
 }
 
-const WORK_CENTER_FILTER_FIELDS = [
-  { value: 'name', label: 'Name' },
-  { value: 'code', label: 'Code' },
-  { value: 'location', label: 'Location' },
-  { value: 'status', label: 'Status', type: 'select', emptyLabel: 'All Status', options: [
-    { value: 'active', label: 'Active' },
-    { value: 'inactive', label: 'Inactive' },
-  ] },
-]
 
 export default function WorkCentersTab({ canManage }) {
   const { isOrgAdmin, locationId: myLocationId, accessRole } = usePermissions()
@@ -48,6 +41,7 @@ export default function WorkCentersTab({ canManage }) {
   const debouncedSearch = useDebouncedValue(search.trim())
   const listFilters = useMemo(() => compactFilters(columnFilters), [columnFilters])
   const scopedLocationId = canSelectAnyLocation ? undefined : (myLocationId || undefined)
+  const { locations } = useLocations()
   const [listTotal, setListTotal] = useState(0)
   const paginationResetKey = `${debouncedSearch}|${JSON.stringify(columnFilters)}|${sortBy}|${scopedLocationId || ''}`
   const pagination = useTablePagination(listTotal, { resetKey: paginationResetKey })
@@ -70,6 +64,12 @@ export default function WorkCentersTab({ canManage }) {
     filters: listFilters,
   })
   useEffect(() => { setListTotal(total) }, [total])
+  const workCenterFilterFields = useMemo(() => ([
+    selectFilterField('name', 'Name', uniqueNameOptions(workCenters), 'All names'),
+    selectFilterField('code', 'Code', uniqueNameOptions(workCenters, (row) => row.code), 'All codes'),
+    selectFilterField('location', 'Location', uniqueNameOptions((locations || []).filter((row) => row.is_active !== false)), 'All locations'),
+    ACTIVE_STATUS_FILTER,
+  ]), [workCenters, locations])
 
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState(null)
@@ -122,6 +122,7 @@ export default function WorkCentersTab({ canManage }) {
     columnOrder,
     reorderColumns,
     moveColumn,
+    saveColumns,
   } = useTableColumnPrefs('company-work-centers', columnDefs)
 
   const openCreate = () => {
@@ -222,7 +223,7 @@ export default function WorkCentersTab({ canManage }) {
             ariaLabel: 'Search work centers',
           }}
           filter={{
-            fields: WORK_CENTER_FILTER_FIELDS,
+            fields: workCenterFilterFields,
             values: columnFilters,
             onChange: setColumnFilters,
           }}
@@ -258,6 +259,7 @@ export default function WorkCentersTab({ canManage }) {
               onReset={resetColumns}
               onReorder={reorderColumns}
               onMove={moveColumn}
+              onSave={saveColumns}
             />
           )}
         />
@@ -268,10 +270,6 @@ export default function WorkCentersTab({ canManage }) {
 
       {loading ? (
         <div className="company-loading">Loading work centers…</div>
-      ) : workCenters.length === 0 ? (
-        <div className="company-empty">No work centers yet. Add a workshop, plant, or crew.</div>
-      ) : filteredWorkCenters.length === 0 ? (
-        <div className="company-empty">No work centers match your filters.</div>
       ) : (
         <>
         <div className="company-table-wrap">
@@ -304,7 +302,13 @@ export default function WorkCentersTab({ canManage }) {
               </tr>
             </thead>
             <tbody>
-              {pagedRows.map((row) => {
+              {pagedRows.length === 0 ? (
+                <TableEmptyRow colSpan={(canManage ? 1 : 0) + visibleColumnIds.length}>
+                  {workCenters.length === 0
+                    ? 'No work centers yet. Add a workshop, plant, or crew.'
+                    : 'No work centers match your filters.'}
+                </TableEmptyRow>
+              ) : pagedRows.map((row) => {
                 const isActive = row.is_active !== false
                 return (
                   <tr

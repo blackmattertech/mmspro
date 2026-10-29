@@ -28,10 +28,6 @@ export function DetailField({ label, value, fullWidth = false }) {
 }
 
 export function DetailTable({ columns, rows, emptyLabel = 'No items.' }) {
-  if (!rows?.length) {
-    return <div className="company-empty">{emptyLabel}</div>
-  }
-
   return (
     <div className="detail-view__table-wrap">
       <table className="detail-view__table">
@@ -43,7 +39,13 @@ export function DetailTable({ columns, rows, emptyLabel = 'No items.' }) {
           </tr>
         </thead>
         <tbody>
-          {rows.map((row, index) => (
+          {!rows?.length ? (
+            <tr>
+              <td colSpan={Math.max(columns.length, 1)} className="company-empty">
+                {emptyLabel}
+              </td>
+            </tr>
+          ) : rows.map((row, index) => (
             <tr key={row.id || index}>
               {columns.map((col) => (
                 <td key={col.id}>{col.render ? col.render(row) : (row[col.id] ?? '—')}</td>

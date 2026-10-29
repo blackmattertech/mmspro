@@ -3,6 +3,7 @@
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: 16px;
   margin-top: 8px;
+  padding: 8px 28px 32px;
 }
 
 .others-hub__card {
@@ -158,4 +159,184 @@
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.form-masters-group {
+  margin: 8px 0 12px;
+  padding: 0 28px;
+}
+
+.form-masters-group .others-hub {
+  padding: 8px 0 24px;
+}
+
+.form-masters-group__title {
+  margin: 0 0 12px;
+  font-size: 16px;
+  font-weight: 650;
+  color: var(--color-dark-navy, #111);
+}
+
+.form-masters-modal .company-modal__form {
+  gap: 12px;
+}
+
+.form-masters-skip {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 0 28px 32px;
+}
+
+.form-masters-skip__section {
+  border: 1px solid var(--color-light-gray-1, #e8e8ee);
+  border-radius: 12px;
+  background: var(--color-white, #fff);
+  padding: 12px 14px 10px;
+}
+
+.form-masters-skip__head {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.form-masters-skip__head h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 650;
+  color: var(--color-dark-navy, #111);
+}
+
+.form-masters-skip__hint {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--color-gray-blue, #667085);
+}
+
+.form-masters-skip__banner {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #fff4e5;
+  color: #7a4b00;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.form-masters-skip__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 4px 8px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--color-dark-navy, #111);
+  white-space: nowrap;
+  cursor: pointer;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 1;
+}
+
+.form-masters-skip__toggle input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  flex-shrink: 0;
+  accent-color: var(--color-primary, #e11d48);
+  cursor: pointer;
+}
+
+.form-masters-skip__toggle:hover:not(.is-disabled) {
+  background: rgba(17, 24, 39, 0.06);
+}
+
+.form-masters-skip__toggle.is-disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+  color: var(--color-gray-blue, #667085);
+}
+
+.form-masters-skip__toggle.is-disabled input {
+  cursor: not-allowed;
+}
+
+.form-masters-skip__name {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.form-masters-skip__rows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.form-masters-skip__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--color-light-gray-1, #e8e8ee);
+  border-radius: 10px;
+  background: var(--color-off-white, #f7f7fa);
+}
+
+.form-masters-skip__row.is-required {
+  background: var(--color-white, #fff);
+}
+
+.form-masters-skip__row.is-skipped {
+  opacity: 0.72;
+}
+
+.form-masters-skip__copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.form-masters-skip__copy strong {
+  font-size: 13px;
+  color: var(--color-dark-navy, #111);
+}
+
+.form-masters-skip__copy span {
+  font-size: 11px;
+  color: var(--color-gray-blue, #667085);
+}
+
+.form-masters-skip__options {
+  border: none;
+  background: none;
+  color: var(--color-primary, #e11d48);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.form-masters-skip__actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 20;
+  display: flex;
+  justify-content: flex-end;
+  margin: 8px -28px -32px;
+  padding: 12px 28px calc(12px + env(safe-area-inset-bottom, 0px));
+  background: var(--color-white, #fff);
+  border-top: 1px solid var(--color-light-gray-1, #e8e8ee);
 }

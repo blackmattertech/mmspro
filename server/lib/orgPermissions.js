@@ -4,6 +4,7 @@ import {
   emptyPermissions,
   normalizePermissionsInput,
   MODULE_LEGACY_EXPAND,
+  MODULE_PARENT_GRANTS,
   WORK_ORDER_MODULE_KEYS,
   REPORT_MODULE_KEYS,
 } from './accessModules.js'
@@ -258,6 +259,10 @@ export function hasModulePermission(session, moduleKey, action) {
   for (const [parent, children] of Object.entries(MODULE_LEGACY_EXPAND)) {
     if (children.includes(moduleKey) && granted(parent)) return true
     if (moduleKey === parent && children.some((child) => granted(child))) return true
+  }
+
+  for (const [parent, children] of Object.entries(MODULE_PARENT_GRANTS)) {
+    if (children.includes(moduleKey) && granted(parent)) return true
   }
 
   // API often checks the family parent (work_orders / reports).

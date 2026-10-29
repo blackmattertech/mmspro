@@ -11,6 +11,7 @@ import { useAuth } from '../../hooks/useAuth'
 import { useProfile, profileDisplayName } from '../../hooks/useProfile'
 import { orgPath } from '../../config/navigation'
 import { createTask, getTask, updateTask, getTasksTemplate, bulkUploadTasks } from '../../lib/api-tasks'
+import { notifyTabCountsChanged } from '../../lib/tabCountEvents'
 import { getEquipment } from '../../lib/api-equipment'
 import { syncTaskAttachments, attachmentsFromTask } from '../../lib/taskAttachmentSync'
 import { validateTaskForm, buildTaskPayload } from '../../lib/taskFormSchema'
@@ -209,6 +210,7 @@ export default function TaskFormPage() {
       }
 
       await syncTaskAttachments(task.id, attachments, removedAttachmentIds)
+      notifyTabCountsChanged('tasks')
       navigate(orgPath(org.slug, `tasks-and-followups/${task.id}`))
     } catch (err) {
       setError(err.message)

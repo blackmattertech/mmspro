@@ -380,20 +380,20 @@ async function tasksSection(orgId, session, aggregatePromise = null, dates = nul
 }
 
 function warrantyBucket(row, now = new Date()) {
-  if (!row?.warranty_end) return 'active'
+  if (!row?.warranty_end) return 'out_of_warranty'
   const end = new Date(`${String(row.warranty_end).slice(0, 10)}T23:59:59`)
-  if (Number.isNaN(end.getTime())) return 'active'
-  if (end < now) return 'expired'
-  const notifyDays = Number(row.expiry_notification_days)
-  const windowDays = Number.isFinite(notifyDays) && notifyDays >= 0 ? notifyDays : 30
-  const soon = new Date(now)
-  soon.setDate(soon.getDate() + windowDays)
+  if (Number.isNaN(end.getTime())) return 'out_of_warranty'
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  if (end < today) return 'expired'
+  const soon = new Date(today)
+  soon.setDate(soon.getDate() + 30)
+  soon.setHours(23, 59, 59, 999)
   if (end <= soon) return 'expiring_soon'
-  return 'active'
+  return 'in_warranty'
 }
 
 async function countWarrantyStatusesLite(orgId) {
-  const totals = { active: 0, expiring_soon: 0, expired: 0 }
+  const totals = { in_warranty: 0, out_of_warranty: 0, expiring_soon: 0, expired: 0 }
   const now = new Date()
   const pageSize = 1000
   let from = 0
@@ -418,22 +418,31 @@ async function countWarrantyStatusesLite(orgId) {
 
 function warrantyModule(normalized) {
   const counts = {
-    active: Number(normalized?.active) || 0,
+    in_warranty: Number(normalized?.in_warranty || normalized?.active) || 0,
+    out_of_warranty: Number(normalized?.out_of_warranty) || 0,
     expiring_soon: Number(normalized?.expiring_soon) || 0,
     expired: Number(normalized?.expired) || 0,
   }
   const present = Object.fromEntries(Object.entries(counts).filter(([, value]) => value > 0))
+  const total = counts.in_warranty + counts.out_of_warranty + counts.expiring_soon + counts.expired
   return {
     id: 'warranties',
     label: 'Warranty Manager',
     href: 'warranty-manager',
     kpis: [
-      kpi('total', 'Total', counts.active + counts.expiring_soon + counts.expired),
-      kpi('active', 'Active', counts.active),
-      kpi('expiring_soon', 'Expiring soon', counts.expiring_soon),
+      kpi('total', 'Total', total),
+      kpi('in_warranty', 'In Warranty', counts.in_warranty),
+      kpi('active', 'In Warranty', counts.in_warranty),
+      kpi('out_of_warranty', 'Out of warranty', counts.out_of_warranty),
+      kpi('expiring_soon', 'Soon to Expired', counts.expiring_soon),
       kpi('expired', 'Expired', counts.expired),
     ],
-    status_counts: statusMapToKpis(present),
+    status_counts: statusMapToKpis(present, {
+      in_warranty: 'In Warranty',
+      out_of_warranty: 'Out of warranty',
+      expiring_soon: 'Soon to Expired',
+      expired: 'Expired',
+    }),
   }
 }
 
@@ -462,14 +471,14 @@ async function assetsSection(orgId, session, locationId) {
   ])
 
   const kpis = []
-  if (equipment != null) kpis.push(kpi('equipment', 'Equipment', equipment))
+  if (equipment != null) kpis.push(kpi('equipment', 'Assets', equipment))
   if (areas != null) kpis.push(kpi('areas', 'Areas', areas))
   if (fields != null) kpis.push(kpi('fields', 'Asset fields', fields))
   if (!kpis.length) return null
 
   return {
     id: 'assets',
-    label: 'Assets & Equipment',
+    label: 'Assets',
     href: 'masters/equipment',
     kpis,
   }
