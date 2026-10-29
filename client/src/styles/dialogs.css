@@ -71,12 +71,25 @@ html body .profile-modal {
 }
 
 html body .asset-layout-modal,
-html body .org-configure-modal,
 html body .task-meta-settings-modal {
   width: min(1080px, 100%);
   max-width: min(1080px, 100%);
   height: auto;
   max-height: min(86dvh, 840px);
+}
+
+html body .admin-modal-overlay:has(.org-configure-modal) {
+  padding: 0;
+  align-items: stretch;
+  justify-content: stretch;
+}
+
+html body .org-configure-modal {
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  max-height: none;
+  border-radius: 0;
 }
 
 html body .image-crop-modal {

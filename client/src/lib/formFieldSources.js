@@ -13,7 +13,7 @@ export const MASTER_SOURCES = [
   { id: 'employees_multi', label: 'Employees', multi: true, nativeColumn: 'technician_ids' },
   { id: 'work_centers', label: 'Work Center', multi: false, nativeColumn: 'work_center_id' },
   { id: 'areas', label: 'Area', multi: false, nativeColumn: 'area_id' },
-  { id: 'equipment', label: 'Equipment', multi: false, nativeColumn: 'equipment_id' },
+  { id: 'equipment', label: 'Asset', multi: false, nativeColumn: 'equipment_id' },
   { id: 'vendors', label: 'Vendor', multi: false, nativeColumn: 'vendor_id' },
   { id: 'checklists', label: 'Checklist', multi: false, nativeColumn: 'checklist_template_id' },
   { id: 'activity_types', label: 'Activity type', multi: false, nativeColumn: 'activity_type_id' },
@@ -23,9 +23,21 @@ export const MASTER_SOURCES = [
 const MASTER_BY_ID = new Map(MASTER_SOURCES.map((item) => [item.id, item]))
 
 /** Typed columns that exist on each form's native table. */
+const WORK_ORDER_NATIVE_COLUMNS = new Set([
+  'assignee_ids',
+  'work_center',
+  'priority',
+  'planned_start_at',
+  'planned_end_at',
+  'equipment_id',
+])
+
 export const FORM_NATIVE_COLUMNS = {
   'work_request.create': new Set(['equipment_id']),
-  'work_orders.manual': new Set([]),
+  'work_orders.manual': WORK_ORDER_NATIVE_COLUMNS,
+  'work_orders.from_work_request': WORK_ORDER_NATIVE_COLUMNS,
+  'work_orders.from_pm': WORK_ORDER_NATIVE_COLUMNS,
+  'work_orders.user_self': WORK_ORDER_NATIVE_COLUMNS,
   'pm.plan': new Set([
     'location_id',
     'department_id',
@@ -41,12 +53,48 @@ export const FORM_NATIVE_COLUMNS = {
 export const FORM_STATUS_ENTITY = {
   'work_request.create': 'work_request',
   'work_orders.manual': 'work_order',
+  'work_orders.from_work_request': 'work_order',
+  'work_orders.from_pm': 'work_order',
+  'work_orders.user_self': 'work_order',
   'pm.plan': 'pm_plan',
   'warranty.warranty': 'work_order',
 }
 
 export function getMasterSource(sourceId) {
   return MASTER_BY_ID.get(sourceId) || null
+}
+
+export function isCurrentUserMaster(sourceId) {
+  return sourceId === 'employees' || sourceId === 'employees_multi'
+}
+
+export function fieldMasterSourceId(field) {
+  if (!field) return ''
+  if (field.masterSource) return field.masterSource
+  const parsed = parseLayoutId(field.id)
+  return parsed.kind === 'master' ? parsed.value : ''
+}
+
+/** Value to store when a field should start as the signed-in employee. */
+export function currentUserDefaultForSource(sourceId, employeeId) {
+  if (!employeeId) return undefined
+  if (sourceId === 'employees') return employeeId
+  if (sourceId === 'employees_multi') return [employeeId]
+  return undefined
+}
+
+export function currentUserDefaultPatches(layout, values = {}, employeeId) {
+  if (!layout || !employeeId) return {}
+  const patches = {}
+  for (const field of layout.fields || []) {
+    if (!field?.defaultToCurrentUser) continue
+    const existing = values[field.id]
+    if (existing != null && existing !== '' && !(Array.isArray(existing) && !existing.length)) continue
+    const next = currentUserDefaultForSource(fieldMasterSourceId(field), employeeId)
+    if (next === undefined) continue
+    patches[field.id] = next
+  }
+  return patches
 }
 
 /**
@@ -167,7 +215,7 @@ export function missingRequiredLayoutValues(layout, { systemValues = {}, masterV
   const activeRules = resolveActiveRules(layout, values)
   const missing = []
   for (const field of layout.fields || []) {
-    if (!field.required) continue
+    if (field.skipped || !field.required) continue
     if (isFieldHiddenByRules(field.id, activeRules)) continue
     if (field.dependsOnFieldId && !isFieldDependencyMet({
       depends_on_parent_id: field.dependsOnFieldId,

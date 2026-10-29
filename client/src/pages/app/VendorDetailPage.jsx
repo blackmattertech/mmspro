@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useOrg } from '../../hooks/useOrg'
+import { usePermissions } from '../../hooks/usePermissions'
 import { orgPath } from '../../config/navigation'
 import { getVendor, updateVendor } from '../../lib/api-vendors'
 import RecordDetailLayout from '../../components/shared/RecordDetailLayout'
@@ -13,6 +14,8 @@ export default function VendorDetailPage() {
   const { vendorId } = useParams()
   const navigate = useNavigate()
   const { org } = useOrg()
+  const { canUpdate } = usePermissions()
+  const canEdit = canUpdate('vendors')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
@@ -68,7 +71,7 @@ export default function VendorDetailPage() {
         subtitle={vendor?.vendor_code ? `ID ${vendor.vendor_code}` : undefined}
         loading={loading}
         error={error}
-        actions={(
+        actions={canEdit ? (
           <button
             type="button"
             className="company-btn company-btn--secondary company-btn--compact company-btn--icon"
@@ -78,12 +81,12 @@ export default function VendorDetailPage() {
           >
             <EditIcon />
           </button>
-        )}
+        ) : null}
       >
         {vendor && <VendorDetailContent vendor={vendor} />}
       </RecordDetailLayout>
 
-      {editOpen && vendor && (
+      {canEdit && editOpen && vendor && (
         <VendorModal
           vendor={vendor}
           saving={saving}

@@ -22,7 +22,7 @@ const FEATURES = [
         <path d="M14.5 3.5L16.5 5.5M3.5 16.5L5.5 14.5M11.5 2.5L8.5 5.5M5.5 8.5L2.5 11.5M14 6L6 14M6.5 3.5C6.5 4.88 5.38 6 4 6C2.62 6 1.5 4.88 1.5 3.5C1.5 2.12 2.62 1 4 1C5.38 1 6.5 2.12 6.5 3.5ZM16.5 13.5C16.5 14.88 15.38 16 14 16C12.62 16 11.5 14.88 11.5 13.5C11.5 12.12 12.62 11 14 11C15.38 11 16.5 12.12 16.5 13.5Z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
       </svg>
     ),
-    title: 'Equipment Maintenance',
+    title: 'Asset Maintenance',
     description: 'Stay on top of every inspection and service.',
   },
   {

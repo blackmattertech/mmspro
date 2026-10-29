@@ -6,6 +6,7 @@ import {
   loadTableColumnPrefs,
   resolveColumnPrefs,
   saveTableColumnPrefs,
+  pinActionsLast,
   visibleIdsFromPrefs,
 } from '../lib/tableColumnPrefs'
 
@@ -42,7 +43,8 @@ function applyColumnOrder(previousOrder, orderedIds) {
       next.push(id)
     }
   }
-  return next.join('|') === previousOrder.join('|') ? previousOrder : next
+  const pinned = pinActionsLast(next)
+  return pinned.join('|') === previousOrder.join('|') ? previousOrder : pinned
 }
 
 /**
@@ -74,6 +76,11 @@ export function useTableColumnPrefs(tableId, columnDefs) {
     if (key && loadedKeyRef.current === key) saveTableColumnPrefs(key, next)
   }, [])
 
+  const savedOrderIds = (saved) => {
+    if (Array.isArray(saved)) return saved
+    return saved?.order || []
+  }
+
   useEffect(() => {
     if (!tableId || !columnDefs.length) {
       setLoadedKey(null)
@@ -81,8 +88,13 @@ export function useTableColumnPrefs(tableId, columnDefs) {
     }
     const saved = storageKey ? loadTableColumnPrefs(storageKey) : null
     const next = resolveColumnPrefs(saved, columnDefs)
+    const valid = new Set(columnDefs.map((col) => col.id))
+    const currentHasFields = columnDefs.some((col) => String(col.id).startsWith('field:'))
+    const dropsUnloadedField = savedOrderIds(saved).some((id) => (
+      String(id).startsWith('field:') && !valid.has(id) && !currentHasFields
+    ))
     setPrefs((prev) => (samePrefs(prev, next) ? prev : next))
-    setLoadedKey(storageKey ?? `memory:${tableId}`)
+    setLoadedKey(dropsUnloadedField ? null : (storageKey ?? `memory:${tableId}`))
   }, [tableId, storageKey, columnsSignature])
 
   useEffect(() => {
@@ -135,8 +147,9 @@ export function useTableColumnPrefs(tableId, columnDefs) {
       const order = resolved.order.filter((id) => id !== columnId)
       if (position === 'bottom') order.push(columnId)
       else order.unshift(columnId)
+      const pinned = pinActionsLast(order)
       const hidden = resolved.hidden.filter((id) => id !== columnId)
-      const next = { ...resolved, order, hidden }
+      const next = { ...resolved, order: pinned, hidden }
       writePrefs(next)
       return next
     })
@@ -147,6 +160,16 @@ export function useTableColumnPrefs(tableId, columnDefs) {
     [visibleColumnIds],
   )
 
+  const saveColumns = useCallback(() => {
+    const key = storageKeyRef.current
+    if (!key) return false
+    const next = resolveColumnPrefs(prefs, columnDefsRef.current)
+    saveTableColumnPrefs(key, next)
+    setLoadedKey(key)
+    setPrefs((prev) => (samePrefs(prev, next) ? prev : next))
+    return true
+  }, [prefs])
+
   return {
     columnDefs,
     columnOrder: prefs.order,
@@ -156,5 +179,6 @@ export function useTableColumnPrefs(tableId, columnDefs) {
     resetColumns,
     reorderColumns,
     moveColumn,
+    saveColumns,
   }
 }

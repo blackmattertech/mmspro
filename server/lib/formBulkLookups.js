@@ -98,7 +98,7 @@ export function validValueColumns(masters, extras = []) {
     { header: 'Location', values: masters.locations.map((row) => row.name) },
     { header: 'Department', values: masters.departments.map((row) => row.code ? `${row.name} (${row.code})` : row.name) },
     { header: 'Area', values: masters.areas.map((row) => row.name) },
-    { header: 'Equipment', values: masters.equipment.map(equipmentLabel) },
+    { header: 'Asset', values: masters.equipment.map(equipmentLabel) },
     { header: 'Employees', values: masters.employees.map((row) => row.emp_id ? `${row.name} (${row.emp_id})` : row.name) },
     ...extras,
   ]

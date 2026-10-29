@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import { verifyAuth } from '../../middleware/auth.js'
 import { requireOrgAccess } from '../../middleware/orgAccess.js'
-import { requireOrgRole } from '../../middleware/orgRole.js'
+import { requireModulePermission } from '../../middleware/modulePermission.js'
 import {
   listTextFieldLimits,
   resetTextFieldLimits,
@@ -9,7 +9,7 @@ import {
 } from '../../lib/textFieldLimits.js'
 
 const router = Router()
-const requireAdmin = requireOrgRole('admin', 'super_admin', 'owner')
+const canUpdate = requireModulePermission('others', 'update')
 
 router.use(verifyAuth, requireOrgAccess)
 
@@ -22,7 +22,7 @@ router.get('/', async (req, res) => {
   }
 })
 
-router.put('/', requireAdmin, async (req, res) => {
+router.put('/', canUpdate, async (req, res) => {
   try {
     const fields = await updateTextFieldLimits(req.userProfile.org_id, req.body || {})
     res.json({ fields })
@@ -31,7 +31,7 @@ router.put('/', requireAdmin, async (req, res) => {
   }
 })
 
-router.post('/reset', requireAdmin, async (req, res) => {
+router.post('/reset', canUpdate, async (req, res) => {
   try {
     const fields = await resetTextFieldLimits(req.userProfile.org_id)
     res.json({ fields })

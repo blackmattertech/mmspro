@@ -56,10 +56,10 @@ export function useOrgEquipmentFields({ enabled = true } = {}) {
   }
 
   const create = async () => {
-    throw new Error('Equipment field schema is managed from the Super Admin panel')
+    throw new Error('Asset field schema is managed from the Super Admin panel')
   }
   const remove = async () => {
-    throw new Error('Equipment field schema is managed from the Super Admin panel')
+    throw new Error('Asset field schema is managed from the Super Admin panel')
   }
   const toggleActive = async (id, isActive) => update(id, { is_active: isActive })
   const reorderSections = async () => {

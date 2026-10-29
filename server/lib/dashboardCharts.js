@@ -485,7 +485,7 @@ function buildHeadlines({ modules, window, woRows, wrRows, pmRows, taskRows, dai
   addStatic({
     key: 'assets.equipment',
     module: 'assets',
-    label: 'Equipment',
+    label: 'Assets',
     value: kpiValue(assets, 'equipment'),
     tone: 'blue',
   })

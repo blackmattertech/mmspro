@@ -7,6 +7,7 @@ import {
   fieldLayoutId,
   normalizeColSpan,
   normalizeFilledBy,
+  normalizeStage,
   parseLayoutId,
   FIELD_WIDTHS,
   isGroupId,
@@ -14,13 +15,38 @@ import {
 import {
   buildDefaultLayout,
   getFormDef,
+  isFormId,
+  isKnownSystemField,
+  isKnownSystemSection,
   publicFormMeta,
 } from './formRegistry.js'
+import { shouldFallbackWorkOrderLayout } from './workOrderForms.js'
 import { getMasterSource, publicMasterSources, canFilterMasterBy } from './formFieldSources.js'
 import { normalizeOptions, sanitizeOptionRule } from './formOptionRules.js'
 import { createTtlCache } from './ttlCache.js'
 
 const OPTION_FIELD_TYPES = new Set(['dropdown', 'radio', 'checkbox'])
+
+const LEGACY_EQUIPMENT_LABELS = {
+  Equipment: 'Asset',
+  'Equipment picker': 'Asset picker',
+}
+
+function presentEquipmentLabels(layout) {
+  if (!layout) return layout
+  const next = cloneLayout(layout)
+  const rename = (item) => {
+    if (item && LEGACY_EQUIPMENT_LABELS[item.label]) {
+      item.label = LEGACY_EQUIPMENT_LABELS[item.label]
+    }
+  }
+  for (const field of next.fields || []) rename(field)
+  for (const group of next.groups || []) {
+    rename(group)
+    for (const child of group.childFields || []) rename(child)
+  }
+  return next
+}
 
 const CATALOG_SELECT = [
   'id',
@@ -47,6 +73,8 @@ export function invalidateOrgFormCaches(orgId, formId = null) {
     return
   }
   catalogCache.delete(`catalog:${orgId}`)
+  catalogCache.delete(`catalog-asset:${orgId}`)
+  catalogCache.delete(`catalog-meta:${orgId}`)
   if (formId) {
     layoutCache.delete(`layout:${orgId}:${formId}`)
   } else {
@@ -118,6 +146,75 @@ export async function loadOrgCatalogFields(orgId) {
       : undefined,
   }))
   catalogCache.set(cacheKey, result)
+  catalogCache.set(`catalog-asset:${orgId}`, result.filter((row) => row.field_source === 'asset'))
+  return result
+}
+
+/** Asset parents and sections only — enough to count Form Master dropdowns. */
+export async function loadOrgAssetCatalogMeta(orgId) {
+  const cacheKey = `catalog-meta:${orgId}`
+  const cached = catalogCache.get(cacheKey)
+  if (cached) return cached
+  const fromFull = catalogCache.get(`catalog-asset:${orgId}`) || catalogCache.get(`catalog:${orgId}`)
+  if (fromFull) {
+    const meta = fromFull
+      .filter((row) => row.kind === 'parent' || row.kind === 'section')
+      .map((row) => ({ ...row, field_source: row.field_source || 'asset' }))
+    catalogCache.set(cacheKey, meta)
+    return meta
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from('asset_fields')
+    .select('id, name, kind, section_id, field_type, sort_order, is_active')
+    .eq('org_id', orgId)
+    .in('kind', ['parent', 'section'])
+    .order('sort_order')
+    .order('name')
+  if (error) throw error
+  const result = (data || []).map((row) => ({ ...row, field_source: 'asset' }))
+  catalogCache.set(cacheKey, result)
+  return result
+}
+
+export async function loadOrgAssetCatalogFields(orgId) {
+  const cacheKey = `catalog-asset:${orgId}`
+  const cached = catalogCache.get(cacheKey)
+  if (cached) return cached
+  const full = catalogCache.get(`catalog:${orgId}`)
+  if (full) {
+    const assetOnly = full.filter((row) => row.field_source === 'asset')
+    catalogCache.set(cacheKey, assetOnly)
+    return assetOnly
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from('asset_fields')
+    .select(CATALOG_SELECT)
+    .eq('org_id', orgId)
+    .order('sort_order')
+    .order('name')
+  if (error) throw error
+
+  const rows = (data || []).map((row) => ({ ...row, field_source: 'asset' }))
+  const childrenByParent = new Map()
+  for (const row of rows) {
+    if (row.kind === 'child' && row.parent_id && row.is_active !== false) {
+      if (!childrenByParent.has(row.parent_id)) childrenByParent.set(row.parent_id, [])
+      childrenByParent.get(row.parent_id).push(row)
+    }
+  }
+  const sectionNameById = new Map(
+    rows.filter((row) => row.kind === 'section').map((row) => [row.id, row.name]),
+  )
+  const result = rows.map((row) => ({
+    ...row,
+    section_name: row.section_id ? (sectionNameById.get(row.section_id) || null) : row.name,
+    dropdown_options: OPTION_FIELD_TYPES.has(row.field_type)
+      ? (childrenByParent.get(row.id) || []).map((child) => child.name)
+      : undefined,
+  }))
+  catalogCache.set(cacheKey, result)
   return result
 }
 
@@ -154,6 +251,11 @@ function sanitizeLayoutField(field, index, { allowBindKey = true, requireSection
   const filterByFieldId = typeof field.filterByFieldId === 'string'
     ? field.filterByFieldId.trim()
     : ''
+  const defaultToCurrentUser = (masterSource === 'employees' || masterSource === 'employees_multi')
+    && field.defaultToCurrentUser === true
+  const equipmentColumnId = !masterSource && typeof field.equipmentColumnId === 'string'
+    ? field.equipmentColumnId.trim()
+    : ''
   return {
     id: fieldLayoutId(field),
     ...(field.sectionId ? { sectionId: fieldLayoutId({ id: field.sectionId }) } : {}),
@@ -164,10 +266,12 @@ function sanitizeLayoutField(field, index, { allowBindKey = true, requireSection
     ...(fieldType ? { fieldType } : {}),
     ...(masterSource ? { masterSource } : {}),
     ...(allowBindKey && bindKey ? { bindKey } : {}),
-    ...(!masterSource && options.length ? { options } : {}),
+    ...(!masterSource && !equipmentColumnId && options.length ? { options } : {}),
+    ...(equipmentColumnId ? { equipmentColumnId, fieldType: fieldType || 'dropdown' } : {}),
     ...(dependsOnFieldId ? { dependsOnFieldId } : {}),
     ...(dependsOnFieldId && dependsOnOptions.length ? { dependsOnOptions } : {}),
     ...(masterSource && filterByFieldId ? { filterByFieldId } : {}),
+    ...(defaultToCurrentUser ? { defaultToCurrentUser: true } : {}),
   }
 }
 
@@ -189,11 +293,17 @@ function sanitizeLayout(raw) {
       const id = fieldLayoutId(section)
       const label = typeof section.label === 'string' ? section.label.trim() : ''
       const filledBy = normalizeFilledBy(section.filledBy)
+      const stage = normalizeStage(section.stage)
+      const sharedWith = Array.isArray(section.sharedWith)
+        ? [...new Set(section.sharedWith.map((item) => String(item || '').trim()).filter(Boolean))].sort()
+        : []
       return {
         id,
         order: Number.isFinite(Number(section.order)) ? Number(section.order) : index,
         ...(label ? { label } : {}),
         ...(filledBy !== 'any' ? { filledBy } : {}),
+        ...(stage ? { stage } : {}),
+        ...(sharedWith.length ? { sharedWith } : {}),
       }
     }),
     fields: fields.map((field, index) => sanitizeLayoutField(field, index, {
@@ -251,8 +361,13 @@ export function validateFormLayout(formDef, layout, catalogFields) {
 
   for (const section of cleaned.sections) {
     const parsed = parseLayoutId(section.id)
-    if (parsed.kind === 'system' && !knownSystemSections.has(section.id)) {
+    if (parsed.kind === 'system' && !knownSystemSections.has(section.id) && !isKnownSystemSection(section.id)) {
       throw httpError(`Unknown section ${section.id}`)
+    }
+    if (section.sharedWith?.length) {
+      const peers = section.sharedWith.filter((id) => id !== formDef.formId && isFormId(id))
+      if (peers.length) section.sharedWith = [formDef.formId, ...peers].sort()
+      else delete section.sharedWith
     }
     if (parsed.kind === 'catalog' && !catalogIds.has(parsed.value)) {
       throw httpError('Layout references a section that no longer exists')
@@ -263,8 +378,11 @@ export function validateFormLayout(formDef, layout, catalogFields) {
     if (parsed.kind === 'group') {
       throw httpError('Groups cannot be used as sections')
     }
-    if (section.filledBy && !['any', 'creator', 'order_to_dept_head', 'technician'].includes(section.filledBy)) {
+    if (section.filledBy && !['any', 'creator', 'order_to_dept_head', 'technician', 'supervisor'].includes(section.filledBy)) {
       throw httpError(`Invalid filledBy on section ${section.id}`)
+    }
+    if (section.stage && !['create', 'assignment', 'execution', 'closeout'].includes(section.stage)) {
+      throw httpError(`Invalid stage on section ${section.id}`)
     }
   }
 
@@ -275,7 +393,7 @@ export function validateFormLayout(formDef, layout, catalogFields) {
     const parsed = parseLayoutId(field.id)
     if (parsed.kind === 'system') {
       if (!allowSystem) throw httpError(`Group child cannot be a system field (${field.id})`)
-      if (!knownSystemFields.has(field.id)) {
+      if (!knownSystemFields.has(field.id) && !isKnownSystemField(field.id)) {
         throw httpError(`Unknown field ${field.id}`)
       }
     }
@@ -357,7 +475,7 @@ export function validateFormLayout(formDef, layout, catalogFields) {
       }
     }
     if (!FIELD_WIDTHS.includes(field.colSpan)) {
-      throw httpError('Field width must be 25%, 33%, 75%, or 100%')
+      throw httpError('Field width must be 25%, 33%, 50%, 75%, or 100%')
     }
   }
 
@@ -372,7 +490,7 @@ export function validateFormLayout(formDef, layout, catalogFields) {
       throw httpError(`Group "${group.label || group.id}" is missing its section`)
     }
     if (!FIELD_WIDTHS.includes(group.colSpan)) {
-      throw httpError('Group width must be 25%, 33%, 75%, or 100%')
+      throw httpError('Group width must be 25%, 33%, 50%, 75%, or 100%')
     }
     const childIds = new Set(group.childFields.map((child) => child.id))
     for (const child of group.childFields) {
@@ -470,7 +588,11 @@ export async function listSavedFormLayouts(orgId) {
     if (isMissingFormLayoutsTable(error)) return []
     throw error
   }
-  return data || []
+  const rows = data || []
+  for (const row of rows) {
+    layoutCache.set(`layout:${orgId}:${row.form_id}`, row)
+  }
+  return rows
 }
 
 export async function upsertFormLayout(orgId, formId, layout) {
@@ -502,7 +624,7 @@ export async function buildFormLayoutPayload(orgId, formId) {
 
   return {
     form: publicFormMeta({ ...formDef, moduleId: formDef.moduleId, moduleLabel: formDef.moduleLabel }),
-    layout: saved?.layout || null,
+    layout: presentEquipmentLabels(saved?.layout) || null,
     defaultLayout: buildDefaultLayout(formDef, catalogFields),
     updated_at: saved?.updated_at || null,
     catalog: {
@@ -513,24 +635,242 @@ export async function buildFormLayoutPayload(orgId, formId) {
   }
 }
 
+function peersOf(section, formId) {
+  return (section?.sharedWith || []).filter((id) => id && id !== formId && isFormId(id))
+}
+
+function extractSectionSnapshot(layout, sectionId) {
+  const section = (layout?.sections || []).find((item) => item.id === sectionId)
+  if (!section) return null
+  return {
+    section: { ...section },
+    fields: (layout.fields || []).filter((field) => field.sectionId === sectionId).map((field) => ({ ...field })),
+    groups: (layout.groups || []).filter((group) => group.sectionId === sectionId).map((group) => ({
+      ...group,
+      childFields: (group.childFields || []).map((field) => ({ ...field })),
+    })),
+  }
+}
+
+function applySectionSnapshot(layout, snapshot) {
+  const sectionId = snapshot.section.id
+  const existing = (layout.sections || []).find((section) => section.id === sectionId)
+  const section = {
+    ...snapshot.section,
+    order: existing ? existing.order : (layout.sections || []).length,
+  }
+  layout.sections = existing
+    ? layout.sections.map((item) => (item.id === sectionId ? section : item))
+    : [...(layout.sections || []), section]
+  const incomingFieldIds = new Set((snapshot.fields || []).map((field) => field.id))
+  const incomingGroupIds = new Set((snapshot.groups || []).map((group) => group.id))
+  layout.fields = [
+    ...(layout.fields || []).filter((field) => field.sectionId !== sectionId && !incomingFieldIds.has(field.id)),
+    ...(snapshot.fields || []),
+  ]
+  layout.groups = [
+    ...(layout.groups || []).filter((group) => group.sectionId !== sectionId && !incomingGroupIds.has(group.id)),
+    ...(snapshot.groups || []),
+  ]
+  return layout
+}
+
+function removeSectionFromLayout(layout, sectionId) {
+  layout.sections = (layout.sections || [])
+    .filter((section) => section.id !== sectionId)
+    .map((section, index) => ({ ...section, order: index }))
+  layout.fields = (layout.fields || []).filter((field) => field.sectionId !== sectionId)
+  layout.groups = (layout.groups || []).filter((group) => group.sectionId !== sectionId)
+}
+
+function setSectionMembership(layout, sectionId, membership) {
+  const section = (layout.sections || []).find((item) => item.id === sectionId)
+  if (!section) return
+  const ids = [...new Set((membership || []).filter((id) => isFormId(id)))]
+  if (ids.length <= 1) delete section.sharedWith
+  else section.sharedWith = ids.sort()
+}
+
+async function planSharedSectionWrites(orgId, formId, previousLayout, nextLayout, catalogFields) {
+  const prevById = new Map((previousLayout?.sections || []).map((section) => [section.id, section]))
+  const nextById = new Map((nextLayout?.sections || []).map((section) => [section.id, section]))
+  const ids = new Set([...prevById.keys(), ...nextById.keys()])
+  const peerLayouts = new Map()
+
+  const peerLayout = async (peerId) => {
+    if (peerLayouts.has(peerId)) return peerLayouts.get(peerId)
+    const formDef = getFormDef(peerId)
+    if (!formDef) return null
+    const saved = await getSavedFormLayout(orgId, peerId)
+    const base = saved?.layout
+      ? cloneLayout(saved.layout)
+      : buildDefaultLayout(formDef, catalogFields)
+    const entry = { layout: base, dirty: false }
+    peerLayouts.set(peerId, entry)
+    return entry
+  }
+
+  for (const id of ids) {
+    const prev = prevById.get(id)
+    const next = nextById.get(id)
+    const prevPeers = peersOf(prev, formId)
+    const nextPeers = peersOf(next, formId)
+    if (!prevPeers.length && !nextPeers.length) continue
+
+    if (next && nextPeers.length) {
+      const snapshot = extractSectionSnapshot(nextLayout, id)
+      for (const peerId of nextPeers) {
+        const entry = await peerLayout(peerId)
+        if (!entry || !snapshot) continue
+        applySectionSnapshot(entry.layout, snapshot)
+        entry.dirty = true
+      }
+    }
+
+    if (!next) {
+      const membership = (prev?.sharedWith || []).filter((peerId) => peerId !== formId)
+      for (const peerId of prevPeers) {
+        const entry = await peerLayout(peerId)
+        if (!entry) continue
+        setSectionMembership(entry.layout, id, membership)
+        entry.dirty = true
+      }
+      continue
+    }
+
+    for (const peerId of prevPeers) {
+      if (nextPeers.includes(peerId)) continue
+      const entry = await peerLayout(peerId)
+      if (!entry) continue
+      removeSectionFromLayout(entry.layout, id)
+      entry.dirty = true
+    }
+  }
+
+  return [...peerLayouts.entries()]
+    .filter(([, entry]) => entry.dirty)
+    .map(([peerId, entry]) => ({ formId: peerId, layout: entry.layout }))
+}
+
 export async function saveOrgFormLayout(orgId, formId, rawLayout) {
   const formDef = getFormDef(formId)
   if (!formDef) throw httpError('Unknown form', 404)
   const catalogFields = await loadOrgCatalogFields(orgId)
+  const previous = await getSavedFormLayout(orgId, formId)
   const layout = validateFormLayout(formDef, rawLayout, catalogFields)
+  const peerWrites = await planSharedSectionWrites(orgId, formId, previous?.layout, layout, catalogFields)
+  const validatedWrites = peerWrites.map((write) => {
+    const peerDef = getFormDef(write.formId)
+    if (!peerDef) throw httpError(`Unknown form ${write.formId}`)
+    return {
+      formId: write.formId,
+      layout: validateFormLayout(peerDef, write.layout, catalogFields),
+    }
+  })
   const saved = await upsertFormLayout(orgId, formId, layout)
+  for (const write of validatedWrites) {
+    await upsertFormLayout(orgId, write.formId, write.layout)
+  }
   return {
     form: publicFormMeta(formDef),
     layout: saved.layout,
     defaultLayout: buildDefaultLayout(formDef, catalogFields),
     updated_at: saved.updated_at,
     masters: publicMasterSources(),
+    syncedFormIds: validatedWrites.map((write) => write.formId),
   }
+}
+
+const platformDefaultCache = createTtlCache({ ttlMs: 30_000, maxEntries: 8 })
+
+function isMissingPlatformDefaultsTable(error) {
+  const msg = String(error?.message || '')
+  return /platform_form_defaults/i.test(msg) && /does not exist|schema cache/i.test(msg)
+}
+
+export function invalidatePlatformFormDefaultCache() {
+  platformDefaultCache.clear()
+}
+
+export async function listPlatformFormDefaults() {
+  const cached = platformDefaultCache.get('all')
+  if (cached) return cached
+  const { data, error } = await supabaseAdmin
+    .from('platform_form_defaults')
+    .select('form_id, layout, catalog')
+  if (error) {
+    if (isMissingPlatformDefaultsTable(error)) {
+      const empty = new Map()
+      platformDefaultCache.set('all', empty)
+      return empty
+    }
+    throw error
+  }
+  const map = new Map((data || []).map((row) => [row.form_id, row]))
+  platformDefaultCache.set('all', map)
+  return map
+}
+
+async function getPlatformFormDefaultRow(formId) {
+  const all = platformDefaultCache.get('all')
+  if (all) return all.get(formId) || null
+  const { data, error } = await supabaseAdmin
+    .from('platform_form_defaults')
+    .select('layout, catalog')
+    .eq('form_id', formId)
+    .maybeSingle()
+  if (error) {
+    if (isMissingPlatformDefaultsTable(error)) return null
+    throw error
+  }
+  return data || null
 }
 
 export async function loadRuntimeFormLayout(orgId, formId) {
   const saved = await getSavedFormLayout(orgId, formId)
-  return saved?.layout || null
+  const raw = saved?.layout
+    ? presentEquipmentLabels(saved.layout)
+    : presentEquipmentLabels((await getPlatformFormDefaultRow(formId))?.layout) || null
+  if (!raw) {
+    if (shouldFallbackWorkOrderLayout(formId)) {
+      const formDef = getFormDef(formId)
+      const fallback = formDef ? buildDefaultLayout(formDef, []) : null
+      if (!fallback) return null
+      const { applyCompanyOptionsToLayout } = await import('./formFieldMasters.js')
+      const { applyLoadedCompanySkips } = await import('./formSkips.js')
+      const withOptions = await applyCompanyOptionsToLayout(orgId, formId, fallback)
+      return applyLoadedCompanySkips(orgId, formId, withOptions)
+    }
+    return null
+  }
+  const { applyCompanyOptionsToLayout } = await import('./formFieldMasters.js')
+  const { applyLoadedCompanySkips } = await import('./formSkips.js')
+  const withOptions = await applyCompanyOptionsToLayout(orgId, formId, raw)
+  return applyLoadedCompanySkips(orgId, formId, withOptions)
+}
+
+export async function loadRuntimeFormBundle(orgId, formId) {
+  const saved = await getSavedFormLayout(orgId, formId)
+  if (saved?.layout) {
+    return { layout: presentEquipmentLabels(saved.layout), catalogSource: 'org', platformCatalog: [] }
+  }
+  const platform = await getPlatformFormDefaultRow(formId)
+  if (!platform?.layout) {
+    if (shouldFallbackWorkOrderLayout(formId)) {
+      const formDef = getFormDef(formId)
+      return {
+        layout: formDef ? buildDefaultLayout(formDef, []) : null,
+        catalogSource: 'none',
+        platformCatalog: [],
+      }
+    }
+    return { layout: null, catalogSource: 'none', platformCatalog: [] }
+  }
+  return {
+    layout: presentEquipmentLabels(platform.layout),
+    catalogSource: 'platform',
+    platformCatalog: platform.catalog || [],
+  }
 }
 
 export function applySavedLayout(schema, layout, catalogFields) {
@@ -630,6 +970,29 @@ function hierarchyLabel(row, label) {
   return match ? String(match.value).trim() : ''
 }
 
+function isPriorityLayoutField(field) {
+  const parsed = parseLayoutId(field?.id)
+  const key = field?.bindKey || (parsed.kind === 'system' ? parsed.value : '')
+  const label = String(field?.label || '').toLowerCase().replace(/[^a-z0-9]+/g, '')
+  return key === 'priority' || label === 'priority' || label === 'jobpriority'
+}
+
+function knownPriority(value) {
+  const raw = String(value || '').trim().toLowerCase()
+  if (raw === 'high' || raw === 'medium' || raw === 'low') return raw
+  return ''
+}
+
+function priorityTextFromLayout(layout, values) {
+  const map = values && typeof values === 'object' ? values : {}
+  for (const field of layout?.fields || []) {
+    if (!isPriorityLayoutField(field)) continue
+    const text = layoutValueForField(map, field)
+    if (text) return text
+  }
+  return ''
+}
+
 function layoutFieldText(layout, values, { bindKey, label }) {
   const map = values && typeof values === 'object' ? values : {}
   for (const field of layout?.fields || []) {
@@ -652,9 +1015,11 @@ function workRequestValueMap(row) {
 /** Custom form fields are stored beside the row. Copy them onto the columns the lists read. */
 export async function fillWorkRequestShortDescriptions(orgId, rows) {
   const list = rows || []
+  const openPriority = new Set(['draft', 'submitted', 'pending_approval', 'need_info', 'info_provided'])
   const pending = list.filter((row) => row?.id && (
     !String(row.short_description || '').trim()
     || !String(row.job_nature || '').trim()
+    || openPriority.has(row.status)
   ))
   if (!pending.length) return list
   const [layout, catalogFields] = await Promise.all([
@@ -664,6 +1029,7 @@ export async function fillWorkRequestShortDescriptions(orgId, rows) {
   const natureFields = (catalogFields || []).filter((field) => labelsMatch(field?.name, 'job nature'))
   const descriptionUpdates = []
   const natureUpdates = []
+  const priorityUpdates = []
   for (const row of pending) {
     const values = workRequestValueMap(row)
     if (!String(row.short_description || '').trim()) {
@@ -694,6 +1060,13 @@ export async function fillWorkRequestShortDescriptions(orgId, rows) {
         if (fromLayout) natureUpdates.push({ id: row.id, job_nature: text })
       }
     }
+    if (openPriority.has(row.status)) {
+      const selected = knownPriority(priorityTextFromLayout(layout, values))
+      if (selected && row.priority !== selected) {
+        row.priority = selected
+        priorityUpdates.push({ id: row.id, priority: selected })
+      }
+    }
   }
   await Promise.all([
     ...descriptionUpdates.map((item) => supabaseAdmin
@@ -704,6 +1077,11 @@ export async function fillWorkRequestShortDescriptions(orgId, rows) {
     ...natureUpdates.map((item) => supabaseAdmin
       .from('work_requests')
       .update({ job_nature: item.job_nature })
+      .eq('org_id', orgId)
+      .eq('id', item.id)),
+    ...priorityUpdates.map((item) => supabaseAdmin
+      .from('work_requests')
+      .update({ priority: item.priority })
       .eq('org_id', orgId)
       .eq('id', item.id)),
   ])

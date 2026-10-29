@@ -97,7 +97,7 @@ export async function buildWorkbook(templateColumns, validColumns = [], { sample
   return Buffer.from(buffer)
 }
 
-export function readTemplateRows(workbook, expectedColumns, { extraColumns = [] } = {}) {
+export function readTemplateRows(workbook, expectedColumns, { extraColumns = [], aliases = {} } = {}) {
   const sheet = workbook.getWorksheet(TEMPLATE_SHEET) || workbook.worksheets[0]
   if (!sheet) {
     throw Object.assign(new Error('No worksheet found in file'), { status: 400 })
@@ -111,12 +111,16 @@ export function readTemplateRows(workbook, expectedColumns, { extraColumns = [] 
   })
 
   for (const col of expectedColumns) {
-    if (!columnByHeader.has(normalizeName(col))) {
-      throw Object.assign(
-        new Error(`Missing column "${col}" in template. Download the latest sample file and try again.`),
-        { status: 400 },
-      )
+    if (columnByHeader.has(normalizeName(col))) continue
+    const alias = (aliases[col] || []).find((name) => columnByHeader.has(normalizeName(name)))
+    if (alias) {
+      columnByHeader.set(normalizeName(col), columnByHeader.get(normalizeName(alias)))
+      continue
     }
+    throw Object.assign(
+      new Error(`Missing column "${col}" in template. Download the latest sample file and try again.`),
+      { status: 400 },
+    )
   }
 
   const columnsToRead = [...expectedColumns]

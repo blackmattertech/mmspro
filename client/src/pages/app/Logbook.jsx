@@ -6,6 +6,7 @@ import { unwrapList } from '../../lib/listResponse'
 import { formatMeterDate, formatMeterLogger, formatMeterTime, formatMeterValue } from '../../lib/meterReading'
 import { stopTableRowClick, tableRowClickProps } from '../../lib/clickableTableRow'
 import TablePagination from '../../components/shared/TablePagination'
+import TableEmptyRow from '../../components/shared/TableEmptyRow'
 import TableFilterToolbar from '../../components/shared/TableFilterToolbar'
 import { useTablePagination } from '../../hooks/useTablePagination'
 import MeterReadingModal from '../../components/logbook/MeterReadingModal'
@@ -74,8 +75,6 @@ function HistoryModal({ equipmentId, canCreate, canDelete, onClose, onChanged })
           {error && <div className="company-alert" role="alert">{error}</div>}
           {loading ? (
             <p className="company-empty">Loading readings…</p>
-          ) : readings.length === 0 ? (
-            <p className="company-empty">No meter readings yet.</p>
           ) : (
             <div className="company-table-wrap">
               <div className="company-table-scroll">
@@ -90,7 +89,11 @@ function HistoryModal({ equipmentId, canCreate, canDelete, onClose, onChanged })
                     </tr>
                   </thead>
                   <tbody>
-                    {readings.map((row) => (
+                    {readings.length === 0 ? (
+                      <TableEmptyRow colSpan={canDelete ? 5 : 4}>
+                        No meter readings yet.
+                      </TableEmptyRow>
+                    ) : readings.map((row) => (
                       <tr key={row.id}>
                         <td>{formatMeterValue(row.reading)}</td>
                         <td>{formatMeterDate(row.reading_at)}</td>
@@ -159,7 +162,7 @@ export default function Logbook() {
         setItems(page.items)
         setTotal(page.total)
       })
-      .catch((err) => setError(err.message || 'Could not load the logbook'))
+      .catch((err) => setError(err.message || 'Could not load meter readings'))
       .finally(() => setLoading(false))
   }, [debouncedSearch, pagination.pageSize, pagination.offset])
 
@@ -180,9 +183,9 @@ export default function Logbook() {
   return (
     <div className="company-page">
       <header className="company-page__header">
-        <h1 className="company-page__title">Logbook</h1>
+        <h1 className="company-page__title">Meter reading</h1>
         <p className="company-page__subtitle">
-          Log meter readings for equipment that requires them. Scan an equipment QR code, then choose Add reading.
+          Log meter readings for assets that require them. Scan an asset QR code, then choose Add reading.
         </p>
       </header>
       <div className="company-page__content">
@@ -192,20 +195,14 @@ export default function Logbook() {
               search={{
                 value: search,
                 onChange: setSearch,
-                placeholder: 'Search equipment...',
-                ariaLabel: 'Search logbook',
+                placeholder: 'Search assets...',
+                ariaLabel: 'Search meter readings',
               }}
             />
           </div>
           {error && <div className="company-alert" role="alert">{error}</div>}
           {loading ? (
-            <div className="company-loading">Loading logbook…</div>
-          ) : items.length === 0 ? (
-            <div className="company-empty">
-              {debouncedSearch
-                ? 'No equipment matches your search.'
-                : 'No equipment requires a meter reading yet. Turn on Reading required on an equipment record to log it here.'}
-            </div>
+            <div className="company-loading">Loading meter readings…</div>
           ) : (
             <>
               <div className="company-table-wrap">
@@ -213,7 +210,7 @@ export default function Logbook() {
                   <table className="company-table master-table">
                     <thead>
                       <tr>
-                        <th>Equipment</th>
+                        <th>Asset</th>
                         <th>Code</th>
                         <th>Location</th>
                         <th>Department</th>
@@ -225,7 +222,13 @@ export default function Logbook() {
                       </tr>
                     </thead>
                     <tbody>
-                      {items.map((row) => (
+                      {items.length === 0 ? (
+                        <TableEmptyRow colSpan={9}>
+                          {debouncedSearch
+                            ? 'No assets match your search.'
+                            : 'No assets require a meter reading yet. Turn on Reading required on an asset record to log it here.'}
+                        </TableEmptyRow>
+                      ) : items.map((row) => (
                         <tr
                           key={row.id}
                           {...tableRowClickProps({

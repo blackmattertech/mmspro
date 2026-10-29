@@ -135,7 +135,7 @@ export default function WorkOrderFieldSettingsModal({
           {loading && <p className="wo-settings-loading">Loading settings...</p>}
 
           {!loading && !local.length && (
-            <p className="wo-settings-empty">No asset sections found. Create fields under Masters → Fields first.</p>
+            <p className="wo-settings-empty">No form sections found. Ask Super Admin to add fields in Form Builder.</p>
           )}
 
           <div className="wo-settings-list">

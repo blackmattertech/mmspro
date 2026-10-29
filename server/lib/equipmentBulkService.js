@@ -11,17 +11,32 @@ import {
 const TEMPLATE_SHEET = 'Template'
 const VALID_VALUES_SHEET = 'Valid values'
 const PLACEMENT_COLUMNS = ['Location', 'Department', 'Area']
+const NATIVE_COLUMNS = ['Reading required', 'Active']
+const YES_NO_VALUES = ['Yes', 'No']
 const OPTION_FIELD_TYPES = new Set(['dropdown', 'radio', 'checkbox'])
 const MULTI_OPTION_FIELD_TYPES = new Set(['checkbox'])
 
-function isAreaParent(field) {
-  return normalizeMasterName(field?.name) === 'area'
+function unusedHeaders(parents, headers) {
+  const used = new Set((parents || []).map((field) => normalizeMasterName(field.name)))
+  return headers.filter((name) => !used.has(normalizeMasterName(name)))
 }
 
 /** Placement columns already represented by a super-admin parent field are omitted. */
 function extraPlacementColumns(parents) {
-  const used = new Set((parents || []).map((field) => normalizeMasterName(field.name)))
-  return PLACEMENT_COLUMNS.filter((name) => !used.has(normalizeMasterName(name)))
+  return unusedHeaders(parents, PLACEMENT_COLUMNS)
+}
+
+function extraNativeColumns(parents) {
+  return unusedHeaders(parents, NATIVE_COLUMNS)
+}
+
+function parseYesNo(value, fieldLabel, defaultValue) {
+  const raw = String(value ?? '').trim()
+  if (!raw) return defaultValue
+  const normalized = raw.toLowerCase()
+  if (['yes', 'y', 'true', '1'].includes(normalized)) return true
+  if (['no', 'n', 'false', '0'].includes(normalized)) return false
+  throw new Error(`${fieldLabel} must be Yes or No`)
 }
 
 function cellsForHeader(cells, header) {
@@ -78,7 +93,11 @@ export async function buildEquipmentTemplate(orgId, { locationId } = {}) {
   workbook.created = new Date()
 
   const templateSheet = workbook.addWorksheet(TEMPLATE_SHEET)
-  const headers = [...parents.map((p) => p.name), ...extraPlacementColumns(parents)]
+  const headers = [
+    ...parents.map((p) => p.name),
+    ...extraPlacementColumns(parents),
+    ...extraNativeColumns(parents),
+  ]
   templateSheet.addRow(headers)
   templateSheet.getRow(1).font = { bold: true }
   templateSheet.views = [{ state: 'frozen', ySplit: 1 }]
@@ -103,8 +122,11 @@ export async function buildEquipmentTemplate(orgId, { locationId } = {}) {
   }
   pushValid('Location', locations.map((l) => l.name))
   pushValid('Department', departments.map((d) => d.name))
-  const areaHeader = parents.find(isAreaParent)?.name || 'Area'
-  pushValid(areaHeader, [...new Set(areas.map((area) => area.name).filter(Boolean))])
+  if (extraPlacementColumns(parents).includes('Area')) {
+    pushValid('Area', [...new Set(areas.map((area) => area.name).filter(Boolean))])
+  }
+  pushValid('Reading required', YES_NO_VALUES)
+  pushValid('Active', YES_NO_VALUES)
 
   validSheet.addRow(validColumns.map((c) => c.header))
   validSheet.getRow(1).font = { bold: true }
@@ -177,6 +199,43 @@ function resolvePlacement(cells, options) {
   }
 }
 
+async function resolveArea(orgId, cells, placement, options) {
+  const areaText = firstFilledCell(cells, 'Area').text
+  if (!areaText) return null
+  if (!placement.location_id || !placement.department_id) {
+    throw new Error('Area needs Location and Department')
+  }
+
+  const token = normalizeMasterName(areaText)
+  const match = (options.areas || []).find((item) => {
+    if (item.location_id !== placement.location_id || item.department_id !== placement.department_id) {
+      return false
+    }
+    return normalizeMasterName(item.name) === token || normalizeMasterName(item.code) === token
+  })
+  if (match) return match.id
+
+  const { data, error } = await supabaseAdmin
+    .from('areas')
+    .insert({
+      org_id: orgId,
+      location_id: placement.location_id,
+      department_id: placement.department_id,
+      name: areaText.trim(),
+      is_active: true,
+    })
+    .select('id, name, code, location_id, department_id')
+    .single()
+
+  if (error) {
+    if (error.code === '23505') throw new Error(`Area "${areaText}" already exists`)
+    throw error
+  }
+
+  options.areas = [...(options.areas || []), data]
+  return data.id
+}
+
 /** Parse an uploaded workbook and create equipment rows. */
 export async function bulkImportEquipment(orgId, buffer, { locationId } = {}) {
   const fields = await loadOrgFields(orgId)
@@ -209,6 +268,13 @@ export async function bulkImportEquipment(orgId, buffer, { locationId } = {}) {
 
     try {
       const placement = resolvePlacement(cells, options)
+      const areaId = await resolveArea(orgId, cells, placement, options)
+      const readingRequired = parseYesNo(
+        firstFilledCell(cells, 'Reading required').text,
+        'Reading required',
+        false,
+      )
+      const isActive = parseYesNo(firstFilledCell(cells, 'Active').text, 'Active', true)
       const values = []
       const seenFields = new Set()
       for (const field of parents) {
@@ -234,15 +300,20 @@ export async function bulkImportEquipment(orgId, buffer, { locationId } = {}) {
         }
       }
 
-      await createEquipment(orgId, { ...placement, values }, { fields, skipDetail: true })
+      await createEquipment(orgId, {
+        ...placement,
+        area_id: areaId,
+        reading_required: readingRequired,
+        is_active: isActive,
+        values,
+      }, { fields, skipDetail: true })
       results.created += 1
       if (results.preview.length < MAX_PREVIEW) {
-        const areaParent = parents.find(isAreaParent)
-        const areaText = areaParent ? firstFilledCell(cells, areaParent.name).text : firstFilledCell(cells, 'Area').text
+        const areaText = firstFilledCell(cells, 'Area').text
         const label = parents.map((field) => firstFilledCell(cells, field.name).text).find(Boolean) || areaText
         results.preview.push({
           row: rowNumber,
-          name: label || 'Equipment',
+          name: label || 'Asset',
           location: firstFilledCell(cells, 'Location').text,
           department: firstFilledCell(cells, 'Department').text,
           area: areaText,

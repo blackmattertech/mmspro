@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useAuth } from '../../hooks/useAuth'
 import { useOrg } from '../../hooks/useOrg'
+import { usePermissions } from '../../hooks/usePermissions'
 import { useTextFieldLimits } from '../../hooks/useTextFieldLimits'
 import { isCompanyAdmin, canManageOrg } from '../../lib/accountRoles'
 import { orgPath } from '../../config/navigation'
@@ -26,7 +27,8 @@ function valuesFromFields(fields) {
 export default function OthersCharacterLimits() {
   const { org } = useOrg()
   const { role } = useAuth()
-  const canManage = isCompanyAdmin(role) || canManageOrg(role)
+  const { canUpdate } = usePermissions()
+  const canManage = isCompanyAdmin(role) || canManageOrg(role) || canUpdate('others')
   const { fields, loading, error } = useTextFieldLimits()
 
   const [values, setValues] = useState({})

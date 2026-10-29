@@ -353,25 +353,25 @@ export default function ReportsFilters({
                   disabled={!canSelectLocation}
                 />
                 <SelectField
-                  label="Equipment"
+                  label="Asset"
                   value={filters.equipment_id}
                   onChange={(value) => setFilter('equipment_id', value)}
                   options={equipmentOptions}
                 />
                 <SelectField
-                  label="Equipment Type"
+                  label="Asset Type"
                   value={filters.equipment_type}
                   onChange={(value) => setFilter('equipment_type', value)}
                   options={typeOptions}
                 />
                 <SelectField
-                  label="Equipment Capacity"
+                  label="Asset Capacity"
                   value={filters.equipment_capacity}
                   onChange={(value) => setFilter('equipment_capacity', value)}
                   options={capacityOptions}
                 />
                 <SelectField
-                  label="Equipment Tag"
+                  label="Asset Tag"
                   value={filters.equipment_tag}
                   onChange={(value) => setFilter('equipment_tag', value)}
                   options={tagOptions}

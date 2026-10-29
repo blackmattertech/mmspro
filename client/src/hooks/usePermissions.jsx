@@ -4,6 +4,7 @@ import {
   ACCESS_MODULES,
   emptyPermissions,
   MODULE_LEGACY_EXPAND,
+  MODULE_PARENT_GRANTS,
   WORK_ORDER_MODULE_KEYS,
   WORK_REQUEST_MODULE_KEYS,
   REPORT_MODULE_KEYS,
@@ -103,6 +104,10 @@ export function PermissionsProvider({ children }) {
         if (moduleKey === parent && children.some((child) => granted(child))) return true
       }
 
+      for (const [parent, children] of Object.entries(MODULE_PARENT_GRANTS)) {
+        if (children.includes(moduleKey) && granted(parent)) return true
+      }
+
       if (moduleKey === 'work_request' && WORK_REQUEST_MODULE_KEYS.some((key) => granted(key))) {
         return true
       }
@@ -132,19 +137,23 @@ export function PermissionsProvider({ children }) {
         ['work_orders_scheduled', 'work-orders/scheduled'],
         ['logbook', 'logbook'],
         ['calendar', 'calendar'],
-        ['warranty_manager', 'warranty-manager'],
+        ['warranty_manager', 'warranty-manager/in-warranty'],
         ['tasks_followups', 'tasks-and-followups'],
         ['reports', 'reports'],
         ['company', 'masters/company'],
         ['locations', 'masters/company'],
+        ['work_centers', 'masters/company'],
         ['employees', 'masters/company'],
         ['areas', 'masters/equipment'],
-        ['assets', 'masters/assets'],
+        ['assets', 'masters/forms'],
         ['equipment', 'masters/equipment'],
         ['vendors', 'masters/vendors'],
         ['others', 'masters/others'],
         ['roles_access', 'configuration/roles'],
+        ['approvals', 'configuration/approvals'],
         ['settings', 'configuration/settings'],
+        ['import', 'configuration/import'],
+        ['export', 'configuration/export'],
       ]
       for (const [moduleKey, segment] of order) {
         if (can(moduleKey, 'read')) return `/${orgSlug}/${segment}`

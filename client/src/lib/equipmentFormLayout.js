@@ -9,7 +9,9 @@ function sectionTitle(field) {
  * Built-in name, code, location, department, area, and image inputs are not part of this form.
  */
 export function buildEquipmentFormSections(fieldDefs, layout) {
-  const parents = (fieldDefs || []).filter((field) => field.is_active !== false)
+  const parents = (fieldDefs || []).filter((field) => (
+    field.is_active !== false && (field.kind === 'parent' || field.kind == null)
+  ))
   const byId = new Map(parents.map((field) => [field.id, field]))
   const ordered = []
   const seen = new Set()

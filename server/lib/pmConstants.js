@@ -1,9 +1,9 @@
 export const DEFAULT_ACTIVITY_TYPES = [
-  { name: 'Inspection', description: 'Visual inspection and equipment condition assessment', sort_order: 10 },
+  { name: 'Inspection', description: 'Visual inspection and asset condition assessment', sort_order: 10 },
   { name: 'Calibration', description: 'Instrument calibration', sort_order: 20 },
   { name: 'Functional Test', description: 'Operational testing', sort_order: 30 },
-  { name: 'Cleaning', description: 'Cleaning of equipment and panels', sort_order: 40 },
-  { name: 'Lubrication', description: 'Lubrication of rotating equipment', sort_order: 50 },
+  { name: 'Cleaning', description: 'Cleaning of assets and panels', sort_order: 40 },
+  { name: 'Lubrication', description: 'Lubrication of rotating assets', sort_order: 50 },
   { name: 'Battery Maintenance', description: 'Battery inspection and replacement', sort_order: 60 },
   { name: 'Condition Monitoring', description: 'Vibration, temperature and pressure monitoring', sort_order: 70 },
   { name: 'Preventive Maintenance', description: 'OEM recommended maintenance', sort_order: 80 },

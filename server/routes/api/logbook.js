@@ -54,7 +54,7 @@ router.get('/', canRead, async (req, res) => {
 router.get('/latest', canReadLatest, async (req, res) => {
   try {
     const equipmentId = String(req.query.equipment_id || '').trim()
-    if (!equipmentId) return res.status(400).json({ error: 'Equipment is required' })
+    if (!equipmentId) return res.status(400).json({ error: 'Asset is required' })
     const latest = await getLatestMeterReading(req.userProfile.org_id, equipmentId)
     assertLocationAccess(req.orgPermissions, latest.location_id)
     res.json(latest)

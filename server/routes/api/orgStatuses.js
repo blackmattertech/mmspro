@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import { verifyAuth } from '../../middleware/auth.js'
 import { requireOrgAccess } from '../../middleware/orgAccess.js'
-import { requireOrgRole } from '../../middleware/orgRole.js'
+import { requireModulePermission } from '../../middleware/modulePermission.js'
 import { ORG_STATUS_ENTITY_TYPES } from '../../lib/orgStatusDefaults.js'
 import {
   createOrgStatus,
@@ -13,7 +13,9 @@ import {
 } from '../../lib/orgStatusService.js'
 
 const router = Router()
-const requireAdmin = requireOrgRole('admin', 'super_admin', 'owner')
+const canCreate = requireModulePermission('others', 'create')
+const canUpdate = requireModulePermission('others', 'update')
+const canDelete = requireModulePermission('others', 'delete')
 
 router.use(verifyAuth, requireOrgAccess)
 
@@ -31,7 +33,7 @@ router.get('/:entityType', async (req, res) => {
   }
 })
 
-router.post('/:entityType', requireAdmin, async (req, res) => {
+router.post('/:entityType', canCreate, async (req, res) => {
   try {
     const row = await createOrgStatus(req.userProfile.org_id, req.params.entityType, req.body || {})
     res.status(201).json(row)
@@ -40,7 +42,7 @@ router.post('/:entityType', requireAdmin, async (req, res) => {
   }
 })
 
-router.patch('/:entityType/reorder', requireAdmin, async (req, res) => {
+router.patch('/:entityType/reorder', canUpdate, async (req, res) => {
   try {
     const rows = await reorderOrgStatuses(
       req.userProfile.org_id,
@@ -53,7 +55,7 @@ router.patch('/:entityType/reorder', requireAdmin, async (req, res) => {
   }
 })
 
-router.post('/:entityType/reset', requireAdmin, async (req, res) => {
+router.post('/:entityType/reset', canUpdate, async (req, res) => {
   try {
     const rows = await resetOrgStatuses(req.userProfile.org_id, req.params.entityType)
     res.json(rows)
@@ -62,7 +64,7 @@ router.post('/:entityType/reset', requireAdmin, async (req, res) => {
   }
 })
 
-router.patch('/:entityType/:id', requireAdmin, async (req, res) => {
+router.patch('/:entityType/:id', canUpdate, async (req, res) => {
   try {
     const row = await updateOrgStatus(
       req.userProfile.org_id,
@@ -76,7 +78,7 @@ router.patch('/:entityType/:id', requireAdmin, async (req, res) => {
   }
 })
 
-router.delete('/:entityType/:id', requireAdmin, async (req, res) => {
+router.delete('/:entityType/:id', canDelete, async (req, res) => {
   try {
     const result = await deleteOrgStatus(req.userProfile.org_id, req.params.entityType, req.params.id)
     res.json(result)

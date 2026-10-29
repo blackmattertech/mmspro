@@ -33,6 +33,7 @@ export async function saveAdminFormLayout(orgId, formId, layout) {
     body: JSON.stringify({ layout }),
   })
   invalidateFormLayoutCache(formId)
+  for (const id of data?.syncedFormIds || []) invalidateFormLayoutCache(id)
   return data
 }
 

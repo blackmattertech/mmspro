@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Outlet } from 'react-router-dom'
 import { useLocations } from '../../hooks/useLocations'
+import { useEmployees } from '../../hooks/useEmployees'
+import { uniqueNameOptions } from '../../lib/tableFilters'
 import { usePermissions } from '../../hooks/usePermissions'
 import { useProfile } from '../../hooks/useProfile'
 import { WorkOrderToolbarProvider, useWorkOrderToolbar } from '../../hooks/useWorkOrderToolbar'
@@ -14,8 +16,9 @@ import TableFilterToolbar from '../shared/TableFilterToolbar'
 import TableColumnPicker from '../shared/TableColumnPicker'
 import { AdvancedFilterMenu, ExportCsvButton } from '../shared/ListTableChrome'
 import { ColumnPickerMount, ColumnPickerScope } from '../shared/ColumnPickerSlot'
-import { exportWorkOrderList } from '../../lib/api-work-orders'
-import { exportPmPlans } from '../../lib/api-pm'
+import { exportWorkOrderList, getScheduledWorkOrders } from '../../lib/api-work-orders'
+import { getPmPlans, getPmActivityTypes, exportPmPlans } from '../../lib/api-pm'
+import { getEquipmentList } from '../../lib/api-equipment'
 import { downloadBlobFile } from '../../lib/api'
 import '../shared/ListTableChrome.css'
 import PageBreadcrumbs from '../shared/PageBreadcrumbs'
@@ -32,6 +35,7 @@ import '../pm/Pm.css'
 function PmScheduledLayoutInner() {
   const { employee } = useProfile()
   const { locations } = useLocations()
+  const { employees } = useEmployees({ limit: 200 })
   const { toolbarLeft, toolbarRight } = useWorkOrderToolbar()
   const { isOrgAdmin, locationId: scopedLocationId } = usePermissions()
   const [view, setView] = useState('plans')
@@ -42,6 +46,27 @@ function PmScheduledLayoutInner() {
   const [headerSort, setHeaderSort] = useState(null)
   const [statusFilters, setStatusFilters] = useState([])
   const [exporting, setExporting] = useState(false)
+  const [planRows, setPlanRows] = useState([])
+  const [activityTypes, setActivityTypes] = useState([])
+  const [assets, setAssets] = useState([])
+  const [scheduledRows, setScheduledRows] = useState([])
+
+  useEffect(() => {
+    let cancelled = false
+    Promise.all([
+      getPmPlans({ limit: 200, offset: 0 }).catch(() => []),
+      getPmActivityTypes().catch(() => []),
+      getEquipmentList({ limit: 200, offset: 0 }).catch(() => []),
+      getScheduledWorkOrders({ limit: 200, offset: 0 }).catch(() => []),
+    ]).then(([plans, types, equipment, orders]) => {
+      if (cancelled) return
+      setPlanRows(Array.isArray(plans) ? plans : [])
+      setActivityTypes(Array.isArray(types) ? types : [])
+      setAssets(Array.isArray(equipment) ? equipment : [])
+      setScheduledRows(Array.isArray(orders) ? orders : [])
+    })
+    return () => { cancelled = true }
+  }, [])
 
   const isPlansView = view === 'plans'
   const catalogFields = useCatalogFields()
@@ -56,6 +81,7 @@ function PmScheduledLayoutInner() {
     resetColumns: resetPmColumns,
     reorderColumns: reorderPmColumns,
     moveColumn: movePmColumn,
+    saveColumns: savePmColumns,
     columnDefs: pmColumnDefs,
   } = useTableColumnPrefs('pm-plans', pmColumns)
   const sortOptions = isPlansView ? PM_PLAN_SORT_OPTIONS : WO_SORT_OPTIONS
@@ -79,9 +105,27 @@ function PmScheduledLayoutInner() {
   const locationFilter = canSeeAllLocations ? 'all' : (userLocationId || 'all')
   const filterFields = isPlansView
     ? [
-      { id: 'plan_number', label: 'Plan #', placeholder: 'Enter plan number...' },
-      { id: 'name', label: 'Name', placeholder: 'Enter keywords...' },
-      { id: 'activity', label: 'Activity', placeholder: 'Enter keywords...' },
+      {
+        id: 'plan_number',
+        label: 'Plan #',
+        type: 'select',
+        emptyLabel: 'All Plan #',
+        options: uniqueNameOptions(planRows, (row) => row.plan_number),
+      },
+      {
+        id: 'name',
+        label: 'Name',
+        type: 'select',
+        emptyLabel: 'All names',
+        options: uniqueNameOptions(planRows),
+      },
+      {
+        id: 'activity',
+        label: 'Activity',
+        type: 'select',
+        emptyLabel: 'All activities',
+        options: uniqueNameOptions(activityTypes),
+      },
       {
         id: 'status',
         label: 'Status',
@@ -96,12 +140,36 @@ function PmScheduledLayoutInner() {
         emptyLabel: 'All Locations',
         options: activeLocations.map((loc) => ({ value: loc.name, label: loc.name })),
       },
-      { id: 'equipment', label: 'Asset', placeholder: 'Enter asset...' },
-      { id: 'technician', label: 'Technician', placeholder: 'Enter technician...' },
+      {
+        id: 'equipment',
+        label: 'Asset',
+        type: 'select',
+        emptyLabel: 'All assets',
+        options: uniqueNameOptions(assets, (row) => row.name || row.code),
+      },
+      {
+        id: 'technician',
+        label: 'Technician',
+        type: 'select',
+        emptyLabel: 'All technicians',
+        options: uniqueNameOptions(employees),
+      },
     ]
     : [
-      { id: 'wo_number', label: 'WO #', placeholder: 'Enter work order number...' },
-      { id: 'summary', label: 'Short description', placeholder: 'Enter keywords...' },
+      {
+        id: 'wo_number',
+        label: 'WO #',
+        type: 'select',
+        emptyLabel: 'All WO #',
+        options: uniqueNameOptions(scheduledRows, (row) => row.wo_number),
+      },
+      {
+        id: 'summary',
+        label: 'Short description',
+        type: 'select',
+        emptyLabel: 'All descriptions',
+        options: uniqueNameOptions(scheduledRows, (row) => row.short_description || row.summary),
+      },
       {
         id: 'status',
         label: 'Status',
@@ -133,7 +201,13 @@ function PmScheduledLayoutInner() {
         emptyLabel: 'All Locations',
         options: activeLocations.map((loc) => ({ value: loc.id, label: loc.name })),
       },
-      { id: 'work_request', label: 'Work request', placeholder: 'Enter work request...' },
+      {
+        id: 'work_request',
+        label: 'Work request',
+        type: 'select',
+        emptyLabel: 'All work requests',
+        options: uniqueNameOptions(scheduledRows, (row) => row.work_request_number),
+      },
       { id: 'created', label: 'Created', type: 'date-range', fromKey: 'created_from', toKey: 'created_to' },
     ]
   const outletContext = useMemo(() => ({
@@ -232,6 +306,7 @@ function PmScheduledLayoutInner() {
                 onReset={resetPmColumns}
                 onReorder={reorderPmColumns}
                 onMove={movePmColumn}
+                onSave={savePmColumns}
               />
             ) : <ColumnPickerMount />}
           />

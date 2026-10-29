@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useOrg } from '../../hooks/useOrg'
+import { usePermissions } from '../../hooks/usePermissions'
 import { useVendors } from '../../hooks/useVendors'
 import { useDebouncedValue } from '../../hooks/useDebouncedValue'
 import VendorModal from '../../components/vendors/VendorModal'
@@ -8,13 +9,15 @@ import EditIcon from '../../components/ui/EditIcon'
 import TrashIcon from '../../components/ui/TrashIcon'
 import NavIcon from '../../components/layout/NavIcon'
 import TablePagination from '../../components/shared/TablePagination'
+import TableEmptyRow from '../../components/shared/TableEmptyRow'
 import TableColumnPicker from '../../components/shared/TableColumnPicker'
 import TableFilterToolbar from '../../components/shared/TableFilterToolbar'
 import { useTablePagination } from '../../hooks/useTablePagination'
 import { useTableColumnPrefs } from '../../hooks/useTableColumnPrefs'
-import { TABLE_SORT_OPTIONS, applyTableFilters, compactFilters } from '../../lib/tableFilters'
+import { TABLE_SORT_OPTIONS, applyTableFilters, compactFilters, uniqueNameOptions, selectFilterField } from '../../lib/tableFilters'
 import { stopTableRowClick, tableRowClickProps } from '../../lib/clickableTableRow'
 import { orgPath } from '../../config/navigation'
+import MastersBack from '../../components/company/MastersBack'
 import { formatCityDisplay } from '../../lib/indiaLocations'
 import '../../components/shared/TableColumnPicker.css'
 import '../../components/shared/TableFilterToolbar.css'
@@ -43,15 +46,6 @@ const VENDOR_COLUMNS = [
   { id: 'actions', label: 'Actions', locked: true },
 ]
 
-const VENDOR_FILTER_FIELDS = [
-  { value: 'vendor_code', label: 'Vendor ID' },
-  { value: 'name', label: 'Name' },
-  { value: 'contact_person', label: 'Contact Person' },
-  { value: 'mobile', label: 'Mobile' },
-  { value: 'email', label: 'Email' },
-  { value: 'city', label: 'City' },
-  { value: 'gstin', label: 'GSTIN' },
-]
 
 function renderVendorCell(row, columnId) {
   switch (columnId) {
@@ -98,6 +92,11 @@ export default function Vendors() {
   const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
   const { org } = useOrg()
+  const { canCreate, canUpdate, canDelete } = usePermissions()
+  const canAdd = canCreate('vendors')
+  const canEdit = canUpdate('vendors')
+  const canRemove = canDelete('vendors')
+  const canManage = canAdd || canEdit || canRemove
   const [search, setSearch] = useState('')
   const [columnFilters, setColumnFilters] = useState({})
   const [sortBy, setSortBy] = useState('name_asc')
@@ -117,6 +116,15 @@ export default function Vendors() {
   }), [debouncedSearch, pagination.pageSize, pagination.offset, listFilters])
   const { items, total, loading, saving, error, create, update, remove } = useVendors(filters)
   useEffect(() => { setListTotal(total) }, [total])
+  const vendorFilterFields = useMemo(() => ([
+    selectFilterField('vendor_code', 'Vendor ID', uniqueNameOptions(items, (row) => row.vendor_code), 'All vendor IDs'),
+    selectFilterField('name', 'Name', uniqueNameOptions(items), 'All names'),
+    selectFilterField('contact_person', 'Contact Person', uniqueNameOptions(items, (row) => row.contact_person), 'All contacts'),
+    selectFilterField('mobile', 'Mobile', uniqueNameOptions(items, (row) => row.mobile), 'All mobile numbers'),
+    selectFilterField('email', 'Email', uniqueNameOptions(items, (row) => row.email), 'All emails'),
+    selectFilterField('city', 'City', uniqueNameOptions(items, (row) => row.city), 'All cities'),
+    selectFilterField('gstin', 'GSTIN', uniqueNameOptions(items, (row) => row.gstin), 'All GSTIN'),
+  ]), [items])
   useEffect(() => {
     if (params.get('create') !== '1') return
     setEditing(null)
@@ -142,6 +150,7 @@ export default function Vendors() {
     columnOrder: vendorColumnOrder,
     reorderColumns: reorderVendorColumns,
     moveColumn: moveVendorColumn,
+    saveColumns: saveVendorColumns,
   } = useTableColumnPrefs('masters-vendors', VENDOR_COLUMNS)
 
   const openCreate = () => {
@@ -179,6 +188,7 @@ export default function Vendors() {
   return (
     <div className="company-page">
       <header className="company-page__header">
+        <MastersBack />
         <h1 className="company-page__title">Vendors</h1>
         <p className="company-page__subtitle">
           Maintain vendor contact, address, taxation, and bank details.
@@ -196,26 +206,30 @@ export default function Vendors() {
                 ariaLabel: 'Search vendors',
               }}
               filter={{
-                fields: VENDOR_FILTER_FIELDS,
+                fields: vendorFilterFields,
                 values: columnFilters,
                 onChange: setColumnFilters,
               }}
               sort={{ value: sortBy, onChange: setSortBy, options: TABLE_SORT_OPTIONS }}
               actions={(
                 <>
-                  <button
-                    type="button"
-                    className="company-btn company-btn--secondary equipment-bulk-btn"
-                    onClick={goBulkUpload}
-                  >
-                    <span className="equipment-bulk-btn__icon" aria-hidden="true">
-                      <NavIcon name="upload" />
-                    </span>
-                    Import
-                  </button>
-                  <button type="button" className="company-btn company-btn--primary" onClick={openCreate}>
-                    + Add Vendor
-                  </button>
+                  {canAdd && (
+                    <button
+                      type="button"
+                      className="company-btn company-btn--secondary equipment-bulk-btn"
+                      onClick={goBulkUpload}
+                    >
+                      <span className="equipment-bulk-btn__icon" aria-hidden="true">
+                        <NavIcon name="upload" />
+                      </span>
+                      Import
+                    </button>
+                  )}
+                  {canAdd && (
+                    <button type="button" className="company-btn company-btn--primary" onClick={openCreate}>
+                      + Add Vendor
+                    </button>
+                  )}
                 </>
               )}
               columnPicker={(
@@ -227,6 +241,7 @@ export default function Vendors() {
                   onReset={resetVendorColumns}
                   onReorder={reorderVendorColumns}
                   onMove={moveVendorColumn}
+                  onSave={saveVendorColumns}
                 />
               )}
             />
@@ -236,10 +251,6 @@ export default function Vendors() {
 
           {loading ? (
             <div className="company-loading">Loading vendors…</div>
-          ) : items.length === 0 ? (
-            <div className="company-empty">No vendors yet. Click &quot;Add Vendor&quot; to create one.</div>
-          ) : filteredItems.length === 0 ? (
-            <div className="company-empty">No vendors match your filters.</div>
           ) : (
             <div className="company-table-wrap">
               <div className="company-table-scroll">
@@ -263,11 +274,17 @@ export default function Vendors() {
                       {isVendorColumnVisible('account_name') && <th>Account Name</th>}
                       {isVendorColumnVisible('ifsc_code') && <th>IFSC Code</th>}
                       {isVendorColumnVisible('branch') && <th>Branch</th>}
-                      {isVendorColumnVisible('actions') && <th>Actions</th>}
+                      {canManage && isVendorColumnVisible('actions') && <th>Actions</th>}
                     </tr>
                   </thead>
                   <tbody>
-                    {pagedItems.map((row) => (
+                    {pagedItems.length === 0 ? (
+                      <TableEmptyRow colSpan={vendorVisibleColumnIds.filter((id) => id !== 'actions' || canManage).length}>
+                        {items.length === 0
+                          ? (canAdd ? 'No vendors yet. Click "Add Vendor" to create one.' : 'No vendors yet.')
+                          : 'No vendors match your filters.'}
+                      </TableEmptyRow>
+                    ) : pagedItems.map((row) => (
                       <tr
                         key={row.id}
                         {...tableRowClickProps({
@@ -326,28 +343,32 @@ export default function Vendors() {
                         {isVendorColumnVisible('branch') && (
                           <td>{renderVendorCell(row, 'branch')}</td>
                         )}
-                        {isVendorColumnVisible('actions') && (
+                        {canManage && isVendorColumnVisible('actions') && (
                           <td onClick={stopTableRowClick}>
                             <div className="company-table__actions">
-                              <button
-                                type="button"
-                                className="company-btn company-btn--secondary company-btn--compact company-btn--icon"
-                                onClick={() => openEdit(row)}
-                                aria-label={`Edit ${row.name}`}
-                                title="Edit"
-                              >
-                                <EditIcon />
-                              </button>
-                              <button
-                                type="button"
-                                className="company-btn company-btn--danger company-btn--compact company-btn--icon"
-                                onClick={() => handleDelete(row)}
-                                disabled={saving}
-                                aria-label={`Delete ${row.name}`}
-                                title="Delete"
-                              >
-                                <TrashIcon />
-                              </button>
+                              {canEdit && (
+                                <button
+                                  type="button"
+                                  className="company-btn company-btn--secondary company-btn--compact company-btn--icon"
+                                  onClick={() => openEdit(row)}
+                                  aria-label={`Edit ${row.name}`}
+                                  title="Edit"
+                                >
+                                  <EditIcon />
+                                </button>
+                              )}
+                              {canRemove && (
+                                <button
+                                  type="button"
+                                  className="company-btn company-btn--danger company-btn--compact company-btn--icon"
+                                  onClick={() => handleDelete(row)}
+                                  disabled={saving}
+                                  aria-label={`Delete ${row.name}`}
+                                  title="Delete"
+                                >
+                                  <TrashIcon />
+                                </button>
+                              )}
                             </div>
                           </td>
                         )}

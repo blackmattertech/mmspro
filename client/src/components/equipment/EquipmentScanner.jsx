@@ -51,7 +51,7 @@ function cameraMessage(error) {
   const name = error?.name || ''
   if (name === 'CameraUnavailableError') return error.message
   if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
-    return 'Camera access was denied. Allow the camera to scan an equipment QR code.'
+    return 'Camera access was denied. Allow the camera to scan an asset QR code.'
   }
   if (name === 'NotFoundError' || name === 'OverconstrainedError') {
     return 'No camera was found on this device.'
@@ -148,9 +148,9 @@ export default function EquipmentScanner({ onClose, onResult, notice }) {
   }, [])
 
   return (
-    <div className="equipment-scanner" role="dialog" aria-modal="true" aria-label="Scan equipment QR code">
+    <div className="equipment-scanner" role="dialog" aria-modal="true" aria-label="Scan asset QR code">
       <div className="equipment-scanner__bar">
-        <h2>Scan equipment</h2>
+        <h2>Scan asset</h2>
         <button type="button" className="equipment-scanner__close" onClick={onClose} aria-label="Close scanner">
           <NavIcon name="close" />
         </button>
@@ -168,7 +168,7 @@ export default function EquipmentScanner({ onClose, onResult, notice }) {
         <div className="equipment-scanner__frame" aria-hidden="true" />
       </div>
       <p className="equipment-scanner__hint">
-        {busy ? 'Looking up equipment…' : 'Point the camera at an equipment QR code.'}
+        {busy ? 'Looking up asset…' : 'Point the camera at an asset QR code.'}
       </p>
       <div className="equipment-scanner__actions">
         <button

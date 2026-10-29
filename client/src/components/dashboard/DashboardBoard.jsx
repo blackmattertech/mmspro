@@ -467,7 +467,7 @@ export default function DashboardBoard({
       key: 'pm', tone: 'teal', icon: 'calendar', label: 'PM Schedules', value: moduleKpi(modules, 'pm', 'total'), note: 'vs last month', trendItem: headline('pm.total'),
     } : null,
     show('assets') ? {
-      key: 'assets', tone: 'purple', icon: 'box', label: 'Assets & Equipment', value: moduleKpi(modules, 'assets', 'equipment'), note: 'Active records',
+      key: 'assets', tone: 'purple', icon: 'box', label: 'Assets', value: moduleKpi(modules, 'assets', 'equipment'), note: 'Active records',
     } : null,
     show('warranties') ? {
       key: 'warranty', tone: 'orange', icon: 'shield', label: 'Warranty Expiring', value: moduleKpi(modules, 'warranties', 'expiring_soon'), note: 'Next 30 days',
@@ -504,7 +504,6 @@ export default function DashboardBoard({
     show('company') ? { label: 'Locations', value: moduleKpi(modules, 'company', 'locations'), to: pathFor('masters/company') } : null,
     show('company') ? { label: 'Departments', value: moduleKpi(modules, 'company', 'departments'), to: pathFor('masters/company') } : null,
     show('company') ? { label: 'Employees', value: moduleKpi(modules, 'company', 'employees'), to: pathFor('masters/company') } : null,
-    show('company') ? { label: 'Work centers', value: moduleKpi(modules, 'company', 'work_centers'), to: pathFor('masters/company') } : null,
     show('vendors') ? { label: 'Vendors', value: moduleKpi(modules, 'vendors', 'total'), to: pathFor('masters/vendors') } : null,
     show('calendar') ? { label: 'Calendar', value: moduleKpi(modules, 'calendar', 'upcoming'), to: pathFor('calendar') } : null,
     show('others') ? { label: 'Checklists', value: moduleKpi(modules, 'others', 'checklists'), to: pathFor('masters/others/checklists') } : null,
@@ -775,14 +774,14 @@ export default function DashboardBoard({
 
       {show('warranties') ? (
         <div className="board-grid board-grid--3">
-          <Panel title="Warranty Manager" tone="orange" icon="shield" to={pathFor('warranty-manager')}>
+          <Panel title="Warranty Manager" tone="orange" icon="shield" to={pathFor('warranty-manager/in-warranty')}>
             <MiniStats items={[
-              { label: 'Total', value: moduleKpi(modules, 'warranties', 'total'), tone: 'blue', icon: 'shield' },
-              { label: 'Active', value: moduleKpi(modules, 'warranties', 'active'), tone: 'green', icon: 'shield' },
-              { label: 'Expiring Soon', value: moduleKpi(modules, 'warranties', 'expiring_soon'), tone: 'orange', icon: 'alert' },
+              { label: 'In Warranty', value: moduleKpi(modules, 'warranties', 'in_warranty') || moduleKpi(modules, 'warranties', 'active'), tone: 'green', icon: 'shield' },
+              { label: 'Out of warranty', value: moduleKpi(modules, 'warranties', 'out_of_warranty'), tone: 'blue', icon: 'shield' },
+              { label: 'Soon to Expired', value: moduleKpi(modules, 'warranties', 'expiring_soon'), tone: 'orange', icon: 'alert' },
               { label: 'Expired', value: moduleKpi(modules, 'warranties', 'expired'), tone: 'red', icon: 'alert' },
             ]} />
-            <p className="mini-stats__hint">Expiring soon is the next 30 days.</p>
+            <p className="mini-stats__hint">Soon to Expired is the next 30 days.</p>
           </Panel>
           <Panel title="Warranty Expiry Trend" tone="orange">
             <GroupedBars
@@ -794,7 +793,7 @@ export default function DashboardBoard({
               empty="No warranty end dates in the last 6 months."
             />
           </Panel>
-          <Panel title="Items Expiring Soon" tone="orange" to={pathFor('warranty-manager')}>
+          <Panel title="Items Expiring Soon" tone="orange" to={pathFor('warranty-manager/soon-to-expired')}>
             <ExpiringItemList rows={board.expiring_items} pathFor={pathFor} />
           </Panel>
         </div>
@@ -802,7 +801,7 @@ export default function DashboardBoard({
 
       {show('assets') ? (
         <div className="board-grid board-grid--3">
-          <Panel title="Assets & Equipment" tone="purple" icon="box" to={pathFor('masters/equipment')}>
+          <Panel title="Assets" tone="purple" icon="box" to={pathFor('masters/equipment')}>
             <MiniStats items={[
               { label: 'Total', value: assetStats?.total ?? moduleKpi(modules, 'assets', 'equipment'), tone: 'blue', icon: 'box' },
               { label: 'Operational', value: assetStats?.operational ?? 0, tone: 'green', icon: 'box' },
@@ -811,10 +810,10 @@ export default function DashboardBoard({
             ]} />
           </Panel>
           <Panel title="Assets by Department" tone="purple">
-            <RankBars rows={assetStats?.departments} empty="No equipment departments yet." />
+            <RankBars rows={assetStats?.departments} empty="No asset departments yet." />
           </Panel>
           <Panel title="Assets by Location" tone="purple">
-            <RankBars rows={assetStats?.locations} empty="No equipment locations yet." />
+            <RankBars rows={assetStats?.locations} empty="No asset locations yet." />
           </Panel>
         </div>
       ) : null}
@@ -845,37 +844,39 @@ export default function DashboardBoard({
             ) : <p className="dash-empty">No recent activity.</p>}
           </Panel>
           <Panel title="Upcoming Tasks" tone="blue" to={pathFor('tasks-and-followups')}>
-            {upcomingTasks.length ? (
-              <div className="dash-table-wrap">
-                <table className="board-table">
-                  <thead>
+            <div className="dash-table-wrap">
+              <table className="board-table">
+                <thead>
+                  <tr>
+                    <th>Task</th>
+                    <th>Due Date</th>
+                    <th>Priority</th>
+                    <th>Assignee</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {upcomingTasks.length === 0 ? (
                     <tr>
-                      <th>Task</th>
-                      <th>Due Date</th>
-                      <th>Priority</th>
-                      <th>Assignee</th>
-                      <th>Status</th>
+                      <td colSpan={5} className="company-empty">No open tasks with a due date.</td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {upcomingTasks.map((task) => (
-                      <tr key={task.id}>
-                        <td>
-                          <strong>{task.title}</strong>
-                          <em>{task.location_name || ''}</em>
-                        </td>
-                        <td className={isToday(task.due_at) ? 'is-today' : ''}>
-                          {isToday(task.due_at) ? 'Today' : formatDate(task.due_at)}
-                        </td>
-                        <td>{task.priority ? <span className={`priority-badge priority-badge--${String(task.priority).toLowerCase()}`}>{task.priority}</span> : '—'}</td>
-                        <td>{task.assignee || '—'}</td>
-                        <td><span className="status-badge">{task.status}</span></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : <p className="dash-empty">No open tasks with a due date.</p>}
+                  ) : upcomingTasks.map((task) => (
+                    <tr key={task.id}>
+                      <td>
+                        <strong>{task.title}</strong>
+                        <em>{task.location_name || ''}</em>
+                      </td>
+                      <td className={isToday(task.due_at) ? 'is-today' : ''}>
+                        {isToday(task.due_at) ? 'Today' : formatDate(task.due_at)}
+                      </td>
+                      <td>{task.priority ? <span className={`priority-badge priority-badge--${String(task.priority).toLowerCase()}`}>{task.priority}</span> : '—'}</td>
+                      <td>{task.assignee || '—'}</td>
+                      <td><span className="status-badge">{task.status}</span></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </Panel>
         </div>
       ) : null}
@@ -896,34 +897,36 @@ export default function DashboardBoard({
           ) : null}
           {show('work_orders') ? (
             <Panel title="Overdue Work Orders" tone="red" icon="alert" to={pathFor('work-orders/received')}>
-              {overdueOrders.length ? (
-                <div className="dash-table-wrap">
-                  <table className="board-table">
-                    <thead>
+              <div className="dash-table-wrap">
+                <table className="board-table">
+                  <thead>
+                    <tr>
+                      <th>WO No.</th>
+                      <th>Description</th>
+                      <th>Location</th>
+                      <th>Due Date</th>
+                      <th>Days Overdue</th>
+                      <th>Priority</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {overdueOrders.length === 0 ? (
                       <tr>
-                        <th>WO No.</th>
-                        <th>Description</th>
-                        <th>Location</th>
-                        <th>Due Date</th>
-                        <th>Days Overdue</th>
-                        <th>Priority</th>
+                        <td colSpan={6} className="company-empty">No overdue work orders.</td>
                       </tr>
-                    </thead>
-                    <tbody>
-                      {overdueOrders.map((order) => (
-                        <tr key={order.id}>
-                          <td><strong>{order.wo_number}</strong></td>
-                          <td>{order.title}</td>
-                          <td>{order.location_name}</td>
-                          <td>{formatDate(order.due_at)}</td>
-                          <td className="is-overdue">{order.days} days</td>
-                          <td>{order.priority ? <span className={`priority-badge priority-badge--${order.priority}`}>{order.priority}</span> : '—'}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : <p className="dash-empty">No overdue work orders.</p>}
+                    ) : overdueOrders.map((order) => (
+                      <tr key={order.id}>
+                        <td><strong>{order.wo_number}</strong></td>
+                        <td>{order.title}</td>
+                        <td>{order.location_name}</td>
+                        <td>{formatDate(order.due_at)}</td>
+                        <td className="is-overdue">{order.days} days</td>
+                        <td>{order.priority ? <span className={`priority-badge priority-badge--${order.priority}`}>{order.priority}</span> : '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </Panel>
           ) : null}
         </div>

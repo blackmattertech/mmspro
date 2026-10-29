@@ -49,6 +49,17 @@ function hiddenByDefault(columnDefs, exceptIds = null) {
     .map((col) => col.id)
 }
 
+const ACTIONS_COLUMN_ID = 'actions'
+
+/** Keep the actions column at the end, including after a saved reorder. */
+export function pinActionsLast(order) {
+  if (!order?.length || !order.includes(ACTIONS_COLUMN_ID)) return order
+  if (order[order.length - 1] === ACTIONS_COLUMN_ID) return order
+  const next = order.filter((id) => id !== ACTIONS_COLUMN_ID)
+  next.push(ACTIONS_COLUMN_ID)
+  return next
+}
+
 /** Default order matches the picker: shown columns, then hidden ones. */
 function groupUntouchedOrder(result, columnDefs) {
   const allIds = (columnDefs || []).map((col) => col.id)
@@ -81,7 +92,7 @@ export function resolveColumnPrefs(saved, columnDefs) {
   const locked = new Set((columnDefs || []).filter((col) => col.locked).map((col) => col.id))
 
   if (!saved) {
-    return groupUntouchedOrder(
+    return finalizeColumnPrefs(
       { order: allIds, hidden: hiddenByDefault(columnDefs), known: allIds },
       columnDefs,
     )
@@ -92,7 +103,7 @@ export function resolveColumnPrefs(saved, columnDefs) {
     for (const id of allIds) {
       if (!seen.has(id)) list.push(id)
     }
-    return groupUntouchedOrder(
+    return finalizeColumnPrefs(
       { order: list, hidden: hiddenByDefault(columnDefs, seen), known: allIds },
       columnDefs,
     )
@@ -109,14 +120,22 @@ export function resolveColumnPrefs(saved, columnDefs) {
     const def = byId.get(id)
     if (def?.defaultVisible === false && !known.has(id) && !locked.has(id)) hidden.add(id)
   }
-  return groupUntouchedOrder({ order: list, hidden: [...hidden], known: allIds }, columnDefs)
+  return finalizeColumnPrefs({ order: list, hidden: [...hidden], known: allIds }, columnDefs)
+}
+
+function finalizeColumnPrefs(result, columnDefs) {
+  const grouped = groupUntouchedOrder(result, columnDefs)
+  const order = pinActionsLast(grouped.order)
+  if (order === grouped.order) return grouped
+  return { ...grouped, order }
 }
 
 export function visibleIdsFromPrefs(prefs, columnDefs) {
   const locked = new Set((columnDefs || []).filter((col) => col.locked).map((col) => col.id))
   const hidden = new Set(prefs?.hidden || [])
-  return (prefs?.order || [])
-    .filter((id) => locked.has(id) || !hidden.has(id))
+  return pinActionsLast(
+    (prefs?.order || []).filter((id) => locked.has(id) || !hidden.has(id)),
+  )
 }
 
 /** @param {string[]|{ order?: string[], hidden?: string[] }|null} savedOrDefault */

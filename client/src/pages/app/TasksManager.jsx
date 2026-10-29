@@ -6,8 +6,9 @@ import { useDebouncedValue } from '../../hooks/useDebouncedValue'
 import { useTasksPage, useTaskPoll } from '../../hooks/useTasksPage'
 import { orgPath } from '../../config/navigation'
 import { TASK_TABS } from '../../config/tasks'
-import { TABLE_SORT_OPTIONS, applyTableFilters } from '../../lib/tableFilters'
+import { TABLE_SORT_OPTIONS, applyTableFilters, uniqueNameOptions, selectFilterField } from '../../lib/tableFilters'
 import { deleteTask, getTasksTemplate, bulkUploadTasks, getTaskTabCounts } from '../../lib/api-tasks'
+import { notifyTabCountsChanged, TAB_COUNTS_EVENT } from '../../lib/tabCountEvents'
 import { invalidateTasksBootstrapCache } from '../../lib/tasksBootstrapCache'
 import { useTablePagination } from '../../hooks/useTablePagination'
 import TableFilterToolbar from '../../components/shared/TableFilterToolbar'
@@ -30,24 +31,18 @@ import '../../components/tasks/Tasks.css'
 const TaskVoiceAssistant = lazy(() => import('../../components/tasks/TaskVoiceAssistant'))
 const VoiceAgentIcon = lazy(() => import('../../components/ui/VoiceAgentIcon'))
 
-const TASK_FILTER_FIELDS = [
-  { value: 'status', label: 'Status', placeholder: 'Enter status...' },
-  { value: 'priority', label: 'Priority', placeholder: 'Enter priority...' },
-  { value: 'category', label: 'Category', placeholder: 'Enter category...' },
-  { value: 'tag', label: 'Tag', placeholder: 'Enter tag...' },
-  {
-    value: 'visibility',
-    label: 'Visibility',
-    type: 'select',
-    emptyLabel: 'All Visibility',
-    options: [
-      { value: 'self', label: 'Self' },
-      { value: 'team', label: 'Team' },
-      { value: 'department', label: 'Department' },
-      { value: 'location', label: 'Location' },
-    ],
-  },
-]
+const TASK_VISIBILITY_FILTER = {
+  value: 'visibility',
+  label: 'Visibility',
+  type: 'select',
+  emptyLabel: 'All Visibility',
+  options: [
+    { value: 'self', label: 'Self' },
+    { value: 'team', label: 'Team' },
+    { value: 'department', label: 'Department' },
+    { value: 'location', label: 'Location' },
+  ],
+}
 
 function filterTasks(tasks, { sortBy }) {
   return applyTableFilters(tasks, {
@@ -78,10 +73,21 @@ export default function TasksManager() {
 
   useEffect(() => {
     let cancelled = false
-    getTaskTabCounts()
-      .then((counts) => { if (!cancelled) setTabCounts(counts || {}) })
-      .catch(() => { if (!cancelled) setTabCounts({}) })
-    return () => { cancelled = true }
+    const load = () => {
+      getTaskTabCounts()
+        .then((counts) => { if (!cancelled) setTabCounts(counts || {}) })
+        .catch(() => { if (!cancelled) setTabCounts({}) })
+    }
+    load()
+    const onChange = (event) => {
+      if (event.detail?.module && event.detail.module !== 'tasks') return
+      load()
+    }
+    window.addEventListener(TAB_COUNTS_EVENT, onChange)
+    return () => {
+      cancelled = true
+      window.removeEventListener(TAB_COUNTS_EVENT, onChange)
+    }
   }, [tab])
 
   const debouncedSearch = useDebouncedValue(search.trim())
@@ -118,12 +124,23 @@ export default function TasksManager() {
     total,
     board,
     statusCounts,
+    statuses,
+    priorities,
+    categories,
+    tags,
     loading,
     error,
     reload,
   } = useTasksPage(filters, {
     mode: viewMode === 'kanban' ? 'kanban' : 'list',
   })
+  const taskFilterFields = useMemo(() => ([
+    selectFilterField('status', 'Status', uniqueNameOptions(statuses), 'All Status'),
+    selectFilterField('priority', 'Priority', uniqueNameOptions(priorities), 'All Priorities'),
+    selectFilterField('category', 'Category', uniqueNameOptions(categories), 'All Categories'),
+    selectFilterField('tag', 'Tag', uniqueNameOptions(tags), 'All Tags'),
+    TASK_VISIBILITY_FILTER,
+  ]), [statuses, priorities, categories, tags])
   useEffect(() => { setListTotal(total) }, [total])
 
   const pollReload = useCallback(() => reload({ silent: true }), [reload])
@@ -173,6 +190,7 @@ export default function TasksManager() {
     try {
       await deleteTask(task.id)
       invalidateTasksBootstrapCache()
+      notifyTabCountsChanged('tasks')
       await reload()
     } catch (err) {
       window.alert(err.message)
@@ -183,6 +201,7 @@ export default function TasksManager() {
 
   const handleStatusChanged = () => {
     invalidateTasksBootstrapCache()
+    notifyTabCountsChanged('tasks')
     reload({ silent: true })
   }
 
@@ -323,7 +342,7 @@ export default function TasksManager() {
                 ariaLabel: 'Search tasks',
               }}
               filter={{
-                fields: TASK_FILTER_FIELDS,
+                fields: taskFilterFields,
                 field: filterField,
                 onFieldChange: setFilterField,
                 value: filterValue,

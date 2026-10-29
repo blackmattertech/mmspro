@@ -14,6 +14,7 @@ import LocationModal from './LocationModal'
 import LocationHeadCell from './LocationHeadCell'
 import LimitExceededCard from '../shared/LimitExceededCard'
 import TablePagination from '../shared/TablePagination'
+import TableEmptyRow from '../shared/TableEmptyRow'
 import TableColumnPicker from '../shared/TableColumnPicker'
 import { DynamicPickerCells, DynamicPickerHeaders } from '../shared/DynamicPickerCells'
 import TableFilterToolbar from '../shared/TableFilterToolbar'
@@ -21,7 +22,7 @@ import { AdvancedFilterMenu, ExportCsvButton, TableColumnHead } from '../shared/
 import '../shared/ListTableChrome.css'
 import { useTablePagination } from '../../hooks/useTablePagination'
 import { useTableColumnPrefs } from '../../hooks/useTableColumnPrefs'
-import { TABLE_SORT_OPTIONS, applyTableFilters } from '../../lib/tableFilters'
+import { TABLE_SORT_OPTIONS, applyTableFilters, uniqueNameOptions, ACTIVE_STATUS_FILTER, selectFilterField } from '../../lib/tableFilters'
 import { stopTableRowClick, tableRowClickProps } from '../../lib/clickableTableRow'
 import RecordDetailModal from '../shared/RecordDetailModal'
 import { LocationDetailContent } from './CompanyRecordDetails'
@@ -131,6 +132,7 @@ export default function LocationsTab({ canManage }) {
     columnOrder: locationColumnOrder,
     reorderColumns: reorderLocationColumns,
     moveColumn: moveLocationColumn,
+    saveColumns: saveLocationColumns,
     columnDefs: locationPickerColumns,
     visibleColumnIds: locationVisibleColumnIds,
   } = useTableColumnPrefs('company-locations', locationColumnDefs)
@@ -256,11 +258,18 @@ export default function LocationsTab({ canManage }) {
           filterSlot={(
             <AdvancedFilterMenu
               fields={[
-                ...locationPickerColumns.filter((col) => col.id !== 'actions').map((col) => ({ id: col.id, label: col.label })),
-                { id: 'status', label: 'Status', type: 'select', emptyLabel: 'All Status', options: [
-                  { value: 'active', label: 'Active' },
-                  { value: 'inactive', label: 'Inactive' },
-                ] },
+                selectFilterField('name', 'Name', uniqueNameOptions(locations), 'All names'),
+                selectFilterField('code', 'Code', uniqueNameOptions(locations, (row) => row.code), 'All codes'),
+                selectFilterField('city', 'City', uniqueNameOptions(locations, (row) => row.city), 'All cities'),
+                selectFilterField('country', 'Country', uniqueNameOptions(locations, (row) => row.country), 'All countries'),
+                selectFilterField(
+                  'location_head',
+                  'Location head',
+                  uniqueNameOptions(employees),
+                  'All location heads',
+                ),
+                selectFilterField('state', 'State', uniqueNameOptions(locations, (row) => row.state), 'All states'),
+                ACTIVE_STATUS_FILTER,
               ]}
               values={columnFilters}
               onChange={setColumnFilters}
@@ -322,6 +331,7 @@ export default function LocationsTab({ canManage }) {
               onReset={resetLocationColumns}
               onReorder={reorderLocationColumns}
               onMove={moveLocationColumn}
+              onSave={saveLocationColumns}
             />
           )}
         />
@@ -334,10 +344,6 @@ export default function LocationsTab({ canManage }) {
 
       {loading ? (
         <div className="company-loading">Loading locations...</div>
-      ) : locations.length === 0 ? (
-        <div className="company-empty">No locations yet. Add your first site or branch.</div>
-      ) : filteredLocations.length === 0 ? (
-        <div className="company-empty">No locations match your filters.</div>
       ) : (
         <>
         <div className="company-table-wrap">
@@ -380,7 +386,13 @@ export default function LocationsTab({ canManage }) {
               </tr>
             </thead>
             <tbody>
-              {pagedLocations.map((loc) => {
+              {pagedLocations.length === 0 ? (
+                <TableEmptyRow colSpan={(canManage ? 1 : 0) + locationVisibleColumnIds.length}>
+                  {locations.length === 0
+                    ? 'No locations yet. Add your first site or branch.'
+                    : 'No locations match your filters.'}
+                </TableEmptyRow>
+              ) : pagedLocations.map((loc) => {
                 const isActive = loc.is_active !== false
                 return (
                   <tr

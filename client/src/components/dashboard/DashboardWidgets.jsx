@@ -328,44 +328,44 @@ export function RecentWorkOrders({ orders }) {
         <h3 className="dash-card__title">Recent Work Orders</h3>
         <Link to={viewAllPath} className="dash-card__link">View All</Link>
       </div>
-      {!orders?.length ? (
-        <p className="dash-empty">No work orders yet.</p>
-      ) : (
-        <div className="dash-table-wrap">
-          <table className="dash-table">
-            <thead>
+      <div className="dash-table-wrap">
+        <table className="dash-table">
+          <thead>
+            <tr>
+              <th>WO No.</th>
+              <th>Description</th>
+              <th>Location</th>
+              <th>Created</th>
+              <th>Priority</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {!orders?.length ? (
               <tr>
-                <th>WO No.</th>
-                <th>Description</th>
-                <th>Location</th>
-                <th>Created</th>
-                <th>Priority</th>
-                <th>Status</th>
+                <td colSpan={6} className="company-empty">No work orders yet.</td>
               </tr>
-            </thead>
-            <tbody>
-              {orders.map((order) => (
-                <tr key={order.id}>
-                  <td className="dash-table__id">{order.wo_number || order.work_order_number}</td>
-                  <td className="dash-table__title">{order.short_description || order.title || order.summary}</td>
-                  <td>{order.location_name || '—'}</td>
-                  <td>{timeAgo(order.created_at)}</td>
-                  <td>
-                    {order.priority ? (
-                      <span className={`priority-badge priority-badge--${order.priority}`}>{order.priority}</span>
-                    ) : '—'}
-                  </td>
-                  <td>
-                    <span className={`status-badge status-badge--${order.status}`}>
-                      {humanStatus(order.status)}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+            ) : orders.map((order) => (
+              <tr key={order.id}>
+                <td className="dash-table__id">{order.wo_number || order.work_order_number}</td>
+                <td className="dash-table__title">{order.short_description || order.title || order.summary}</td>
+                <td>{order.location_name || '—'}</td>
+                <td>{timeAgo(order.created_at)}</td>
+                <td>
+                  {order.priority ? (
+                    <span className={`priority-badge priority-badge--${order.priority}`}>{order.priority}</span>
+                  ) : '—'}
+                </td>
+                <td>
+                  <span className={`status-badge status-badge--${order.status}`}>
+                    {humanStatus(order.status)}
+                  </span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }

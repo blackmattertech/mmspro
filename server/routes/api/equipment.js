@@ -18,7 +18,17 @@ import {
   updateEquipment,
   deleteEquipment,
   findEquipmentByScan,
+  listEquipmentColumnValues,
 } from '../../lib/equipmentService.js'
+import {
+  buildEquipmentQrLabels,
+  createLabelSize,
+  deleteLabelSize,
+  listEquipmentIdentityValues,
+  listLabelSizes,
+  queryEquipmentLabels,
+  resolveLabelPaper,
+} from '../../lib/equipmentLabelService.js'
 import {
   buildEquipmentTemplate,
   bulkImportEquipment,
@@ -34,6 +44,11 @@ const canReadPicker = requireAnyModulePermission([
   ['equipment', 'read'],
   ['work_orders_scheduled', 'read'],
   ['work_orders', 'read'],
+  ['work_orders', 'create'],
+  ['work_orders_manual', 'read'],
+  ['work_orders_manual', 'create'],
+  ['work_request_create', 'read'],
+  ['work_request_create', 'create'],
 ])
 const canCreate = requireModulePermission('equipment', 'create')
 const canUpdate = requireModulePermission('equipment', 'update')
@@ -48,6 +63,20 @@ function parsePagination(query) {
   const offset = Number.isFinite(rawOffset) ? Math.max(0, rawOffset) : 0
   return { limit, offset }
 }
+
+router.get('/column-values', canReadPicker, async (req, res) => {
+  try {
+    const fieldId = String(req.query.field_id || '').trim()
+    if (!fieldId) {
+      res.status(400).json({ error: 'field_id is required' })
+      return
+    }
+    const values = await listEquipmentColumnValues(req.userProfile.org_id, fieldId)
+    res.json({ values })
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message })
+  }
+})
 
 router.get('/catalog', canReadPicker, async (req, res) => {
   try {
@@ -64,7 +93,7 @@ router.get('/catalog', canReadPicker, async (req, res) => {
   }
 })
 
-router.get('/', canRead, async (req, res) => {
+router.get('/', canReadPicker, async (req, res) => {
   try {
     const { limit, offset } = parsePagination(req.query)
     const locationId = resolveLocationFilter(req.orgPermissions, req.query.location_id)
@@ -91,7 +120,7 @@ router.get('/template', canCreate, async (req, res) => {
       locationId: resolveLocationFilter(req.orgPermissions, null),
     })
     res.json({
-      filename: 'equipment-template.xlsx',
+      filename: 'assets-template.xlsx',
       contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       data: buffer.toString('base64'),
     })
@@ -113,10 +142,92 @@ router.post('/bulk', canCreate, async (req, res) => {
     }
     const locationId = resolveLocationFilter(req.orgPermissions, null)
     const result = await bulkImportEquipment(req.userProfile.org_id, buffer, { locationId })
-    const payload = await attachFailedFileToResult(result, buffer, 'equipment-import-failed-rows.xlsx')
+    const payload = await attachFailedFileToResult(result, buffer, 'assets-import-failed-rows.xlsx')
     res.json(payload)
   } catch (err) {
     res.status(err.status || 400).json({ error: err.message })
+  }
+})
+
+router.get('/label-sizes', canRead, async (req, res) => {
+  try {
+    const payload = await listLabelSizes(req.userProfile.org_id)
+    res.json(payload)
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message })
+  }
+})
+
+router.post('/label-sizes', canUpdate, async (req, res) => {
+  try {
+    const row = await createLabelSize(req.userProfile.org_id, req.body || {})
+    res.status(201).json(row)
+  } catch (err) {
+    res.status(err.status || 400).json({ error: err.message })
+  }
+})
+
+router.delete('/label-sizes/:sizeId', canUpdate, async (req, res) => {
+  try {
+    const result = await deleteLabelSize(req.userProfile.org_id, req.params.sizeId)
+    res.json(result)
+  } catch (err) {
+    res.status(err.status || 400).json({ error: err.message })
+  }
+})
+
+router.get('/label-column-values', canRead, async (req, res) => {
+  try {
+    const locationId = resolveLocationFilter(req.orgPermissions, null)
+    const values = await listEquipmentIdentityValues(
+      req.userProfile.org_id,
+      req.query.column,
+      locationId,
+    )
+    res.json({ values })
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message })
+  }
+})
+
+router.post('/qr-labels/preview', canRead, async (req, res) => {
+  try {
+    const locationId = resolveLocationFilter(req.orgPermissions, null)
+    const { count } = await queryEquipmentLabels(req.userProfile.org_id, {
+      scopedLocationId: locationId,
+      filters: req.body?.filters || {},
+      sort: req.body?.sort || [],
+      forPdf: false,
+    })
+    res.json({ count, cap: 500, over_cap: count > 500 })
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message })
+  }
+})
+
+router.post('/qr-labels', canRead, async (req, res) => {
+  try {
+    const locationId = resolveLocationFilter(req.orgPermissions, null)
+    const paper = await resolveLabelPaper(req.userProfile.org_id, req.body?.paper || {})
+    const label = await resolveLabelPaper(req.userProfile.org_id, req.body?.label || {}, {
+      fallback: 'label-2x1',
+      noun: 'label',
+    })
+    const { pdf, count } = await buildEquipmentQrLabels(req.userProfile.org_id, {
+      scopedLocationId: locationId,
+      filters: req.body?.filters || {},
+      sort: req.body?.sort || [],
+      paper,
+      label,
+      copies: req.body?.copies,
+      print_fields: req.body?.print_fields,
+    })
+    res.setHeader('Content-Type', 'application/pdf')
+    res.setHeader('Content-Disposition', 'attachment; filename="asset-qr-labels.pdf"')
+    res.setHeader('X-Label-Count', String(count))
+    res.send(pdf)
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message })
   }
 })
 
@@ -124,7 +235,7 @@ router.get('/lookup', canRead, async (req, res) => {
   try {
     const row = await findEquipmentByScan(req.userProfile.org_id, req.query.code)
     if (!row) {
-      return res.status(404).json({ error: 'This code is not an equipment record in your organization.' })
+      return res.status(404).json({ error: 'This code is not an asset record in your organization.' })
     }
     assertLocationAccess(req.orgPermissions, row.location_id)
     const detail = await getEquipmentDetail(req.userProfile.org_id, row.id)
@@ -137,7 +248,7 @@ router.get('/lookup', canRead, async (req, res) => {
 router.get('/:id', canRead, assertOrgOwnership('equipment'), async (req, res) => {
   try {
     const row = await getEquipmentDetail(req.userProfile.org_id, req.params.id)
-    if (!row) return res.status(404).json({ error: 'Equipment not found' })
+    if (!row) return res.status(404).json({ error: 'Asset not found' })
     assertLocationAccess(req.orgPermissions, row.location_id)
     res.json(row)
   } catch (err) {
@@ -158,7 +269,7 @@ router.post('/', canCreate, async (req, res) => {
 router.patch('/:id', canUpdate, assertOrgOwnership('equipment'), async (req, res) => {
   try {
     const existing = await getEquipmentDetail(req.userProfile.org_id, req.params.id)
-    if (!existing) return res.status(404).json({ error: 'Equipment not found' })
+    if (!existing) return res.status(404).json({ error: 'Asset not found' })
     assertLocationAccess(req.orgPermissions, existing.location_id)
     const location_id = req.body?.location_id !== undefined
       ? coerceScopedLocationId(req.orgPermissions, req.body.location_id)
@@ -177,7 +288,7 @@ router.patch('/:id', canUpdate, assertOrgOwnership('equipment'), async (req, res
 router.delete('/:id', canDelete, assertOrgOwnership('equipment'), async (req, res) => {
   try {
     const existing = await getEquipmentDetail(req.userProfile.org_id, req.params.id)
-    if (!existing) return res.status(404).json({ error: 'Equipment not found' })
+    if (!existing) return res.status(404).json({ error: 'Asset not found' })
     assertLocationAccess(req.orgPermissions, existing.location_id)
     const result = await deleteEquipment(req.userProfile.org_id, req.params.id)
     res.json(result)

@@ -6,12 +6,22 @@ export const FIELD_PREFIX = 'field:'
 export const GROUP_PREFIX = 'group:'
 export const LAYOUT_VERSION = 1
 
-export const FILLED_BY_VALUES = ['any', 'creator', 'order_to_dept_head', 'technician']
+export const FILLED_BY_VALUES = ['any', 'creator', 'order_to_dept_head', 'technician', 'supervisor']
 export const FILLED_BY_LABELS = {
   any: 'Anyone',
   creator: 'Creator',
   order_to_dept_head: 'Order To Department Head',
   technician: 'Technician',
+  supervisor: 'Supervisor',
+}
+
+export const SECTION_STAGE_VALUES = ['', 'create', 'assignment', 'execution', 'closeout']
+export const SECTION_STAGE_LABELS = {
+  '': 'Any stage',
+  create: 'Create',
+  assignment: 'Assignment',
+  execution: 'Execution',
+  closeout: 'Closeout',
 }
 
 const KNOWN_PREFIXES = [
@@ -106,10 +116,61 @@ export function isGroupId(id) {
   return String(id || '').startsWith(GROUP_PREFIX)
 }
 
+const ASSET_PICKER_KEYS = new Set(['asset_picker', 'equipment_id', 'area_id'])
+
+/**
+ * Drop the Areas master. If that was the only asset control, keep one picker in its place.
+ * A system area_id stays so the form can render the hierarchy picker, but it is not required.
+ */
+export function layoutWithoutAreasMaster(layout) {
+  if (!layout?.fields?.length) return layout
+  const hasPicker = layout.fields.some((field) => {
+    const parsed = parseLayoutId(field.id)
+    return parsed.kind === 'system' && ASSET_PICKER_KEYS.has(parsed.value)
+  })
+  let inserted = hasPicker
+  const fields = []
+  for (const field of layout.fields) {
+    const parsed = parseLayoutId(field.id)
+    if (parsed.kind === 'system' && ASSET_PICKER_KEYS.has(parsed.value)) {
+      fields.push({ ...field, colSpan: 100, required: parsed.value === 'area_id' ? false : field.required })
+      continue
+    }
+    const isAreas = (parsed.kind === 'master' && parsed.value === 'areas')
+      || field.masterSource === 'areas'
+      || field.bindKey === 'area_id'
+    const isEquipmentMaster = (parsed.kind === 'master' && parsed.value === 'equipment')
+      || field.masterSource === 'equipment'
+      || field.bindKey === 'equipment_id'
+    if (!isAreas && !isEquipmentMaster) {
+      fields.push(field)
+      continue
+    }
+    if (inserted) continue
+    inserted = true
+    fields.push({
+      ...field,
+      id: systemId('asset_picker'),
+      bindKey: 'asset_picker',
+      masterSource: '',
+      required: field.required,
+      colSpan: 100,
+      label: field.label || 'Asset information',
+    })
+  }
+  return { ...layout, fields }
+}
+
 export function normalizeFilledBy(value) {
   const raw = String(value || '').trim()
   if (FILLED_BY_VALUES.includes(raw)) return raw
   return 'any'
+}
+
+export function normalizeStage(value) {
+  const raw = String(value || '').trim()
+  if (raw && SECTION_STAGE_VALUES.includes(raw)) return raw
+  return ''
 }
 
 export function fieldLayoutId(field) {
@@ -128,10 +189,11 @@ export function cloneLayout(layout) {
   return JSON.parse(JSON.stringify(layout || emptyLayout()))
 }
 
-export const FIELD_WIDTHS = [25, 33, 75, 100]
+export const FIELD_WIDTHS = [25, 33, 50, 75, 100]
 export const FIELD_WIDTH_LABELS = {
   25: '25%',
   33: '33%',
+  50: '50%',
   75: '75%',
   100: '100%',
 }
@@ -185,6 +247,8 @@ function fieldSignatureEntry(field) {
     field.dependsOnFieldId || '',
     Array.isArray(field.dependsOnOptions) ? field.dependsOnOptions.join('|') : '',
     field.filterByFieldId || '',
+    field.defaultToCurrentUser ? '1' : '',
+    field.equipmentColumnId || '',
   ]
 }
 
@@ -196,6 +260,8 @@ export function layoutSignature(layout) {
       section.order,
       section.label || '',
       normalizeFilledBy(section.filledBy),
+      normalizeStage(section.stage),
+      [...(section.sharedWith || [])].sort().join(','),
     ]),
     fields: (layout.fields || []).map((field) => fieldSignatureEntry(field)),
     groups: (layout.groups || []).map((group) => [
@@ -238,6 +304,20 @@ export function layoutHasSection(layout, id) {
   return layout.sections.some((section) => fieldLayoutId(section) === target)
 }
 
+/** Layout slice for sections that are not equipment catalog fields. */
+export function layoutWithoutCatalogFields(layout) {
+  if (!layout) return null
+  const fields = (layout.fields || []).filter((field) => parseLayoutId(field.id).kind !== 'catalog')
+  const groups = layout.groups || []
+  const sectionIds = new Set([
+    ...fields.map((field) => field.sectionId),
+    ...groups.map((group) => group.sectionId),
+  ])
+  const sections = (layout.sections || []).filter((section) => sectionIds.has(section.id))
+  if (!sections.length) return null
+  return { ...layout, sections, fields, groups }
+}
+
 export function findLayoutField(layout, id) {
   if (!layout?.fields) return null
   const target = fieldLayoutId({ id })
@@ -246,7 +326,8 @@ export function findLayoutField(layout, id) {
 
 export function layoutFieldIsRequired(layout, id) {
   const field = findLayoutField(layout, id)
-  return Boolean(field?.required)
+  if (!field || field.skipped) return false
+  return Boolean(field.required)
 }
 
 export function shouldRequire(layout, id, defaultWhenNoLayout = false) {

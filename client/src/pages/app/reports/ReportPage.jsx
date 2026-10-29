@@ -3,6 +3,8 @@ import ReportsLayout from '../../../components/reports/ReportsLayout'
 import ReportsFilters, { countActiveReportFilters } from '../../../components/reports/ReportsFilters'
 import ReportScheduleModal from '../../../components/reports/ReportScheduleModal'
 import ReportSendNowModal from '../../../components/reports/ReportSendNowModal'
+import { useAuth } from '../../../hooks/useAuth'
+import { useOrg } from '../../../hooks/useOrg'
 import { usePermissions } from '../../../hooks/usePermissions'
 import {
   createCustomReport,
@@ -18,6 +20,11 @@ import {
 import { downloadBase64File } from '../../../lib/fileDownload'
 import { asListArray } from '../../../lib/listResponse'
 import {
+  buildTableColumnStorageKey,
+  loadTableColumnPrefs,
+  saveTableColumnPrefs,
+} from '../../../lib/tableColumnPrefs'
+import {
   columnsForReportKey,
   defaultReportDateRange,
   defaultReportFilters,
@@ -26,6 +33,7 @@ import {
   UNIFIED_REPORT_KEY,
 } from '../../../lib/reportColumns'
 import TableColumnPicker from '../../../components/shared/TableColumnPicker'
+import TableEmptyRow from '../../../components/shared/TableEmptyRow'
 import StatusCountBar from '../../../components/shared/StatusCountBar'
 import { useOrgStatusOptions } from '../../../hooks/useOrgStatusOptions'
 import { colorByStatus } from '../../../lib/statusCounts'
@@ -139,6 +147,15 @@ function ReportCell({ columnId, value, row, statusLabels }) {
   return formatReportCell(columnId, value)
 }
 
+function savedReportColumnIds(saved, columnDefs) {
+  const order = Array.isArray(saved) ? saved : saved?.order
+  const hidden = new Set(Array.isArray(saved) ? [] : (saved?.hidden || []))
+  return validColumnIds(
+    columnDefs,
+    (order || []).filter((id) => !hidden.has(id)),
+  )
+}
+
 function validColumnIds(columnDefs, ids) {
   const allowed = new Set(columnDefs.map((col) => col.id))
   return (Array.isArray(ids) ? ids : []).filter((id) => allowed.has(id))
@@ -171,6 +188,8 @@ function toQuery(filters, search) {
 export default function ReportPage() {
   const title = 'Reports'
   const columnDefs = useMemo(() => columnsForReportKey(REPORT_KEY), [])
+  const { user } = useAuth()
+  const { org } = useOrg()
   const { isOrgAdmin } = usePermissions()
   const { statuses, labelByKey: statusLabels } = useOrgStatusOptions('work_order', { includeInactive: true })
   const statusColors = useMemo(() => colorByStatus(statuses), [statuses])
@@ -277,6 +296,12 @@ export default function ReportPage() {
         const items = asListArray(data)
         setCustomReports(items)
         applyCustom(items[0] || null, columnDefs)
+        const storageKey = buildTableColumnStorageKey(org?.id, user?.id, `report-${REPORT_KEY}`)
+        const savedIds = savedReportColumnIds(
+          storageKey ? loadTableColumnPrefs(storageKey) : null,
+          columnDefs,
+        )
+        if (savedIds.length) setSelectedColumnIds(savedIds)
       } catch (err) {
         if (!cancelled) {
           setCustomReports([])
@@ -286,7 +311,7 @@ export default function ReportPage() {
     }
     loadCustoms()
     return () => { cancelled = true }
-  }, [columnDefs, applyCustom])
+  }, [columnDefs, applyCustom, org?.id, user?.id])
 
   useEffect(() => {
     let cancelled = false
@@ -515,12 +540,6 @@ export default function ReportPage() {
               ariaLabel="Work order status counts"
             />
 
-            {rows.length === 0 ? (
-              <div className="company-empty">
-                <p>No rows for this period.</p>
-                <p className="wo-page__empty-hint">Try adjusting the filters and click Search.</p>
-              </div>
-            ) : (
             <div className="reports-table-wrap company-table-wrap">
               <div className="company-table-toolbar">
                 <TableColumnPicker
@@ -543,6 +562,19 @@ export default function ReportPage() {
                     setSelectedColumnIds(position === 'top' ? [id, ...rest] : [...rest, id])
                   }}
                   onReset={() => setSelectedColumnIds(defaultColumnIds)}
+                  onSave={() => {
+                    const storageKey = buildTableColumnStorageKey(org?.id, user?.id, `report-${REPORT_KEY}`)
+                    if (!storageKey) return false
+                    const hidden = columnDefs
+                      .map((col) => col.id)
+                      .filter((id) => !selectedColumnIds.includes(id))
+                    saveTableColumnPrefs(storageKey, {
+                      order: [...selectedColumnIds, ...hidden],
+                      hidden,
+                      known: columnDefs.map((col) => col.id),
+                    })
+                    return true
+                  }}
                 />
               </div>
               <div className="company-table-scroll">
@@ -555,7 +587,12 @@ export default function ReportPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.map((row) => (
+                  {rows.length === 0 ? (
+                    <TableEmptyRow colSpan={Math.max(visibleCols.length, 1)}>
+                      <p>No rows for this period.</p>
+                      <p className="wo-page__empty-hint">Try adjusting the filters and click Search.</p>
+                    </TableEmptyRow>
+                  ) : rows.map((row) => (
                     <tr key={row.id}>
                       {visibleCols.map((col) => (
                         <td
@@ -577,7 +614,6 @@ export default function ReportPage() {
               </table>
               </div>
             </div>
-            )}
             </div>
           </>
         )}

@@ -8,6 +8,63 @@ import {
 import { isProductModuleEnabled, productIdForPermissionKey } from '../lib/orgModules'
 import { WORK_REQUEST_TABS } from './workRequests'
 import { WORK_ORDER_TABS, isWorkOrdersNavPath } from './workOrders'
+import { WARRANTY_TABS } from './warranty'
+
+export function isMastersNavPath(pathname) {
+  if (!/\/masters(?:\/|$)/.test(pathname || '')) return false
+  return !/\/masters\/equipment(?:\/|$)/.test(pathname || '')
+}
+
+export function isAssetsNavPath(pathname) {
+  return /\/(?:masters\/equipment|scan\/equipment)(?:\/|$)/.test(pathname || '')
+}
+
+export const MASTERS_HUB_ITEMS = [
+  {
+    id: 'company',
+    label: 'Company',
+    title: 'Company',
+    description: 'Locations, departments, work centers, and employees.',
+    segment: 'masters/company',
+    moduleKey: 'company',
+    icon: 'buildings',
+    altModuleKeys: ['locations', 'departments', 'work_centers', 'employees'],
+  },
+  {
+    id: 'vendors',
+    label: 'Vendors',
+    title: 'Vendors',
+    description: 'Vendor contact, tax, and bank details.',
+    segment: 'masters/vendors',
+    moduleKey: 'vendors',
+    icon: 'userCheck',
+  },
+  {
+    id: 'others',
+    label: 'Others',
+    title: 'Others',
+    description: 'Statuses, checklists, and shared character limits.',
+    segment: 'masters/others',
+    moduleKey: 'others',
+    icon: 'dots',
+  },
+  {
+    id: 'forms',
+    label: 'Forms Master',
+    title: 'Forms Master',
+    description: 'Dropdown lists Superadmin added to each module form, such as Job Nature.',
+    segment: 'masters/forms',
+    moduleKey: 'assets',
+    icon: 'clipboard',
+  },
+]
+
+export const MASTER_HUB_MODULE_KEYS = [
+  ...COMPANY_PAGE_MODULE_KEYS,
+  'assets',
+  'vendors',
+  'others',
+]
 
 const APP_SEGMENTS = [
   {
@@ -16,6 +73,15 @@ const APP_SEGMENTS = [
     segment: 'dashboard',
     icon: 'home',
     moduleKey: 'dashboard',
+  },
+  {
+    id: 'equipment',
+    label: 'Assets',
+    segment: 'masters/equipment',
+    icon: 'washer',
+    moduleKey: 'equipment',
+    altModuleKeys: ['areas'],
+    isPathActive: isAssetsNavPath,
   },
   {
     id: 'calendar',
@@ -50,7 +116,7 @@ const APP_SEGMENTS = [
   },
   {
     id: 'logbook',
-    label: 'Logbook',
+    label: 'Meter reading',
     segment: 'logbook',
     icon: 'logbook',
     moduleKey: 'logbook',
@@ -68,6 +134,7 @@ const APP_SEGMENTS = [
     segment: 'warranty-manager',
     icon: 'shieldLock',
     moduleKey: 'warranty_manager',
+    isPathActive: (pathname) => /\/warranty-manager(?:\/|$)/.test(pathname || ''),
   },
   {
     id: 'reports',
@@ -80,20 +147,9 @@ const APP_SEGMENTS = [
   {
     id: 'masters',
     label: 'Masters',
+    segment: 'masters',
     icon: 'list',
-    children: [
-      {
-        label: 'Company',
-        segment: 'masters/company',
-        moduleKey: 'company',
-        icon: 'buildings',
-        altModuleKeys: ['locations', 'departments', 'work_centers', 'employees'],
-      },
-      { label: 'Fields', segment: 'masters/assets', moduleKey: 'assets', icon: 'asset' },
-      { label: 'Equipment', segment: 'masters/equipment', moduleKey: 'equipment', icon: 'washer', altModuleKeys: ['areas'] },
-      { label: 'Vendors', segment: 'masters/vendors', moduleKey: 'vendors', icon: 'userCheck', showWithoutPermission: true },
-      { label: 'Others', segment: 'masters/others', moduleKey: 'others', icon: 'dots', showWithoutPermission: true },
-    ],
+    isPathActive: isMastersNavPath,
   },
   {
     id: 'configuration',
@@ -101,10 +157,10 @@ const APP_SEGMENTS = [
     icon: 'settings',
     children: [
       { label: 'Roles & Access', segment: 'configuration/roles', moduleKey: 'roles_access', icon: 'key' },
-      { label: 'Approvals', segment: 'configuration/approvals', moduleKey: 'settings', icon: 'userCheck' },
+      { label: 'Approvals', segment: 'configuration/approvals', moduleKey: 'approvals', icon: 'userCheck' },
       { label: 'Settings', segment: 'configuration/settings', moduleKey: 'settings', icon: 'settings' },
-      { label: 'Import', segment: 'configuration/import', moduleKey: 'settings', icon: 'upload' },
-      { label: 'Export', segment: 'configuration/export', moduleKey: 'settings', icon: 'download' },
+      { label: 'Import', segment: 'configuration/import', moduleKey: 'import', icon: 'upload' },
+      { label: 'Export', segment: 'configuration/export', moduleKey: 'export', icon: 'download' },
     ],
   },
 ]
@@ -137,16 +193,16 @@ export function moduleKeyForPath(pathname, orgSlug) {
   if (rest.startsWith('warranty-manager')) return 'warranty_manager'
   if (rest.startsWith('tasks-and-followups')) return 'tasks_followups'
   if (rest.startsWith('reports')) return 'reports'
+  if (rest.startsWith('masters/forms')) return 'assets'
   if (rest.startsWith('masters/company')) return 'company'
-  if (rest.startsWith('masters/assets')) return 'assets'
   if (rest.startsWith('masters/equipment')) return 'equipment'
   if (rest.startsWith('masters/vendors')) return 'vendors'
   if (rest.startsWith('masters/others')) return 'others'
   if (rest.startsWith('configuration/roles')) return 'roles_access'
-  if (rest.startsWith('configuration/approvals')) return 'settings'
+  if (rest.startsWith('configuration/approvals')) return 'approvals'
   if (rest.startsWith('configuration/settings')) return 'settings'
-  if (rest.startsWith('configuration/import')) return 'settings'
-  if (rest.startsWith('configuration/export')) return 'settings'
+  if (rest.startsWith('configuration/import')) return 'import'
+  if (rest.startsWith('configuration/export')) return 'export'
   if (rest.startsWith('configuration')) return 'settings'
   if (rest.startsWith('masters')) return 'company'
   return null
@@ -170,23 +226,30 @@ export function moduleKeysForPath(pathname, orgSlug) {
   return [key]
 }
 
+function navProductOk(item, disabledModules) {
+  const productId = item.moduleKey
+    ? (productIdForPermissionKey(item.moduleKey) || item.moduleKey)
+    : null
+  return isProductModuleEnabled(disabledModules, productId)
+}
+
+function allowNavItem(item, allow, disabledModules) {
+  if (!navProductOk(item, disabledModules)) return false
+  if (item.showWithoutPermission) return true
+  if (allow(item.moduleKey)) return true
+  return (item.altModuleKeys || []).some((key) => allow(key))
+}
+
 export function getNavItems(orgSlug, { canRead, disabledModules } = {}) {
   const allow = typeof canRead === 'function' ? canRead : () => true
-  const productOk = (item) => {
-    const productId = item.moduleKey
-      ? (productIdForPermissionKey(item.moduleKey) || item.moduleKey)
-      : null
-    return isProductModuleEnabled(disabledModules, productId)
-  }
-  const allowItem = (item) => {
-    if (!productOk(item)) return false
-    if (item.showWithoutPermission) return true
-    if (allow(item.moduleKey)) return true
-    return (item.altModuleKeys || []).some((key) => allow(key))
-  }
+  const allowItem = (item) => allowNavItem(item, allow, disabledModules)
 
   return APP_SEGMENTS
     .map((item) => {
+      if (item.id === 'masters') {
+        if (!MASTERS_HUB_ITEMS.some((hub) => allowItem(hub))) return null
+        return { ...item, path: orgPath(orgSlug, item.segment) }
+      }
       if (item.children) {
         const children = item.children
           .filter((child) => allowItem(child))
@@ -206,10 +269,21 @@ export function getNavItems(orgSlug, { canRead, disabledModules } = {}) {
     .filter(Boolean)
 }
 
+export function getMastersHubItems(orgSlug, { canRead, disabledModules } = {}) {
+  const allow = typeof canRead === 'function' ? canRead : () => true
+  return MASTERS_HUB_ITEMS
+    .filter((item) => allowNavItem(item, allow, disabledModules))
+    .map((item) => ({
+      ...item,
+      path: orgPath(orgSlug, item.segment),
+    }))
+}
+
 /** Page-level tabs under a top-level nav item. */
 const SHORTCUT_TAB_GROUPS = {
   'work-request': WORK_REQUEST_TABS,
   'work-orders': WORK_ORDER_TABS,
+  'warranty-manager': WARRANTY_TABS,
 }
 
 /** Inner destinations under Masters → Others. */
@@ -233,25 +307,48 @@ export function getShortcutOptions(orgSlug, { canRead, disabledModules } = {}) {
   const allow = typeof canRead === 'function' ? canRead : () => true
   const options = []
 
+  const allowItem = (hub) => allowNavItem(hub, allow, disabledModules)
+
   for (const item of getNavItems(orgSlug, { canRead, disabledModules })) {
-    if (item.children) {
+    if (item.id === 'masters') {
       const children = []
-      for (const child of item.children) {
-        if (child.segment === 'masters/others') {
+      for (const hub of MASTERS_HUB_ITEMS) {
+        if (!allowItem(hub)) continue
+        if (hub.segment === 'masters/others') {
           children.push({
-            id: child.segment,
-            label: child.label,
-            icon: child.icon || item.icon || 'document',
-            children: OTHERS_SHORTCUTS.map((hub) => shortcutLeaf({
-              id: hub.segment,
-              label: hub.label,
-              path: orgPath(orgSlug, hub.segment),
-              icon: hub.icon || child.icon || item.icon,
-              group: child.label,
+            id: hub.segment,
+            label: hub.label,
+            icon: hub.icon || item.icon || 'document',
+            children: OTHERS_SHORTCUTS.map((inner) => shortcutLeaf({
+              id: inner.segment,
+              label: inner.label,
+              path: orgPath(orgSlug, inner.segment),
+              icon: inner.icon || hub.icon || item.icon,
+              group: hub.label,
             })),
           })
           continue
         }
+        children.push(shortcutLeaf({
+          id: hub.segment,
+          label: hub.label,
+          path: orgPath(orgSlug, hub.segment),
+          icon: hub.icon || item.icon,
+          group: item.label,
+        }))
+      }
+      if (!children.length) continue
+      options.push({
+        id: item.id,
+        label: item.label,
+        icon: item.icon || 'document',
+        children,
+      })
+      continue
+    }
+    if (item.children) {
+      const children = []
+      for (const child of item.children) {
         children.push(shortcutLeaf({
           id: child.segment,
           label: child.label,
@@ -310,15 +407,17 @@ export function getBreadcrumbsForPath(pathname, orgSlug) {
 
   let match = null
   for (const item of APP_SEGMENTS) {
-    if (item.children?.length) {
-      for (const child of item.children) {
+    const virtualChildren = item.id === 'masters' ? MASTERS_HUB_ITEMS : item.children
+    if (virtualChildren?.length) {
+      for (const child of virtualChildren) {
         if (rest === child.segment || rest.startsWith(`${child.segment}/`)) {
           if (!match || child.segment.length > match.leaf.segment.length) {
             match = { parent: item, leaf: child }
           }
         }
       }
-    } else if (item.segment) {
+    }
+    if (item.segment) {
       if (rest === item.segment || rest.startsWith(`${item.segment}/`)) {
         const leafLen = match?.leaf?.segment?.length || 0
         if (!match || item.segment.length > leafLen) {
@@ -332,10 +431,11 @@ export function getBreadcrumbsForPath(pathname, orgSlug) {
 
   const crumbs = []
   if (match.parent) {
-    const firstChild = match.parent.children?.[0]
     crumbs.push({
       label: match.parent.label,
-      to: firstChild ? orgPath(orgSlug, firstChild.segment) : undefined,
+      to: match.parent.segment ? orgPath(orgSlug, match.parent.segment) : (
+        match.parent.children?.[0] ? orgPath(orgSlug, match.parent.children[0].segment) : undefined
+      ),
     })
   }
 
@@ -349,6 +449,12 @@ export function getBreadcrumbsForPath(pathname, orgSlug) {
     const tabId = after.replace(/^\//, '').split('/')[0]
     const tab = WORK_REQUEST_TABS.find((item) => item.id === tabId)
     if (tab) crumbs.push({ label: tab.label, to: orgPath(orgSlug, tab.segment) })
+  } else if (match.leaf.segment === 'warranty-manager' && after) {
+    const tabId = after.replace(/^\//, '').split('/')[0]
+    const tab = WARRANTY_TABS.find((item) => item.id === tabId)
+    if (tab) crumbs.push({ label: tab.label, to: orgPath(orgSlug, tab.segment) })
+    else if (after === '/create' || after.startsWith('/create/')) crumbs.push({ label: 'Create' })
+    else if (/^\/[^/]+\/edit(?:\/|$)/.test(after)) crumbs.push({ label: 'Edit' })
   } else if (match.leaf.segment === 'work-orders' && after && !after.startsWith('/scheduled')) {
     const tabId = after.replace(/^\//, '').split('/')[0]
     const tab = WORK_ORDER_TABS.find((item) => item.id === tabId)

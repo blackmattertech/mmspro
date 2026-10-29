@@ -223,15 +223,13 @@ export default function PmPlansTable({
             ))}
             {!plans.length && (
               <tr>
-                <td colSpan={Math.max(colSpan, 1)}>
-                  <div className="company-empty">
-                    <strong>{totalCount ? 'No matching PM plans.' : 'No PM plans yet.'}</strong>
-                    <p>
-                      {totalCount
-                        ? 'Try a different search or clear the filters.'
-                        : 'Create a planned maintenance plan to generate scheduled work orders automatically.'}
-                    </p>
-                  </div>
+                <td colSpan={Math.max(colSpan, 1)} className="company-empty">
+                  <strong>{totalCount ? 'No matching PM plans.' : 'No PM plans yet.'}</strong>
+                  <p>
+                    {totalCount
+                      ? 'Try a different search or clear the filters.'
+                      : 'Create a planned maintenance plan to generate scheduled work orders automatically.'}
+                  </p>
                 </td>
               </tr>
             )}

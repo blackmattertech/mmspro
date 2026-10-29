@@ -4,6 +4,96 @@
   gap: 10px;
 }
 
+button.wr-page__create-tab {
+  appearance: none;
+  font: inherit;
+  cursor: pointer;
+}
+
+.wo-page .wr-page__toolbar,
+.wo-page .wr-page__toolbar-row--tabs {
+  overflow: visible;
+}
+
+.warranty-tabs-cluster {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  overflow: visible;
+}
+
+.wr-page__toolbar-row--tabs .warranty-tabs-cluster .wo-page__tabs {
+  flex: 0 1 auto;
+}
+
+.warranty-soon-settings {
+  position: relative;
+  flex-shrink: 0;
+  overflow: visible;
+}
+
+.warranty-soon-settings__btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-pill);
+  background: #eef2f6;
+  color: var(--color-dark-navy);
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.warranty-soon-settings__btn:hover,
+.warranty-soon-settings__btn.is-open,
+.warranty-soon-settings__btn.is-applied {
+  background: var(--color-primary);
+  color: var(--color-white);
+}
+
+.warranty-soon-settings__tooltip {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 50%;
+  z-index: 40;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: #1f2937;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.35;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateX(-50%) translateY(4px);
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.18);
+  transition: opacity 0.12s ease, transform 0.12s ease, visibility 0.12s ease;
+}
+
+.warranty-soon-settings__btn:hover .warranty-soon-settings__tooltip,
+.warranty-soon-settings__btn:focus-visible .warranty-soon-settings__tooltip {
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(-50%) translateY(0);
+}
+
+.warranty-soon-settings__btn.is-open .warranty-soon-settings__tooltip {
+  display: none;
+}
+
+.wo-page .company-page__content {
+  padding-top: 16px;
+}
+
 .warranty-manager__create-btn {
   display: inline-flex;
   align-items: center;

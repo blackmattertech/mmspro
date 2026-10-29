@@ -104,6 +104,7 @@ export function useManualWorkOrderForm({ workOrderId = null, initialEquipmentId 
   const [assignedEmployeeIds, setAssignedEmployeeIds] = useState([])
   const [assignToDepartment, setAssignToDepartment] = useState(false)
   const [assignedDepartmentId, setAssignedDepartmentId] = useState(null)
+  const [assignedDepartment, setAssignedDepartment] = useState(null)
   const [assignedLocationId, setAssignedLocationId] = useState(null)
   const [linkedEquipment, setLinkedEquipment] = useState(null)
   const [existingStatus, setExistingStatus] = useState(null)
@@ -161,7 +162,9 @@ export function useManualWorkOrderForm({ workOrderId = null, initialEquipmentId 
         setValues(formValuesFromDetail(detail))
         const assigneeIds = (detail.assignees || []).map((a) => a.id).filter(Boolean)
         setAssignedEmployeeIds(assigneeIds)
-        setAssignedDepartmentId(detail.assigned_department_id || detail.assigned_department?.id || null)
+        const department = detail.assigned_department?.id ? detail.assigned_department : null
+        setAssignedDepartmentId(detail.assigned_department_id || department?.id || null)
+        setAssignedDepartment(department)
         setAssignedLocationId(detail.assigned_location_id || detail.assigned_location?.id || null)
         setAssignToDepartment(Boolean(
           (detail.assigned_department_id || detail.assigned_department?.id)
@@ -189,6 +192,7 @@ export function useManualWorkOrderForm({ workOrderId = null, initialEquipmentId 
         setAssignToDepartment(draft.assignToDepartment)
       }
       if (draft.assignedDepartmentId) setAssignedDepartmentId(draft.assignedDepartmentId)
+      if (draft.assignedDepartment) setAssignedDepartment(draft.assignedDepartment)
       if (draft.assignedLocationId) setAssignedLocationId(draft.assignedLocationId)
       if (draft.formOpen !== undefined) setFormOpen(draft.formOpen)
     }
@@ -204,6 +208,14 @@ export function useManualWorkOrderForm({ workOrderId = null, initialEquipmentId 
         setLinkedEquipment(row)
         setAssignedLocationId((current) => current || row.location_id || null)
         setAssignedDepartmentId((current) => current || row.department_id || null)
+        if (row.department_id) {
+          setAssignedDepartment((current) => current || {
+            id: row.department_id,
+            name: row.departments?.name || 'Department',
+            location_id: row.location_id || null,
+            location_name: row.org_locations?.name || '',
+          })
+        }
       })
       .catch(() => {})
     return () => { cancelled = true }
@@ -238,6 +250,7 @@ export function useManualWorkOrderForm({ workOrderId = null, initialEquipmentId 
     const hasContent = Object.keys(serialized).length > 0
       || assignedEmployeeIds.length > 0
       || assignToDepartment
+      || Boolean(assignedDepartmentId)
       || formOpen
     if (!hasContent) {
       clearFormDraft(draftKey)
@@ -248,10 +261,11 @@ export function useManualWorkOrderForm({ workOrderId = null, initialEquipmentId 
       assignedEmployeeIds,
       assignToDepartment,
       assignedDepartmentId,
+      assignedDepartment,
       assignedLocationId,
       formOpen,
     })
-  }, [draftKey, values, assignedEmployeeIds, assignToDepartment, assignedDepartmentId, assignedLocationId, formOpen, isEdit])
+  }, [draftKey, values, assignedEmployeeIds, assignToDepartment, assignedDepartmentId, assignedDepartment, assignedLocationId, formOpen, isEdit])
 
   useEffect(() => () => revokePreviewUrls(valuesRef.current), [])
 
@@ -279,15 +293,17 @@ export function useManualWorkOrderForm({ workOrderId = null, initialEquipmentId 
     setAssignedEmployeeIds([])
     setAssignToDepartment(false)
     setAssignedDepartmentId(null)
+    setAssignedDepartment(null)
     setAssignedLocationId(null)
     setSuccess(null)
     setError(null)
     if (draftKey) clearFormDraft(draftKey)
   }
 
-  const setDepartmentTarget = useCallback(({ departmentId, locationId }) => {
+  const setDepartmentTarget = useCallback(({ departmentId, locationId, department = null }) => {
     setAssignedDepartmentId(departmentId || null)
     setAssignedLocationId(locationId || null)
+    setAssignedDepartment(department?.id ? department : null)
   }, [])
 
   const saveSettings = async (updates, { sectionIds } = {}) => {
@@ -311,8 +327,9 @@ export function useManualWorkOrderForm({ workOrderId = null, initialEquipmentId 
       setError('Organization not loaded')
       return
     }
-    if (status === 'created' && !assignedLocationId && !assignedEmployeeIds.length) {
-      setError('Select a location (or specific employees) before creating the work order')
+    const requireAssignedDepartment = extras.requireAssignedDepartment !== false
+    if (status === 'created' && requireAssignedDepartment && !assignedDepartmentId) {
+      setError('Select an Order to department before creating the work order.')
       return
     }
     if (status === 'created') {
@@ -355,7 +372,6 @@ export function useManualWorkOrderForm({ workOrderId = null, initialEquipmentId 
       const payload = {
         status,
         values: textValues,
-        assignedEmployeeIds,
         assignedDepartmentId: assignedDepartmentId || null,
         assignedLocationId: assignedLocationId || null,
         checklist_template_id: extras.checklistTemplateId || null,
@@ -365,7 +381,7 @@ export function useManualWorkOrderForm({ workOrderId = null, initialEquipmentId 
         ? await updateManualWorkOrder(workOrderId, payload)
         : await createManualWorkOrder({
           ...payload,
-          equipmentId: linkedEquipment?.id || initialEquipmentId || null,
+          equipmentId: extras.equipmentId || linkedEquipment?.id || initialEquipmentId || null,
         })
 
       if (fileEntries.length) {
@@ -390,6 +406,7 @@ export function useManualWorkOrderForm({ workOrderId = null, initialEquipmentId 
         setAssignedEmployeeIds([])
         setAssignToDepartment(false)
         setAssignedDepartmentId(null)
+        setAssignedDepartment(null)
         setAssignedLocationId(null)
         if (draftKey) clearFormDraft(draftKey)
       } else {
@@ -418,6 +435,8 @@ export function useManualWorkOrderForm({ workOrderId = null, initialEquipmentId 
     setAssignedEmployeeIds,
     assignToDepartment,
     setAssignToDepartment,
+    assignedDepartmentId,
+    assignedDepartment,
     setDepartmentTarget,
     linkedEquipment,
     formOpen,

@@ -7,13 +7,6 @@ export const WORK_REQUEST_TABS = [
     icon: 'addSquare',
   },
   {
-    id: 'my',
-    label: 'My Requests',
-    segment: 'work-request/my',
-    moduleKey: 'work_request_my',
-    icon: 'profileIncoming',
-  },
-  {
     id: 'incoming',
     label: 'Incoming Requests',
     segment: 'work-request/incoming',
@@ -26,6 +19,13 @@ export const WORK_REQUEST_TABS = [
     segment: 'work-request/outgoing',
     moduleKey: 'work_request_outgoing',
     icon: 'arrowUpRight',
+  },
+  {
+    id: 'my',
+    label: 'My Requests',
+    segment: 'work-request/my',
+    moduleKey: 'work_request_my',
+    icon: 'profileIncoming',
   },
   {
     id: 'all',
@@ -53,5 +53,8 @@ export function visibleWorkRequestTabs(canRead) {
 
 export function defaultWorkRequestTab(canRead) {
   const tabs = visibleWorkRequestTabs(canRead)
-  return tabs.find((tab) => tab.id === 'create') || tabs[0] || null
+  return tabs.find((tab) => tab.id === 'incoming')
+    || tabs.find((tab) => tab.id !== 'create')
+    || tabs[0]
+    || null
 }

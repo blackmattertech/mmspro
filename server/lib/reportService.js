@@ -5,7 +5,7 @@ import { resolveLivePlanStatus } from './pmSchedule.js'
 import { resolveLocationFilter } from './orgPermissions.js'
 import { loadOrgFields } from './equipmentFieldService.js'
 import { listOrgStatuses } from './orgStatusService.js'
-import { jobNatureOptionsFromField, resolveJobNatureField } from './workRequestService.js'
+import { resolveJobNatureChoiceList } from './formFieldMasters.js'
 import { loadTimelineActors } from './timelineActors.js'
 import {
   agingDays,
@@ -720,8 +720,8 @@ async function buildOverdueReport(orgId, filters, now) {
 
 function equipmentFieldRole(field) {
   const name = String(field?.name || '').trim().toLowerCase()
-  if (name.includes('equipment type')) return 'equipmentType'
-  if (name.includes('equipment tag')) return 'equipmentTag'
+  if (name.includes('equipment type') || name.includes('asset type')) return 'equipmentType'
+  if (name.includes('equipment tag') || name.includes('asset tag')) return 'equipmentTag'
   if (name.includes('capacity')) return 'capacity'
   return null
 }
@@ -808,7 +808,7 @@ async function loadEquipmentCatalog(orgId, locationId) {
 
 export async function getReportFilterOptions(orgId, session) {
   const locationId = resolveLocationFilter(session, null)
-  const [locations, departmentsResult, areasResult, employeesResult, statuses, jobNatureField, equipment] = await Promise.all([
+  const [locations, departmentsResult, areasResult, employeesResult, statuses, jobNatures, equipment] = await Promise.all([
     loadLocations(orgId, locationId),
     supabaseAdmin
       .from('departments')
@@ -829,7 +829,7 @@ export async function getReportFilterOptions(orgId, session) {
       .eq('is_active', true)
       .order('name'),
     listOrgStatuses(orgId, 'work_order'),
-    resolveJobNatureField(orgId),
+    resolveJobNatureChoiceList(orgId),
     loadEquipmentCatalog(orgId, locationId),
   ])
 
@@ -858,7 +858,7 @@ export async function getReportFilterOptions(orgId, session) {
     order_types: ORDER_TYPE_OPTIONS,
     priorities: REPORT_PRIORITY_OPTIONS,
     statuses: (statuses || []).map((row) => ({ value: row.key, label: row.name })),
-    job_natures: jobNatureOptionsFromField(jobNatureField),
+    job_natures: jobNatures,
     departments: departments.map((row) => ({ value: row.id, label: row.name })),
     locations: locations.map((row) => ({ value: row.id, label: row.name })),
     areas: areas.map((row) => ({

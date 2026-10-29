@@ -1,6 +1,6 @@
 # Form Builder — Configuration & Customization
 
-Super Admin can customize the create/edit layout for Work Request, Manual Work Order, PM Plan, and Warranty **per organization**. Layouts are stored in the database; if no layout is saved for a form, the app uses the live default UI (no empty form).
+Super Admin can customize the create/edit layout for Work Request, Work Order processes, PM Plan, and Warranty **per organization**. Layouts are stored in the database; if no layout is saved for a form, the app uses the live default UI (no empty form). Work Order process forms (WR→WO, PM→WO, User Self) fall back to the registry template so assignment and technician fields appear without a saved layout.
 
 ---
 
@@ -23,7 +23,10 @@ Entry points:
 | Form ID | Label | Module permission key |
 |---------|-------|------------------------|
 | `work_request.create` | Work request | `work_request_create` |
+| `work_orders.from_work_request` | Work Request to Work Order | `work_orders_received` |
+| `work_orders.from_pm` | PM Schedule to Work Order | `work_orders_scheduled` |
 | `work_orders.manual` | Manual work order | `work_orders_manual` |
+| `work_orders.user_self` | User Self Request | `work_orders_received` |
 | `pm.plan` | PM plan | `work_orders_scheduled` |
 | `warranty.warranty` | Warranty | `warranty_manager` |
 
@@ -129,7 +132,38 @@ In the canvas: click the width control or drag the resize handle on a field card
 - Built-in sections come from the form registry (`system:…`).
 - Super Admin can add custom sections (`custom:<uuid>`), rename labels, reorder, and remove empty custom sections.
 - Fields belong to a `sectionId`.
-- Optional **Filled by** (`filledBy`): `any` | `creator` | `order_to_dept_head` | `technician`. Only that actor (or org admin) can edit the section; others see it read-only with a badge.
+- Optional **Filled by** (`filledBy`): `any` | `creator` | `order_to_dept_head` | `technician` | `supervisor`. Only that actor (or org admin) can edit the section; others see it read-only with a badge.
+- Optional **Stage** (`stage`): `create` | `assignment` | `execution` | `closeout`. Work Order hosts only show matching stages (Approve & Assign uses `assignment`; technician lifecycle uses `execution` / `closeout`). Missing stage means the section is visible whenever that host is shown.
+
+Work Order forms are **process forms** (assignment → technician complete), not a second Work Request create screen. The Work Request layout stays the requester document and is shown read-only on converted work orders. Reuse a Work Request section onto a Work Order form if those fields must also be editable after conversion.
+
+### Company Skip (Masters → Forms)
+
+Companies do **not** edit Super Admin layouts. On **Company → Masters → Forms** they can skip optional fields:
+
+- Super Admin **Required** (and registry **locked**, e.g. Work start / end) stay on the form and cannot be skipped.
+- Skipping a parent field also skips dependents that only appear when that parent is filled. A field cannot be skipped if a required field depends on it.
+- **Supervisor verification** (`wo_closeout`) stays on the work order. Only its non-required fields can be skipped.
+- Work Order process forms also have **Skip technician acceptance**. When on, assigning a technician sets status to `accepted` (no Accept click). Old `assigned` rows can move to Started.
+
+Overlay table: `org_form_skips`. Runtime applies it after company dropdown overlays in `loadRuntimeFormLayout`.
+
+### Blocks (compound fields)
+
+Compound **Blocks** (Permit details, Daily logs, Work start / end, Breakdown times, Material consumed, and the rest for that form) live in the left **Blocks** list, not as their own sections.
+
+To put Permit details under Work execution:
+
+1. Click **Work execution** on the canvas so it is selected.
+2. In **Blocks**, click **Permit details**. It is added to that section.
+3. Or drag the Permit details card from another section onto Work execution (the target section highlights).
+4. **Remove** the leftover empty Permit details section if it is unused.
+
+If no section is selected, the palette asks you to select one first. **This form** still adds whole sections (Assignment, Daily logs, …). Nested fields under those sections go to the selected canvas section when one is selected.
+
+Runtime binds by field key (`permit_details`, `daily_logs`, …), so the host section’s **Filled by** and **Stage** apply.
+
+Company users manage dropdown lists for those forms under **Company → Masters → Forms Master**. Work Order → **Work Request to Work Order** lists the same kind of configurable dropdowns as Work Request (Priority, Work Center, Permit types, and any Super Admin dropdowns on that layout).
 
 ### Repeatable groups
 
@@ -158,9 +192,11 @@ Helpers: `client/src/lib/formLayoutIds.js` (mirrored on server).
 
 ## Field types you can add
 
-### 1. System fields (THIS FORM palette)
+### 1. System fields (Blocks + THIS FORM palette)
 
-Drag or add registry fields (Request type, Asset picker, Schedule block, etc.). These keep their `system:` id and are rendered by the host page.
+**Blocks** lists compound registry fields. Select a section, then click a Block to place it there, or drag an existing Block onto another section.
+
+**This form** adds whole built-in sections. Expand a section to add leftover non-block fields. These keep their `system:` id and are rendered by the host page.
 
 ### 2. Catalog fields
 
@@ -329,6 +365,7 @@ Key files:
 | Sanitize / persist | `server/lib/orgFormLayouts.js` |
 | Admin routes | `server/routes/admin/orgFormLayouts.js` |
 | Company routes | `server/routes/api/formLayouts.js` |
+| Company Skip overlay | `server/lib/formSkips.js`, `client/src/pages/app/FormMasters.jsx` |
 
 ---
 

@@ -28,6 +28,17 @@
   color: var(--color-gray-blue);
 }
 
+.form-builder__inherit {
+  margin: 8px 0 0;
+  max-width: 720px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--color-light-pink-1, #fff1f2);
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--color-dark-navy);
+}
+
 .form-builder__back,
 .form-builder-palette__link {
   border: none;
@@ -151,12 +162,14 @@
   display: grid;
   grid-template-columns: minmax(240px, 280px) minmax(0, 1fr);
   gap: 16px;
-  min-height: 520px;
+  min-height: 0;
   align-items: stretch;
 }
 
 .form-builder-palette,
 .form-builder-board {
+  min-height: 0;
+  height: 100%;
   background: var(--color-white);
   border: 1px solid var(--color-light-gray-1);
   border-radius: var(--radius-md);
@@ -251,12 +264,73 @@
   border-color: var(--color-primary);
 }
 
+.form-builder-board__section.is-drop-target {
+  border-color: var(--color-primary);
+  border-style: dashed;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 28%, transparent);
+  background: color-mix(in srgb, var(--color-light-pink-1) 55%, var(--color-white));
+}
+
+.form-builder-board__toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  position: sticky;
+  top: -16px;
+  z-index: 3;
+  margin: -16px -16px 2px;
+  padding: 10px 16px;
+  background: var(--color-white);
+  border-bottom: 1px solid var(--color-light-gray-1);
+}
+
+.form-builder-board__fold {
+  border: none;
+  background: none;
+  color: var(--color-primary);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
 .form-builder-board__section-head {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
   padding: 10px 12px;
   border-bottom: 1px solid var(--color-light-gray-1);
+}
+
+.form-builder-board__section.is-collapsed .form-builder-board__section-head {
+  border-bottom: none;
+}
+
+.form-builder-board__toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--color-gray-blue);
+  cursor: pointer;
+}
+
+.form-builder-board__toggle:hover {
+  background: var(--color-white);
+  color: var(--color-dark-navy);
+}
+
+.form-builder-board__count {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-gray-blue);
+  white-space: nowrap;
 }
 
 .form-builder-board__section-head h4 {
@@ -286,7 +360,7 @@
 
 .form-builder-board__title-input {
   flex: 1;
-  min-width: 0;
+  min-width: 8rem;
   border: none;
   background: transparent;
   font-size: 14px;
@@ -339,9 +413,123 @@
   cursor: pointer;
 }
 
+.form-builder-board__add-field + .form-builder-board__add-field {
+  margin-left: 0;
+}
+
+.form-builder-board__reuse {
+  border: none;
+  background: none;
+  color: var(--color-primary);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.form-builder-reuse {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(17, 24, 39, 0.45);
+}
+
+.form-builder-reuse__dialog {
+  width: min(480px, 100%);
+  max-height: min(86dvh, 640px);
+  overflow: auto;
+  padding: 22px;
+  background: var(--color-white);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+}
+
+.form-builder-reuse__dialog h2 {
+  margin: 0;
+  font-size: 18px;
+  color: var(--color-dark-navy);
+}
+
+.form-builder-reuse__dialog p {
+  margin: 8px 0 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--color-gray-blue);
+}
+
+.form-builder-reuse__groups {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.form-builder-reuse__groups fieldset {
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--color-light-gray-2);
+  border-radius: var(--radius-sm);
+}
+
+.form-builder-reuse__groups legend {
+  padding: 0 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-dark-navy);
+}
+
+.form-builder-reuse__groups label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  font-size: 14px;
+  color: var(--color-dark-navy);
+  cursor: pointer;
+}
+
+.form-builder-reuse__note {
+  font-size: 12px;
+}
+
+.form-builder-reuse__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.form-builder-reuse__actions button {
+  height: 38px;
+  padding: 0 16px;
+  border: none;
+  border-radius: var(--radius-pill);
+  background: var(--color-light-gray-1);
+  color: var(--color-dark-navy);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.form-builder-reuse__actions button.is-primary {
+  background: var(--color-primary);
+  color: var(--color-white);
+}
+
+.form-builder-reuse__actions button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .form-builder-board__grid {
   display: grid;
   grid-template-columns: repeat(12, minmax(0, 1fr));
+  grid-auto-flow: dense;
   gap: 10px;
   padding: 12px;
   min-height: 72px;
@@ -357,8 +545,10 @@
 .form-builder-board__field {
   position: relative;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
+  min-width: 0;
   min-height: 56px;
   padding: 8px 16px 8px 10px;
   background: var(--color-white);
@@ -548,29 +738,39 @@
   grid-column: span 4;
 }
 
+.form-builder-board__field.span-w-50 {
+  grid-column: span 6;
+}
+
 .form-builder-board__field.span-w-75 {
   grid-column: span 9;
 }
 
-.form-builder-board__field.span-w-100,
-.form-builder-board__field.is-compound {
+.form-builder-board__field.span-w-100 {
   grid-column: 1 / -1;
 }
 
 .form-builder-board__field-copy {
   display: flex;
   flex-direction: column;
+  flex: 1 1 72px;
   min-width: 0;
 }
 
 .form-builder-board__field-copy strong {
+  overflow: hidden;
   font-size: 13px;
   color: var(--color-dark-navy);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .form-builder-board__field-copy span {
+  overflow: hidden;
   font-size: 11px;
   color: var(--color-gray-blue);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 @media (max-width: 900px) {
@@ -581,6 +781,7 @@
 
   .form-builder-board__field.span-w-25,
   .form-builder-board__field.span-w-33,
+  .form-builder-board__field.span-w-50,
   .form-builder-board__field.span-w-75,
   .form-builder-board__field.span-w-100 {
     grid-column: 1 / -1;
@@ -606,7 +807,7 @@
 
 .form-builder-board__title-input {
   flex: 1;
-  min-width: 0;
+  min-width: 8rem;
   border: none;
   background: transparent;
   font-size: 14px;

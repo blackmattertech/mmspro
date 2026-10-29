@@ -138,12 +138,12 @@ function drawFilterGrid(doc, filters, x, y, width) {
     ['Order To', filters.orderTo],
     ['To Date', filters.toDate],
     ['Area', filters.area],
-    ['Equipment Type', filters.equipmentType],
+    ['Asset Type', filters.equipmentType],
     ['Order Type', filters.orderType],
     ['Facility', filters.facility],
-    ['Equipment Capacity', filters.equipmentCapacity],
+    ['Asset Capacity', filters.equipmentCapacity],
     ['Job Nature', filters.jobNature],
-    ['Equipment', filters.equipment],
+    ['Asset', filters.equipment],
     ['Job Priority', filters.priority],
   ]
   const cols = 6

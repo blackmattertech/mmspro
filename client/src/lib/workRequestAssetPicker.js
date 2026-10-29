@@ -19,12 +19,12 @@ export function isEquipmentCascadeRole(role) {
 export function getEquipmentFieldRole(field) {
   if (!field?.name) return 'other'
   const n = field.name.trim().toLowerCase()
-  if (n === 'equipment' && field.field_type === 'dropdown') return 'redundant'
-  if (n === 'area' || n === 'equipment area') return 'area'
-  if (n.includes('equipment type')) return 'equipmentType'
-  if (isNameField(field) || n.includes('equipment name')) return 'equipmentName'
-  if (n.includes('equipment tag')) return 'equipmentTag'
-  if (n.includes('equipment code') || (isCodeField(field) && n.includes('equipment'))) {
+  if ((n === 'equipment' || n === 'asset') && field.field_type === 'dropdown') return 'redundant'
+  if (n === 'area' || n === 'equipment area' || n === 'asset area') return 'area'
+  if (n.includes('equipment type') || n.includes('asset type')) return 'equipmentType'
+  if (isNameField(field) || n.includes('equipment name') || n.includes('asset name')) return 'equipmentName'
+  if (n.includes('equipment tag') || n.includes('asset tag')) return 'equipmentTag'
+  if (n.includes('equipment code') || n.includes('asset code') || (isCodeField(field) && (n.includes('equipment') || n.includes('asset')))) {
     return 'equipmentCode'
   }
   if (n.includes('capacity')) return 'capacity'

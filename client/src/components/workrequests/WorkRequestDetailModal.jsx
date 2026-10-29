@@ -1,36 +1,37 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { Link } from 'react-router-dom'
 import { useBackdropClose } from '../../hooks/useBackdropClose'
 import { useWorkOrderDetail } from '../../hooks/useWorkOrderList'
 import { useOrg } from '../../hooks/useOrg'
 import { useAuth } from '../../hooks/useAuth'
 import { usePermissions } from '../../hooks/usePermissions'
-import { useTextFieldLimits } from '../../hooks/useTextFieldLimits'
 import {
   approveWorkRequest,
   rejectWorkRequest,
   requestWorkRequestInfo,
   replyToWorkRequest,
-  getWorkRequestDepartmentEmployees,
   saveWorkRequestChecklist,
 } from '../../lib/api-work-requests'
+import { getReceivedWorkOrder } from '../../lib/api-work-orders'
+import { notifyTabCountsChanged } from '../../lib/tabCountEvents'
+import { orgPath } from '../../config/navigation'
 import ChecklistExecution from '../pm/ChecklistExecution'
-import { getWorkCenters } from '../../lib/api'
 import { getWorkOrderFileSignedUrl, uploadWorkOrderFile } from '../../lib/workOrderAssets'
 import { downloadFromUrl } from '../../lib/fileDownload'
 import { getWorkOrderFiles, isImageFileItem, revokeWorkOrderFilePreviews, workOrderFilesValue, filesNeedStoredPreview } from '../../lib/workOrderFileValues'
 import ImageLightbox from '../shared/ImageLightbox'
 import PageBack from '../shared/PageBack'
-import RecordTimeline from '../shared/RecordTimeline'
+import RecordTimeline, { hydrateTimelineAttachments } from '../shared/RecordTimeline'
 import EmployeeAvatar from '../company/EmployeeAvatar'
-import DateField from '../ui/DateField'
 import FilterableSelect from '../ui/FilterableSelect'
 import WorkRequestAttachmentsField from './WorkRequestAttachmentsField'
-import TechnicianMultiSelect from './TechnicianMultiSelect'
 import SpellcheckInput from '../shared/SpellcheckInput'
-import FormLabel from '../shared/FormLabel'
 import OrderedFormLayout from '../forms/OrderedFormLayout'
 import EquipmentQrCode from '../equipment/EquipmentQrCode'
+import { AssetHierarchySummary } from './WorkRequestAssetFields'
+import { hierarchyDisplaySteps } from '../../lib/assetHierarchy'
+import WorkOrderAssignmentActions from '../workorders/WorkOrderAssignmentActions'
 
 function WorkRequestChecklistPanel({ detail }) {
   const fields = detail?.checklist_snapshot?.fields || []
@@ -79,7 +80,7 @@ import { useFormLayout } from '../../hooks/useFormLayout'
 import { useFormFieldValues } from '../../hooks/useFormFieldValues'
 import { resolveFormActors } from '../../lib/formFillership'
 import { catalogId, parseLayoutId } from '../../lib/formLayoutIds'
-import { getEquipmentFieldRole } from '../../lib/workRequestAssetPicker'
+import { SYSTEM_FIELD_OPTIONS } from '../../lib/systemFieldFallback'
 import '../company/CompanyShared.css'
 import '../workorders/WorkOrdersPage.css'
 import '../workorders/ManualWorkOrder.css'
@@ -107,31 +108,87 @@ function fieldLabel(field, catalog) {
   return String(field?.label || catalog?.name || catalog?.label || '').trim().toLowerCase()
 }
 
-function isAreaLayoutField(field, catalog, parsed) {
+export function requestTypeLabel(value) {
+  const option = SYSTEM_FIELD_OPTIONS.request_type.find((item) => item.value === value)
+  if (option) return option.label
+  return String(value || '').replace(/_/g, ' ').trim()
+}
+
+export function renderIncomingRequestInfoField(detail, key, props = {}) {
+  const known = {
+    request_type: {
+      label: 'Request type',
+      value: detail?.request_type || '',
+      options: SYSTEM_FIELD_OPTIONS.request_type,
+      getOptionValue: (row) => row.value,
+      getOptionLabel: (row) => row.label,
+      placeholder: 'Select Request type',
+    },
+    order_from_department_id: {
+      label: 'Order from',
+      value: detail?.order_from_department_id || detail?.order_from?.id || '',
+      name: detail?.order_from?.name || '',
+      placeholder: 'Select Department',
+    },
+    order_to_department_id: {
+      label: 'Order to',
+      value: detail?.order_to_department_id || detail?.order_to?.id || '',
+      name: detail?.order_to?.name || '',
+      placeholder: 'Select Department',
+    },
+  }
+  const field = known[key]
+  if (!field) return null
+  const options = field.options || (
+    field.value ? [{ id: field.value, name: field.name || '—' }] : []
+  )
+  return (
+    <label key={key} className={props.className}>
+      <span className="company-form__label">
+        {props.field?.label || field.label}
+        {props.required ? ' *' : ''}
+      </span>
+      <FilterableSelect
+        value={field.value}
+        options={options}
+        getOptionValue={field.getOptionValue || ((row) => row.id)}
+        getOptionLabel={field.getOptionLabel || ((row) => row.name)}
+        placeholder={field.placeholder}
+        disabled
+        className="company-form__input--select wr-request-info-value"
+      />
+    </label>
+  )
+}
+
+const ASSET_PICKER_KEYS = new Set(['asset_picker', 'area_id', 'equipment_id'])
+
+export function isAssetPickerLayoutField(field) {
+  if (!field) return false
+  const parsed = parseLayoutId(field.id)
+  if (parsed.kind === 'system' && ASSET_PICKER_KEYS.has(parsed.value)) return true
+  if (field.masterSource === 'areas' || field.masterSource === 'equipment') return true
+  if (field.bindKey === 'area_id' || field.bindKey === 'equipment_id' || field.bindKey === 'asset_picker') return true
+  return false
+}
+
+export function isAssetLayoutSection(sectionId, section, layout) {
+  if (/asset/i.test(String(section?.label || ''))) return true
+  return (layout?.fields || []).some((field) => (
+    field.sectionId === sectionId && isAssetPickerLayoutField(field)
+  ))
+}
+
+function isAreaLayoutField(field, _catalog, parsed) {
   return parsed.value === 'areas'
     || field.masterSource === 'areas'
     || field.bindKey === 'area_id'
-    || fieldLabel(field, catalog) === 'area'
-    || getEquipmentFieldRole(catalog || { name: field?.label }) === 'area'
 }
 
 function isImageLayoutField(field, catalog, parsed) {
   const label = fieldLabel(field, catalog)
   const type = String(field.fieldType || catalog?.field_type || '').toLowerCase()
   return type === 'image' || /^images?$/.test(label)
-}
-
-function incomingDisplayLayout(layout, catalogFields) {
-  if (!layout) return layout
-  const catalogById = new Map((catalogFields || []).map((row) => [String(row.id), row]))
-  return {
-    ...layout,
-    fields: (layout.fields || []).filter((field) => {
-      const parsed = parseLayoutId(field.id)
-      const catalog = parsed.kind === 'catalog' ? catalogById.get(String(parsed.value)) : null
-      return !isAreaLayoutField(field, catalog, parsed)
-    }),
-  }
 }
 
 function firstLayoutText(layout, catalogFields, values, test) {
@@ -163,7 +220,7 @@ function jobNatureDisplay(detail, layout, catalogFields, extrasValues) {
   ) || '—'
 }
 
-function seedWorkRequestFormValues(layout, catalogFields, values, detail) {
+export function seedWorkRequestFormValues(layout, catalogFields, values, detail) {
   if (!layout) return null
   const next = { ...values }
   let changed = false
@@ -180,6 +237,9 @@ function seedWorkRequestFormValues(layout, catalogFields, values, detail) {
     remarks: detail?.remarks,
     job_nature: detail?.job_nature_label || detail?.job_nature,
     priority: detail?.priority,
+    request_type: detail?.request_type,
+    order_from_department_id: detail?.order_from_department_id || detail?.order_from?.id,
+    order_to_department_id: detail?.order_to_department_id || detail?.order_to?.id,
     area_id: areaId || areaName,
     location_id: equipment.location_id,
     department_id: equipment.department_id,
@@ -224,9 +284,26 @@ function seedWorkRequestFormValues(layout, catalogFields, values, detail) {
     const catalogKey = catalog?.id || (parsed.kind === 'catalog' ? parsed.value : null)
     const label = fieldLabel(field, catalog)
     const bind = String(field.bindKey || '')
+    const systemKey = parsed.kind === 'system' ? parsed.value : ''
     const type = String(field.fieldType || catalog?.field_type || '').toLowerCase()
 
     if (nativeByKey[bind]) assignBoth(field.id, catalogKey, nativeByKey[bind])
+    if (nativeByKey[systemKey]) assignBoth(field.id, catalogKey, nativeByKey[systemKey])
+    if ((bind === 'request_type' || systemKey === 'request_type' || /request\s*type/.test(label)) && nativeByKey.request_type) {
+      assignBoth(field.id, catalogKey, nativeByKey.request_type)
+    }
+    if (
+      (bind === 'order_from_department_id' || systemKey === 'order_from_department_id' || /order\s*from/.test(label))
+      && nativeByKey.order_from_department_id
+    ) {
+      assignBoth(field.id, catalogKey, nativeByKey.order_from_department_id)
+    }
+    if (
+      (bind === 'order_to_department_id' || systemKey === 'order_to_department_id' || /order\s*to/.test(label))
+      && nativeByKey.order_to_department_id
+    ) {
+      assignBoth(field.id, catalogKey, nativeByKey.order_to_department_id)
+    }
     if (bind === 'short_description' || label === 'short description') {
       assignBoth(field.id, catalogKey, nativeByKey.short_description)
     }
@@ -453,18 +530,9 @@ export default function WorkRequestDetailModal({
   const { org } = useOrg()
   const { user } = useAuth()
   const { isOrgAdmin, session, canUpdate } = usePermissions()
-  const { maxLength } = useTextFieldLimits()
   const { layout, catalogFields, hasLayout } = useFormLayout('work_request.create')
   const extras = useFormFieldValues('work_request.create', requestId || null)
   const handleBackdropClick = useBackdropClose(onClose)
-  const [employees, setEmployees] = useState([])
-  const [assigneeIds, setAssigneeIds] = useState([])
-  const [assignmentRemarks, setAssignmentRemarks] = useState('')
-  const [workCenter, setWorkCenter] = useState('')
-  const [workCenters, setWorkCenters] = useState([])
-  const [approvePriority, setApprovePriority] = useState('medium')
-  const [plannedStartAt, setPlannedStartAt] = useState('')
-  const [plannedEndAt, setPlannedEndAt] = useState('')
   const [rejectReason, setRejectReason] = useState('')
   const [infoMessage, setInfoMessage] = useState('')
   const [replyMessage, setReplyMessage] = useState('')
@@ -474,6 +542,7 @@ export default function WorkRequestDetailModal({
   const [actionError, setActionError] = useState(null)
   const [acting, setActing] = useState(false)
   const [mode, setMode] = useState(null)
+  const [linkedOrder, setLinkedOrder] = useState(null)
 
   const closeRejectDialog = useCallback(() => {
     if (acting) return
@@ -481,11 +550,6 @@ export default function WorkRequestDetailModal({
     setRejectReason('')
   }, [acting])
   const handleRejectBackdropClick = useBackdropClose(closeRejectDialog)
-
-  useEffect(() => {
-    if (!detail) return
-    if (detail.priority) setApprovePriority(detail.priority)
-  }, [detail?.id, detail?.priority])
 
   const showActions = canApprove && detail && ACTIONABLE.has(detail.status)
   const canReply = Boolean(detail?.can_reply)
@@ -516,46 +580,12 @@ export default function WorkRequestDetailModal({
     return () => document.removeEventListener('keydown', onKey)
   }, [closeRejectDialog, mode, onClose])
 
-  useEffect(() => {
-    if (!showActions || !requestId) return
-    let cancelled = false
-    ;(async () => {
-      try {
-        const rows = await getWorkRequestDepartmentEmployees(requestId)
-        if (!cancelled) setEmployees(rows)
-      } catch {
-        if (!cancelled) setEmployees([])
-      }
-    })()
-    return () => { cancelled = true }
-  }, [showActions, requestId])
-
-  useEffect(() => {
-    if (!showActions) return undefined
-    let cancelled = false
-    ;(async () => {
-      try {
-        const rows = await getWorkCenters({ limit: 50 })
-        if (cancelled) return
-        const active = (rows || []).filter((row) => row.is_active !== false)
-        setWorkCenters(active)
-        setWorkCenter((current) => {
-          if (current) return current
-          const general = active.find((row) => String(row.name).toLowerCase() === 'general')
-          return general?.name || active[0]?.name || ''
-        })
-      } catch {
-        if (!cancelled) setWorkCenters([])
-      }
-    })()
-    return () => { cancelled = true }
-  }, [showActions])
-
   const runAction = async (fn) => {
     setActing(true)
     setActionError(null)
     try {
       await fn()
+      notifyTabCountsChanged('work_requests')
       onUpdated?.()
       reload()
       setMode(null)
@@ -594,6 +624,37 @@ export default function WorkRequestDetailModal({
 
   const hierarchy = detail?.asset_hierarchy || []
   const technicians = detail?.assigned_technicians || []
+  const workOrderId = detail?.linked_work_order?.id || detail?.manual_work_order_id || null
+  const showPostApproveAssign = Boolean(
+    canApprove
+    && detail?.status === 'approved'
+    && workOrderId
+    && technicians.length === 0
+  )
+
+  useEffect(() => {
+    if (!showPostApproveAssign || !workOrderId) {
+      setLinkedOrder(null)
+      return undefined
+    }
+    let cancelled = false
+    getReceivedWorkOrder(workOrderId)
+      .then((row) => {
+        if (!cancelled) setLinkedOrder(row)
+      })
+      .catch(() => {
+        if (!cancelled) setLinkedOrder(null)
+      })
+    return () => { cancelled = true }
+  }, [showPostApproveAssign, workOrderId])
+
+  const handleLinkedOrderUpdated = (updated) => {
+    setLinkedOrder(updated)
+    notifyTabCountsChanged('work_orders')
+    notifyTabCountsChanged('work_requests')
+    onUpdated?.()
+    reload()
+  }
   const layoutFields = detail?.layout_fields || []
   const breakdownFields = detail?.breakdown_fields || []
   const equipment = detail?.equipment
@@ -622,10 +683,26 @@ export default function WorkRequestDetailModal({
     detail,
   ])
 
-  const displayLayout = useMemo(
-    () => incomingDisplayLayout(layout, catalogFields),
-    [layout, catalogFields],
-  )
+  const displayLayout = layout
+  const routingValueLabels = useMemo(() => {
+    const map = {}
+    if (!detail) return map
+    for (const field of displayLayout?.fields || []) {
+      const parsed = parseLayoutId(field.id)
+      const key = field.bindKey || (parsed.kind === 'system' ? parsed.value : '')
+      const label = String(field.label || '')
+      if ((key === 'request_type' || /request\s*type/i.test(label)) && detail.request_type) {
+        map[field.id] = requestTypeLabel(detail.request_type)
+      }
+      if ((key === 'order_from_department_id' || /order\s*from/i.test(label)) && detail.order_from?.name) {
+        map[field.id] = detail.order_from.name
+      }
+      if ((key === 'order_to_department_id' || /order\s*to/i.test(label)) && detail.order_to?.name) {
+        map[field.id] = detail.order_to.name
+      }
+    }
+    return map
+  }, [detail, displayLayout])
   const hasFormImages = useMemo(() => {
     const catalogById = new Map((catalogFields || []).map((row) => [String(row.id), row]))
     return (displayLayout?.fields || []).some((field) => {
@@ -691,15 +768,8 @@ export default function WorkRequestDetailModal({
                   <MetaItem label="Order from">{detail.order_from?.name || '—'}</MetaItem>
                   <MetaItem label="Order to">{detail.order_to?.name || '—'}</MetaItem>
                   {equipment && (
-                    <MetaItem label="Equipment">
+                    <MetaItem label="Asset">
                       {[equipment.name, equipment.code].filter(Boolean).join(' · ') || '—'}
-                    </MetaItem>
-                  )}
-                  {(equipment?.area_name || hierarchy.some((step) => /^area$/i.test(step.field_name))) && (
-                    <MetaItem label="Area">
-                      {equipment?.area_name
-                        || hierarchy.find((step) => /^area$/i.test(step.field_name))?.value
-                        || '—'}
                     </MetaItem>
                   )}
                   <MetaItem label="Requested by">
@@ -723,64 +793,29 @@ export default function WorkRequestDetailModal({
                     ) : '—'}
                   </MetaItem>
                   <MetaItem label="Request date">{formatDate(detail.request_date)}</MetaItem>
-                  {detail.linked_work_order && (
+                  {(detail.linked_work_order || detail.manual_work_order_id) && (
                     <MetaItem label="Work order">
-                      {detail.linked_work_order.wo_number || detail.manual_work_order_id?.slice(0, 8)}
+                      {org?.slug && workOrderId ? (
+                        <Link
+                          to={orgPath(org.slug, `work-orders/received?open=${workOrderId}`)}
+                          className="company-link"
+                        >
+                          {detail.linked_work_order?.wo_number
+                            || detail.manual_work_order_id?.slice(0, 8)
+                            || 'Open work order'}
+                        </Link>
+                      ) : (
+                        detail.linked_work_order?.wo_number
+                        || (detail.manual_work_order_id
+                          ? `Linked · ${detail.manual_work_order_id.slice(0, 8)}…`
+                          : '—')
+                      )}
                       {detail.execution_status
                         ? ` · ${detail.execution_status.replace(/_/g, ' ')}`
                         : ''}
                     </MetaItem>
                   )}
-                  {!detail.linked_work_order && detail.manual_work_order_id && (
-                    <MetaItem label="Work order">
-                      Linked · {detail.manual_work_order_id.slice(0, 8)}…
-                    </MetaItem>
-                  )}
                 </div>
-
-                  {(hierarchy.length > 0 || equipment) && (
-                    <section className="wr-form-section">
-                      <div className="wr-form-section__head">
-                        <h3 className="wr-form-section__title">Equipment &amp; Asset Information</h3>
-                      </div>
-                      <div className="wr-detail-equip wr-form-section__body">
-                        <dl className="wo-received-detail__fields">
-                          {hierarchy.length > 0 ? hierarchy
-                            .filter((step, i, list) => {
-                              const name = String(step.field_name || '').trim().toLowerCase()
-                              if (!name) return false
-                              return list.findIndex((item) => String(item.field_name || '').trim().toLowerCase() === name) === i
-                            })
-                            .map((step, i) => (
-                            <div key={`${step.field_id || step.field_name}-${i}`} className="wo-received-detail__field">
-                              <dt>{step.field_name}</dt>
-                              <dd>{step.value || '—'}</dd>
-                            </div>
-                          )) : (
-                            <>
-                              {equipment?.area_name && (
-                                <div className="wo-received-detail__field">
-                                  <dt>Area</dt>
-                                  <dd>{equipment.area_name}</dd>
-                                </div>
-                              )}
-                              <div className="wo-received-detail__field">
-                                <dt>Equipment</dt>
-                                <dd>{[equipment?.name, equipment?.code].filter(Boolean).join(' · ') || '—'}</dd>
-                              </div>
-                            </>
-                          )}
-                        </dl>
-                        {qrValue ? (
-                          <EquipmentQrCode
-                            value={qrValue}
-                            caption={{ label: 'QR code', value: equipment?.code || equipment?.name || qrValue }}
-                            fileName={equipment?.code || equipment?.name || 'equipment-qr'}
-                          />
-                        ) : null}
-                      </div>
-                    </section>
-                  )}
 
                   {hasLayout ? (
                     <>
@@ -797,7 +832,47 @@ export default function WorkRequestDetailModal({
                         onMasterChange={extras.setFieldValue}
                         disabled
                         actors={formActors}
-                        renderField={() => null}
+                        valueLabels={routingValueLabels}
+                        omitField={(item) => isAssetPickerLayoutField(item)}
+                        renderField={(key, props) => renderIncomingRequestInfoField(detail, key, props)}
+                        renderSection={(id, children, section) => {
+                          const showAsset = isAssetLayoutSection(id, section, layout)
+                            && (hierarchyDisplaySteps(hierarchy).length > 0 || Boolean(qrValue))
+                          const nodes = (Array.isArray(children) ? children : [children]).filter(Boolean)
+                          if (!showAsset && !nodes.length) return null
+                          const filledBy = section.filledBy || 'any'
+                          return (
+                            <section
+                              key={id}
+                              data-section-id={id}
+                              className={`company-form__layout-section wo-section ${filledBy !== 'any' ? 'is-fillership-locked' : ''}`}
+                            >
+                              {section.label || section.badge ? (
+                                <div className="wo-section__header company-form__layout-section-head">
+                                  {section.label ? <h3 className="wo-section__title">{section.label}</h3> : null}
+                                  {section.badge}
+                                </div>
+                              ) : null}
+                              <div className={`wo-section__body company-form__layout-section-body ${section.label || section.badge ? '' : 'company-form__layout-section-body--flush'}`.trim()}>
+                                {showAsset ? (
+                                  <div className="wr-detail-equip">
+                                    <AssetHierarchySummary steps={hierarchy} />
+                                    {qrValue ? (
+                                      <EquipmentQrCode
+                                        value={qrValue}
+                                        caption={{ label: 'QR code', value: equipment?.code || equipment?.name || qrValue }}
+                                        fileName={equipment?.code || equipment?.name || 'asset-qr'}
+                                      />
+                                    ) : null}
+                                  </div>
+                                ) : null}
+                                {nodes.length > 0 ? (
+                                  <div className="company-form__grid company-form__grid--12">{children}</div>
+                                ) : null}
+                              </div>
+                            </section>
+                          )
+                        }}
                       />
                     </>
                   ) : layoutFields.length > 0 && (
@@ -898,7 +973,7 @@ export default function WorkRequestDetailModal({
                           onClick={() => setMode(mode === 'approve' ? null : 'approve')}
                           disabled={acting || mode === 'reject'}
                         >
-                          Approve &amp; Assign
+                          Approve
                         </button>
                         <button
                           type="button"
@@ -921,103 +996,16 @@ export default function WorkRequestDetailModal({
 
                     {mode === 'approve' && (
                       <div className="wr-assign-block">
-                        <div className="company-form__field company-form__field--full">
-                          <span className="company-form__label">
-                            Technicians
-                            {assigneeIds.length > 0 ? ` (${assigneeIds.length} selected)` : ''}
-                          </span>
-                          <TechnicianMultiSelect
-                            employees={employees}
-                            value={assigneeIds}
-                            onChange={setAssigneeIds}
-                            disabled={acting}
-                            placeholder="Select technicians…"
-                          />
-                        </div>
-                        <div className="company-form__grid">
-                          <label className="company-form__field">
-                            <span className="company-form__label">Work center</span>
-                            {workCenters.length ? (
-                              <FilterableSelect
-                                className="company-form__input--select"
-                                value={workCenter}
-                                onChange={setWorkCenter}
-                                options={workCenters}
-                                getOptionValue={(row) => row.name}
-                                getOptionLabel={(row) => row.code ? `${row.name} (${row.code})` : row.name}
-                                placeholder="Select work center"
-                                allowEmpty={false}
-                                required
-                              />
-                            ) : (
-                              <SpellcheckInput
-                                className="company-form__input"
-                                value={workCenter}
-                                onChange={(e) => setWorkCenter(e.target.value)}
-                                placeholder="e.g. Mechanical Workshop"
-                                required
-                              />
-                            )}
-                          </label>
-                          <label className="company-form__field">
-                            <span className="company-form__label">Priority</span>
-                            <select
-                              className="company-form__input"
-                              value={approvePriority}
-                              onChange={(e) => setApprovePriority(e.target.value)}
-                            >
-                              <option value="high">High</option>
-                              <option value="medium">Medium</option>
-                              <option value="low">Low</option>
-                            </select>
-                          </label>
-                          <label className="company-form__field">
-                            <span className="company-form__label">Planned start</span>
-                            <DateField
-                              value={plannedStartAt}
-                              onChange={setPlannedStartAt}
-                              withTime
-                              disabled={acting}
-                            />
-                          </label>
-                          <label className="company-form__field">
-                            <span className="company-form__label">Planned end</span>
-                            <DateField
-                              value={plannedEndAt}
-                              onChange={setPlannedEndAt}
-                              withTime
-                              disabled={acting}
-                            />
-                          </label>
-                        </div>
-                        <label className="company-form__field company-form__field--full">
-                          <FormLabel limit={maxLength('assignment_remarks')}>Assignment remarks</FormLabel>
-                          <SpellcheckInput
-                            multiline
-                            className="company-form__input company-form__textarea"
-                            rows={2}
-                            value={assignmentRemarks}
-                            onChange={(e) => setAssignmentRemarks(e.target.value)}
-                            maxLength={maxLength('assignment_remarks')}
-                          />
-                        </label>
+                        <p className="wo-permit__hint">
+                          Approving creates a work order. You can assign technicians next, or leave it
+                          Unassigned for anyone to pick up in Received work orders.
+                        </p>
                         <div className="wr-actions">
                           <button
                             type="button"
                             className="company-btn company-btn--primary"
-                            disabled={acting || !assigneeIds.length || !workCenter.trim()}
-                            onClick={() => runAction(() => approveWorkRequest(requestId, {
-                              assignedEmployeeIds: assigneeIds,
-                              assignmentRemarks,
-                              workCenter: workCenter.trim(),
-                              priority: approvePriority,
-                              plannedStartAt: plannedStartAt
-                                ? new Date(plannedStartAt).toISOString()
-                                : null,
-                              plannedEndAt: plannedEndAt
-                                ? new Date(plannedEndAt).toISOString()
-                                : null,
-                            }))}
+                            disabled={acting}
+                            onClick={() => runAction(() => approveWorkRequest(requestId, {}))}
                           >
                             {acting ? 'Saving…' : 'Confirm approval'}
                           </button>
@@ -1025,6 +1013,7 @@ export default function WorkRequestDetailModal({
                             type="button"
                             className="company-btn company-btn--secondary"
                             onClick={() => setMode(null)}
+                            disabled={acting}
                           >
                             Cancel
                           </button>
@@ -1065,10 +1054,17 @@ export default function WorkRequestDetailModal({
                     )}
                   </section>
                 )}
+
+                {showPostApproveAssign && linkedOrder && (
+                  <WorkOrderAssignmentActions
+                    detail={linkedOrder}
+                    onUpdated={handleLinkedOrderUpdated}
+                  />
+                )}
               </div>
               <aside className="wr-detail-timeline" aria-label="Timeline">
                 <h3 className="wr-detail-timeline__title">Timeline</h3>
-                <RecordTimeline events={detail.timeline} />
+                <RecordTimeline events={hydrateTimelineAttachments(detail.timeline, detail.attachments)} />
               </aside>
             </div>
           )}

@@ -12,6 +12,7 @@ export async function getEmployees(filters = {}) {
     filters: filters.filters,
     sort: filters.sort,
     sortDir: filters.sortDir,
+    sort_by: filters.sortBy,
   })}`)
   return asListArray(data)
 }
@@ -24,6 +25,7 @@ export function exportEmployees(filters = {}) {
     filters: filters.filters,
     sort: filters.sort,
     sortDir: filters.sortDir,
+    sort_by: filters.sortBy,
     exportCsv: true,
   })}`)
 }

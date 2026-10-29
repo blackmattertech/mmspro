@@ -150,10 +150,13 @@ function findRequestRoutingFields(layout) {
   }
 
   const requestType = byBind.get('request_type')
-    || fields.find((field) => (
-      /request\s*type/i.test(field.label || '')
-      && normalizeOptions(field.options).length > 0
-    ))
+    || byBind.get('order_type')
+    || fields.find((field) => {
+      const id = String(field.id || '')
+      if (id === 'system:request_type' || id === 'system:order_type') return true
+      const label = String(field.label || '')
+      return /request\s*type/i.test(label) || /order\s*type/i.test(label)
+    })
   const orderFrom = byBind.get('order_from_department_id')
     || fields.find((field) => (
       /order\s*from/i.test(field.label || '')

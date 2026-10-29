@@ -14,8 +14,10 @@ import {
 } from '../../config/workRequests'
 import { useDepartments } from '../../hooks/useDepartments'
 import { WR_PRIORITY_FILTER_OPTIONS, WR_SORT_OPTIONS, WR_STATUS_FILTER_OPTIONS } from '../../lib/workRequestFilters'
-import { getWorkRequestsTemplate, bulkUploadWorkRequests, exportWorkRequests, getWorkRequestTabCounts } from '../../lib/api-work-requests'
+import { getWorkRequestsTemplate, bulkUploadWorkRequests, exportWorkRequests, getWorkRequestTabCounts, listWorkRequests } from '../../lib/api-work-requests'
+import { uniqueNameOptions } from '../../lib/tableFilters'
 import { peekReferenceData, seedReferenceData } from '../../lib/referenceDataCache'
+import { TAB_COUNTS_EVENT } from '../../lib/tabCountEvents'
 import { downloadBlobFile } from '../../lib/api'
 import TableFilterToolbar from '../shared/TableFilterToolbar'
 import TableColumnPicker from '../shared/TableColumnPicker'
@@ -79,9 +81,33 @@ export default function WorkRequestsLayout() {
   const fallbackTab = defaultWorkRequestTab(canRead)
 
   const { departments } = useDepartments()
+  const [filterRows, setFilterRows] = useState([])
+  useEffect(() => {
+    if (!listFilter) {
+      setFilterRows([])
+      return undefined
+    }
+    let cancelled = false
+    listWorkRequests(listFilter, { limit: 200, offset: 0 })
+      .then((rows) => { if (!cancelled) setFilterRows(Array.isArray(rows) ? rows : []) })
+      .catch(() => { if (!cancelled) setFilterRows([]) })
+    return () => { cancelled = true }
+  }, [listFilter])
   const requestFilterFields = useMemo(() => ([
-    { id: 'wr_number', label: 'WR #', placeholder: 'Enter work request number...' },
-    { id: 'problem', label: 'Short description', placeholder: 'Enter keywords...' },
+    {
+      id: 'wr_number',
+      label: 'WR #',
+      type: 'select',
+      emptyLabel: 'All WR #',
+      options: uniqueNameOptions(filterRows, (row) => row.request_number || row.wr_number),
+    },
+    {
+      id: 'problem',
+      label: 'Short description',
+      type: 'select',
+      emptyLabel: 'All descriptions',
+      options: uniqueNameOptions(filterRows, (row) => row.short_description || row.problem_description),
+    },
     {
       id: 'type',
       label: 'Type',
@@ -122,7 +148,7 @@ export default function WorkRequestsLayout() {
       options: WR_STATUS_FILTER_OPTIONS.filter((option) => option.value !== 'all'),
     },
     { id: 'request_date', label: 'Requested Date', type: 'date-range' },
-  ]), [departments])
+  ]), [departments, filterRows])
   const catalogFields = useCatalogFields()
   const requestColumns = useMemo(
     () => mergePickerColumns(WORK_REQUEST_COLUMNS, catalogFields),
@@ -134,6 +160,7 @@ export default function WorkRequestsLayout() {
     resetColumns,
     reorderColumns,
     moveColumn,
+    saveColumns,
     columnOrder,
     columnDefs,
   } = useTableColumnPrefs(
@@ -158,15 +185,32 @@ export default function WorkRequestsLayout() {
 
   useEffect(() => {
     let cancelled = false
-    getWorkRequestTabCounts()
-      .then((counts) => {
-        if (cancelled) return
-        setTabCounts(counts || {})
-        seedReferenceData('tab-counts', { module: 'work_requests' }, counts || {})
-      })
-      .catch(() => {})
-    return () => { cancelled = true }
-  }, [bulkReloadToken, org?.id])
+    const load = () => {
+      getWorkRequestTabCounts()
+        .then((counts) => {
+          if (cancelled || !counts || typeof counts !== 'object') return
+          const next = {
+            my: Number(counts.my) || 0,
+            incoming: Number(counts.incoming) || 0,
+            outgoing: Number(counts.outgoing) || 0,
+            all: Number(counts.all) || 0,
+          }
+          setTabCounts(next)
+          seedReferenceData('tab-counts', { module: 'work_requests' }, next)
+        })
+        .catch(() => {})
+    }
+    load()
+    const onChange = (event) => {
+      if (event.detail?.module && event.detail.module !== 'work_requests') return
+      load()
+    }
+    window.addEventListener(TAB_COUNTS_EVENT, onChange)
+    return () => {
+      cancelled = true
+      window.removeEventListener(TAB_COUNTS_EVENT, onChange)
+    }
+  }, [bulkReloadToken, org?.id, location.pathname])
 
   const outletContext = useMemo(() => ({
     listFilter,
@@ -329,6 +373,7 @@ export default function WorkRequestsLayout() {
                   onReset={resetColumns}
                   onReorder={reorderColumns}
                   onMove={moveColumn}
+                  onSave={saveColumns}
                 />
               )}
             />

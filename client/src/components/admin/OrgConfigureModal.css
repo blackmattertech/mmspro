@@ -148,9 +148,28 @@
 .org-configure-modal__body {
   flex: 1;
   min-height: 0;
-  overflow-y: auto;
-  padding: 24px 28px 28px;
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
+  padding: 16px 20px 20px;
   background: var(--color-off-white);
+}
+
+.org-configure-modal__body .form-builder,
+.org-configure-modal__body .form-builder-canvas {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.org-configure-modal__body:has(.form-builder-canvas) {
+  overflow: hidden;
+}
+
+.org-configure-modal__body .form-builder-canvas__split {
+  flex: 1;
+  min-height: 0;
 }
 
 .org-configure-modal__empty-card {

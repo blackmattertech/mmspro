@@ -25,6 +25,8 @@ export default function OthersChecklists() {
   const canManage = (
     isCompanyAdmin(role)
     || canManageOrg(role)
+    || canCreate('others')
+    || canUpdate('others')
     || canCreate('work_orders_scheduled')
     || canUpdate('work_orders_scheduled')
     || canCreate('work_orders')
@@ -33,6 +35,7 @@ export default function OthersChecklists() {
   const canRemove = (
     isCompanyAdmin(role)
     || canManageOrg(role)
+    || canDelete('others')
     || canDelete('work_orders_scheduled')
     || canDelete('work_orders')
   )

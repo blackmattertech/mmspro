@@ -19,6 +19,7 @@ import { TableColumnHead } from '../shared/ListTableChrome'
 import RecordPdfButton from '../shared/RecordPdfButton'
 import { ColumnPickerPortal } from '../shared/ColumnPickerSlot'
 import { VirtualTableBody } from '../shared/VirtualTableBody'
+import TableEmptyRow from '../shared/TableEmptyRow'
 import '../shared/ListTableChrome.css'
 import { progressPercentForStatus } from '../../lib/statusProgress'
 import { colorByStatus, tallyStatusCounts } from '../../lib/statusCounts'
@@ -52,7 +53,7 @@ const EXTRA_COLUMNS = [
   { id: 'problem_description', label: 'Problem description' },
   { id: 'location', label: 'Location' },
   { id: 'department', label: 'Department' },
-  { id: 'equipment', label: 'Equipment' },
+  { id: 'equipment', label: 'Asset' },
   { id: 'source_type', label: 'Source' },
   { id: 'job_nature', label: 'Job nature' },
   { id: 'special_instructions', label: 'Special instructions' },
@@ -83,7 +84,10 @@ function hierarchyValue(order, name, fieldId) {
 }
 
 function equipmentLabel(order) {
-  return hierarchyValue(order, 'Equipment') || hierarchyValue(order, 'Equipment Name')
+  return hierarchyValue(order, 'Asset')
+    || hierarchyValue(order, 'Asset Name')
+    || hierarchyValue(order, 'Equipment')
+    || hierarchyValue(order, 'Equipment Name')
 }
 
 function permitLabel(order) {
@@ -273,6 +277,7 @@ export default function WorkOrdersTable({
     resetColumns,
     reorderColumns,
     moveColumn,
+    saveColumns,
   } = useTableColumnPrefs(tableId, columnDefs)
   const { statuses, labelByKey: statusLabels } = useOrgStatusOptions('work_order', { includeInactive: true })
   const statusColors = useMemo(() => colorByStatus(statuses), [statuses])
@@ -407,22 +412,10 @@ export default function WorkOrdersTable({
         onReset={resetColumns}
         onReorder={reorderColumns}
         onMove={moveColumn}
+        onSave={saveColumns}
       />
     </ColumnPickerPortal>
   )
-
-  if (!orders.length) {
-    return (
-      <div>
-        {columnPicker}
-        {countBar}
-        <div className="company-empty">
-          <p>{emptyTitle}</p>
-          {emptyHint && <p className="wo-page__empty-hint">{emptyHint}</p>}
-        </div>
-      </div>
-    )
-  }
 
   return (
     <div>
@@ -451,25 +444,34 @@ export default function WorkOrdersTable({
             </th>
           </tr>
         </thead>
-        <VirtualTableBody
-          items={pagedOrders}
-          renderRow={(order) => (
-            <WorkOrderTableRow
-              key={order.id}
-              order={order}
-              visibleColumnIds={visibleColumnIds}
-              renderCell={renderCell}
-              onView={onView}
-              onApprove={onApprove}
-              canApproveOrder={canApproveOrder}
-              approvingId={approvingId}
-              canEdit={canEdit}
-              onEdit={onEdit}
-              canDelete={canDelete}
-              onDelete={onDelete}
-            />
-          )}
-        />
+        {pagedOrders.length === 0 ? (
+          <tbody>
+            <TableEmptyRow colSpan={visibleColumnIds.length + 1}>
+              <p>{emptyTitle}</p>
+              {emptyHint ? <p className="wo-page__empty-hint">{emptyHint}</p> : null}
+            </TableEmptyRow>
+          </tbody>
+        ) : (
+          <VirtualTableBody
+            items={pagedOrders}
+            renderRow={(order) => (
+              <WorkOrderTableRow
+                key={order.id}
+                order={order}
+                visibleColumnIds={visibleColumnIds}
+                renderCell={renderCell}
+                onView={onView}
+                onApprove={onApprove}
+                canApproveOrder={canApproveOrder}
+                approvingId={approvingId}
+                canEdit={canEdit}
+                onEdit={onEdit}
+                canDelete={canDelete}
+                onDelete={onDelete}
+              />
+            )}
+          />
+        )}
       </table>
       <TablePagination {...pagination} />
       </div>

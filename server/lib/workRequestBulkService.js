@@ -1,4 +1,5 @@
-import { createWorkRequest, jobNatureOptionsFromField, resolveJobNatureField } from './workRequestService.js'
+import { createWorkRequest } from './workRequestService.js'
+import { resolveJobNatureChoiceList } from './formFieldMasters.js'
 import { loadOrgFields } from './equipmentFieldService.js'
 import { buildManualWorkOrderFormSchema } from './manualWorkOrderForm.js'
 import {
@@ -24,7 +25,7 @@ const CORE_COLUMNS = [
   'Request Type',
   'Order From Department',
   'Order To Department',
-  'Equipment',
+  'Asset',
   'Short Description',
   'Problem Description',
   'Priority',
@@ -64,13 +65,13 @@ async function loadWorkRequestFormColumns(orgId) {
 }
 
 export async function buildWorkRequestsTemplate(orgId) {
-  const [masters, mapped, jobNatureField] = await Promise.all([
+  const [masters, mapped, jobNatureChoices] = await Promise.all([
     loadFormMasters(orgId),
     loadWorkRequestFormColumns(orgId),
-    resolveJobNatureField(orgId),
+    resolveJobNatureChoiceList(orgId),
   ])
   const extraColumns = [...STATIC_EXTRA_COLUMNS, ...mapped.map((row) => row.column)]
-  const jobNatures = jobNatureOptionsFromField(jobNatureField).map((row) => row.label || row.value)
+  const jobNatures = jobNatureChoices.map((row) => row.label || row.value)
   return buildWorkbook([...CORE_COLUMNS, ...extraColumns], [
     { header: 'Request Type', values: REQUEST_TYPES.map((row) => row.label) },
     { header: 'Priority', values: PRIORITIES.map((row) => row.label) },
@@ -104,7 +105,7 @@ export async function bulkImportWorkRequests(orgId, profileId, email, buffer, { 
 
     const fromDept = optionalMatch(masters.departments, row['Order From Department'], 'Order from department', ['name', 'code'])
     const toDept = optionalMatch(masters.departments, row['Order To Department'], 'Order to department', ['name', 'code'])
-    const equipment = optionalMatch(masters.equipment, row.Equipment, 'Equipment', ['name', 'code'])
+    const equipment = optionalMatch(masters.equipment, row.Asset || row.Equipment, 'Asset', ['name', 'code'])
     const saveAs = matchChoice(row['Save As'], SAVE_AS) || 'submit'
     const priority = matchChoice(row.Priority, PRIORITIES)
     const formFieldValues = valuesFromMappedRow(row, mapped)
@@ -129,5 +130,5 @@ export async function bulkImportWorkRequests(orgId, profileId, email, buffer, { 
       to: toDept?.name || '',
       type: requestType,
     }
-  }, { extraColumns })
+  }, { extraColumns, aliases: { Asset: ['Equipment'] } })
 }

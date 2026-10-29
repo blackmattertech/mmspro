@@ -92,7 +92,7 @@ export const IMPORT_PREVIEW_COLUMNS = {
   pm_plans: [
     { key: 'name', label: 'Plan' },
     { key: 'activity', label: 'Activity' },
-    { key: 'equipment', label: 'Equipment' },
+    { key: 'equipment', label: 'Asset' },
     { key: 'status', label: 'Status' },
   ],
   tasks: [
@@ -176,19 +176,20 @@ export const IMPORT_TEMPLATES = [
   },
   {
     id: 'equipment',
-    label: 'Equipment',
-    description: 'Bulk create equipment records with placement and custom fields.',
+    label: 'Assets',
+    description: 'Bulk create asset records with placement and custom fields.',
     moduleKey: 'equipment',
     instructions: [
-      'Download the Excel template — columns match your organization’s equipment fields.',
+      'Download the Excel template — columns match your organization’s asset fields, plus Location, Department, Area, Reading required, and Active.',
       'Location and Department must match the Valid values sheet. Area accepts any name: an existing area is reused, and a new name is created for that location and department and appears on the Areas tab.',
-      'Complete any other required columns for each equipment row.',
-      'Upload the .xlsx file. Each valid row creates one equipment record.',
+      'Use Yes/No for Reading required and Active. Leave them blank to default Reading required to No and Active to Yes.',
+      'Complete any other required columns for each asset row.',
+      'Upload the .xlsx file. Each valid row creates one asset record.',
       'For failed rows, download the failed-rows file, correct data using the Import errors column, delete that column, and re-upload.',
     ],
     downloadTemplate: getEquipmentTemplate,
     upload: bulkUploadEquipment,
-    failedFilename: 'equipment-import-failed-rows.xlsx',
+    failedFilename: 'assets-import-failed-rows.xlsx',
   },
   {
     id: 'vendors',
@@ -213,7 +214,7 @@ export const IMPORT_TEMPLATES = [
     moduleKey: 'work_request_create',
     instructions: [
       'Download the Work Requests sample Excel file. It includes every form field, plus child and grandchild fields named Parent → Child.',
-      'Fill Request Type, departments, equipment, descriptions, and priority from Valid values. Child fields appear as extra columns.',
+      'Fill Request Type, departments, asset, descriptions, and priority from Valid values. Child fields appear as extra columns.',
       'Save As can be Submit or Draft. Upload the .xlsx file from this page or the Work Requests toolbar.',
     ],
     downloadTemplate: getWorkRequestsTemplate,
@@ -228,7 +229,7 @@ export const IMPORT_TEMPLATES = [
     moduleKeys: ['work_orders', 'work_orders_manual'],
     instructions: [
       'Download the Work Orders sample Excel file. It includes assignment fields plus every parent, child, and grandchild form field.',
-      'Enter short description, priority, location, department, equipment, and assigned technicians from Valid values.',
+      'Enter short description, priority, location, department, asset, and assigned technicians from Valid values.',
       'Dependent fields are named Parent → Child. Status can be Draft or Assigned.',
     ],
     downloadTemplate: getWorkOrdersTemplate,
@@ -242,7 +243,7 @@ export const IMPORT_TEMPLATES = [
     moduleKey: 'work_orders_scheduled',
     instructions: [
       'Download the PM Plans sample Excel file.',
-      'Name, department, activity type, and equipment are required. Use Valid values for schedule type, interval, technicians, and checklist.',
+      'Name, department, activity type, and asset are required. Use Valid values for schedule type, interval, technicians, and checklist.',
       'Upload the .xlsx file from this page or the PM Plans toolbar.',
     ],
     downloadTemplate: getPmPlansTemplate,

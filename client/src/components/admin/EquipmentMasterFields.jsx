@@ -13,18 +13,27 @@ import {
   fieldTypeLabel,
   fieldTypeSupportsOptions,
 } from '../../lib/assetFieldTypes'
+import { hierarchyChainLabel, previousLevelChoices } from '../../lib/assetHierarchy'
+import TableEmptyRow from '../shared/TableEmptyRow'
 import '../company/CompanyShared.css'
+import '../assets/AssetsFields.css'
 
 const EMPTY = {
   name: '',
   field_type: 'text',
   is_required: false,
-  dropdown_options: [''],
 }
 
 function optionsFromField(field) {
+  const bindings = field?.option_bindings
+  if (Array.isArray(bindings) && bindings.length) {
+    return bindings.map((binding) => ({
+      value: String(binding.value || '').trim(),
+      parentValue: String(binding.parent_value || '').trim(),
+    }))
+  }
   const options = (field?.dropdown_options || []).map((value) => String(value).trim()).filter(Boolean)
-  return options.length ? options : ['']
+  return (options.length ? options : ['']).map((value) => ({ value, parentValue: '' }))
 }
 
 function withQrField(layout, field) {
@@ -75,7 +84,7 @@ export default function EquipmentMasterFields({ orgId, fieldsState }) {
   const markQrField = async (field) => {
     const data = await getAdminFormLayout(orgId, 'equipment.create')
     const base = data?.layout || data?.defaultLayout
-    if (!base) throw new Error('Equipment form is not available yet')
+    if (!base) throw new Error('Assets form is not available yet')
     const saved = await saveAdminFormLayout(orgId, 'equipment.create', withQrField(base, field))
     setQrFieldId(saved?.layout?.qrFieldId || catalogId(field.id))
   }
@@ -151,7 +160,7 @@ export default function EquipmentMasterFields({ orgId, fieldsState }) {
   }
 
   const handleDelete = async (field) => {
-    if (!window.confirm(`Delete "${field.name}"? Companies will no longer see this field on equipment.`)) return
+    if (!window.confirm(`Delete "${field.name}"? Companies will no longer see this field on assets.`)) return
     setActionError(null)
     try {
       await remove(field.id)
@@ -164,43 +173,34 @@ export default function EquipmentMasterFields({ orgId, fieldsState }) {
   return (
     <div className="company-panel asset-fields-panel--compact">
       <p className="org-configure-equipment__hint">
-        These are the only fields on the equipment form. Mark QR code on the field that should generate the QR as soon as it is filled in.
+        These are the only fields on the asset form. Mark QR code on the field that should generate the QR as soon as it is filled in.
       </p>
-      <div className="asset-field-filters">
-        <div className="asset-field-filters__search-group">
-          <label className="company-filter asset-field-filters__search">
-            <span>Search</span>
-            <SpellcheckInput
-              type="search"
-              className="company-form__input"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search fields…"
-            />
-          </label>
-        </div>
+      <div className="asset-field-filters asset-field-filters--inline">
+        <label className="company-filter asset-field-filters__search">
+          <span>Search</span>
+          <SpellcheckInput
+            type="search"
+            className="company-form__input"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Search fields…"
+          />
+        </label>
+        <button type="button" className="company-btn company-btn--primary" onClick={openCreate}>
+          + Add field
+        </button>
         <p className="company-panel__count">{visible.length} field{visible.length === 1 ? '' : 's'}</p>
-        <div className="asset-field-filters__add">
-          <button type="button" className="company-btn company-btn--primary" onClick={openCreate}>
-            + Add field
-          </button>
-        </div>
       </div>
       {(error || actionError) && <div className="company-alert">{actionError || error}</div>}
       {loading ? (
         <div className="company-loading">Loading fields…</div>
-      ) : visible.length === 0 ? (
-        <div className="company-empty">
-          {search.trim()
-            ? 'No fields match your search.'
-            : 'No equipment fields yet. Add the details this company will fill in for each machine.'}
-        </div>
       ) : (
         <div className="company-table-wrap">
           <table className="company-table master-table">
             <thead>
               <tr>
                 <th>Name</th>
+                <th>Level</th>
                 <th>Type</th>
                 <th>Required</th>
                 <th>QR code</th>
@@ -210,9 +210,16 @@ export default function EquipmentMasterFields({ orgId, fieldsState }) {
               </tr>
             </thead>
             <tbody>
-              {visible.map((field) => (
+              {visible.length === 0 ? (
+                <TableEmptyRow colSpan={8}>
+                  {search.trim()
+                    ? 'No fields match your search.'
+                    : 'No asset fields yet. Add the details this company will fill in for each machine.'}
+                </TableEmptyRow>
+              ) : visible.map((field) => (
                 <tr key={field.id} className={field.is_active === false ? 'company-table__row--inactive' : ''}>
                   <td>{field.name}</td>
+                  <td>{hierarchyChainLabel(field, parents)}</td>
                   <td>{fieldTypeLabel(field.field_type)}</td>
                   <td>{field.is_required ? 'Yes' : 'No'}</td>
                   <td>
@@ -266,6 +273,7 @@ export default function EquipmentMasterFields({ orgId, fieldsState }) {
       {modalOpen && (
         <EquipmentFieldModal
           field={modalField}
+          parents={parents}
           saving={saving || qrSavingId === modalField?.id}
           useQr={Boolean(modalField?.id && qrFieldId === catalogId(modalField.id))}
           onClose={() => setModalOpen(false)}
@@ -276,7 +284,7 @@ export default function EquipmentMasterFields({ orgId, fieldsState }) {
   )
 }
 
-function EquipmentFieldModal({ field, saving, useQr = false, onClose, onSave }) {
+function EquipmentFieldModal({ field, parents = [], saving, useQr = false, onClose, onSave }) {
   const handleBackdropClick = useBackdropClose(onClose)
   const [form, setForm] = useState(() => (
     field
@@ -284,19 +292,29 @@ function EquipmentFieldModal({ field, saving, useQr = false, onClose, onSave }) 
         name: field.name || '',
         field_type: field.field_type || 'text',
         is_required: Boolean(field.is_required),
-        dropdown_options: optionsFromField(field),
+        parent_field_id: field.depends_on_parent_id || '',
+        options: optionsFromField(field),
         use_qr: useQr,
       }
-      : { ...EMPTY, use_qr: false }
+      : { ...EMPTY, parent_field_id: '', options: [{ value: '', parentValue: '' }], use_qr: false }
   ))
   const [error, setError] = useState(null)
   const showOptions = fieldTypeSupportsOptions(form.field_type)
+  const levelChoices = previousLevelChoices(parents, field?.id)
+  const previousField = levelChoices.find((item) => item.id === form.parent_field_id)
+    || parents.find((item) => item.id === form.parent_field_id)
+    || null
+  const previousOptions = (previousField?.field_type === 'dropdown' || previousField?.field_type === 'radio')
+    ? (previousField?.dropdown_options || []).map((option) => String(option).trim()).filter(Boolean)
+    : []
 
-  const updateOption = (index, value) => {
-    const dropdown_options = form.dropdown_options.map((option, optionIndex) => (
-      optionIndex === index ? value : option
-    ))
-    setForm((current) => ({ ...current, dropdown_options }))
+  const updateOption = (index, patch) => {
+    setForm((current) => ({
+      ...current,
+      options: current.options.map((option, optionIndex) => (
+        optionIndex === index ? { ...option, ...patch } : option
+      )),
+    }))
   }
 
   const handleSubmit = async (event) => {
@@ -306,11 +324,14 @@ function EquipmentFieldModal({ field, saving, useQr = false, onClose, onSave }) 
       setError('Name is required')
       return
     }
-    const dropdown_options = form.dropdown_options.map((option) => option.trim()).filter(Boolean)
-    if (showOptions && (form.field_type === 'dropdown' || form.field_type === 'radio') && !dropdown_options.length) {
-      setError('Add at least one option')
-      return
-    }
+    const options = showOptions
+      ? form.options
+        .map((option) => ({
+          value: String(option.value || '').trim(),
+          parentValue: String(option.parentValue || '').trim(),
+        }))
+        .filter((option) => option.value)
+      : []
     setError(null)
     try {
       await onSave({
@@ -319,7 +340,13 @@ function EquipmentFieldModal({ field, saving, useQr = false, onClose, onSave }) 
         is_required: form.is_required,
         is_parent: true,
         is_section: false,
-        dropdown_options,
+        depends_on_parent_id: form.parent_field_id || null,
+        depends_on_option: null,
+        dropdown_options: options.map((option) => option.value),
+        option_bindings: options.map((option) => ({
+          value: option.value,
+          parent_value: previousOptions.length ? option.parentValue : '',
+        })),
       }, { useQr: form.use_qr })
     } catch (err) {
       setError(err.message)
@@ -361,9 +388,9 @@ function EquipmentFieldModal({ field, saving, useQr = false, onClose, onSave }) 
               onChange={(field_type) => setForm((current) => ({
                 ...current,
                 field_type,
-                dropdown_options: fieldTypeSupportsOptions(field_type)
-                  ? (current.dropdown_options.length ? current.dropdown_options : [''])
-                  : [''],
+                options: fieldTypeSupportsOptions(field_type)
+                  ? (current.options.length ? current.options : [{ value: '', parentValue: '' }])
+                  : [{ value: '', parentValue: '' }],
               }))}
               options={ASSET_FIELD_TYPES}
               getOptionValue={(type) => type.value}
@@ -392,18 +419,49 @@ function EquipmentFieldModal({ field, saving, useQr = false, onClose, onSave }) 
             </div>
           </div>
           <p className="company-employee-photo__login-hint equipment-field-flags__hint">
-            The value of this field is printed under the equipment QR code.
+            The value of this field is printed under the asset QR code.
           </p>
+          <label className="company-form__field">
+            <span className="company-form__label">Parent</span>
+            <FilterableSelect
+              value={form.parent_field_id || '__first__'}
+              onChange={(parent_field_id) => setForm((current) => ({
+                ...current,
+                parent_field_id: parent_field_id === '__first__' ? '' : parent_field_id,
+                options: current.options.map((option) => ({ ...option, parentValue: '' })),
+              }))}
+              options={[{ id: '__first__', name: 'First level' }, ...levelChoices]}
+              getOptionValue={(item) => item.id}
+              getOptionLabel={(item) => (item.id === '__first__' ? item.name : `Next level of ${item.name}`)}
+              placeholder="First level"
+              allowEmpty={false}
+              className="company-form__input--select"
+            />
+          </label>
           {showOptions && (
             <div className="company-form__field">
               <span className="company-form__label">Options</span>
+              <p className="company-employee-photo__login-hint equipment-field-flags__hint">
+                Optional. Leave this empty and the company can type the value while creating an asset.
+              </p>
               <div className="asset-dropdown-options">
-                {form.dropdown_options.map((option, index) => (
+                {form.options.map((option, index) => (
                   <div key={index} className="asset-dropdown-options__row">
+                    {previousOptions.length > 0 && (
+                      <FilterableSelect
+                        value={option.parentValue}
+                        onChange={(parentValue) => updateOption(index, { parentValue })}
+                        options={previousOptions}
+                        getOptionValue={(item) => item}
+                        getOptionLabel={(item) => item}
+                        placeholder={`When ${previousField.name} is`}
+                        className="company-form__input--select"
+                      />
+                    )}
                     <SpellcheckInput
                       className="company-form__input"
-                      value={option}
-                      onChange={(event) => updateOption(index, event.target.value)}
+                      value={option.value}
+                      onChange={(event) => updateOption(index, { value: event.target.value })}
                       placeholder="Option"
                     />
                     <button
@@ -411,9 +469,9 @@ function EquipmentFieldModal({ field, saving, useQr = false, onClose, onSave }) 
                       className="company-btn company-btn--ghost company-btn--compact"
                       onClick={() => setForm((current) => ({
                         ...current,
-                        dropdown_options: current.dropdown_options.filter((_, optionIndex) => optionIndex !== index),
+                        options: current.options.filter((_, optionIndex) => optionIndex !== index),
                       }))}
-                      disabled={form.dropdown_options.length === 1}
+                      disabled={form.options.length === 1}
                     >
                       Remove
                     </button>
@@ -425,7 +483,7 @@ function EquipmentFieldModal({ field, saving, useQr = false, onClose, onSave }) 
                 className="company-btn company-btn--ghost company-btn--compact"
                 onClick={() => setForm((current) => ({
                   ...current,
-                  dropdown_options: [...current.dropdown_options, ''],
+                  options: [...current.options, { value: '', parentValue: '' }],
                 }))}
               >
                 + Add option

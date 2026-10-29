@@ -12,6 +12,14 @@ export const ACCESS_MODULE_GROUPS = [
     ],
   },
   {
+    id: 'equipment',
+    label: 'Assets',
+    modules: [
+      { key: 'equipment', label: 'Assets', actions: ['create', 'read', 'update', 'delete'] },
+      { key: 'areas', label: 'Areas', actions: ['create', 'read', 'update', 'delete'] },
+    ],
+  },
+  {
     id: 'work_request',
     label: 'Work Request',
     modules: [
@@ -57,9 +65,9 @@ export const ACCESS_MODULE_GROUPS = [
   },
   {
     id: 'logbook',
-    label: 'Logbook',
+    label: 'Meter reading',
     modules: [
-      { key: 'logbook', label: 'Logbook', actions: ['create', 'read', 'delete'] },
+      { key: 'logbook', label: 'Meter reading', actions: ['create', 'read', 'delete'] },
     ],
   },
   {
@@ -88,9 +96,9 @@ export const ACCESS_MODULE_GROUPS = [
     id: 'masters',
     label: 'Masters',
     modules: [
-      { key: 'assets', label: 'Fields', actions: ['create', 'read', 'update', 'delete'] },
-      { key: 'areas', label: 'Areas', actions: ['create', 'read', 'update', 'delete'] },
-      { key: 'equipment', label: 'Equipment', actions: ['create', 'read', 'update', 'delete'] },
+      { key: 'vendors', label: 'Vendors', actions: ['create', 'read', 'update', 'delete'] },
+      { key: 'others', label: 'Others (Status, Checklists, Limits)', actions: ['create', 'read', 'update', 'delete'] },
+      { key: 'assets', label: 'Forms Master', actions: ['create', 'read', 'update', 'delete'] },
     ],
   },
   {
@@ -98,7 +106,10 @@ export const ACCESS_MODULE_GROUPS = [
     label: 'Configuration',
     modules: [
       { key: 'roles_access', label: 'Roles & Access', actions: ['create', 'read', 'update', 'delete'] },
+      { key: 'approvals', label: 'Approvals', actions: ['read', 'update'] },
       { key: 'settings', label: 'Settings', actions: ['read', 'update'] },
+      { key: 'import', label: 'Import', actions: ['create', 'read'] },
+      { key: 'export', label: 'Export', actions: ['read'] },
     ],
   },
 ]
@@ -131,6 +142,11 @@ export const MODULE_LEGACY_EXPAND = {
     'reports_overdue',
   ],
   company: ['locations', 'departments', 'work_centers'],
+}
+
+/** Parent grants children; children do not grant the parent. */
+export const MODULE_PARENT_GRANTS = {
+  settings: ['approvals', 'import', 'export'],
 }
 
 export const PERMISSION_ACTIONS = ['create', 'read', 'update', 'delete']
@@ -223,6 +239,24 @@ export function normalizePermissionsInput(permissions) {
         can_read: mod.actions.includes('read') && Boolean(legacy.can_read),
         can_update: mod.actions.includes('update') && Boolean(writeUpdate),
         can_delete: mod.actions.includes('delete') && Boolean(writeDelete),
+      })
+    }
+  }
+
+  for (const [parent, children] of Object.entries(MODULE_PARENT_GRANTS)) {
+    const parentRow = byKey.get(parent)
+    if (!parentRow) continue
+    for (const childKey of children) {
+      if (byKey.has(childKey)) continue
+      const mod = ACCESS_MODULES.find((m) => m.key === childKey)
+      if (!mod) continue
+      const write = Boolean(parentRow.can_create || parentRow.can_update)
+      byKey.set(childKey, {
+        module_key: childKey,
+        can_create: mod.actions.includes('create') && write,
+        can_read: mod.actions.includes('read') && Boolean(parentRow.can_read),
+        can_update: mod.actions.includes('update') && Boolean(parentRow.can_update),
+        can_delete: mod.actions.includes('delete') && Boolean(parentRow.can_delete || parentRow.can_update),
       })
     }
   }

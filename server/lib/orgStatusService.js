@@ -380,7 +380,7 @@ export async function resetOrgStatuses(orgId, entityType) {
 }
 
 /** Next statuses for WO lifecycle including active custom statuses. */
-export async function getAllowedNextWorkOrderStatuses(orgId, fromStatus) {
+export async function getAllowedNextWorkOrderStatuses(orgId, fromStatus, extras = {}) {
   const { STATUS_TRANSITIONS } = await import('./workOrderService.js')
   const systemNext = [...(STATUS_TRANSITIONS[fromStatus] || [])]
   const rows = await listOrgStatuses(orgId, 'work_order', { includeInactive: false })
@@ -399,6 +399,13 @@ export async function getAllowedNextWorkOrderStatuses(orgId, fromStatus) {
     }
   }
 
+  if (fromStatus === 'assigned' && extras.skipTechnicianAcceptance) {
+    for (const key of ['started', 'in_progress']) {
+      const row = byKey.get(key)
+      if ((!row || row.is_active !== false) && !next.includes(key)) next.push(key)
+    }
+  }
+
   if (fromRow && !fromRow.is_system) {
     const recovery = ['in_progress', 'started', 'on_hold', 'waiting_material', 'waiting_shutdown', 'completed']
     for (const key of recovery) {
@@ -410,9 +417,9 @@ export async function getAllowedNextWorkOrderStatuses(orgId, fromStatus) {
   return next
 }
 
-export async function assertWorkOrderStatusChange(orgId, fromStatus, toStatus) {
+export async function assertWorkOrderStatusChange(orgId, fromStatus, toStatus, extras = {}) {
   if (fromStatus === toStatus) return
-  const allowed = await getAllowedNextWorkOrderStatuses(orgId, fromStatus)
+  const allowed = await getAllowedNextWorkOrderStatuses(orgId, fromStatus, extras)
   if (!allowed.includes(toStatus)) {
     const err = new Error(
       `Cannot change status from ${String(fromStatus).replace(/_/g, ' ')} to ${String(toStatus).replace(/_/g, ' ')}.`,

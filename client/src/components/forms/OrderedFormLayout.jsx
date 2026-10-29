@@ -1,4 +1,10 @@
 import { useEffect, useRef } from 'react'
+import { getEquipment } from '../../lib/api-equipment'
+import {
+  isEquipmentMasterField,
+  layoutHasEquipmentMaster,
+  valuesFromEquipmentSelection,
+} from '../../lib/equipmentLayoutFields'
 import {
   parseLayoutId,
   sortLayoutItems,
@@ -8,9 +14,9 @@ import {
   layoutGroupsForSection,
 } from '../../lib/formLayoutIds'
 import WorkOrderFieldInput from '../workorders/WorkOrderFieldInput'
-import { getFormDef } from '../../lib/formRegistry'
-import { getMasterSource, resolveMasterFilters } from '../../lib/formFieldSources'
-import { layoutHasEquipmentMaster } from '../../lib/equipmentLayoutFields'
+import { findSystemField, getFormDef } from '../../lib/formRegistry'
+import { SYSTEM_FIELD_MASTERS, SYSTEM_FIELD_OPTIONS } from '../../lib/systemFieldFallback'
+import { currentUserDefaultPatches, getMasterSource, resolveMasterFilters } from '../../lib/formFieldSources'
 import { isFieldDependencyMet } from '../../lib/assetFieldDependencies'
 import {
   resolveActiveRules,
@@ -28,7 +34,9 @@ import {
   emptyGroupRow,
   normalizeGroupRows,
 } from '../../lib/formFillership'
+import { isCloseoutSection } from '../../lib/formSkips'
 import MasterPicker from './MasterPicker'
+import EquipmentColumnSelect from './EquipmentColumnSelect'
 
 function emptyMasterValue(value) {
   return Array.isArray(value) ? [] : ''
@@ -126,6 +134,7 @@ function buildDependencyValues(catalogValues = {}, masterValues = {}) {
 }
 
 function layoutItemVisible(item, catalogSource, values, activeRules) {
+  if (item?.skipped) return false
   const effect = fieldEffect(item.id, activeRules)
   const ruleVisibility = isFieldVisibleByRules(effect)
   if (ruleVisibility != null) return ruleVisibility
@@ -158,7 +167,7 @@ function RepeatableGroup({
   onChange,
   disabled = false,
 }) {
-  const childFields = sortLayoutItems(group.childFields || [])
+  const childFields = sortLayoutItems((group.childFields || []).filter((child) => !child.skipped))
   const minRows = Number(group.minRows) || 0
   const maxRows = Math.max(1, Number(group.maxRows) || 20)
   const rows = normalizeGroupRows(value, childFields, { minRows })
@@ -255,6 +264,7 @@ export default function OrderedFormLayout({
   fallback,
   renderField,
   renderSection,
+  omitField,
   catalogLookup = [],
   catalogValues = {},
   onCatalogChange,
@@ -262,6 +272,8 @@ export default function OrderedFormLayout({
   onMasterChange,
   disabled = false,
   actors = null,
+  currentEmployeeId = null,
+  valueLabels = {},
 }) {
   const formDef = formId ? getFormDef(formId) : null
   const dependencyValues = buildDependencyValues(catalogValues, masterValues)
@@ -270,7 +282,27 @@ export default function OrderedFormLayout({
   const prevFilterParents = useRef({})
   const lastValuesRef = useRef(null)
   const lastRulesRef = useRef(null)
+  const seededCurrentUser = useRef(false)
+  const lastEquipmentIdRef = useRef('')
+  const suppressFilterClearRef = useRef(false)
   const equipmentMasterOnLayout = layoutHasEquipmentMaster(layout)
+  const equipmentField = (layout?.fields || []).find(isEquipmentMasterField) || null
+  const equipmentValue = equipmentField ? (masterValues?.[equipmentField.id] || '') : ''
+
+  useEffect(() => {
+    if (seededCurrentUser.current) return
+    if (!currentEmployeeId || !layout || !onMasterChange) return
+    const configured = (layout.fields || []).some((field) => field.defaultToCurrentUser)
+    if (!configured) {
+      seededCurrentUser.current = true
+      return
+    }
+    const patches = currentUserDefaultPatches(layout, dependencyValues, currentEmployeeId)
+    seededCurrentUser.current = true
+    for (const [fieldId, value] of Object.entries(patches)) {
+      onMasterChange(fieldId, value)
+    }
+  }, [currentEmployeeId, layout, onMasterChange, dependencyValues])
 
   useEffect(() => {
     if (!layout || !onMasterChange) return
@@ -294,7 +326,43 @@ export default function OrderedFormLayout({
   }, [layout, dependencyValues, activeRules, onMasterChange])
 
   useEffect(() => {
+    if (!equipmentField) return undefined
+    const equipmentId = String(equipmentValue || '')
+    if (equipmentId === lastEquipmentIdRef.current) return undefined
+    lastEquipmentIdRef.current = equipmentId
+    if (!equipmentId) return undefined
+
+    let cancelled = false
+    getEquipment(equipmentId)
+      .then((detail) => {
+        if (cancelled || !detail) return
+        const patch = valuesFromEquipmentSelection(detail, layout, catalogLookup)
+        const entries = Object.entries(patch).filter(([, value]) => value != null && value !== '')
+        if (!entries.length) return
+        suppressFilterClearRef.current = true
+        for (const [fieldId, value] of entries) {
+          if (fieldId === equipmentField.id) continue
+          const parsed = parseLayoutId(fieldId)
+          if (parsed.kind === 'catalog') onCatalogChange?.(parsed.value, value)
+          else (onMasterChange || onCatalogChange)?.(fieldId, value)
+        }
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [equipmentField, equipmentValue, layout, catalogLookup, onCatalogChange, onMasterChange])
+
+  useEffect(() => {
     if (!layout || !onMasterChange) return
+    if (suppressFilterClearRef.current) {
+      suppressFilterClearRef.current = false
+      const parentIds = new Set(
+        (layout.fields || []).map((field) => field.filterByFieldId).filter(Boolean),
+      )
+      const next = { ...prevFilterParents.current }
+      for (const parentId of parentIds) next[parentId] = dependencyValues[parentId] ?? ''
+      prevFilterParents.current = next
+      return
+    }
     const parentIds = new Set(
       (layout.fields || [])
         .map((field) => field.filterByFieldId)
@@ -339,6 +407,8 @@ export default function OrderedFormLayout({
       const locked = isFieldLockedByRules(item.id, activeRules) || sectionDisabled
       const excludeIds = excludedValuesForField(item.id, activeRules, dependencyValues)
 
+      if (omitField?.(item, section)) return null
+
       if (!layoutItemVisible(item, catalogSource, dependencyValues, activeRules)) return null
 
       if (parsed.kind === 'catalog') {
@@ -353,16 +423,26 @@ export default function OrderedFormLayout({
           || (equipmentMasterOnLayout && catalogSource.field_source === 'equipment')
         const catalogValue = catalogValues[catalogSource.id] ?? catalogValues[item.id]
         if (fromEquipment) {
+          const isImage = catalogSource.field_type === 'image' || /image/i.test(catalogSource.name || '')
+          const imageSrc = isImage && /^(https?:|data:image\/)/i.test(String(catalogValue || ''))
+            ? catalogValue
+            : ''
           return (
             <label key={item.id} className={className}>
               <span className="company-form__label">{catalogSource.name || catalogSource.label}</span>
-              <input
-                className="company-form__input"
-                type="text"
-                value={catalogValue || '—'}
-                readOnly
-                disabled
-              />
+              {isImage ? (
+                imageSrc
+                  ? <img className="company-form__equipment-image" src={imageSrc} alt="" />
+                  : <input className="company-form__input" type="text" value="—" readOnly disabled />
+              ) : (
+                <input
+                  className="company-form__input"
+                  type="text"
+                  value={catalogValue || '—'}
+                  readOnly
+                  disabled
+                />
+              )}
             </label>
           )
         }
@@ -386,6 +466,23 @@ export default function OrderedFormLayout({
         const sourceId = item.masterSource || (parsed.kind === 'master' ? parsed.value : '')
         const master = getMasterSource(sourceId)
         const label = item.label || master?.label || 'Field'
+        if (item.equipmentColumnId && !sourceId) {
+          return (
+            <label key={item.id} className={className}>
+              <span className="company-form__label">
+                {label}
+                {required ? ' *' : ''}
+              </span>
+              <EquipmentColumnSelect
+                fieldId={item.equipmentColumnId}
+                value={masterValues[item.id] ?? catalogValues[item.id]}
+                onChange={(val) => (onMasterChange || onCatalogChange)?.(item.id, val)}
+                required={required}
+                disabled={locked}
+              />
+            </label>
+          )
+        }
         if (sourceId) {
           const filters = resolveMasterFilters(item, layout, dependencyValues)
           return (
@@ -403,6 +500,7 @@ export default function OrderedFormLayout({
                 disabled={locked}
                 excludeIds={excludeIds}
                 filters={filters}
+                fallbackLabel={valueLabels[item.id] || ''}
               />
             </label>
           )
@@ -428,19 +526,74 @@ export default function OrderedFormLayout({
       }
 
       if (parsed.kind === 'system') {
-        return renderField?.(parsed.value, {
+        const systemField = systemByKey.get(parsed.value) || findSystemField(item.id)
+        const rendered = renderField?.(parsed.value, {
           className,
           colSpan: item.colSpan,
-          field: systemByKey.get(parsed.value),
+          field: systemField,
           required,
           disabled: locked,
-        }) || null
+        })
+        if (rendered) return rendered
+        if (systemField?.compound) return null
+        const masterSource = item.masterSource || SYSTEM_FIELD_MASTERS[parsed.value] || ''
+        const label = item.label || systemField?.label || 'Field'
+        if (masterSource && getMasterSource(masterSource)) {
+          const filters = resolveMasterFilters(
+            { ...item, masterSource },
+            layout,
+            dependencyValues,
+          )
+          return (
+            <label key={item.id} className={className}>
+              <span className="company-form__label">
+                {label}
+                {required ? ' *' : ''}
+              </span>
+              <MasterPicker
+                sourceId={masterSource}
+                formId={formId}
+                value={masterValues[item.id] ?? catalogValues[item.id]}
+                onChange={(val) => (onMasterChange || onCatalogChange)?.(item.id, val)}
+                required={required}
+                disabled={locked}
+                excludeIds={excludeIds}
+                filters={filters}
+                fallbackLabel={valueLabels[item.id] || ''}
+              />
+            </label>
+          )
+        }
+        const staticOptions = SYSTEM_FIELD_OPTIONS[parsed.value] || []
+        const options = selectOptionsForField(item).length
+          ? selectOptionsForField(item)
+          : staticOptions
+        const fieldType = item.fieldType || systemField?.fieldType || 'text'
+        const resolvedType = fieldType === 'dropdown' && !options.length ? 'text' : fieldType
+        return (
+          <FormCatalogField
+            key={item.id}
+            field={{
+              id: item.id,
+              name: label,
+              field_type: resolvedType,
+              colSpan: item.colSpan,
+              is_required: required,
+              dropdown_options: options.filter(
+                (opt) => !excludeIds.includes(String(opt.value ?? '')),
+              ),
+            }}
+            value={catalogValues[item.id] ?? masterValues[item.id]}
+            onChange={(val) => (onMasterChange || onCatalogChange)?.(item.id, val)}
+            disabled={locked}
+          />
+        )
       }
 
       return null
     }).filter(Boolean)
 
-    const groupNodes = sectionGroups.map((group) => (
+    const groupNodes = sectionGroups.filter((group) => !group.skipped).map((group) => (
       <div key={group.id} className="company-form__field company-form__field--w-100">
         <RepeatableGroup
           group={group}
@@ -452,7 +605,8 @@ export default function OrderedFormLayout({
     ))
 
     const allChildren = [...children, ...groupNodes]
-    if (!allChildren.length) return null
+    const omittedFields = sectionFields.some((item) => omitField?.(item, section))
+    if (!allChildren.length && !omittedFields && !isCloseoutSection(section)) return null
 
     const badge = filledBy !== 'any' ? (
       <span className="company-form__fillership-badge">

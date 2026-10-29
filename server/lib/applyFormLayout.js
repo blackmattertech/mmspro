@@ -64,6 +64,7 @@ export function applyFormLayout(defaultSchema, layout, { catalogFields = [] } = 
   const fieldsBySection = new Map()
 
   for (const item of layoutFields) {
+    if (item.skipped) continue
     const layoutId = fieldLayoutId(item)
     let source = indexed.fields.get(layoutId)
     if (!source) {
@@ -92,6 +93,7 @@ export function applyFormLayout(defaultSchema, layout, { catalogFields = [] } = 
       sections.push({
         ...source,
         layout_id: layoutId,
+        name: item.label || source.name,
         sort_order: item.order ?? index,
         fields,
       })
@@ -99,7 +101,7 @@ export function applyFormLayout(defaultSchema, layout, { catalogFields = [] } = 
     }
     if (!fields.length) return
 
-    let name = source?.name || item.label
+    let name = item.label || source?.name
     if (!name) {
       const catalogRow = lookupCatalogField(catalogFields, layoutId)
       name = catalogRow?.name || source?.label

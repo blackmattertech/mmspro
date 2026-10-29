@@ -16,19 +16,21 @@ function field(key, label, opts = {}) {
     label,
     fieldType: opts.type || 'text',
     required: Boolean(opts.required),
-    locked: false,
+    locked: Boolean(opts.locked),
     colSpan: opts.colSpan || 25,
     compound: Boolean(opts.compound),
   }
 }
 
-function section(key, label, fields) {
+function section(key, label, fields, extra = {}) {
   return {
     id: systemId(key),
     key,
     label,
-    locked: false,
+    locked: Boolean(extra.locked),
     fields,
+    ...(extra.filledBy ? { filledBy: extra.filledBy } : {}),
+    ...(extra.stage ? { stage: extra.stage } : {}),
   }
 }
 
@@ -50,7 +52,13 @@ function form(formId, label, systemSections, extra = {}) {
 function layoutFromSections(sections) {
   return {
     v: LAYOUT_VERSION,
-    sections: sections.map((item, index) => ({ id: item.id, order: index, label: item.label })),
+    sections: sections.map((item, index) => ({
+      id: item.id,
+      order: index,
+      label: item.label,
+      ...(item.filledBy && item.filledBy !== 'any' ? { filledBy: item.filledBy } : {}),
+      ...(item.stage ? { stage: item.stage } : {}),
+    })),
     fields: sections.flatMap((item) => item.fields.map((itemField, index) => ({
       id: itemField.id,
       sectionId: item.id,
@@ -85,7 +93,7 @@ const WORK_REQUEST_CREATE = form('work_request.create', 'Work request', [
     field('order_to_department_id', 'Order to', { type: 'dropdown', required: true }),
   ]),
   section('wr_asset', 'Asset', [
-    field('asset_picker', 'Equipment picker', { compound: true, required: true, colSpan: 100 }),
+    field('asset_picker', 'Asset picker', { compound: true, required: true, colSpan: 100 }),
   ]),
   section('wr_details', 'Details', [
     field('short_description', 'Short description', { required: true }),
@@ -102,11 +110,121 @@ const WORK_REQUEST_CREATE = form('work_request.create', 'Work request', [
   ]),
 ], { permissionKey: 'work_request_create', catalogMode: 'all' })
 
-const WORK_ORDERS_MANUAL = form('work_orders.manual', 'Manual work order', [
-  section('wo_assignment', 'Assignment', [
-    field('assignment', 'Work order assignment', { compound: true, required: true, colSpan: 100 }),
-  ]),
-], { permissionKey: 'work_orders_manual', catalogMode: 'all' })
+function woAssignmentSection({ requiredAssignees = true } = {}) {
+  return section('wo_assign', 'Assignment', [
+    field('assignee_ids', 'Technicians', { type: 'dropdown', required: requiredAssignees, compound: true, colSpan: 100 }),
+    field('work_center', 'Work center', { type: 'dropdown', required: true }),
+    field('priority', 'Priority', { type: 'dropdown' }),
+    field('planned_start_at', 'Planned start', { type: 'datetime' }),
+    field('planned_end_at', 'Planned end', { type: 'datetime' }),
+    field('assignment_remarks', 'Assignment remarks', { type: 'textarea', colSpan: 100 }),
+  ], { filledBy: 'order_to_dept_head', stage: 'assignment' })
+}
+
+function woExecutionSections({ includePermit = true, includeDailyLogs = true, includeDocs = true } = {}) {
+  const sections = []
+  if (includePermit) {
+    sections.push(section('wo_permit', 'Permit details', [
+      field('permit_details', 'Permit details', { compound: true, colSpan: 100 }),
+    ], { filledBy: 'technician', stage: 'execution' }))
+  }
+  sections.push(section('wo_execution', 'Work execution', [
+    field('work_stamps', 'Work start / end', { compound: true, required: true, locked: true, colSpan: 100 }),
+    field('labour_count', 'Labour count', { type: 'number' }),
+    field('vendor_expense', 'Vendor expense', { type: 'number' }),
+    field('breakdown_times', 'Breakdown times', { compound: true, colSpan: 100 }),
+  ], { filledBy: 'technician', stage: 'execution' }))
+  if (includeDailyLogs) {
+    sections.push(section('wo_daily_logs', 'Daily logs', [
+      field('daily_logs', 'Daily logs', { compound: true, colSpan: 100 }),
+    ], { filledBy: 'technician', stage: 'execution' }))
+  }
+  if (includeDocs) {
+    sections.push(section('wo_docs', 'Maintenance documentation', [
+      field('job_description', 'Detailed job description', { type: 'textarea', required: true, colSpan: 100 }),
+      field('root_cause', 'Root cause analysis', { type: 'textarea', required: true, colSpan: 100 }),
+      field('action_taken', 'Action taken', { type: 'textarea', required: true, colSpan: 100 }),
+      field('material_consumed', 'Material consumed', { compound: true, required: true, colSpan: 100 }),
+      field('special_tools_used', 'Special tools used', { type: 'textarea', colSpan: 100 }),
+      field('safety_precautions', 'Safety precautions', { type: 'textarea', colSpan: 100 }),
+      field('dos_and_donts', 'Do\'s and Don\'ts', { compound: true, colSpan: 100 }),
+      field('lessons_learned', 'Lessons learned', { type: 'textarea', colSpan: 100 }),
+      field('execution_remarks', 'Remarks', { type: 'textarea', colSpan: 100 }),
+      field('execution_files', 'Technician photos & files', { type: 'file', compound: true, colSpan: 100 }),
+    ], { filledBy: 'technician', stage: 'execution' }))
+  }
+  sections.push(section('wo_closeout', 'Supervisor verification', [
+    field('verification_remarks', 'Verification remarks', { type: 'textarea', colSpan: 100 }),
+  ], { filledBy: 'supervisor', stage: 'closeout' }))
+  return sections
+}
+
+const WR_TO_WO_INFO = 'Work Request fields stay on the Work Request form and show read-only after conversion. Design assignment (who the Order To department head fills) and technician execution here.'
+
+const WORK_ORDERS_FROM_REQUEST = form(
+  'work_orders.from_work_request',
+  'Work Request to Work Order',
+  [woAssignmentSection({ requiredAssignees: true }), ...woExecutionSections()],
+  {
+    permissionKey: 'work_orders_received',
+    catalogMode: 'all',
+    inheritFromFormId: 'work_request.create',
+    inheritFromLabel: 'Work request',
+    info: WR_TO_WO_INFO,
+  },
+)
+
+const WORK_ORDERS_FROM_PM = form(
+  'work_orders.from_pm',
+  'PM Schedule to Work Order',
+  [
+    section('wo_pm_checklist', 'Checklist', [
+      field('checklist_execution', 'Checklist', { compound: true, colSpan: 100 }),
+    ], { filledBy: 'technician', stage: 'execution' }),
+    section('wo_pm_close', 'Material consumed & Do\'s / Don\'ts', [
+      field('material_consumed', 'Material consumed', { compound: true, colSpan: 100 }),
+      field('dos_and_donts', 'Do\'s and Don\'ts', { compound: true, colSpan: 100 }),
+    ], { filledBy: 'technician', stage: 'execution' }),
+    section('wo_closeout', 'Supervisor verification', [
+      field('verification_remarks', 'Verification remarks', { type: 'textarea', colSpan: 100 }),
+    ], { filledBy: 'supervisor', stage: 'closeout' }),
+  ],
+  {
+    permissionKey: 'work_orders_scheduled',
+    catalogMode: 'all',
+    info: 'Shown on scheduled PM work orders after generation. Checklist comes from the PM plan.',
+  },
+)
+
+const WORK_ORDERS_MANUAL = form(
+  'work_orders.manual',
+  'Manual work order',
+  [
+    section('wo_assignment', 'Assignment', [
+      field('assignment', 'Work order assignment', { compound: true, required: true, colSpan: 100 }),
+    ], { stage: 'create' }),
+    woAssignmentSection({ requiredAssignees: false }),
+    ...woExecutionSections(),
+  ],
+  {
+    permissionKey: 'work_orders_manual',
+    catalogMode: 'all',
+    info: 'Create collects Order To and asset fields. Assignment and technician sections are filled after the work order is created.',
+  },
+)
+
+const WORK_ORDERS_USER_SELF = form(
+  'work_orders.user_self',
+  'User Self Request',
+  [woAssignmentSection({ requiredAssignees: false }), ...woExecutionSections()],
+  {
+    permissionKey: 'work_orders_received',
+    catalogMode: 'all',
+    inheritFromFormId: 'work_request.create',
+    inheritFromLabel: 'Work request',
+    info: 'User self requests auto-convert. Assignment can be completed later from Received.',
+  },
+)
 
 const PM_PLAN = form('pm.plan', 'PM plan', [
   section('pm_details', 'Plan details', [
@@ -118,7 +236,7 @@ const PM_PLAN = form('pm.plan', 'PM plan', [
     field('status', 'Status', { required: true }),
     field('location_id', 'Location', { type: 'dropdown' }),
     field('area_id', 'Area', { type: 'dropdown' }),
-    field('equipment_id', 'Equipment', { type: 'dropdown', required: true }),
+    field('equipment_id', 'Asset', { type: 'dropdown', required: true }),
     field('schedule', 'Schedule', { compound: true, required: true, colSpan: 100 }),
   ]),
   section('pm_technicians', 'Technicians', [
@@ -129,7 +247,7 @@ const PM_PLAN = form('pm.plan', 'PM plan', [
   ]),
 ], { permissionKey: 'work_orders_scheduled', catalogMode: 'all' })
 
-const EQUIPMENT_CREATE = form('equipment.create', 'Equipment', [
+const EQUIPMENT_CREATE = form('equipment.create', 'Assets', [
   section('equipment_identity', 'Identity', [
     field('name', 'Name', { required: true }),
     field('code', 'Code'),
@@ -153,7 +271,12 @@ export const MODULE_FORM_GROUPS = [
   {
     moduleId: 'work_orders',
     label: 'Work Orders',
-    forms: [WORK_ORDERS_MANUAL],
+    forms: [
+      WORK_ORDERS_FROM_REQUEST,
+      WORK_ORDERS_FROM_PM,
+      WORK_ORDERS_MANUAL,
+      WORK_ORDERS_USER_SELF,
+    ],
   },
   {
     moduleId: 'work_orders_scheduled',
@@ -167,7 +290,7 @@ export const MODULE_FORM_GROUPS = [
   },
   {
     moduleId: 'equipment',
-    label: 'Equipment',
+    label: 'Assets',
     forms: [EQUIPMENT_CREATE],
   },
 ]
@@ -181,9 +304,19 @@ export const FORM_REGISTRY = MODULE_FORM_GROUPS.flatMap((group) => (
 ))
 
 const FORM_BY_ID = new Map(FORM_REGISTRY.map((item) => [item.formId, item]))
+const SYSTEM_FIELD_BY_ID = new Map()
+for (const form of FORM_REGISTRY) {
+  for (const field of form.systemFields || []) {
+    if (!SYSTEM_FIELD_BY_ID.has(field.id)) SYSTEM_FIELD_BY_ID.set(field.id, field)
+  }
+}
 
 export function getFormDef(formId) {
   return FORM_BY_ID.get(formId) || null
+}
+
+export function findSystemField(id) {
+  return SYSTEM_FIELD_BY_ID.get(id) || null
 }
 
 export function isFormId(formId) {
@@ -259,6 +392,8 @@ export function publicFormMeta(formDef) {
     allowCatalogFields: formDef.allowCatalogFields,
     catalogMode: formDef.catalogMode,
     info: formDef.info || null,
+    inheritFromFormId: formDef.inheritFromFormId || null,
+    inheritFromLabel: formDef.inheritFromLabel || null,
     systemSections: formDef.systemSections,
     systemFields: formDef.systemFields,
   }

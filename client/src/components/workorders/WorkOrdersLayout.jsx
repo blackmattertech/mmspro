@@ -1,10 +1,12 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useDebouncedValue } from '../../hooks/useDebouncedValue'
 import { NavLink, Navigate, Outlet, useNavigate, useLocation } from 'react-router-dom'
 import { useOrg } from '../../hooks/useOrg'
 import { useProfile } from '../../hooks/useProfile'
 import { useLocations } from '../../hooks/useLocations'
 import { useWorkCenters } from '../../hooks/useWorkCenters'
+import { useEmployees } from '../../hooks/useEmployees'
+import { uniqueNameOptions } from '../../lib/tableFilters'
 import { useOrgStatusOptions } from '../../hooks/useOrgStatusOptions'
 import { useWorkOrderToolbar } from '../../hooks/useWorkOrderToolbar'
 import { usePermissions } from '../../hooks/usePermissions'
@@ -15,7 +17,14 @@ import {
   visibleWorkOrderTabs,
 } from '../../config/workOrders'
 import { createFilterRule, WO_SORT_OPTIONS } from '../../lib/workOrderFilters'
-import { getWorkOrdersTemplate, bulkUploadWorkOrders, exportWorkOrderList } from '../../lib/api-work-orders'
+import {
+  getWorkOrdersTemplate,
+  bulkUploadWorkOrders,
+  exportWorkOrderList,
+  getManualWorkOrders,
+  getReceivedWorkOrders,
+  getAssignedWorkOrders,
+} from '../../lib/api-work-orders'
 import { downloadBlobFile } from '../../lib/api'
 import { useWorkOrderCounts } from '../../hooks/useWorkOrderCounts'
 import TableFilterToolbar from '../shared/TableFilterToolbar'
@@ -60,8 +69,9 @@ export default function WorkOrdersLayout() {
   const { employee } = useProfile()
   const { locations } = useLocations()
   const { workCenters } = useWorkCenters()
+  const { employees } = useEmployees({ limit: 200 })
   const { options: loadedStatusOptions } = useOrgStatusOptions('work_order')
-  const { toolbarLeft, toolbarRight } = useWorkOrderToolbar()
+  const { toolbarLeft, toolbarTools, toolbarRight } = useWorkOrderToolbar()
   const { isOrgAdmin, canCreate, canRead, loading: permsLoading, locationId: scopedLocationId } = usePermissions()
   const [search, setSearch] = useState('')
   const debouncedSearch = useDebouncedValue(search.trim())
@@ -110,9 +120,34 @@ export default function WorkOrdersLayout() {
   }, [locations, canSeeAllLocations, userLocationId])
 
   const locationFilter = canSeeAllLocations ? 'all' : (userLocationId || 'all')
+  const [filterRows, setFilterRows] = useState([])
+  useEffect(() => {
+    let cancelled = false
+    const load = activeTab === 'received'
+      ? getReceivedWorkOrders
+      : activeTab === 'assigned'
+        ? getAssignedWorkOrders
+        : getManualWorkOrders
+    load({ limit: 200, offset: 0 })
+      .then((rows) => { if (!cancelled) setFilterRows(Array.isArray(rows) ? rows : []) })
+      .catch(() => { if (!cancelled) setFilterRows([]) })
+    return () => { cancelled = true }
+  }, [activeTab])
   const workOrderFilterFields = useMemo(() => ([
-    { id: 'wo_number', label: 'WO #', placeholder: 'Enter work order number...' },
-    { id: 'summary', label: 'Short description', placeholder: 'Enter keywords...' },
+    {
+      id: 'wo_number',
+      label: 'WO #',
+      type: 'select',
+      emptyLabel: 'All WO #',
+      options: uniqueNameOptions(filterRows, (row) => row.wo_number),
+    },
+    {
+      id: 'summary',
+      label: 'Short description',
+      type: 'select',
+      emptyLabel: 'All descriptions',
+      options: uniqueNameOptions(filterRows, (row) => row.short_description || row.summary),
+    },
     {
       id: 'status',
       label: 'Status',
@@ -141,11 +176,29 @@ export default function WorkOrdersLayout() {
       emptyLabel: 'All Work Centers',
       options: (workCenters || []).map((center) => ({ value: center.name, label: center.name })),
     },
-    { id: 'assignee', label: 'Assignee', placeholder: 'Enter assignee...' },
-    { id: 'creator', label: 'Created by', placeholder: 'Enter name...' },
-    { id: 'work_request', label: 'Work request', placeholder: 'Enter work request...' },
+    {
+      id: 'assignee',
+      label: 'Assignee',
+      type: 'select',
+      emptyLabel: 'All Assignees',
+      options: uniqueNameOptions(employees),
+    },
+    {
+      id: 'creator',
+      label: 'Created by',
+      type: 'select',
+      emptyLabel: 'All creators',
+      options: uniqueNameOptions(employees),
+    },
+    {
+      id: 'work_request',
+      label: 'Work request',
+      type: 'select',
+      emptyLabel: 'All work requests',
+      options: uniqueNameOptions(filterRows, (row) => row.work_request_number),
+    },
     { id: 'created', label: 'Created', type: 'date-range', fromKey: 'created_from', toKey: 'created_to' },
-  ]), [activeLocations, loadedStatusOptions, workCenters])
+  ]), [activeLocations, loadedStatusOptions, workCenters, employees, filterRows])
 
   const handleAddWorkOrder = () => {
     if (!org?.slug) return
@@ -236,7 +289,29 @@ export default function WorkOrdersLayout() {
         </div>
       </header>
 
-      <div className="wo-page__toolbar">
+      <div className={`wo-page__toolbar${isFormPage ? ' wo-page__toolbar--command' : ''}`}>
+        {isFormPage ? (
+          <div className="wo-command" role="toolbar" aria-label="Work order actions">
+            {toolbarLeft}
+            <span className="wo-command__rule" aria-hidden="true" />
+            <div className="wo-command__actions">
+              {toolbarTools}
+              {canCreateWorkOrders && (
+                <MasterBulkActions
+                  onDownload={handleDownloadTemplate}
+                  bulkBusy={bulkBusy}
+                  bulkInputRef={bulkInputRef}
+                  onFileChange={handleBulkFile}
+                  title="Import work orders"
+                  noun="work order"
+                  bulkError={bulkError}
+                  bulkResult={bulkResult}
+                />
+              )}
+              {toolbarRight}
+            </div>
+          </div>
+        ) : (
         <div className="wo-page__toolbar-row wo-page__toolbar-row--tabs">
           <nav className="wo-page__tabs" aria-label="Work order views">
             {tabs.map((tab) => (
@@ -257,7 +332,9 @@ export default function WorkOrdersLayout() {
             ))}
           </nav>
         </div>
+        )}
 
+        {!isFormPage && (
         <div className="wo-page__toolbar-row wo-page__toolbar-row--filters">
           <div className="wo-page__bar-controls">
             {toolbarLeft}
@@ -302,25 +379,9 @@ export default function WorkOrdersLayout() {
               />
             )}
 
-            {isFormPage && (
-              <>
-                {toolbarRight}
-                {canCreateWorkOrders && (
-                  <MasterBulkActions
-                    onDownload={handleDownloadTemplate}
-                    bulkBusy={bulkBusy}
-                    bulkInputRef={bulkInputRef}
-                    onFileChange={handleBulkFile}
-                    title="Import work orders"
-                    noun="work order"
-                    bulkError={bulkError}
-                    bulkResult={bulkResult}
-                  />
-                )}
-              </>
-            )}
           </div>
         </div>
+        )}
       </div>
 
       <div className="wo-page__content">

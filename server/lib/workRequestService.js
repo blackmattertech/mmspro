@@ -1,7 +1,6 @@
 import { supabaseAdmin } from '../services/supabase.js'
 import { loadOrgFields } from './equipmentFieldService.js'
-import { loadOrgFields as loadAssetOrgFields } from './assetFieldService.js'
-import { listEquipment, getEquipmentDetail, deriveEquipmentIdentity, orderedParentFields } from './equipmentService.js'
+import { listEquipment, getEquipmentDetail, deriveEquipmentIdentity, hierarchyParentFields } from './equipmentService.js'
 import { notifyUser, notifyEmployees, notifyByModule } from '../services/notifications.js'
 import { buildManualWorkOrderFormSchema } from './manualWorkOrderForm.js'
 import {
@@ -13,7 +12,7 @@ import {
   listEnvelope,
   restrictToIds,
 } from './listQuery.js'
-import { countExactStatuses, countStatusesViaRpc, rpcJson, isMissingRpcError } from './statusCounts.js'
+import { countExactStatuses, countStatusesViaRpc } from './statusCounts.js'
 import { createTtlCache } from './ttlCache.js'
 import { loadTimelineActors } from './timelineActors.js'
 import {
@@ -35,6 +34,26 @@ import {
 import { shouldRequire, systemId, parseLayoutId } from './formLayoutIds.js'
 import { getMasterSource } from './formFieldSources.js'
 import { assertChecklistForForm, snapshotChecklistTemplate } from './checklistService.js'
+import { normalizeOptions } from './formOptionRules.js'
+import { assignedStatusForTechnicians, maybePromoteAssignedToAccepted } from './formSkips.js'
+import { workOrderFormIdForSource } from './workOrderForms.js'
+import {
+  resolveJobNatureChoiceList,
+  resolveWorkCenterChoiceList,
+} from './formFieldMasters.js'
+import {
+  findJobNatureField,
+  isBreakdownJobNature,
+  jobNatureOptionsFromField,
+  resolveJobNatureField,
+} from './jobNatureField.js'
+
+export {
+  findJobNatureField,
+  isBreakdownJobNature,
+  jobNatureOptionsFromField,
+  resolveJobNatureField,
+}
 
 async function loadOrgDisabledModules(orgId) {
   const { data, error } = await supabaseAdmin
@@ -84,6 +103,23 @@ export async function getEmployeeByProfile(orgId, profileId, { email = null } = 
 
   if (emailError) throw emailError
   return byEmail || null
+}
+
+function sanitizeTimelineAttachments(list) {
+  return (Array.isArray(list) ? list : []).map((file) => {
+    if (!file || typeof file !== 'object') return null
+    const path = file.path || file.url || ''
+    const name = file.name || file.file_name || ''
+    if (!path && !name) return null
+    return {
+      path: path || null,
+      url: file.url || null,
+      name: name || 'file',
+      size: Number.isFinite(Number(file.size)) ? Number(file.size) : null,
+      mime_type: file.mime_type || file.type || '',
+      bucket: file.bucket || null,
+    }
+  }).filter(Boolean)
 }
 
 async function addTimelineEvent(orgId, workRequestId, eventType, message, actorId, metadata = {}) {
@@ -188,61 +224,53 @@ export async function generateWorkRequestNumber(orgId, orderToDepartmentId) {
   return `WR-${code}-${label}-${String(next).padStart(4, '0')}`
 }
 
+function hierarchyStepText(item) {
+  if (!item) return ''
+  if (item.value_text) return String(item.value_text).trim()
+  if (Array.isArray(item.value_json?.values)) {
+    return item.value_json.values.map((value) => String(value ?? '').trim()).filter(Boolean).join(', ')
+  }
+  return ''
+}
+
 export async function buildAssetHierarchy(orgId, equipmentId) {
   if (!equipmentId) return []
   const detail = await getEquipmentDetail(orgId, equipmentId)
   if (!detail) return []
 
-  const path = []
-  const seenNames = new Set()
-
-  const push = (fieldId, fieldName, value) => {
-    const name = String(fieldName || '').trim()
-    const text = String(value ?? '').trim()
-    if (!name || !text) return
-    const key = name.toLowerCase()
-    if (seenNames.has(key)) return
-    seenNames.add(key)
-    path.push({
-      field_id: fieldId || null,
-      field_name: name,
-      value: text,
-    })
-  }
-
-  const areaName = detail.areas?.name || detail.area_name || null
-  if (areaName) push('area', 'Area', areaName)
-
-  const deptName = detail.departments?.name || detail.department_name || null
-  if (deptName) push('department', 'Department', deptName)
-
-  const locationName = detail.org_locations?.name || detail.location_name || null
-  if (locationName) push('location', 'Location', locationName)
-
+  const fields = await loadOrgFields(orgId)
+  const chain = hierarchyParentFields(fields)
+  const byId = new Map()
   for (const item of detail.field_values || []) {
-    const text = item.value_text
-      || (Array.isArray(item.value_json?.values) ? item.value_json.values.join(', ') : '')
-      || ''
-    push(item.field_id, item.field_name, text)
+    if (item?.field_id) byId.set(item.field_id, item)
   }
-
-  // Fallback when field_values missing but raw values exist
-  if (!(detail.field_values || []).length) {
-    const fields = await loadOrgFields(orgId)
-    const fieldById = new Map(fields.map((f) => [f.id, f]))
+  if (!byId.size) {
+    const fieldById = new Map(fields.map((field) => [field.id, field]))
     for (const val of detail.values || []) {
       const field = fieldById.get(val.field_id)
-      if (!field || field.kind === 'section') continue
-      const text = val.value_text
-        || (Array.isArray(val.value_json?.values) ? val.value_json.values.join(', ') : '')
-      push(val.field_id, field.name, text)
+      if (!field || field.kind === 'section' || field.kind === 'child') continue
+      byId.set(val.field_id, {
+        field_id: val.field_id,
+        field_name: field.name,
+        field_type: field.field_type,
+        value_text: val.value_text,
+        value_json: val.value_json,
+      })
     }
   }
 
-  if (detail.name || detail.code) {
-    push(null, 'Equipment', [detail.name, detail.code].filter(Boolean).join(' · '))
+  const path = []
+  const seenNames = new Set()
+  for (const field of chain) {
+    if (field.field_type === 'image' || field.field_type === 'file') continue
+    const name = String(field.name || '').trim()
+    const text = hierarchyStepText(byId.get(field.id))
+    if (!name || !text) continue
+    const key = name.toLowerCase()
+    if (seenNames.has(key)) continue
+    seenNames.add(key)
+    path.push({ field_id: field.id, field_name: name, value: text })
   }
-
   return path
 }
 
@@ -332,48 +360,6 @@ async function loadDepartments(orgId, { locationId } = {}) {
   }))
 }
 
-function normalizeFieldName(name) {
-  return String(name || '')
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim()
-}
-
-/** Match Assets field "Job Nature" / "Job Natures" (user-configured dropdown). */
-export function findJobNatureField(fields) {
-  const candidates = (fields || []).filter((field) => {
-    if (field?.kind === 'section') return false
-    if (field?.kind === 'child') return false
-    if (field?.is_active === false) return false
-    const name = normalizeFieldName(field?.name)
-    return name === 'job nature' || name === 'job natures'
-  })
-  const withOptions = candidates.find((field) => Array.isArray(field.dropdown_options) && field.dropdown_options.length)
-  return withOptions || candidates[0] || null
-}
-
-export function jobNatureOptionsFromField(field) {
-  if (!field) return []
-  return (field.dropdown_options || [])
-    .map((option) => String(option || '').trim())
-    .filter(Boolean)
-    .map((value) => ({ value, label: value }))
-}
-
-export function isBreakdownJobNature(value) {
-  return String(value || '').trim().toLowerCase() === 'breakdown'
-}
-
-/** Prefer Assets Job Natures; fall back to Equipment fields with the same name. */
-export async function resolveJobNatureField(orgId) {
-  const assetFields = await loadAssetOrgFields(orgId)
-  const fromAssets = findJobNatureField(assetFields)
-  if (fromAssets) return fromAssets
-  const equipmentFields = await loadOrgFields(orgId)
-  return findJobNatureField(equipmentFields)
-}
-
 function buildAssetFieldSections(fields) {
   const active = (fields || []).filter((f) => f.is_active !== false)
   const sections = active
@@ -390,6 +376,7 @@ function buildAssetFieldSections(fields) {
     section_id: p.section_id,
     sort_order: p.sort_order ?? 0,
     dropdown_options: p.dropdown_options || [],
+    option_bindings: p.option_bindings || [],
     depends_on_parent_id: p.depends_on_parent_id || null,
     depends_on_option: p.depends_on_option ?? null,
     depends_on_parent_name: p.depends_on_parent_name || null,
@@ -426,28 +413,9 @@ function readEquipmentValue(row) {
   return String(row.value_text ?? '').trim()
 }
 
-function isCodeFieldName(field) {
-  return /(^|[^a-z])code([^a-z]|$)/i.test(String(field?.name || ''))
-}
-
-function isNameFieldName(field) {
-  return /(^|[^a-z])name([^a-z]|$)/i.test(String(field?.name || ''))
-}
-
-/** Merge equipment.name / equipment.code into dynamic field values when missing. */
+/** Merge equipment.name / equipment.code into the first and last levels when missing. */
 function enrichEquipmentCatalogValues(fields, equipmentRow, valuesByFieldId) {
   const values = { ...valuesByFieldId }
-  const parents = orderedParentFields(fields)
-
-  for (const field of parents) {
-    if (values[field.id]) continue
-    if (isNameFieldName(field) && equipmentRow.name) {
-      values[field.id] = equipmentRow.name
-    } else if (isCodeFieldName(field) && equipmentRow.code) {
-      values[field.id] = equipmentRow.code
-    }
-  }
-
   const identity = deriveEquipmentIdentity(
     fields,
     Object.entries(values).map(([field_id, value_text]) => ({ field_id, value_text })),
@@ -551,14 +519,18 @@ export async function listEquipmentCatalogForDepartment(orgId, departmentId, {
     }
   }
 
+  const fields = await loadOrgFields(orgId)
+  const sections = buildAssetFieldSections(fields)
+
   if (!equipment.length) {
-    return { equipment: [], has_assets: false, total: page.total || 0 }
+    return { equipment: [], has_assets: false, total: page.total || 0, sections }
   }
 
   return {
     has_assets: true,
-    equipment: await shapeEquipmentCatalog(orgId, equipment),
+    equipment: await shapeEquipmentCatalog(orgId, equipment, fields),
     total: page.total || equipment.length,
+    sections,
   }
 }
 
@@ -581,7 +553,17 @@ export async function listEquipmentPickerCatalog(orgId, {
       limit,
       locationId,
     })
-    return { ...catalog, sections }
+    const { data: areaRows, error: areaError } = await supabaseAdmin
+      .from('areas')
+      .select('id, name, department_id, is_active')
+      .eq('org_id', orgId)
+      .eq('department_id', departmentId)
+      .order('name')
+    if (areaError) throw areaError
+    const areas = (areaRows || [])
+      .filter((row) => row.is_active !== false && row.name)
+      .map((row) => ({ id: row.id, name: row.name }))
+    return { ...catalog, sections, areas }
   }
 
   const page = await listEquipment(orgId, {
@@ -596,6 +578,90 @@ export async function listEquipmentPickerCatalog(orgId, {
     equipment,
     total: page.total || equipment.length,
     sections,
+  }
+}
+
+const DEFAULT_WORK_REQUEST_PRIORITIES = [
+  { value: 'high', label: 'High' },
+  { value: 'medium', label: 'Medium' },
+  { value: 'low', label: 'Low' },
+]
+
+function canonicalWorkRequestPriority(value, fallback = 'medium') {
+  const raw = String(value || '').trim().toLowerCase()
+  if (raw === 'high' || raw === 'medium' || raw === 'low') return raw
+  const next = String(fallback || '').trim().toLowerCase()
+  if (next === 'high' || next === 'medium' || next === 'low') return next
+  return 'medium'
+}
+
+function isPriorityLayoutField(field) {
+  const parsed = parseLayoutId(field?.id)
+  const key = field?.bindKey || (parsed.kind === 'system' ? parsed.value : '')
+  const label = String(field?.label || '').toLowerCase().replace(/[^a-z0-9]+/g, '')
+  return key === 'priority' || label === 'priority' || label === 'jobpriority'
+}
+
+function priorityChoicesFromLayout(layout) {
+  const fields = (layout?.fields || []).filter(isPriorityLayoutField)
+  const field = fields.find((item) => normalizeOptions(item.options).length) || fields[0]
+  const usable = []
+  const seen = new Set()
+  for (const item of normalizeOptions(field?.options)) {
+    const valueKey = String(item.value || '').trim().toLowerCase()
+    const labelKey = String(item.label || '').trim().toLowerCase()
+    const canonical = ['high', 'medium', 'low'].includes(valueKey)
+      ? valueKey
+      : (['high', 'medium', 'low'].includes(labelKey) ? labelKey : '')
+    if (!canonical || seen.has(canonical)) continue
+    seen.add(canonical)
+    usable.push({ value: canonical, label: item.label || DEFAULT_WORK_REQUEST_PRIORITIES.find((row) => row.value === canonical).label })
+  }
+  return usable.length ? usable : DEFAULT_WORK_REQUEST_PRIORITIES.map((item) => ({ ...item }))
+}
+
+async function syncWorkRequestPriorityField(orgId, workRequestId, priority) {
+  const canonical = canonicalWorkRequestPriority(priority, '')
+  if (!['high', 'medium', 'low'].includes(canonical)) return
+  const layout = await loadRuntimeFormLayout(orgId, 'work_request.create')
+  const fields = (layout?.fields || []).filter(isPriorityLayoutField)
+  const field = fields.find((item) => normalizeOptions(item.options).length) || fields[0]
+  if (!field?.id) return
+  const option = normalizeOptions(field.options).find((item) => (
+    canonicalWorkRequestPriority(item.value, '') === canonical
+    || canonicalWorkRequestPriority(item.label, '') === canonical
+  ))
+  const stored = option?.label || option?.value || canonical
+  const { error } = await supabaseAdmin
+    .from('org_form_field_values')
+    .upsert({
+      org_id: orgId,
+      form_id: 'work_request.create',
+      record_id: workRequestId,
+      field_id: field.id,
+      value_json: stored,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'org_id,form_id,record_id,field_id' })
+  if (error) throw error
+}
+
+export async function loadWorkRequestPriorityOptions(orgId) {
+  try {
+    const layout = await loadRuntimeFormLayout(orgId, 'work_request.create')
+    return priorityChoicesFromLayout(layout)
+  } catch {
+    return DEFAULT_WORK_REQUEST_PRIORITIES.map((item) => ({ ...item }))
+  }
+}
+
+export async function loadWorkRequestAssignmentOptions(orgId) {
+  const [priorities, workCenterChoice] = await Promise.all([
+    loadWorkRequestPriorityOptions(orgId),
+    resolveWorkCenterChoiceList(orgId),
+  ])
+  return {
+    priorities,
+    work_centers: workCenterChoice.options,
   }
 }
 
@@ -629,6 +695,7 @@ export async function getWorkRequestFormContext(orgId, profileId, email, { isOrg
   const assetSections = buildAssetFieldSections(orgFields)
   const maintenanceFormSchema = await buildManualWorkOrderFormSchema(orgId)
   const jobNatureField = await resolveJobNatureField(orgId)
+  const jobNatureChoices = await resolveJobNatureChoiceList(orgId)
 
   return {
     employee: employee
@@ -652,18 +719,14 @@ export async function getWorkRequestFormContext(orgId, profileId, email, { isOrg
         is_required: Boolean(jobNatureField.is_required),
       }
       : null,
-    job_natures: jobNatureOptionsFromField(jobNatureField),
+    job_natures: jobNatureChoices,
     request_types: [
       { value: 'inter_department', label: 'Inter Department' },
       { value: 'intra_department', label: 'Intra Department' },
       { value: 'user_self', label: 'User Self Request' },
       { value: 'manual', label: 'Manual Work Request' },
     ],
-    priorities: [
-      { value: 'high', label: 'High' },
-      { value: 'medium', label: 'Medium' },
-      { value: 'low', label: 'Low' },
-    ],
+    priorities: await loadWorkRequestPriorityOptions(orgId),
   }
 }
 
@@ -711,12 +774,12 @@ async function assertEquipmentInDepartment(orgId, equipmentId, departmentId) {
 
   if (error) throw error
   if (!data || data.is_active === false) {
-    const err = new Error('Selected equipment is not available.')
+    const err = new Error('Selected asset is not available.')
     err.status = 400
     throw err
   }
   if (data.department_id !== departmentId) {
-    const err = new Error('Equipment does not belong to the selected executing department.')
+    const err = new Error('Asset does not belong to the selected executing department.')
     err.status = 400
     throw err
   }
@@ -817,7 +880,7 @@ export async function createWorkRequest(orgId, profileId, email, body, { isOrgAd
   const fieldLimits = await getTextFieldLimitsMap(orgId)
   let problem = clipTrimmedToLimit(fieldLimits, 'problem_description', body?.problem_description) || ''
   let shortDescription = clipTrimmedToLimit(fieldLimits, 'short_description', body?.short_description) || ''
-  let priority = body?.priority
+  let priority = canonicalWorkRequestPriority(body?.priority, 'medium')
   const equipmentId = body?.equipment_id || null
 
   if (isDraft) {
@@ -851,7 +914,7 @@ export async function createWorkRequest(orgId, profileId, email, body, { isOrgAd
     }
 
     if (requireField('asset_picker', true) && !equipmentId) {
-      const err = new Error('An asset / equipment selection is required.')
+      const err = new Error('An asset selection is required.')
       err.status = 400
       throw err
     }
@@ -886,7 +949,7 @@ export async function createWorkRequest(orgId, profileId, email, body, { isOrgAd
   )
 
   const jobNatureField = await resolveJobNatureField(orgId)
-  const jobNatureOptions = jobNatureOptionsFromField(jobNatureField).map((row) => row.value)
+  const jobNatureOptions = (await resolveJobNatureChoiceList(orgId)).map((row) => row.value)
   let jobNature = String(body?.job_nature || '').trim() || null
   if (jobNature && jobNatureOptions.length && !jobNatureOptions.includes(jobNature)) {
     const err = new Error('Selected job nature is not valid.')
@@ -1078,17 +1141,22 @@ async function createLinkedWorkOrderFromRequest(orgId, profileId, wr, {
 
   let workOrder = await getWorkOrderForRequest(orgId, wr.id)
   const sourceType = mapRequestTypeToSource(wr.request_type)
-  const resolvedPriority = ['high', 'medium', 'low'].includes(priority) ? priority : wr.priority
+  const resolvedPriority = canonicalWorkRequestPriority(priority, wr.priority)
   const resolvedWorkCenter = String(workCenter || '').trim() || 'General'
   let woNumber = workOrder?.wo_number || null
 
   if (!workOrder) {
     woNumber = await generateWorkOrderNumber(orgId, departmentId)
+    const initialStatus = await assignedStatusForTechnicians(
+      orgId,
+      workOrderFormIdForSource(sourceType),
+      Boolean(assigneeIds.length),
+    )
     const insert = await supabaseAdmin
       .from('manual_work_orders')
       .insert({
         org_id: orgId,
-        status: 'assigned',
+        status: initialStatus,
         wo_number: woNumber,
         source_type: sourceType,
         created_by: profileId,
@@ -1098,7 +1166,9 @@ async function createLinkedWorkOrderFromRequest(orgId, profileId, wr, {
         assigned_location_id: assignedLocationId,
         work_request_id: wr.id,
         equipment_id: wr.equipment_id,
-        asset_hierarchy: wr.asset_hierarchy || [],
+        asset_hierarchy: wr.equipment_id
+          ? await buildAssetHierarchy(orgId, wr.equipment_id)
+          : (wr.asset_hierarchy || []),
         short_description: wr.short_description || null,
         problem_description: wr.problem_description,
         is_breakdown: Boolean(wr.is_breakdown),
@@ -1135,6 +1205,13 @@ async function createLinkedWorkOrderFromRequest(orgId, profileId, wr, {
 
   if (assigneeIds.length) {
     await syncWorkOrderAssignees(orgId, workOrder.id, assigneeIds)
+    const nextStatus = await maybePromoteAssignedToAccepted(orgId, {
+      formId: workOrderFormIdForSource(workOrder.source_type || sourceType),
+      workOrderId: workOrder.id,
+      currentStatus: workOrder.status,
+      hasAssignees: true,
+    })
+    workOrder = { ...workOrder, status: nextStatus }
   }
 
   if (!wr.manual_work_order_id) {
@@ -1144,7 +1221,7 @@ async function createLinkedWorkOrderFromRequest(orgId, profileId, wr, {
       'work_order_generated',
       `Work order ${linkedNumber} generated from ${wr.request_number}.`,
       profileId,
-      { newStatus: 'assigned', metadata: { work_request_id: wr.id, auto_approved: autoApproved } },
+      { newStatus: workOrder.status, metadata: { work_request_id: wr.id, auto_approved: autoApproved } },
     )
 
     if (assigneeIds.length) {
@@ -1154,7 +1231,7 @@ async function createLinkedWorkOrderFromRequest(orgId, profileId, wr, {
         'technician_assigned',
         'Technician(s) assigned.',
         profileId,
-        { newStatus: 'assigned', metadata: { assignee_ids: assigneeIds } },
+        { newStatus: workOrder.status, metadata: { assignee_ids: assigneeIds } },
       )
     }
 
@@ -1164,7 +1241,7 @@ async function createLinkedWorkOrderFromRequest(orgId, profileId, wr, {
       profileId,
       autoApproved ? 'auto_created_from_work_request' : 'created_from_work_request',
       {
-        newStatus: 'assigned',
+        newStatus: workOrder.status,
         departmentId,
         remarks: limitedAssignmentRemarks,
         metadata: { work_request_id: wr.id, wo_number: linkedNumber },
@@ -1186,6 +1263,7 @@ async function createLinkedWorkOrderFromRequest(orgId, profileId, wr, {
       approved_at: now,
       approval_remarks: limitedAssignmentRemarks || (autoApproved ? 'Auto-converted (no approval required).' : null),
       manual_work_order_id: workOrder.id,
+      priority: resolvedPriority,
       updated_at: now,
     })
     .eq('id', wr.id)
@@ -1193,6 +1271,7 @@ async function createLinkedWorkOrderFromRequest(orgId, profileId, wr, {
     .single()
 
   if (updateError) throw updateError
+  await syncWorkRequestPriorityField(orgId, wr.id, resolvedPriority)
 
   await addTimelineEvent(
     orgId,
@@ -1264,12 +1343,6 @@ export async function approveWorkRequest(orgId, profileId, workRequestId, body) 
   const assigneeIds = Array.isArray(body?.assigned_employee_ids)
     ? [...new Set(body.assigned_employee_ids.filter(Boolean))]
     : []
-
-  if (!assigneeIds.length) {
-    const err = new Error('Assign at least one technician.')
-    err.status = 400
-    throw err
-  }
 
   const { workOrder, updated, woNumber } = await createLinkedWorkOrderFromRequest(
     orgId,
@@ -1471,7 +1544,7 @@ export async function replyToWorkRequest(orgId, profileId, workRequestId, body) 
     throw err
   }
 
-  const extraAttachments = Array.isArray(body?.attachments) ? body.attachments : []
+  const extraAttachments = sanitizeTimelineAttachments(body?.attachments)
   const attachments = [
     ...(Array.isArray(wr.attachments) ? wr.attachments : []),
     ...extraAttachments,
@@ -1497,6 +1570,7 @@ export async function replyToWorkRequest(orgId, profileId, workRequestId, body) 
 
   await addTimelineEvent(orgId, workRequestId, 'info_provided', text, profileId, {
     attachments_added: extraAttachments.length,
+    attachments: extraAttachments,
   })
 
   try {
@@ -1859,27 +1933,11 @@ export async function countWorkRequestTabs(orgId, {
   departmentId,
   locationId = null,
 } = {}) {
-  try {
-    const payload = await rpcJson('count_work_request_tabs', {
-      p_org_id: orgId,
-      p_profile_id: profileId || null,
-      p_department_id: departmentId || null,
-      p_location_id: locationId || null,
-    })
-    if (payload && typeof payload === 'object' && !Array.isArray(payload)) {
-      return {
-        my: Number(payload.my) || 0,
-        incoming: Number(payload.incoming) || 0,
-        outgoing: Number(payload.outgoing) || 0,
-        all: Number(payload.all) || 0,
-      }
-    }
-  } catch (err) {
-    if (!isMissingRpcError(err)) throw err
-  }
-
   const tabs = ['my', 'incoming', 'outgoing', 'all']
   const entries = await Promise.all(tabs.map(async (filter) => {
+    if ((filter === 'incoming' || filter === 'outgoing') && !departmentId) {
+      return [filter, 0]
+    }
     let query = supabaseAdmin
       .from('work_requests')
       .select('id', { count: 'exact', head: true })

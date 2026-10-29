@@ -17,6 +17,7 @@ import {
   bulkUploadPmPlans,
 } from '../../lib/api-pm'
 import { useWorkOrderList } from '../../hooks/useWorkOrderList'
+import { notifyTabCountsChanged, TAB_COUNTS_EVENT } from '../../lib/tabCountEvents'
 import { useWorkOrderToolbar } from '../../hooks/useWorkOrderToolbar'
 import { usePermissions } from '../../hooks/usePermissions'
 import { useDebouncedValue } from '../../hooks/useDebouncedValue'
@@ -204,10 +205,21 @@ export default function ScheduledWorkOrders() {
 
   useEffect(() => {
     let cancelled = false
-    getPmTabCounts()
-      .then((counts) => { if (!cancelled && counts) setTabCounts(counts) })
-      .catch(() => {})
-    return () => { cancelled = true }
+    const load = () => {
+      getPmTabCounts()
+        .then((counts) => { if (!cancelled && counts) setTabCounts(counts) })
+        .catch(() => {})
+    }
+    load()
+    const onChange = (event) => {
+      if (event.detail?.module && event.detail.module !== 'pm') return
+      load()
+    }
+    window.addEventListener(TAB_COUNTS_EVENT, onChange)
+    return () => {
+      cancelled = true
+      window.removeEventListener(TAB_COUNTS_EVENT, onChange)
+    }
   }, [view, plans.length])
 
   useEffect(() => {
@@ -259,6 +271,8 @@ export default function ScheduledWorkOrders() {
     try {
       if (planModal?.id) await updatePmPlan(planModal.id, payload)
       else await createPmPlan(payload)
+      notifyTabCountsChanged('pm')
+      notifyTabCountsChanged('work_orders')
       setPlanModal(null)
       await loadPlans()
     } finally {
@@ -270,6 +284,8 @@ export default function ScheduledWorkOrders() {
     setError(null)
     try {
       await generatePmWorkOrder(plan.id)
+      notifyTabCountsChanged('pm')
+      notifyTabCountsChanged('work_orders')
       await loadPlans()
       setView('orders')
     } catch (err) {
@@ -281,6 +297,7 @@ export default function ScheduledWorkOrders() {
     setError(null)
     try {
       await deletePmPlan(plan.id)
+      notifyTabCountsChanged('pm')
       await loadPlans()
     } catch (err) {
       setError(err.message)
@@ -292,6 +309,7 @@ export default function ScheduledWorkOrders() {
     setDuplicatingId(plan.id)
     try {
       await duplicatePmPlan(plan.id)
+      notifyTabCountsChanged('pm')
       await loadPlans()
     } catch (err) {
       setError(err.message)

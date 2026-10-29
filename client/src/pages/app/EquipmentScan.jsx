@@ -28,7 +28,7 @@ export default function EquipmentScan() {
         if (!cancelled) setEquipment(row)
       })
       .catch((err) => {
-        if (!cancelled) setError(err.message || 'This code is not an equipment record in your organization.')
+        if (!cancelled) setError(err.message || 'This code is not an asset record in your organization.')
       })
       .finally(() => {
         if (!cancelled) setLoading(false)
@@ -65,7 +65,7 @@ export default function EquipmentScan() {
   return (
     <div className="company-page">
       <div className="company-page__content">
-        {loading && <p className="company-empty">Loading equipment…</p>}
+        {loading && <p className="company-empty">Loading asset…</p>}
         {error && <div className="company-alert" role="alert">{error}</div>}
         {equipment && (
           <EquipmentDetail

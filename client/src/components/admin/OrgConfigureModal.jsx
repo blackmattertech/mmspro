@@ -27,7 +27,7 @@ const HOME_CARDS = [
   {
     id: 'masters',
     label: 'Masters',
-    text: 'Equipment fields used when this company creates equipment.',
+    text: 'Asset fields used when this company creates assets.',
     icon: 'list',
   },
   {
@@ -41,8 +41,8 @@ const HOME_CARDS = [
 const MASTER_CARDS = [
   {
     id: 'equipment',
-    label: 'Equipment',
-    text: 'Fields and options saved on each equipment record.',
+    label: 'Assets',
+    text: 'Fields and options saved on each asset record.',
     icon: 'washer',
   },
 ]
@@ -70,7 +70,7 @@ export default function OrgConfigureModal({ org, onClose, onOrgUpdated }) {
     : screen === 'masters'
       ? 'Masters'
       : screen === 'equipment'
-        ? 'Equipment'
+        ? 'Assets'
         : screen === 'modules'
           ? 'Modules'
           : 'Configure'

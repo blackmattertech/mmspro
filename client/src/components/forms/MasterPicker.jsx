@@ -70,6 +70,7 @@ export default function MasterPicker({
   disabled = false,
   excludeIds = [],
   filters = {},
+  fallbackLabel = '',
 }) {
   const source = getMasterSource(sourceId)
   const placeholder = source ? `Select ${source.label}` : 'Select…'
@@ -77,6 +78,7 @@ export default function MasterPicker({
   const departmentId = normalizeFilterId(filters.departmentId)
   const areaId = normalizeFilterId(filters.areaId)
   const blocked = Object.values(filters).some((item) => item === '__none__')
+  const keepStoredValue = Boolean(value) && disabled
   const { options, loading } = useMasterOptions(sourceId, {
     locationId,
     departmentId,
@@ -86,11 +88,11 @@ export default function MasterPicker({
   })
 
   const common = {
-    value: blocked ? '' : value,
+    value: blocked && !keepStoredValue ? '' : value,
     onChange,
     required,
-    disabled: disabled || blocked,
-    placeholder: blocked ? 'Select parent first' : placeholder,
+    disabled: disabled || (blocked && !keepStoredValue),
+    placeholder: blocked && !keepStoredValue ? 'Select parent first' : placeholder,
     multi: Boolean(source?.multi),
     excludeIds,
   }
@@ -101,9 +103,15 @@ export default function MasterPicker({
   if (sourceId === 'departments' && locationId) {
     rows = rows.filter((row) => row.all_locations || row.location_id === locationId)
   }
-  if (value && !rows.some((row) => String(row.id) === String(value))) {
-    rows = [{ id: value, name: String(value) }, ...rows]
+  if (common.value && !rows.some((row) => String(row.id) === String(common.value))) {
+    rows = [{ id: common.value, name: fallbackLabel || String(common.value) }, ...rows]
   }
 
-  return <RemoteSelect options={blocked ? [] : rows} loading={!blocked && loading} {...common} />
+  return (
+    <RemoteSelect
+      options={blocked && !keepStoredValue ? [] : rows}
+      loading={!blocked && loading}
+      {...common}
+    />
+  )
 }

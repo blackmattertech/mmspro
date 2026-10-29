@@ -707,6 +707,7 @@ export default function WarrantyForm({
             }}
             disabled={saving || !canSave}
             actors={formActors}
+            currentEmployeeId={(serialNumber == null && !values?.id) ? (session?.employee_id || null) : null}
             renderField={() => null}
           />
         </div>

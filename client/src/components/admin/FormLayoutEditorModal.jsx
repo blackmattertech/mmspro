@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { getAdminFormLayout, saveAdminFormLayout } from '../../lib/api-form-layouts'
+import { MODULE_FORM_GROUPS } from '../../lib/formRegistry'
 import { useBackdropClose } from '../../hooks/useBackdropClose'
 import FormBuilderCanvas from './FormBuilderCanvas'
 import './FormBuilderPanel.css'
@@ -52,6 +53,11 @@ export default function FormLayoutEditorModal({ orgId, formId, onClose }) {
           error={error}
           onBack={onClose}
           onSave={handleSave}
+          formChoices={MODULE_FORM_GROUPS.flatMap((group) => group.forms.map((item) => ({
+            formId: item.formId,
+            label: item.label,
+            moduleLabel: group.label,
+          })))}
         />
       </div>
     </div>

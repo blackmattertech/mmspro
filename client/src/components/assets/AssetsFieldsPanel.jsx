@@ -22,6 +22,7 @@ import EditIcon from '../ui/EditIcon'
 import FieldModal from './FieldModal'
 import AssetFieldSortMenu from './AssetFieldSortMenu'
 import TablePagination from '../shared/TablePagination'
+import TableEmptyRow from '../shared/TableEmptyRow'
 import SpellcheckInput from '../shared/SpellcheckInput'
 import FilterableSelect from '../ui/FilterableSelect'
 import { useTablePagination } from '../../hooks/useTablePagination'
@@ -164,7 +165,7 @@ export default function AssetsFieldsPanel({
   const viewTabs = useMemo(() => {
     if (fieldScope === 'equipment' && !canManageSchema) {
       return [
-        { id: 'parents', label: 'Equipment fields' },
+        { id: 'parents', label: 'Asset fields' },
         { id: 'children', label: 'Option values' },
       ]
     }
@@ -785,25 +786,6 @@ export default function AssetsFieldsPanel({
 
       {loading ? (
         <div className="company-loading">Loading fields…</div>
-      ) : visibleFields.length === 0 ? (
-        <div className="company-empty">
-          {hasFilters && 'No fields match your search or filters.'}
-          {!hasFilters && view === 'sections' && (
-            canManageSchema
-              ? 'No sections yet. Add a section to group parent fields for this organization.'
-              : 'No sections yet. Ask Super Admin to add sections first.'
-          )}
-          {!hasFilters && view === 'parents' && (
-            canManageSchema
-              ? 'No parent fields yet. Create a section first, then add parent fields.'
-              : 'No parent fields yet. Ask Super Admin to add parent fields first.'
-          )}
-          {!hasFilters && view === 'children' && (
-            canManageChildren
-              ? 'No child values yet. Add a child value to an existing option-backed parent.'
-              : 'No child values yet. Ask Super Admin to add a Dropdown or Checkbox parent field, then add values here.'
-          )}
-        </div>
       ) : (
         <div className="company-table-wrap">
           <table className="company-table master-table">
@@ -826,7 +808,41 @@ export default function AssetsFieldsPanel({
               </tr>
             </thead>
             <tbody>
-              {pagedVisibleFields.map((field) => {
+              {pagedVisibleFields.length === 0 ? (
+                <TableEmptyRow colSpan={[
+                  canReorderRows,
+                  true,
+                  view !== 'sections',
+                  view === 'children',
+                  view !== 'sections' && view !== 'children',
+                  showSectionOrder,
+                  view === 'sections',
+                  view === 'sections',
+                  view === 'parents',
+                  view === 'parents',
+                  view === 'parents',
+                  view === 'children',
+                  canManageSchema || canManageChildren,
+                  canManageSchema || canManageChildren,
+                ].filter(Boolean).length}>
+                  {hasFilters && 'No fields match your search or filters.'}
+                  {!hasFilters && view === 'sections' && (
+                    canManageSchema
+                      ? 'No sections yet. Add a section to group parent fields for this organization.'
+                      : 'No sections yet. Ask Super Admin to add sections first.'
+                  )}
+                  {!hasFilters && view === 'parents' && (
+                    canManageSchema
+                      ? 'No parent fields yet. Create a section first, then add parent fields.'
+                      : 'No parent fields yet. Ask Super Admin to add parent fields first.'
+                  )}
+                  {!hasFilters && view === 'children' && (
+                    canManageChildren
+                      ? 'No child values yet. Add a child value to an existing option-backed parent.'
+                      : 'No child values yet. Ask Super Admin to add a Dropdown or Checkbox parent field, then add values here.'
+                  )}
+                </TableEmptyRow>
+              ) : pagedVisibleFields.map((field) => {
                 const isDragging = draggingId === field.id
                 const isDropTarget = dropTargetId === field.id && draggingId !== field.id
                 return (

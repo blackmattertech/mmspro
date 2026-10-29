@@ -516,6 +516,14 @@ a.vendor-rank__row:hover .vendor-rank__name {
   vertical-align: middle;
 }
 
+.board-table td.company-empty {
+  padding: 24px 8px;
+  text-align: center;
+  color: #94a3b8;
+  font-size: 12px;
+  border-top: none;
+}
+
 .board-table .is-today,
 .board-table .is-overdue {
   color: #e63946;

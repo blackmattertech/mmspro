@@ -175,6 +175,7 @@ export default function FilterableSelect({
 
     if (e.key === 'Escape') {
       e.preventDefault()
+      e.stopPropagation()
       close()
       inputRef.current?.blur()
       return

@@ -825,8 +825,12 @@
   margin: 0 0 12px;
 }
 
-.wo-assignment {
-  margin-top: 16px;
+.wr-create-form .wo-assignment {
+  margin-top: 0;
+}
+
+.wr-form-section__head .wo-assignment__count {
+  margin-left: auto;
 }
 
 .wo-assignment__header {
@@ -1373,8 +1377,8 @@
   font-size: 15px;
   font-weight: 650;
   color: #1f2430;
-  background: var(--color-light-pink-2);
-  border-bottom: 1px solid #fde8eb;
+  background: #f4f6f8;
+  border-bottom: 1px solid #e6e8ee;
 }
 
 .wo-execution-files {
@@ -1411,6 +1415,16 @@
   background: var(--color-off-white);
   border: 1px solid var(--color-light-gray-1);
   border-radius: var(--radius-sm);
+}
+
+.company-form__grid--12 > .wo-permit,
+.company-form__field.wo-permit {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+
+.company-form__field.wo-permit {
+  gap: 16px;
 }
 
 .wo-permit__toggle {
@@ -2123,4 +2137,16 @@
     min-width: 0;
     width: 100%;
   }
+}
+
+.wo-stamp {
+  display: flex;
+  align-items: center;
+  min-height: 42px;
+}
+
+.wo-stamp__time {
+  font-weight: 650;
+  color: #1f2430;
+  font-variant-numeric: tabular-nums;
 }

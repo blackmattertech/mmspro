@@ -8,18 +8,22 @@ import {
   FIELD_WIDTH_LABELS,
   FILLED_BY_LABELS,
   FILLED_BY_VALUES,
+  SECTION_STAGE_LABELS,
+  SECTION_STAGE_VALUES,
   defaultColSpanForType,
   fieldWidthFromDelta,
   layoutSignature,
   nextFieldWidth,
   normalizeColSpan,
   normalizeFilledBy,
+  normalizeStage,
   parseLayoutId,
   repeatableGroupId,
 } from '../../lib/formLayoutIds'
 import { getFormDef } from '../../lib/formRegistry'
+import ReuseSectionDialog from './ReuseSectionDialog'
 import { getMasterSource, nativeColumnFor, publicMasterSources, canFilterMasterBy } from '../../lib/formFieldSources'
-import { augmentLayoutWithEquipmentCatalog } from '../../lib/equipmentLayoutFields'
+import { augmentLayoutWithEquipmentCatalog, isEquipmentMasterField } from '../../lib/equipmentLayoutFields'
 import { defaultQrFieldId } from '../../lib/equipmentQr'
 import {
   ASSET_FIELD_TYPES,
@@ -75,6 +79,20 @@ function DragHandle() {
   )
 }
 
+function ChevronIcon({ collapsed }) {
+  return (
+    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+      <path
+        d={collapsed ? 'M4.5 2.5 L8.5 6 L4.5 9.5' : 'M2.5 4.5 L6 8.5 L9.5 4.5'}
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
 function reindex(items) {
   return items.map((item, index) => ({ ...item, order: index }))
 }
@@ -102,6 +120,11 @@ function fieldPayload(extra, sectionId, order) {
     ? normalizeOptions(extra.dependsOnOptions).map((item) => item.value || item.label)
     : []
   const filterByFieldId = masterSource && extra.filterByFieldId ? extra.filterByFieldId : ''
+  const equipmentColumnId = !masterSource && extra.equipmentColumnId
+    ? String(extra.equipmentColumnId).trim()
+    : ''
+  const defaultToCurrentUser = (masterSource === 'employees' || masterSource === 'employees_multi')
+    && Boolean(extra.defaultToCurrentUser)
   return {
     id: extra.id,
     ...(sectionId ? { sectionId } : {}),
@@ -112,10 +135,12 @@ function fieldPayload(extra, sectionId, order) {
     ...(fieldType ? { fieldType } : {}),
     ...(masterSource ? { masterSource } : {}),
     ...(bindKey ? { bindKey } : {}),
-    ...(options.length ? { options } : {}),
+    ...(!equipmentColumnId && options.length ? { options } : {}),
+    ...(equipmentColumnId ? { equipmentColumnId, fieldType: fieldType || 'dropdown' } : {}),
     ...(dependsOnFieldId ? { dependsOnFieldId } : {}),
     ...(dependsOnOptions.length ? { dependsOnOptions } : {}),
     ...(filterByFieldId ? { filterByFieldId } : {}),
+    ...(defaultToCurrentUser ? { defaultToCurrentUser: true } : {}),
   }
 }
 
@@ -177,6 +202,7 @@ function buildParentCandidates(layout, catalogParents, excludeId) {
 function FieldEditor({
   draft,
   masters,
+  equipmentColumns = [],
   bindOptions,
   parentCandidates,
   ruleTargetFields,
@@ -187,8 +213,9 @@ function FieldEditor({
   onClose,
 }) {
   const mapped = !groupMode && Boolean(draft.masterSource)
-  const fieldType = mapped ? 'dropdown' : (draft.fieldType || 'text')
-  const showOptions = !mapped && fieldTypeSupportsOptions(fieldType)
+  const columnMapped = !groupMode && !mapped && Boolean(draft.equipmentColumnId)
+  const fieldType = mapped || columnMapped ? 'dropdown' : (draft.fieldType || 'text')
+  const showOptions = !mapped && !columnMapped && fieldTypeSupportsOptions(fieldType)
   const options = showOptions ? optionsForEditor(draft.options) : []
   const isDependent = Boolean(draft.dependsOnFieldId)
   const selectedParent = parentCandidates.find((item) => item.id === draft.dependsOnFieldId) || null
@@ -242,7 +269,7 @@ function FieldEditor({
                   : [],
               })
             }}
-            disabled={mapped}
+            disabled={mapped || columnMapped}
           >
             {ASSET_FIELD_TYPES.map((item) => (
               <option key={item.value} value={item.value}>{item.label}</option>
@@ -260,9 +287,13 @@ function FieldEditor({
               onChange({
                 ...draft,
                 masterSource,
+                equipmentColumnId: masterSource ? '' : (draft.equipmentColumnId || ''),
                 fieldType: masterSource ? 'dropdown' : (draft.fieldType || 'text'),
                 options: masterSource ? [] : optionsForEditor(draft.options),
                 filterByFieldId: masterSource ? (draft.filterByFieldId || '') : '',
+                defaultToCurrentUser: (masterSource === 'employees' || masterSource === 'employees_multi')
+                  ? Boolean(draft.defaultToCurrentUser)
+                  : false,
               })
             }}
           >
@@ -271,6 +302,35 @@ function FieldEditor({
               <option key={master.id} value={master.id}>{master.label}</option>
             ))}
           </select>
+        </label>
+        )}
+        {!groupMode && !mapped && (
+        <label className="company-form__field">
+          <span className="company-form__label">Map column from asset master</span>
+          <select
+            className="company-form__input"
+            value={draft.equipmentColumnId || ''}
+            onChange={(event) => {
+              const equipmentColumnId = event.target.value
+              onChange({
+                ...draft,
+                equipmentColumnId,
+                masterSource: '',
+                fieldType: equipmentColumnId ? 'dropdown' : (draft.fieldType || 'text'),
+                options: equipmentColumnId ? [] : optionsForEditor(draft.options),
+                filterByFieldId: '',
+              })
+            }}
+          >
+            <option value="">None</option>
+            {equipmentColumns.map((column) => (
+              <option key={column.id} value={column.id}>{column.name}</option>
+            ))}
+          </select>
+          <p className="form-builder-editor__hint">
+            Lists the values stored in that asset column, such as Asset Type.
+            This does not list asset records.
+          </p>
         </label>
         )}
         {!groupMode && mapped && (
@@ -292,10 +352,29 @@ function FieldEditor({
               ))}
             </select>
             <p className="form-builder-editor__hint">
-              Example: Area filtered by Order To (Department), then Equipment filtered by Area.
+              Example: Area filtered by Order To (Department), then Asset filtered by Area.
               Only matching records appear in the picker.
             </p>
           </label>
+        )}
+        {!groupMode && (draft.masterSource === 'employees' || draft.masterSource === 'employees_multi') && (
+          <div className="form-builder-editor__dependency">
+            <label className="form-builder-board__required">
+              <input
+                type="checkbox"
+                checked={Boolean(draft.defaultToCurrentUser)}
+                onChange={(event) => onChange({
+                  ...draft,
+                  defaultToCurrentUser: event.target.checked,
+                })}
+              />
+              Default to the logged-in user
+            </label>
+            <p className="form-builder-editor__hint">
+              On a new form, this field starts with the employee who is signed in.
+              They can still change the selection before saving.
+            </p>
+          </div>
         )}
         {showOptions && (
           <div className="form-builder-editor__options">
@@ -550,6 +629,7 @@ export default function FormBuilderCanvas({
   onSave,
   onMarkDefault,
   onGoToSections,
+  formChoices = [],
 }) {
   const form = payload?.form
   const formDef = form?.formId ? getFormDef(form.formId) : null
@@ -558,20 +638,24 @@ export default function FormBuilderCanvas({
   const [selectedFieldId, setSelectedFieldId] = useState(null)
   const [selectedGroupId, setSelectedGroupId] = useState(null)
   const [dragging, setDragging] = useState(null)
+  const [dropTargetSectionId, setDropTargetSectionId] = useState(null)
   const [resizingId, setResizingId] = useState(null)
   const [localError, setLocalError] = useState(null)
   const [paletteSectionId, setPaletteSectionId] = useState(null)
   const [openSystemSection, setOpenSystemSection] = useState(null)
   const [editor, setEditor] = useState(null)
+  const [reuseSectionId, setReuseSectionId] = useState(null)
+  const [collapsedSectionIds, setCollapsedSectionIds] = useState(() => new Set())
 
   const savedLayout = payload?.layout || null
   const defaultLayout = payload?.defaultLayout || emptyLayout()
-  const seedLayout = savedLayout || emptyLayout()
+  const seedLayout = savedLayout || defaultLayout
 
   useEffect(() => {
     setLayout(cloneLayout(seedLayout))
     setSelectedSectionId(seedLayout.sections?.[0]?.id || null)
     setSelectedFieldId(null)
+    setCollapsedSectionIds(new Set())
     setLocalError(null)
   }, [layoutSignature(seedLayout)])
 
@@ -600,6 +684,19 @@ export default function FormBuilderCanvas({
     }
     return rows
   }, [payload?.catalog?.parents, formDef?.catalogMode])
+
+  const equipmentColumns = useMemo(() => (
+    (payload?.catalog?.parents || [])
+      .filter((row) => (
+        row.field_source === 'equipment'
+        && row.kind !== 'child'
+        && row.is_active !== false
+        && row.field_type !== 'image'
+        && row.field_type !== 'file'
+      ))
+      .map((row) => ({ id: row.id, name: row.name || 'Column' }))
+      .sort((a, b) => a.name.localeCompare(b.name))
+  ), [payload?.catalog?.parents])
 
   const parentCandidates = useMemo(() => {
     if (editor?.groupId && layout) {
@@ -677,6 +774,16 @@ export default function FormBuilderCanvas({
     () => new Set((layout?.sections || []).map((section) => section.id)),
     [layout],
   )
+  const compoundBlocks = useMemo(() => {
+    const seen = new Set()
+    const blocks = []
+    for (const item of formDef?.systemFields || []) {
+      if (!item?.compound || seen.has(item.id)) continue
+      seen.add(item.id)
+      blocks.push(item)
+    }
+    return blocks
+  }, [formDef])
 
   const canvasSections = useMemo(() => {
     const canvasLayout = augmentLayoutWithEquipmentCatalog(layout, catalogParents)
@@ -741,27 +848,64 @@ export default function FormBuilderCanvas({
           label: section.label || system?.label || catalog?.name || (parsed.kind === 'custom' ? 'Section' : parsed.value),
           custom: parsed.kind === 'custom',
           filledBy: normalizeFilledBy(section.filledBy),
+          stage: normalizeStage(section.stage),
           fields,
           groups,
         }
       })
   }, [layout, systemSectionById, systemFieldById, catalogSections, catalogParents, masters])
 
-  const ensureSection = (current, sectionId, label) => {
+  const ensureSection = (current, sectionId, label, extra = {}) => {
     if (!Array.isArray(current.groups)) current.groups = []
     if (current.sections.some((section) => section.id === sectionId)) return current
+    const filledBy = extra.filledBy && extra.filledBy !== 'any' ? extra.filledBy : ''
+    const stage = extra.stage || ''
     current.sections = reindex([
       ...current.sections,
-      { id: sectionId, order: current.sections.length, ...(label ? { label } : {}) },
+      {
+        id: sectionId,
+        order: current.sections.length,
+        ...(label ? { label } : {}),
+        ...(filledBy ? { filledBy } : {}),
+        ...(stage ? { stage } : {}),
+      },
     ])
     return current
   }
 
-  const addSection = (sectionId, extraFields = [], label) => {
+  const expandSection = (sectionId) => {
+    if (!sectionId) return
+    setCollapsedSectionIds((prev) => {
+      if (!prev.has(sectionId)) return prev
+      const next = new Set(prev)
+      next.delete(sectionId)
+      return next
+    })
+  }
+
+  const toggleSectionCollapsed = (sectionId) => {
+    setCollapsedSectionIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(sectionId)) next.delete(sectionId)
+      else next.add(sectionId)
+      return next
+    })
+  }
+
+  const collapseAllSections = () => {
+    setCollapsedSectionIds(new Set((layout?.sections || []).map((section) => section.id)))
+  }
+
+  const expandAllSections = () => {
+    setCollapsedSectionIds(new Set())
+  }
+
+  const addSection = (sectionId, extraFields = [], label, extra = {}) => {
     setSelectedSectionId(sectionId)
+    expandSection(sectionId)
     setLayout((prev) => {
       const current = cloneLayout(prev)
-      ensureSection(current, sectionId, label)
+      ensureSection(current, sectionId, label, extra)
       for (const extra of extraFields) {
         if (current.fields.some((field) => field.id === extra.id)) continue
         const siblings = current.fields.filter((field) => field.sectionId === sectionId)
@@ -781,17 +925,75 @@ export default function FormBuilderCanvas({
     addSection(target, [{ id: fieldId, colSpan: normalizeColSpan(colSpan, 25), required, ...extra }])
   }
 
+  const addBlockToSelectedSection = (item) => {
+    if (!item?.id || usedFieldIds.has(item.id)) return
+    if (!selectedSectionId) {
+      setLocalError('Select a section on the canvas, then click a Block to add it there.')
+      return
+    }
+    setLocalError(null)
+    addField(item.id, selectedSectionId, item.colSpan || 100, item.required)
+  }
+
   const addSystemSection = (section) => {
     addSection(section.id, section.fields.map((item) => ({
       id: item.id,
       colSpan: normalizeColSpan(item.colSpan, 25),
       required: Boolean(item.required),
-    })), section.label)
+    })), section.label, { filledBy: section.filledBy, stage: section.stage })
   }
 
   const addCustomSection = () => {
     const id = customSectionId()
     addSection(id, [], 'New section')
+  }
+
+  const addEquipmentPicker = () => {
+    const existingSection = selectedSectionId
+      && layout?.sections?.some((section) => section.id === selectedSectionId)
+    const sectionId = existingSection ? selectedSectionId : customSectionId()
+    setSelectedSectionId(sectionId)
+    setLayout((prev) => {
+      const current = cloneLayout(prev || emptyLayout())
+      if (!current.sections.some((section) => section.id === sectionId)) {
+        ensureSection(current, sectionId, 'Asset information')
+      }
+      const inSection = () => current.fields.filter((field) => field.sectionId === sectionId)
+      const sourceOf = (field) => {
+        if (field.masterSource) return field.masterSource
+        const parsed = parseLayoutId(field.id)
+        return parsed.kind === 'master' ? parsed.value : ''
+      }
+      let area = inSection().find((field) => sourceOf(field) === 'areas')
+      if (!area) {
+        const id = customFieldId()
+        current.fields.push(fieldPayload({
+          id,
+          label: 'Area',
+          fieldType: 'dropdown',
+          masterSource: 'areas',
+          bindKey: suggestedBindKey(form?.formId, current, 'areas'),
+          colSpan: 25,
+        }, sectionId, inSection().length))
+        area = current.fields.find((field) => field.id === id)
+      }
+      const equipment = inSection().find(isEquipmentMasterField)
+      if (!equipment) {
+        current.fields.push(fieldPayload({
+          id: customFieldId(),
+          label: 'Asset',
+          fieldType: 'dropdown',
+          masterSource: 'equipment',
+          filterByFieldId: area?.id || '',
+          bindKey: suggestedBindKey(form?.formId, current, 'equipment'),
+          colSpan: 25,
+          required: true,
+        }, sectionId, inSection().length))
+      } else if (!equipment.filterByFieldId && area?.id) {
+        equipment.filterByFieldId = area.id
+      }
+      return augmentLayoutWithEquipmentCatalog(current, catalogParents)
+    })
   }
 
   const addMappedMaster = (master) => {
@@ -839,6 +1041,7 @@ export default function FormBuilderCanvas({
       dependsOnFieldId: '',
       dependsOnOptions: [],
       filterByFieldId: '',
+      defaultToCurrentUser: false,
       ...extras,
     }
     if (!target) {
@@ -848,6 +1051,7 @@ export default function FormBuilderCanvas({
       return
     }
     setSelectedSectionId(target)
+    expandSection(target)
     setEditor({ ...base, sectionId: target })
   }
 
@@ -879,6 +1083,7 @@ export default function FormBuilderCanvas({
       dependsOnFieldId: field.dependsOnFieldId || '',
       dependsOnOptions: Array.isArray(field.dependsOnOptions) ? [...field.dependsOnOptions] : [],
       filterByFieldId: field.filterByFieldId || '',
+      defaultToCurrentUser: Boolean(field.defaultToCurrentUser),
     })
   }
 
@@ -938,6 +1143,7 @@ export default function FormBuilderCanvas({
         childFields: [],
       })
       setSelectedSectionId(target)
+      expandSection(target)
       setSelectedGroupId(id)
       return current
     })
@@ -994,14 +1200,33 @@ export default function FormBuilderCanvas({
     })
   }
 
+  const setSectionStage = (sectionId, stage) => {
+    setLayout((prev) => {
+      const current = cloneLayout(prev)
+      current.sections = current.sections.map((section) => {
+        if (section.id !== sectionId) return section
+        const next = normalizeStage(stage)
+        if (!next) {
+          const { stage: _drop, ...rest } = section
+          return rest
+        }
+        return { ...section, stage: next }
+      })
+      return current
+    })
+  }
+
   const saveFieldEditor = () => {
     if (!editor) return
     const label = String(editor.label || '').trim()
     if (!label) return
     const masterSource = editor.groupId ? '' : (editor.masterSource || '')
-    const fieldType = masterSource ? 'dropdown' : (editor.fieldType || 'text')
+    const equipmentColumnId = !editor.groupId && !masterSource
+      ? String(editor.equipmentColumnId || '').trim()
+      : ''
+    const fieldType = masterSource || equipmentColumnId ? 'dropdown' : (editor.fieldType || 'text')
     const bindKey = editor.groupId ? '' : (editor.bindKey || '')
-    const options = !masterSource && fieldTypeSupportsOptions(fieldType)
+    const options = !masterSource && !equipmentColumnId && fieldTypeSupportsOptions(fieldType)
       ? normalizeOptions(editor.options)
       : []
     const dependsOnFieldId = editor.dependsOnFieldId || ''
@@ -1009,6 +1234,9 @@ export default function FormBuilderCanvas({
       ? normalizeOptions(editor.dependsOnOptions).map((item) => item.value || item.label)
       : []
     const filterByFieldId = (!editor.groupId && masterSource) ? (editor.filterByFieldId || '') : ''
+    const defaultToCurrentUser = !editor.groupId
+      && (masterSource === 'employees' || masterSource === 'employees_multi')
+      && Boolean(editor.defaultToCurrentUser)
     if (dependsOnFieldId && !dependsOnOptions.length) return
 
     if (editor.groupId) {
@@ -1055,11 +1283,13 @@ export default function FormBuilderCanvas({
         label,
         fieldType,
         masterSource,
+        equipmentColumnId,
         bindKey,
         options,
         dependsOnFieldId,
         dependsOnOptions,
         filterByFieldId,
+        defaultToCurrentUser,
       })
       setEditor(null)
       return
@@ -1078,6 +1308,8 @@ export default function FormBuilderCanvas({
         }
         if (masterSource) next.masterSource = masterSource
         else delete next.masterSource
+        if (equipmentColumnId) next.equipmentColumnId = equipmentColumnId
+        else delete next.equipmentColumnId
         if (bindKey) next.bindKey = bindKey
         else delete next.bindKey
         if (options.length) next.options = options
@@ -1088,6 +1320,8 @@ export default function FormBuilderCanvas({
         else delete next.dependsOnOptions
         if (filterByFieldId) next.filterByFieldId = filterByFieldId
         else delete next.filterByFieldId
+        if (defaultToCurrentUser) next.defaultToCurrentUser = true
+        else delete next.defaultToCurrentUser
         return next
       })
       return current
@@ -1103,6 +1337,26 @@ export default function FormBuilderCanvas({
       ))
       return current
     })
+  }
+
+  const applySectionReuse = async (sectionId, formIds) => {
+    const membership = formIds.length ? [form?.formId, ...formIds].filter(Boolean) : []
+    const next = cloneLayout(layout)
+    next.sections = next.sections.map((section) => {
+      if (section.id !== sectionId) return section
+      const copy = { ...section }
+      if (membership.length > 1) copy.sharedWith = membership
+      else delete copy.sharedWith
+      return copy
+    })
+    setLayout(next)
+    setLocalError(null)
+    try {
+      await onSave(next)
+      setReuseSectionId(null)
+    } catch (err) {
+      setLocalError(err.message || 'Could not reuse this section')
+    }
   }
 
   const removeSection = (sectionId) => {
@@ -1189,6 +1443,11 @@ export default function FormBuilderCanvas({
     window.addEventListener('pointerup', onUp)
   }
 
+  const clearFieldDrag = () => {
+    setDragging(null)
+    setDropTargetSectionId(null)
+  }
+
   const handleDropSection = (targetId) => {
     if (!dragging || dragging.type !== 'section') return
     setLayout((prev) => {
@@ -1196,7 +1455,7 @@ export default function FormBuilderCanvas({
       current.sections = moveItem(current.sections, dragging.id, targetId)
       return current
     })
-    setDragging(null)
+    clearFieldDrag()
   }
 
   const handleDropField = (targetId, sectionId) => {
@@ -1218,7 +1477,8 @@ export default function FormBuilderCanvas({
       ]
       return current
     })
-    setDragging(null)
+    expandSection(sectionId)
+    clearFieldDrag()
   }
 
   const qrFieldOptions = useMemo(() => {
@@ -1291,8 +1551,18 @@ export default function FormBuilderCanvas({
         <div>
           <h3 className="form-builder__heading">{form?.label || 'Form'}</h3>
           <p className="form-builder__sub">
-            Drag to reorder. Click width (25% / 33% / 75% / 100%) or drag the right edge to resize. Save to replace the company form.
+            Select a section, then add a Block from the left — or drag a field onto another section.
+            Click width (25% / 33% / 50% / 75% / 100%) or drag the right edge to resize. Save to replace the company form.
           </p>
+          {form?.info && (
+            <p className="form-builder__inherit">{form.info}</p>
+          )}
+          {form?.inheritFromFormId && (
+            <p className="form-builder__inherit">
+              Request fields stay on {form.inheritFromLabel || 'the Work Request form'} and show
+              read-only on this work order. Reuse a Work Request section if it must also be editable here.
+            </p>
+          )}
           {payload?.platformDefault?.isSource && (
             <span className="form-builder__card-badge">Default for new companies</span>
           )}
@@ -1352,6 +1622,32 @@ export default function FormBuilderCanvas({
             + Add repeatable group
           </button>
 
+          {compoundBlocks.length > 0 && (
+            <>
+              <div className="form-builder-palette__divider">Blocks</div>
+              {!selectedSectionId && (
+                <p className="form-builder-palette__empty">
+                  Select a section on the canvas, then click a Block to add it there.
+                </p>
+              )}
+              {compoundBlocks.map((item) => {
+                const usedField = usedFieldIds.has(item.id)
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    className={`form-builder-palette__field ${usedField ? 'is-used' : ''}`}
+                    onClick={() => addBlockToSelectedSection(item)}
+                    disabled={usedField}
+                  >
+                    {item.label}
+                    <small>{usedField ? 'Added' : 'Block'}</small>
+                  </button>
+                )
+              })}
+            </>
+          )}
+
           <h4>This form</h4>
           {(formDef?.systemSections || []).map((section) => {
             const used = usedSectionIds.has(section.id)
@@ -1396,6 +1692,14 @@ export default function FormBuilderCanvas({
           })}
 
           <div className="form-builder-palette__divider">Masters</div>
+          <button
+            type="button"
+            className="form-builder-palette__item"
+            onClick={addEquipmentPicker}
+          >
+            <span>Asset picker</span>
+            <small>Area and asset fields</small>
+          </button>
           {masters.map((master) => (
             <button
               key={master.id}
@@ -1471,39 +1775,72 @@ export default function FormBuilderCanvas({
         </aside>
 
         <div className="form-builder-board">
+          {canvasSections.length > 0 && (
+            <div className="form-builder-board__toolbar">
+              <button type="button" className="form-builder-board__fold" onClick={expandAllSections}>
+                Expand all
+              </button>
+              <button type="button" className="form-builder-board__fold" onClick={collapseAllSections}>
+                Collapse all
+              </button>
+            </div>
+          )}
           {!canvasSections.length ? (
             <div className="form-builder__empty">
               <h3>Empty form</h3>
-              <p>Add a section, then choose fields from this form, masters, or Add field.</p>
+              <p>Add a section, then choose Blocks, fields from this form, masters, or Add field.</p>
             </div>
-          ) : canvasSections.map((section) => (
+          ) : canvasSections.map((section) => {
+            const collapsed = collapsedSectionIds.has(section.id)
+            const itemCount = (section.fields?.length || 0) + (section.groups?.length || 0)
+            return (
             <section
               key={section.id}
-              className={`form-builder-board__section ${selectedSectionId === section.id ? 'is-selected' : ''} ${dragging?.id === section.id ? 'is-dragging' : ''}`}
+              className={`form-builder-board__section ${selectedSectionId === section.id ? 'is-selected' : ''} ${collapsed ? 'is-collapsed' : ''} ${dragging?.id === section.id ? 'is-dragging' : ''} ${dragging?.type === 'field' && dropTargetSectionId === section.id ? 'is-drop-target' : ''}`}
               onClick={() => setSelectedSectionId(section.id)}
-              onDragOver={(event) => event.preventDefault()}
-              onDrop={() => handleDropSection(section.id)}
+              onDragOver={(event) => {
+                event.preventDefault()
+                if (dragging?.type === 'field') setDropTargetSectionId(section.id)
+              }}
+              onDrop={(event) => {
+                if (dragging?.type === 'field') {
+                  event.stopPropagation()
+                  handleDropField(null, section.id)
+                  return
+                }
+                handleDropSection(section.id)
+              }}
             >
               <header className="form-builder-board__section-head">
                 <span
                   className="form-builder-board__handle"
                   draggable
                   onDragStart={() => setDragging({ type: 'section', id: section.id })}
-                  onDragEnd={() => setDragging(null)}
+                  onDragEnd={clearFieldDrag}
                 >
                   <DragHandle />
                 </span>
-                {section.custom ? (
-                  <input
-                    className="form-builder-board__title-input"
-                    value={section.label}
-                    onChange={(event) => renameSection(section.id, event.target.value)}
-                    onClick={(event) => event.stopPropagation()}
-                    aria-label="Section name"
-                  />
-                ) : (
-                  <h4>{section.label}</h4>
-                )}
+                <button
+                  type="button"
+                  className="form-builder-board__toggle"
+                  aria-expanded={!collapsed}
+                  aria-label={collapsed ? `Expand ${section.label || 'section'}` : `Collapse ${section.label || 'section'}`}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    toggleSectionCollapsed(section.id)
+                  }}
+                >
+                  <ChevronIcon collapsed={collapsed} />
+                </button>
+                <input
+                  className="form-builder-board__title-input"
+                  value={section.label}
+                  onChange={(event) => renameSection(section.id, event.target.value)}
+                  onClick={(event) => event.stopPropagation()}
+                  onMouseDown={(event) => event.stopPropagation()}
+                  aria-label="Section name"
+                  placeholder="Section name"
+                />
                 <label
                   className="form-builder-board__filled-by"
                   onClick={(event) => event.stopPropagation()}
@@ -1519,9 +1856,39 @@ export default function FormBuilderCanvas({
                     ))}
                   </select>
                 </label>
+                <label
+                  className="form-builder-board__filled-by"
+                  onClick={(event) => event.stopPropagation()}
+                  title="When this section appears on the work order"
+                >
+                  <span>Stage</span>
+                  <select
+                    value={section.stage || ''}
+                    onChange={(event) => setSectionStage(section.id, event.target.value)}
+                  >
+                    {SECTION_STAGE_VALUES.map((value) => (
+                      <option key={value || 'any'} value={value}>
+                        {SECTION_STAGE_LABELS[value] || 'Any stage'}
+                      </option>
+                    ))}
+                  </select>
+                </label>
                 {section.filledBy && section.filledBy !== 'any' && (
                   <span className="form-builder-board__badge">
                     {FILLED_BY_LABELS[section.filledBy]}
+                  </span>
+                )}
+                {section.stage && (
+                  <span className="form-builder-board__badge">
+                    {SECTION_STAGE_LABELS[section.stage]}
+                  </span>
+                )}
+                {(section.sharedWith || []).some((id) => id !== form?.formId) && (
+                  <span className="form-builder-board__badge">Shared</span>
+                )}
+                {collapsed && (
+                  <span className="form-builder-board__count">
+                    {itemCount} {itemCount === 1 ? 'item' : 'items'}
                   </span>
                 )}
                 <button
@@ -1544,19 +1911,37 @@ export default function FormBuilderCanvas({
                 >
                   + Group
                 </button>
+                <button
+                  type="button"
+                  className="form-builder-board__reuse"
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    setSelectedSectionId(section.id)
+                    setReuseSectionId(section.id)
+                  }}
+                >
+                  Reuse
+                </button>
                 <button type="button" className="form-builder-board__remove" onClick={() => removeSection(section.id)}>
                   Remove
                 </button>
               </header>
+              {!collapsed && (
               <div
                 className="form-builder-board__grid"
-                onDragOver={(event) => event.preventDefault()}
-                onDrop={() => {
+                onDragOver={(event) => {
+                  event.preventDefault()
+                  if (dragging?.type === 'field') setDropTargetSectionId(section.id)
+                }}
+                onDrop={(event) => {
+                  event.stopPropagation()
                   if (dragging?.type === 'field') handleDropField(null, section.id)
                 }}
               >
                 {!section.fields.length && !section.groups.length && (
-                  <p className="form-builder-board__hint">Select a master, click + Field, or + Group for repeatable rows (e.g. permits).</p>
+                  <p className="form-builder-board__hint">
+                    Select this section, then add a Block from the left. Or drag a field onto this section.
+                  </p>
                 )}
                 {section.fields.map((field) => (
                   <article
@@ -1582,7 +1967,7 @@ export default function FormBuilderCanvas({
                         event.stopPropagation()
                         setDragging({ type: 'field', id: field.id })
                       }}
-                      onDragEnd={() => setDragging(null)}
+                      onDragEnd={clearFieldDrag}
                       onClick={(event) => event.stopPropagation()}
                     >
                       <DragHandle />
@@ -1606,6 +1991,7 @@ export default function FormBuilderCanvas({
                             || 'parent'
                           }`
                           : ''}
+                        {field.defaultToCurrentUser ? ' · Logged-in user' : ''}
                       </span>
                     </div>
                     {Boolean(field.options?.length) && (
@@ -1760,8 +2146,10 @@ export default function FormBuilderCanvas({
                   </article>
                 ))}
               </div>
+              )}
             </section>
-          ))}
+            )
+          })}
         </div>
       </div>
 
@@ -1769,6 +2157,7 @@ export default function FormBuilderCanvas({
         <FieldEditor
           draft={editor}
           masters={masters}
+          equipmentColumns={equipmentColumns}
           bindOptions={bindOptions}
           parentCandidates={parentCandidates}
           ruleTargetFields={ruleTargetFields}
@@ -1797,6 +2186,18 @@ export default function FormBuilderCanvas({
           }}
           onSave={saveFieldEditor}
           onClose={() => setEditor(null)}
+        />
+      )}
+      {reuseSectionId && (
+        <ReuseSectionDialog
+          sectionLabel={canvasSections.find((section) => section.id === reuseSectionId)?.label || 'Section'}
+          choices={formChoices.filter((choice) => choice.formId !== form?.formId)}
+          selectedIds={(layout?.sections || [])
+            .find((section) => section.id === reuseSectionId)?.sharedWith
+            ?.filter((id) => id !== form?.formId) || []}
+          saving={saving}
+          onClose={() => { if (!saving) setReuseSectionId(null) }}
+          onApply={(formIds) => applySectionReuse(reuseSectionId, formIds)}
         />
       )}
     </div>

@@ -2,6 +2,7 @@ import { useNavigate } from 'react-router-dom'
 import { useOrg } from '../../hooks/useOrg'
 import { orgPath } from '../../config/navigation'
 import NavIcon from '../../components/layout/NavIcon'
+import MastersBack from '../../components/company/MastersBack'
 import '../../components/company/CompanyShared.css'
 import './Others.css'
 
@@ -36,6 +37,7 @@ export default function Others() {
   return (
     <div className="company-page others-page">
       <header className="company-page__header">
+        <MastersBack />
         <h1 className="company-page__title">Others</h1>
         <p className="company-page__subtitle">
           Shared masters used across requests, orders, and related modules.

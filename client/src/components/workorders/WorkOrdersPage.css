@@ -77,6 +77,135 @@
   overflow: visible;
 }
 
+.wo-page__toolbar--command {
+  background: transparent;
+  border-bottom: none;
+  padding: 16px 28px 4px;
+}
+
+.wo-command {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 10px 12px;
+  background: #fff;
+  border: 1px solid #eceef2;
+  border-radius: 18px;
+  box-shadow: 0 8px 24px rgba(17, 24, 39, 0.05);
+  overflow-x: auto;
+}
+
+.wo-command__rule {
+  width: 1px;
+  align-self: stretch;
+  margin: 6px 2px;
+  background: #e6e8ee;
+  flex-shrink: 0;
+}
+
+.wo-command__tabs {
+  flex-wrap: nowrap;
+  flex-shrink: 0;
+}
+
+.wo-command__actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.wo-command .page-back {
+  height: 40px;
+  padding: 0 16px 0 12px;
+  color: #1f2937;
+  background: #fff;
+  border: 1px solid #e6e8ee;
+  border-radius: 999px;
+  box-shadow: none;
+}
+
+.wo-command .page-back:hover {
+  color: #111827;
+  background: #fafafa;
+}
+
+.wo-command .wo-page__tab {
+  height: 40px;
+  padding: 0 12px;
+  box-shadow: none;
+}
+
+.wo-command .wo-page__tab-count {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  color: #fff;
+  background: var(--color-primary);
+}
+
+.wo-command .wo-page__tab--active .wo-page__tab-count,
+.wo-command .wo-page__tab.active .wo-page__tab-count {
+  color: var(--color-primary);
+  background: #fff;
+}
+
+.wo-command .wo-page__settings-btn {
+  width: 40px;
+  height: 40px;
+  color: var(--color-primary);
+  background: #fff;
+  border: 1px solid #e6e8ee;
+  border-radius: 12px;
+}
+
+.wo-command .wo-page__settings-btn:hover {
+  color: #d42f3c;
+  background: #fff;
+  border-color: #d7dbe3;
+}
+
+.wo-command .company-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid #e6e8ee;
+  box-shadow: none;
+  white-space: nowrap;
+}
+
+.wo-command .company-btn--secondary {
+  color: #1f2937;
+  background: #fff;
+}
+
+.wo-command .company-btn--secondary:hover:not(:disabled) {
+  background: #fafafa;
+}
+
+.wo-command .equipment-bulk-btn {
+  color: var(--color-primary);
+  background: #fff;
+}
+
+.wo-command .company-btn--primary {
+  color: #fff;
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+}
+
+.wo-command__plus {
+  font-size: 18px;
+  font-weight: 500;
+  line-height: 1;
+}
+
+.wo-command__create {
+  padding-left: 14px;
+  padding-right: 16px;
+}
+
 .wo-page__toolbar-row--filters .wo-page__bar-controls {
   width: 100%;
   justify-content: flex-start;
@@ -370,7 +499,8 @@
 .wo-status--waiting_material,
 .wo-status--waiting_shutdown,
 .wo-status--on_hold,
-.wo-status--returned_rework {
+.wo-status--returned_rework,
+.wo-status--unassigned {
   color: #b54708;
   background: #fffaeb;
 }

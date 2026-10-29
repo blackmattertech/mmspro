@@ -19,7 +19,7 @@ const COPY = {
   },
   camera: {
     title: 'Camera',
-    detail: 'Scan equipment QR codes from this device.',
+    detail: 'Scan asset QR codes from this device.',
     action: 'Allow camera',
   },
 }
@@ -128,7 +128,7 @@ export default function StartupPermissions() {
       >
         <h2 id={titleId} className="startup-permissions__title">Allow device access</h2>
         <p className="startup-permissions__lead">
-          MMS PRO uses these to send alerts and scan equipment. Your browser asks for each one separately.
+          MMS PRO uses these to send alerts and scan assets. Your browser asks for each one separately.
         </p>
         <ul className="startup-permissions__list">
           {pending.map((id) => (

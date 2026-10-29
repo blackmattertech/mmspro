@@ -6,6 +6,7 @@ import {
   buildFieldFillershipMap,
 } from './formFillership.js'
 import { hasModulePermission } from './orgPermissions.js'
+import { isWorkOrderProcessForm } from './workOrderForms.js'
 
 function httpError(message, status = 400) {
   const err = new Error(message)
@@ -46,10 +47,10 @@ export async function loadFillershipRecord(orgId, formId, recordId) {
     }
   }
 
-  if (formId === 'work_orders.manual') {
+  if (formId === 'work_orders.manual' || isWorkOrderProcessForm(formId)) {
     const { data, error } = await supabaseAdmin
       .from('manual_work_orders')
-      .select('id, created_by')
+      .select('id, created_by, assigned_department_id, supervisor_id, requester_id')
       .eq('org_id', orgId)
       .eq('id', recordId)
       .maybeSingle()
@@ -58,6 +59,10 @@ export async function loadFillershipRecord(orgId, formId, recordId) {
     const assignees = await loadAssigneesForWorkOrder(data.id)
     return {
       created_by: data.created_by,
+      requested_by: data.requester_id,
+      assigned_department_id: data.assigned_department_id,
+      order_to_department_id: data.assigned_department_id,
+      supervisor_id: data.supervisor_id,
       assignees,
     }
   }
@@ -109,6 +114,9 @@ export function actorsFromRequest(req, record, { isCreate = false, formId = null
     employeeDepartmentId: perms.department_id || null,
     canApproveIncoming: hasModulePermission(perms, 'work_request_approve', 'update')
       || hasModulePermission(perms, 'work_request_incoming', 'update'),
+    isSupervisor: Boolean(perms.is_org_admin)
+      || hasModulePermission(perms, 'work_orders_approve', 'update')
+      || Boolean(record?.supervisor_id && req.userProfile?.id && String(record.supervisor_id) === String(req.userProfile.id)),
     record,
     isCreate,
   })

@@ -8,7 +8,7 @@ import './Approvals.css'
 
 export default function Approvals() {
   const { canUpdate, isProductEnabled } = usePermissions()
-  const canEdit = canUpdate('settings')
+  const canEdit = canUpdate('approvals')
   const modules = APPROVAL_MODULES.filter((mod) => isProductEnabled(mod.id))
   const [loading, setLoading] = useState(true)
   const [approvals, setApprovals] = useState({})

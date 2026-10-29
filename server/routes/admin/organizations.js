@@ -16,7 +16,7 @@ import { ACCOUNT_ROLES } from '../../lib/accountRoles.js'
 import { getSignedUrl } from '../../lib/signedUrlCache.js'
 import { parseDisabledModulesInput, isMissingDisabledModulesColumn } from '../../lib/orgModules.js'
 import { invalidatePermissionsCache } from '../../lib/requestCache.js'
-import { applyPlatformFormDefaults } from '../../lib/platformFormDefaults.js'
+import { applyPlatformFormDefaults, applyPlatformHierarchyDefault } from '../../lib/platformFormDefaults.js'
 
 const router = Router()
 const ORG_ASSETS_BUCKET = 'org-assets'
@@ -230,6 +230,7 @@ router.post('/', async (req, res) => {
     try {
       const defaults = await applyPlatformFormDefaults(org.id)
       defaultFormsApplied = defaults.applied || 0
+      await applyPlatformHierarchyDefault(org.id)
     } catch (defaultsErr) {
       console.warn('Default forms were not copied:', defaultsErr.message)
     }

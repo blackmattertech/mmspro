@@ -3,6 +3,7 @@ import { Link, useLocation } from 'react-router-dom'
 import { useOrg } from '../../hooks/useOrg'
 import { orgPath } from '../../config/navigation'
 import { listWorkRequests, getWorkRequest } from '../../lib/api-work-requests'
+import { notifyTabCountsChanged } from '../../lib/tabCountEvents'
 import { useWorkOrderList } from '../../hooks/useWorkOrderList'
 import { usePermissions } from '../../hooks/usePermissions'
 import { useOpenQueryId } from '../../hooks/useOpenQueryId'
@@ -23,6 +24,7 @@ import './WorkRequests.css'
 import '../company/CompanyShared.css'
 import '../shared/StatusCountBar.css'
 import { VirtualTableBody } from '../shared/VirtualTableBody'
+import TableEmptyRow from '../shared/TableEmptyRow'
 
 function formatDate(value) {
   if (!value) return '—'
@@ -320,6 +322,11 @@ export default function WorkRequestsTable({
   )
   const { orders: requests, total, statusCounts, loading, error, reload } = useWorkOrderList(fetchList)
   useEffect(() => { setListTotal(total) }, [total])
+  useEffect(() => {
+    if (loading) return undefined
+    notifyTabCountsChanged('work_requests')
+    return undefined
+  }, [loading, total, filter])
 
   const success = location.state?.success
   const pagedRows = requests
@@ -352,38 +359,37 @@ export default function WorkRequestsTable({
         onToggle={toggleStatus}
       />
 
-      {!filtered.length ? (
-        <div className="company-empty">
-          <p>
-            {(debouncedSearch || Object.keys(mergedFilters).length || statusFilters.length)
-              ? 'No work requests match your search or filters.'
-              : (emptyHint || 'No work requests yet.')}
-          </p>
-        </div>
-      ) : (
-        <>
-        <div className="company-table-wrap wr-table-wrap">
-          <div className="company-table-scroll">
-            <table className="company-table master-table wr-table">
-              <thead>
-                <tr>
-                  {columns.map((columnId) => {
-                    const col = columnById.get(columnId)
-                    return (
-                      <TableColumnHead
-                        key={columnId}
-                        columnId={columnId}
-                        label={col?.label || columnId}
-                        className={cellClassName(columnId)}
-                        sort={headerSort}
-                        onSort={setHeaderSort}
-                        filterValue={columnFilters[columnId] || ''}
-                        onFilter={setColumnFilter}
-                      />
-                    )
-                  })}
-                </tr>
-              </thead>
+      <div className="company-table-wrap wr-table-wrap">
+        <div className="company-table-scroll">
+          <table className="company-table master-table wr-table">
+            <thead>
+              <tr>
+                {columns.map((columnId) => {
+                  const col = columnById.get(columnId)
+                  return (
+                    <TableColumnHead
+                      key={columnId}
+                      columnId={columnId}
+                      label={col?.label || columnId}
+                      className={cellClassName(columnId)}
+                      sort={headerSort}
+                      onSort={setHeaderSort}
+                      filterValue={columnFilters[columnId] || ''}
+                      onFilter={setColumnFilter}
+                    />
+                  )
+                })}
+              </tr>
+            </thead>
+            {pagedRows.length === 0 ? (
+              <tbody>
+                <TableEmptyRow colSpan={columns.length}>
+                  {(debouncedSearch || Object.keys(mergedFilters).length || statusFilters.length)
+                    ? 'No work requests match your search or filters.'
+                    : (emptyHint || 'No work requests yet.')}
+                </TableEmptyRow>
+              </tbody>
+            ) : (
               <VirtualTableBody
                 items={pagedRows}
                 renderRow={(row) => (
@@ -399,12 +405,11 @@ export default function WorkRequestsTable({
                   />
                 )}
               />
-            </table>
-          </div>
+            )}
+          </table>
         </div>
-        <TablePagination {...pagination} />
-        </>
-      )}
+      </div>
+      <TablePagination {...pagination} />
 
       {selectedId && (
         <WorkRequestDetailModal

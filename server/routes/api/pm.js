@@ -56,10 +56,26 @@ function allowPm(action) {
   }
 }
 
+function allowChecklist(action) {
+  const moduleGuard = requireAnyModulePermission([
+    ['others', action],
+    ['work_orders_scheduled', action],
+    ['work_orders', action],
+  ])
+  return (req, res, next) => {
+    if (['admin', 'super_admin', 'owner'].includes(req.userProfile?.role)) return next()
+    return moduleGuard(req, res, next)
+  }
+}
+
 const canRead = allowPm('read')
 const canCreate = allowPm('create')
 const canUpdate = allowPm('update')
 const canDelete = allowPm('delete')
+const canReadChecklist = allowChecklist('read')
+const canCreateChecklist = allowChecklist('create')
+const canUpdateChecklist = allowChecklist('update')
+const canDeleteChecklist = allowChecklist('delete')
 
 router.use(verifyAuth, requireOrgAccess, loadOrgPermissions)
 
@@ -85,7 +101,7 @@ const PM_PLAN_CSV_COLUMNS = [
   { label: 'Priority', value: (row) => row.priority || '' },
   { label: 'Plant / Facility', value: (row) => row.location?.name || '' },
   { label: 'Area', value: (row) => row.area?.name || '' },
-  { label: 'Equipment', value: (row) => {
+  { label: 'Asset', value: (row) => {
     const name = row.equipment?.name
     const code = row.equipment?.code
     if (code && name) return `${code} — ${name}`
@@ -139,7 +155,7 @@ router.delete('/activity-types/:id', canDelete, async (req, res) => {
   }
 })
 
-router.get('/checklists', canRead, async (req, res) => {
+router.get('/checklists', canReadChecklist, async (req, res) => {
   try {
     const rows = await listChecklistTemplates(req.userProfile.org_id, {
       includeInactive: req.query.include_inactive === '1',
@@ -152,7 +168,7 @@ router.get('/checklists', canRead, async (req, res) => {
   }
 })
 
-router.get('/checklists/:id', canRead, async (req, res) => {
+router.get('/checklists/:id', canReadChecklist, async (req, res) => {
   try {
     const row = await getChecklistTemplate(req.userProfile.org_id, req.params.id)
     res.json(row)
@@ -161,7 +177,7 @@ router.get('/checklists/:id', canRead, async (req, res) => {
   }
 })
 
-router.post('/checklists', canCreate, async (req, res) => {
+router.post('/checklists', canCreateChecklist, async (req, res) => {
   try {
     const row = await createChecklistTemplate(
       req.userProfile.org_id,
@@ -174,7 +190,7 @@ router.post('/checklists', canCreate, async (req, res) => {
   }
 })
 
-router.patch('/checklists/:id', canUpdate, async (req, res) => {
+router.patch('/checklists/:id', canUpdateChecklist, async (req, res) => {
   try {
     const row = await updateChecklistTemplate(
       req.userProfile.org_id,
@@ -188,7 +204,7 @@ router.patch('/checklists/:id', canUpdate, async (req, res) => {
   }
 })
 
-router.delete('/checklists/:id', canDelete, async (req, res) => {
+router.delete('/checklists/:id', canDeleteChecklist, async (req, res) => {
   try {
     await deleteChecklistTemplate(req.userProfile.org_id, req.params.id)
     res.status(204).end()
@@ -197,7 +213,7 @@ router.delete('/checklists/:id', canDelete, async (req, res) => {
   }
 })
 
-router.post('/checklists/:id/fields', canUpdate, async (req, res) => {
+router.post('/checklists/:id/fields', canUpdateChecklist, async (req, res) => {
   try {
     const row = await createChecklistField(
       req.userProfile.org_id,
@@ -211,7 +227,7 @@ router.post('/checklists/:id/fields', canUpdate, async (req, res) => {
   }
 })
 
-router.patch('/checklists/:id/fields/:fieldId', canUpdate, async (req, res) => {
+router.patch('/checklists/:id/fields/:fieldId', canUpdateChecklist, async (req, res) => {
   try {
     const row = await updateChecklistField(
       req.userProfile.org_id,
@@ -226,7 +242,7 @@ router.patch('/checklists/:id/fields/:fieldId', canUpdate, async (req, res) => {
   }
 })
 
-router.delete('/checklists/:id/fields/:fieldId', canDelete, async (req, res) => {
+router.delete('/checklists/:id/fields/:fieldId', canDeleteChecklist, async (req, res) => {
   try {
     await deleteChecklistField(
       req.userProfile.org_id,
@@ -240,7 +256,7 @@ router.delete('/checklists/:id/fields/:fieldId', canDelete, async (req, res) => 
   }
 })
 
-router.put('/checklists/:id/fields/reorder', canUpdate, async (req, res) => {
+router.put('/checklists/:id/fields/reorder', canUpdateChecklist, async (req, res) => {
   try {
     const row = await reorderChecklistFields(
       req.userProfile.org_id,
@@ -254,7 +270,7 @@ router.put('/checklists/:id/fields/reorder', canUpdate, async (req, res) => {
   }
 })
 
-router.post('/checklists/:id/sections', canUpdate, async (req, res) => {
+router.post('/checklists/:id/sections', canUpdateChecklist, async (req, res) => {
   try {
     const row = await createChecklistSection(
       req.userProfile.org_id,
@@ -268,7 +284,7 @@ router.post('/checklists/:id/sections', canUpdate, async (req, res) => {
   }
 })
 
-router.patch('/checklists/:id/sections/:sectionId', canUpdate, async (req, res) => {
+router.patch('/checklists/:id/sections/:sectionId', canUpdateChecklist, async (req, res) => {
   try {
     const row = await updateChecklistSection(
       req.userProfile.org_id,
@@ -283,7 +299,7 @@ router.patch('/checklists/:id/sections/:sectionId', canUpdate, async (req, res) 
   }
 })
 
-router.delete('/checklists/:id/sections/:sectionId', canDelete, async (req, res) => {
+router.delete('/checklists/:id/sections/:sectionId', canDeleteChecklist, async (req, res) => {
   try {
     await deleteChecklistSection(
       req.userProfile.org_id,
@@ -297,7 +313,7 @@ router.delete('/checklists/:id/sections/:sectionId', canDelete, async (req, res)
   }
 })
 
-router.put('/checklists/:id/sections/reorder', canUpdate, async (req, res) => {
+router.put('/checklists/:id/sections/reorder', canUpdateChecklist, async (req, res) => {
   try {
     const row = await reorderChecklistSections(
       req.userProfile.org_id,

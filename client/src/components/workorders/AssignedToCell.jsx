@@ -15,25 +15,6 @@ function assigneeHoverText(employee, fallbackDepartment, fallbackLocation) {
   return [department, location].filter(Boolean).join(' · ')
 }
 
-function PoolAssignee({ assignedDepartment, assignedLocation }) {
-  const department = assignedDepartment?.name || null
-  const location = assignedLocation?.name
-    || assignedDepartment?.location_name
-    || null
-  const label = department || location || 'Unassigned'
-  const hover = [department, location].filter(Boolean).join(' · ')
-  const letter = (label[0] || '?').toUpperCase()
-
-  return (
-    <span className="wo-assigned__person" data-tooltip={hover || label}>
-      <span className="company-employee-avatar company-employee-avatar--placeholder company-employee-avatar--sm" aria-hidden="true">
-        {letter}
-      </span>
-      <span className="wo-assigned__name">{label}</span>
-    </span>
-  )
-}
-
 const MAX_VISIBLE = 2
 
 export default function AssignedToCell({
@@ -44,15 +25,9 @@ export default function AssignedToCell({
   const people = Array.isArray(assignees) ? assignees.filter((a) => a?.id || a?.name) : []
 
   if (!people.length) {
-    if (!assignedDepartment?.name && !assignedLocation?.name && !assignedDepartment?.location_only) {
-      return <span className="wo-assigned wo-assigned--empty">—</span>
-    }
     return (
       <div className="wo-assigned">
-        <PoolAssignee
-          assignedDepartment={assignedDepartment}
-          assignedLocation={assignedLocation}
-        />
+        <span className="wo-status wo-status--unassigned">Unassigned</span>
       </div>
     )
   }

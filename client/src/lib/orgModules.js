@@ -10,6 +10,7 @@ export const PRODUCT_MODULE_GROUPS = [
     label: 'Main',
     modules: [
       { id: 'dashboard', label: 'Dashboard', permissionKeys: ['dashboard'] },
+      { id: 'equipment', label: 'Assets', permissionKeys: ['equipment', 'areas'] },
       { id: 'calendar', label: 'Calendar', permissionKeys: ['calendar'] },
       { id: 'work_request', label: 'Work Request', permissionKeys: [
         'work_request',
@@ -28,7 +29,7 @@ export const PRODUCT_MODULE_GROUPS = [
         'work_orders_manual',
       ] },
       { id: 'work_orders_scheduled', label: 'PM Schedule', permissionKeys: ['work_orders_scheduled'] },
-      { id: 'logbook', label: 'Logbook', permissionKeys: ['logbook'] },
+      { id: 'logbook', label: 'Meter reading', permissionKeys: ['logbook'] },
       { id: 'tasks_followups', label: 'Tasks & Follow-ups', permissionKeys: ['tasks_followups'] },
       { id: 'warranty_manager', label: 'Warranty Manager', permissionKeys: ['warranty_manager'] },
       { id: 'reports', label: 'Reports', permissionKeys: [
@@ -52,10 +53,9 @@ export const PRODUCT_MODULE_GROUPS = [
         'work_centers',
         'employees',
       ] },
-      { id: 'assets', label: 'Fields', permissionKeys: ['assets'] },
-      { id: 'equipment', label: 'Equipment', permissionKeys: ['equipment', 'areas'] },
-      { id: 'vendors', label: 'Vendors', permissionKeys: ['vendors'], entitlementOnly: true },
-      { id: 'others', label: 'Others', permissionKeys: ['others'], entitlementOnly: true },
+      { id: 'assets', label: 'Forms Master', permissionKeys: ['assets'] },
+      { id: 'vendors', label: 'Vendors', permissionKeys: ['vendors'] },
+      { id: 'others', label: 'Others', permissionKeys: ['others'] },
     ],
   },
   {
@@ -63,7 +63,7 @@ export const PRODUCT_MODULE_GROUPS = [
     label: 'Configuration',
     modules: [
       { id: 'roles_access', label: 'Roles & Access', permissionKeys: ['roles_access'] },
-      { id: 'settings', label: 'Settings / Import / Export', permissionKeys: ['settings'] },
+      { id: 'settings', label: 'Settings / Import / Export', permissionKeys: ['settings', 'approvals', 'import', 'export'] },
     ],
   },
 ]

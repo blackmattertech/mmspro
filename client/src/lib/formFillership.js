@@ -13,6 +13,7 @@ export { FILLED_BY_LABELS }
  * @param {boolean} [opts.isDepartmentHead]
  * @param {string|null} [opts.employeeDepartmentId]
  * @param {boolean} [opts.canApproveIncoming]
+ * @param {boolean} [opts.isSupervisor]
  * @param {object|null} [opts.record] — existing record fields
  * @param {boolean} [opts.isCreate] — true when creating (no record yet)
  */
@@ -24,6 +25,7 @@ export function resolveFormActors({
   isDepartmentHead = false,
   employeeDepartmentId = null,
   canApproveIncoming = false,
+  isSupervisor = false,
   record = null,
   isCreate = false,
 } = {}) {
@@ -35,7 +37,9 @@ export function resolveFormActors({
     ? Boolean(profileId)
     : Boolean(profileId && creatorProfileId && String(profileId) === String(creatorProfileId))
 
-  const orderToDeptId = record?.order_to_department_id || null
+  const orderToDeptId = record?.order_to_department_id
+    || record?.assigned_department_id
+    || null
   const isOrderToDeptHead = Boolean(
     orderToDeptId
     && employeeDepartmentId
@@ -62,17 +66,21 @@ export function resolveFormActors({
     isCreator,
     isOrderToDeptHead,
     isTechnician,
+    isSupervisor: Boolean(isSupervisor || isOrgAdmin),
     isCreate: Boolean(isCreate),
   }
 }
 
 export function canEditFilledBy(filledBy, actors = {}) {
-  if (actors.isOrgAdmin) return true
   const role = normalizeFilledBy(filledBy)
+  if (role === 'technician') return Boolean(actors.isTechnician)
+  if (actors.isOrgAdmin) return true
   if (role === 'any') return true
   if (role === 'creator') return Boolean(actors.isCreator)
-  if (role === 'order_to_dept_head') return Boolean(actors.isOrderToDeptHead)
-  if (role === 'technician') return Boolean(actors.isTechnician)
+  if (role === 'order_to_dept_head') {
+    return Boolean(actors.isOrderToDeptHead || actors.isTechnician)
+  }
+  if (role === 'supervisor') return Boolean(actors.isSupervisor)
   return true
 }
 
@@ -147,6 +155,7 @@ export function normalizeGroupRows(value, childFields = [], { minRows = 0 } = {}
 export function validateRepeatableGroups(layout, values, { actors = null } = {}) {
   const errors = []
   for (const group of layout?.groups || []) {
+    if (group.skipped) continue
     if (actors && !canEditFilledBy(
       (layout.sections || []).find((s) => s.id === group.sectionId)?.filledBy,
       actors,
@@ -162,7 +171,7 @@ export function validateRepeatableGroups(layout, values, { actors = null } = {})
     for (let i = 0; i < rows.length; i += 1) {
       const row = rows[i] || {}
       for (const child of group.childFields || []) {
-        if (!child.required) continue
+        if (child.skipped || !child.required) continue
         const val = row[child.id]
         const empty = val == null
           || val === ''

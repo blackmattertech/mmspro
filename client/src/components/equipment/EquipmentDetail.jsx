@@ -4,6 +4,9 @@ import PageBack from '../shared/PageBack'
 import EquipmentQrCode from './EquipmentQrCode'
 import { qrFieldCaption } from '../../lib/equipmentQr'
 import { useFormLayout } from '../../hooks/useFormLayout'
+import { useFormFieldValues } from '../../hooks/useFormFieldValues'
+import { layoutWithoutCatalogFields } from '../../lib/formLayoutIds'
+import OrderedFormLayout from '../forms/OrderedFormLayout'
 import { isAllowedImageFile, resolveImageMime } from '../../lib/imageFiles'
 import { readFileAsDataUrl } from '../../config/warrantyDocuments'
 import { formatMeterLogger, formatMeterStamp, formatMeterValue } from '../../lib/meterReading'
@@ -17,6 +20,9 @@ const HIDDEN_FIELD_NAMES = new Set([
   'equipment name',
   'equipment code',
   'equipment image',
+  'asset name',
+  'asset code',
+  'asset image',
 ])
 
 function fieldText(row) {
@@ -118,7 +124,7 @@ function imageSource(equipment) {
   if (equipment.image_signed_url) return equipment.image_signed_url
   const imageField = (equipment.field_values || []).find((field) => (
     field.field_type === 'image'
-    || String(field.field_name || '').trim().toLowerCase() === 'equipment image'
+    || ['equipment image', 'asset image'].includes(String(field.field_name || '').trim().toLowerCase())
   ))
   const text = fieldText(imageField)
   if (/^(https?:|data:image\/)/i.test(text)) return text
@@ -178,6 +184,8 @@ export default function EquipmentDetail({
   actions = null,
 }) {
   const { layout } = useFormLayout(equipment ? 'equipment.create' : null)
+  const extras = useFormFieldValues(equipment ? 'equipment.create' : null, equipment?.id || null)
+  const sharedLayout = layoutWithoutCatalogFields(layout)
   const fileRef = useRef(null)
   const [imageError, setImageError] = useState(null)
   const [replacing, setReplacing] = useState(false)
@@ -218,8 +226,8 @@ export default function EquipmentDetail({
         <div className="equipment-detail__heading">
           <PageBack onClick={onClose} className="page-back--header" />
           <div>
-            <h1>{equipment.name || 'Equipment'}</h1>
-            <p>{equipment.code ? `Code ${equipment.code}` : 'Equipment record'}</p>
+            <h1>{equipment.name || 'Asset'}</h1>
+            <p>{equipment.code ? `Code ${equipment.code}` : 'Asset record'}</p>
           </div>
         </div>
         <div className="equipment-detail__header-actions">
@@ -249,7 +257,7 @@ export default function EquipmentDetail({
                 <path d="M8 9H16M8 12H16M8 15H13" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
               </svg>
             </CardIcon>
-            Equipment details
+            Asset details
           </h2>
           <dl className="equipment-detail__facts">
             {facts.map((fact) => (
@@ -284,7 +292,7 @@ export default function EquipmentDetail({
                 <circle cx="9" cy="9.25" r="1.15" fill="currentColor" />
               </svg>
             </CardIcon>
-            Equipment image
+            Asset image
           </h2>
           {photo ? (
             <img className="equipment-detail__photo" src={photo} alt="" />
@@ -317,6 +325,17 @@ export default function EquipmentDetail({
           {imageError && <p className="equipment-detail__image-error">{imageError}</p>}
         </section>
       </div>
+
+      {sharedLayout && (
+        <OrderedFormLayout
+          formId="equipment.create"
+          layout={sharedLayout}
+          catalogValues={extras.values}
+          masterValues={extras.values}
+          disabled
+          renderField={() => null}
+        />
+      )}
 
       <div className="equipment-detail__stats">
         <StatCard
@@ -378,7 +397,7 @@ export default function EquipmentDetail({
         variant="panel"
         value={equipment.qr_code}
         caption={caption}
-        fileName={equipment.code || equipment.name || 'equipment-qr'}
+        fileName={equipment.code || equipment.name || 'asset-qr'}
       />
       {actions}
     </div>

@@ -19,12 +19,13 @@ import EmployeeAvatar from './EmployeeAvatar'
 import EmployeeModal from './EmployeeModal'
 import LimitExceededCard from '../shared/LimitExceededCard'
 import TablePagination from '../shared/TablePagination'
+import TableEmptyRow from '../shared/TableEmptyRow'
 import TableColumnPicker from '../shared/TableColumnPicker'
 import { DynamicPickerCells, DynamicPickerHeaders } from '../shared/DynamicPickerCells'
 import TableFilterToolbar from '../shared/TableFilterToolbar'
 import { useTablePagination } from '../../hooks/useTablePagination'
 import { useTableColumnPrefs } from '../../hooks/useTableColumnPrefs'
-import { TABLE_SORT_OPTIONS, applyTableFilters, compactFilters } from '../../lib/tableFilters'
+import { EMPLOYEE_SORT_OPTIONS, applyTableFilters, compactFilters, uniqueNameOptions, ACTIVE_STATUS_FILTER } from '../../lib/tableFilters'
 import { stopTableRowClick, tableRowClickProps } from '../../lib/clickableTableRow'
 import RecordDetailModal from '../shared/RecordDetailModal'
 import { EmployeeDetailContent } from './CompanyRecordDetails'
@@ -41,21 +42,6 @@ import { formatPhoneDisplay } from '../shared/PhoneInput'
 import { isLocationHeadEmployee } from '../../lib/employeeRoles'
 import './CompanyShared.css'
 
-const EMPLOYEE_FILTER_FIELDS = [
-  { value: 'name', label: 'Name' },
-  { value: 'emp_id', label: 'Emp ID' },
-  { value: 'role', label: 'Role' },
-  { value: 'location', label: 'Location' },
-  { value: 'department', label: 'Department' },
-  { value: 'email', label: 'Email' },
-  { value: 'mobile', label: 'Mobile' },
-  { value: 'manager', label: 'Manager' },
-  { value: 'status', label: 'Status', type: 'select', emptyLabel: 'All Status', options: [
-    { value: 'active', label: 'Active' },
-    { value: 'inactive', label: 'Inactive' },
-  ] },
-]
-
 function canPickAnyLocation({ isOrgAdmin, accessRole }) {
   if (isOrgAdmin) return true
   const roleName = accessRole?.name?.trim().toLowerCase() || ''
@@ -68,7 +54,7 @@ export default function EmployeesTab({ canManage }) {
   const canSelectAnyLocation = canPickAnyLocation({ isOrgAdmin, accessRole })
   const [search, setSearch] = useState('')
   const [columnFilters, setColumnFilters] = useState({})
-  const [sortBy, setSortBy] = useState('name_asc')
+  const [sortBy, setSortBy] = useState('department_asc')
   const debouncedSearch = useDebouncedValue(search.trim())
   const listFilters = useMemo(() => compactFilters(columnFilters), [columnFilters])
 
@@ -102,10 +88,10 @@ export default function EmployeesTab({ canManage }) {
     limit: pagination.pageSize,
     offset: pagination.offset,
     listFilters,
+    sortBy,
   })
   const { employees: employeeOptions } = useEmployees({
     locationId: scopedLocationId,
-    enabled: Boolean(modalOpen || editing || viewing),
     limit: 200,
   })
 
@@ -136,6 +122,65 @@ export default function EmployeesTab({ canManage }) {
 
   const activeLocations = locations.filter((l) => l.is_active !== false)
   const activeDepartments = departments.filter((d) => d.is_active !== false)
+  const employeeFilterFields = useMemo(() => ([
+    {
+      value: 'name',
+      label: 'Name',
+      type: 'select',
+      emptyLabel: 'All names',
+      options: uniqueNameOptions(employeeOptions),
+    },
+    {
+      value: 'emp_id',
+      label: 'Emp ID',
+      type: 'select',
+      emptyLabel: 'All Emp IDs',
+      options: uniqueNameOptions(employeeOptions, (row) => row.emp_id),
+    },
+    {
+      value: 'role',
+      label: 'Role',
+      type: 'select',
+      emptyLabel: 'All roles',
+      options: uniqueNameOptions(accessRoles),
+    },
+    {
+      value: 'location',
+      label: 'Location',
+      type: 'select',
+      emptyLabel: 'All locations',
+      options: uniqueNameOptions(activeLocations),
+    },
+    {
+      value: 'department',
+      label: 'Department',
+      type: 'select',
+      emptyLabel: 'All departments',
+      options: uniqueNameOptions(activeDepartments),
+    },
+    {
+      value: 'email',
+      label: 'Email',
+      type: 'select',
+      emptyLabel: 'All emails',
+      options: uniqueNameOptions(employeeOptions, (row) => row.email),
+    },
+    {
+      value: 'mobile',
+      label: 'Mobile',
+      type: 'select',
+      emptyLabel: 'All mobile numbers',
+      options: uniqueNameOptions(employeeOptions, (row) => row.mobile),
+    },
+    {
+      value: 'manager',
+      label: 'Manager',
+      type: 'select',
+      emptyLabel: 'All managers',
+      options: uniqueNameOptions(employeeOptions),
+    },
+    ACTIVE_STATUS_FILTER,
+  ]), [accessRoles, activeLocations, activeDepartments, employeeOptions])
   const nestedSaving = savingLocation || savingDepartment
   const defaultCreateLocationId = canSelectAnyLocation ? '' : (myLocationId || '')
   const lockCreateLocation = Boolean(defaultCreateLocationId)
@@ -191,6 +236,7 @@ export default function EmployeesTab({ canManage }) {
     columnOrder: employeeColumnOrder,
     reorderColumns: reorderEmployeeColumns,
     moveColumn: moveEmployeeColumn,
+    saveColumns: saveEmployeeColumns,
   } = useTableColumnPrefs('company-employees', employeeColumnDefs)
 
   const refreshMasters = async () => {
@@ -369,11 +415,11 @@ export default function EmployeesTab({ canManage }) {
             ariaLabel: 'Search employees across all columns',
           }}
           filter={{
-            fields: EMPLOYEE_FILTER_FIELDS,
+            fields: employeeFilterFields,
             values: columnFilters,
             onChange: setColumnFilters,
           }}
-          sort={{ value: sortBy, onChange: setSortBy, options: TABLE_SORT_OPTIONS }}
+          sort={{ value: sortBy, onChange: setSortBy, options: EMPLOYEE_SORT_OPTIONS }}
           actions={canManage && (
             <>
               {selected.size > 0 && (
@@ -411,6 +457,7 @@ export default function EmployeesTab({ canManage }) {
               onReset={resetEmployeeColumns}
               onReorder={reorderEmployeeColumns}
               onMove={moveEmployeeColumn}
+              onSave={saveEmployeeColumns}
             />
           )}
         />
@@ -423,13 +470,9 @@ export default function EmployeesTab({ canManage }) {
 
       {loading ? (
         <div className="company-loading">Loading employees...</div>
-      ) : employees.length === 0 && !debouncedSearch && !listFilters ? (
-        <div className="company-empty">No employees yet. Add your first team member.</div>
-      ) : filteredEmployees.length === 0 ? (
-        <div className="company-empty">No employees match your search.</div>
       ) : (
         <>
-        <div className="company-table-wrap">
+        <div className="company-table-wrap company-table-wrap--freeze">
           <div className="company-table-scroll">
             <table className="company-table master-table">
               <thead>
@@ -464,7 +507,13 @@ export default function EmployeesTab({ canManage }) {
                 </tr>
               </thead>
               <tbody>
-                {pagedEmployees.map((employee) => {
+                {pagedEmployees.length === 0 ? (
+                  <TableEmptyRow colSpan={(canManage ? 1 : 0) + employeeVisibleColumnIds.length}>
+                    {employees.length === 0 && !debouncedSearch && !listFilters
+                      ? 'No employees yet. Add your first team member.'
+                      : 'No employees match your search.'}
+                  </TableEmptyRow>
+                ) : pagedEmployees.map((employee) => {
                   const isActive = employee.is_active !== false
                   const manager = employee.manager
                     || employees.find((row) => row.id === employee.manager_id)

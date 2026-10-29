@@ -425,6 +425,16 @@ const icons = {
       <path d="M8 3.5v3M16 3.5v3M4 10h16M8 14h3M8 17h6" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
     </svg>
   ),
+  star: (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M12 3.6l2.09 5.02 5.41.48-4.12 3.52 1.24 5.28L12 15.5l-4.62 2.4 1.24-5.28-4.12-3.52 5.41-.48L12 3.6z"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinejoin="round"
+      />
+    </svg>
+  ),
 }
 
 export default function NavIcon({ name }) {
