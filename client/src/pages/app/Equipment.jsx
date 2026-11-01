@@ -140,7 +140,10 @@ export default function Equipment() {
     reorderColumns: reorderEquipmentColumns,
     moveColumn: moveEquipmentColumn,
     saveColumns: saveEquipmentColumns,
-  } = useTableColumnPrefs('masters-equipment', equipmentColumnDefs)
+  } = useTableColumnPrefs(
+    'assets-company-fields',
+    fieldsState.loading ? [] : equipmentColumnDefs,
+  )
   const canSelectAnyLocation = canPickAnyLocation({ isOrgAdmin, accessRole })
   const scopedLocationId = canSelectAnyLocation ? undefined : (myLocationId || undefined)
   const [search, setSearch] = useState('')

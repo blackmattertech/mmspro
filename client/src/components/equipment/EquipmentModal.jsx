@@ -1,22 +1,20 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useBackdropClose } from '../../hooks/useBackdropClose'
 import PageBack from '../shared/PageBack'
-import { getEquipmentFields } from '../../lib/api-equipment'
+import { getEquipmentFields, getEquipmentList } from '../../lib/api-equipment'
 import { getDepartments, getLocations } from '../../lib/api'
 import { fetchReferenceData, PICKER_LIMIT } from '../../lib/referenceDataCache'
 import { seedDateFieldDefaults } from '../../lib/dateInputDefaults'
 import { useFormLayout } from '../../hooks/useFormLayout'
-import { usePermissions } from '../../hooks/usePermissions'
-import { useFormFieldValues } from '../../hooks/useFormFieldValues'
 import { buildEquipmentFormSections } from '../../lib/equipmentFormLayout'
 import {
   applyHierarchyFieldChange,
   hierarchyLevelRevealed,
   optionsForHierarchyField,
   orderedHierarchyFields,
+  pickerOptionsForLevel,
 } from '../../lib/assetHierarchy'
-import { layoutWithoutCatalogFields, parseLayoutId } from '../../lib/formLayoutIds'
-import OrderedFormLayout from '../forms/OrderedFormLayout'
+import { parseLayoutId } from '../../lib/formLayoutIds'
 import { resolveImageMime } from '../../lib/imageFiles'
 import { readFileAsDataUrl } from '../../config/warrantyDocuments'
 import DateField from '../ui/DateField'
@@ -158,6 +156,28 @@ function fieldText(value) {
   return String(value ?? '').trim()
 }
 
+function withCurrentOption(options, current) {
+  const text = fieldText(current)
+  if (!text) return options
+  if (options.some((option) => option.toLowerCase() === text.toLowerCase())) return options
+  return [...options, text]
+}
+
+function blockingLevelName(field, fields, values) {
+  const byId = new Map((fields || []).filter((item) => item?.id).map((item) => [item.id, item]))
+  const seen = new Set()
+  let parentId = field?.depends_on_parent_id
+  let blocked = ''
+  while (parentId && !seen.has(parentId)) {
+    seen.add(parentId)
+    const parent = byId.get(parentId)
+    if (!parent) return blocked
+    if (!fieldText(values?.[parentId])) blocked = parent.name || blocked
+    parentId = parent.depends_on_parent_id || null
+  }
+  return blocked
+}
+
 export default function EquipmentModal({
   equipment,
   saving,
@@ -173,10 +193,8 @@ export default function EquipmentModal({
   const [readingRequired, setReadingRequired] = useState(false)
   const [locations, setLocations] = useState([])
   const [departments, setDepartments] = useState([])
+  const [equipmentRows, setEquipmentRows] = useState([])
   const { layout, loading: layoutLoading } = useFormLayout('equipment.create')
-  const { session } = usePermissions()
-  const extras = useFormFieldValues('equipment.create', equipment?.id || null)
-  const sharedLayout = useMemo(() => layoutWithoutCatalogFields(layout), [layout])
   const [error, setError] = useState(null)
   const handleBackdropClick = useBackdropClose(onClose)
 
@@ -239,6 +257,18 @@ export default function EquipmentModal({
     return () => { cancelled = true }
   }, [])
 
+  useEffect(() => {
+    let cancelled = false
+    getEquipmentList({ limit: 1000 })
+      .then((rows) => {
+        if (!cancelled) setEquipmentRows(Array.isArray(rows) ? rows : [])
+      })
+      .catch(() => {
+        if (!cancelled) setEquipmentRows([])
+      })
+    return () => { cancelled = true }
+  }, [])
+
   const sections = useMemo(() => {
     const built = buildEquipmentFormSections(fieldDefs, layout)
     const order = new Map(orderedHierarchyFields(fieldDefs).map((field, index) => [field.id, index]))
@@ -255,10 +285,22 @@ export default function EquipmentModal({
     [locations, locationId],
   )
 
-  const departmentOptions = useMemo(
-    () => keepCurrent(departments, departmentId),
-    [departments, departmentId],
-  )
+  const departmentOptions = useMemo(() => {
+    const scoped = departments.filter((dept) => (
+      !locationId
+      || dept.all_locations
+      || dept.location_id === locationId
+      || dept.id === departmentId
+    ))
+    return keepCurrent(scoped, departmentId)
+  }, [departments, departmentId, locationId])
+
+  useEffect(() => {
+    if (!locationId || !departmentId) return
+    const selected = departments.find((dept) => dept.id === departmentId)
+    if (!selected || selected.all_locations || selected.location_id === locationId) return
+    setDepartmentId('')
+  }, [locationId, departmentId, departments])
 
   const visibleCatalogFields = useMemo(
     () => sections.flatMap((section) => section.items)
@@ -315,6 +357,7 @@ export default function EquipmentModal({
 
     const missing = visibleCatalogFields
       .filter((field) => {
+        if (!hierarchyLevelRevealed(field, fieldDefs, values)) return false
         if (!field.is_required) return false
         if (isImageField(field)) return !imagePreview(field)
         return !fieldText(values[field.id])
@@ -357,18 +400,24 @@ export default function EquipmentModal({
     payload.reading_required = readingRequired
 
     try {
-      const saved = await onSave(payload)
-      if (saved?.id && sharedLayout) await extras.save(saved.id)
+      await onSave(payload)
     } catch (err) {
       setError(err.message)
     }
   }
 
   const renderField = (field) => {
-    if (!hierarchyLevelRevealed(field, fieldDefs, values)) return null
-    const locked = false
+    const locked = !hierarchyLevelRevealed(field, fieldDefs, values)
+    const blockedBy = locked ? blockingLevelName(field, fieldDefs, values) : ''
     const write = (next) => setValues((current) => applyHierarchyFieldChange(field.id, next, current, fieldDefs))
     const configuredOptions = (field.dropdown_options || []).map((option) => String(option).trim()).filter(Boolean)
+    const choiceOptions = withCurrentOption(
+      configuredOptions.length
+        ? optionsForHierarchyField(field, values)
+        : pickerOptionsForLevel(field, equipmentRows, values, fieldDefs),
+      values[field.id],
+    )
+    const choicePlaceholder = blockedBy ? `Select ${blockedBy} first` : `Select ${field.name}`
     return (
     <div key={field.id} className="equipment-field">
       <div className="company-form__field">
@@ -393,26 +442,19 @@ export default function EquipmentModal({
             onChange={(e) => write(e.target.value)}
             disabled={locked}
           />
-        ) : (field.field_type === 'dropdown' || field.field_type === 'radio') && !configuredOptions.length ? (
-          <SpellcheckInput
-            className="company-form__input"
-            value={values[field.id] || ''}
-            onChange={(e) => write(e.target.value)}
-            disabled={locked}
-            placeholder="Type a value…"
-          />
-        ) : field.field_type === 'dropdown' ? (
+        ) : field.field_type === 'dropdown' || (field.field_type === 'radio' && !configuredOptions.length) ? (
           <FilterableSelect
             value={values[field.id] || ''}
             onChange={write}
-            options={optionsForHierarchyField(field, values)}
-            placeholder={`Select ${field.name}`}
+            options={choiceOptions}
+            placeholder={choicePlaceholder}
             disabled={locked}
             className="company-form__input--select"
+            onCreate={locked ? undefined : (text) => write(text)}
           />
         ) : field.field_type === 'radio' ? (
           <div className="asset-field-dependency__options" role="radiogroup" aria-label={field.name}>
-            {optionsForHierarchyField(field, values).map((opt) => (
+            {choiceOptions.map((opt) => (
               <label key={opt} className="asset-field-dependency__option">
                 <input
                   type="radio"
@@ -436,6 +478,7 @@ export default function EquipmentModal({
                   <input
                     type="checkbox"
                     checked={checked}
+                    disabled={locked}
                     onChange={() => setValues((v) => {
                       const current = Array.isArray(v[field.id]) ? v[field.id] : []
                       return {
@@ -480,6 +523,12 @@ export default function EquipmentModal({
             onChange={(e) => write(e.target.value)}
             disabled={locked}
           />
+        )}
+        {blockedBy && (
+          <p className="company-form__hint">Select {blockedBy} first.</p>
+        )}
+        {qrField?.id === field.id && (
+          <p className="company-form__hint">This value is printed on the asset QR code.</p>
         )}
       </div>
       {qrField?.id === field.id && qrText && (
@@ -528,27 +577,6 @@ export default function EquipmentModal({
               })}
             </div>
           ))}
-
-          {sharedLayout && (
-            <OrderedFormLayout
-              formId="equipment.create"
-              layout={sharedLayout}
-              catalogValues={extras.values}
-              onCatalogChange={extras.setFieldValue}
-              masterValues={extras.values}
-              onMasterChange={extras.setFieldValue}
-              disabled={saving}
-              currentEmployeeId={!isEdit ? (session?.employee_id || null) : null}
-              omitField={(item) => {
-                const parsed = parseLayoutId(item?.id)
-                return (parsed.kind === 'master' && parsed.value === 'areas')
-                  || item?.masterSource === 'areas'
-                  || (parsed.kind === 'system' && parsed.value === 'area_id')
-                  || item?.bindKey === 'area_id'
-              }}
-              renderField={() => null}
-            />
-          )}
 
           <div className="company-form__field">
             <span className="company-form__label">Reading required</span>
