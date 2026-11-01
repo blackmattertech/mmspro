@@ -81,7 +81,8 @@ function groupUntouchedOrder(result, columnDefs) {
 
 /**
  * Column order plus hidden ids.
- * A legacy visible-id array keeps that visible set and appends the rest.
+ * A legacy visible-id array keeps that visible set. New columns are inserted
+ * where they sit in the current definition, ahead of later columns.
  * Columns marked defaultVisible: false stay hidden until the user shows them.
  * Later saves remember hides. Newly added columns follow defaultVisible.
  */
@@ -100,11 +101,9 @@ export function resolveColumnPrefs(saved, columnDefs) {
 
   if (Array.isArray(saved)) {
     const { list, seen } = uniqueValid(saved, valid)
-    for (const id of allIds) {
-      if (!seen.has(id)) list.push(id)
-    }
+    const order = placeNewColumns(list, allIds)
     return finalizeColumnPrefs(
-      { order: list, hidden: hiddenByDefault(columnDefs, seen), known: allIds },
+      { order, hidden: hiddenByDefault(columnDefs, seen), known: allIds },
       columnDefs,
     )
   }
@@ -116,11 +115,30 @@ export function resolveColumnPrefs(saved, columnDefs) {
   )))
   for (const id of allIds) {
     if (seen.has(id)) continue
-    list.push(id)
     const def = byId.get(id)
     if (def?.defaultVisible === false && !known.has(id) && !locked.has(id)) hidden.add(id)
   }
-  return finalizeColumnPrefs({ order: list, hidden: [...hidden], known: allIds }, columnDefs)
+  return finalizeColumnPrefs({
+    order: placeNewColumns(list, allIds),
+    hidden: [...hidden],
+    known: allIds,
+  }, columnDefs)
+}
+
+/** Put columns that were not in a saved order where they sit in the current definition. */
+function placeNewColumns(savedOrder, allIds) {
+  const order = [...savedOrder]
+  const defaultIndex = new Map(allIds.map((id, index) => [id, index]))
+  for (const id of allIds) {
+    if (order.includes(id)) continue
+    const at = defaultIndex.get(id)
+    let insertAt = order.length
+    order.forEach((existing, index) => {
+      if ((defaultIndex.get(existing) ?? -1) > at) insertAt = Math.min(insertAt, index)
+    })
+    order.splice(insertAt, 0, id)
+  }
+  return order
 }
 
 function finalizeColumnPrefs(result, columnDefs) {
