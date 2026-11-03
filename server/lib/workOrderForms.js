@@ -103,7 +103,6 @@ const NATIVE_KEY_ALIASES = {
   breakdown_end_at: 'breakdown_times',
   execution_attachments: 'execution_files',
   vendor_currency: 'vendor_expense',
-  vendor_id: 'vendor_expense',
   checklist_values: 'checklist_execution',
 }
 

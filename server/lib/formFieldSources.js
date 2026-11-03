@@ -28,6 +28,7 @@ const WORK_ORDER_NATIVE_COLUMNS = new Set([
   'planned_start_at',
   'planned_end_at',
   'equipment_id',
+  'vendor_id',
 ])
 
 export const FORM_NATIVE_COLUMNS = {
@@ -60,6 +61,13 @@ export const FORM_STATUS_ENTITY = {
 
 export function getMasterSource(sourceId) {
   return MASTER_BY_ID.get(sourceId) || null
+}
+
+export function fieldMasterSourceId(field) {
+  if (!field) return ''
+  if (field.masterSource) return field.masterSource
+  const parsed = parseLayoutId(field.id)
+  return parsed.kind === 'master' ? parsed.value : ''
 }
 
 /**
@@ -117,15 +125,16 @@ export function valuesByBindKey(layout, values = {}) {
 export function splitBoundValues(formId, values = {}, layout = null) {
   const native = { ...valuesByBindKey(layout, values) }
   const extras = {}
+  const byId = new Map((layout?.fields || []).map((field) => [field.id, field]))
   for (const [key, value] of Object.entries(values)) {
-    const parsed = parseLayoutId(key)
-    if (parsed.kind === 'master') {
-      const column = nativeColumnFor(formId, parsed.value)
-      if (column && native[column] == null) native[column] = value
-      extras[key] = value
-      continue
-    }
     extras[key] = value
+    const field = byId.get(key)
+    const parsed = parseLayoutId(key)
+    const source = fieldMasterSourceId(field) || (parsed.kind === 'master' ? parsed.value : '')
+    const column = nativeColumnFor(formId, source)
+    if (column && (native[column] == null || native[column] === '')) {
+      native[column] = value
+    }
   }
   return { native, extras }
 }

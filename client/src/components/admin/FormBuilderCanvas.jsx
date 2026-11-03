@@ -21,6 +21,7 @@ import {
   repeatableGroupId,
 } from '../../lib/formLayoutIds'
 import { getFormDef } from '../../lib/formRegistry'
+import { isWorkOrderProcessForm } from '../../lib/workOrderForms'
 import ReuseSectionDialog from './ReuseSectionDialog'
 import { getMasterSource, nativeColumnFor, publicMasterSources, canFilterMasterBy } from '../../lib/formFieldSources'
 import { augmentLayoutWithEquipmentCatalog, isEquipmentMasterField } from '../../lib/equipmentLayoutFields'
@@ -900,6 +901,17 @@ export default function FormBuilderCanvas({
     setCollapsedSectionIds(new Set())
   }
 
+  const sectionMetaFromSelection = (extra = {}) => {
+    const selected = (layout?.sections || []).find((section) => section.id === selectedSectionId)
+    const filledBy = extra.filledBy || selected?.filledBy || (
+      isWorkOrderProcessForm(form?.formId) ? 'technician' : ''
+    )
+    const stage = extra.stage || selected?.stage || (
+      isWorkOrderProcessForm(form?.formId) ? 'execution' : ''
+    )
+    return { filledBy, stage }
+  }
+
   const addSection = (sectionId, extraFields = [], label, extra = {}) => {
     setSelectedSectionId(sectionId)
     expandSection(sectionId)
@@ -919,7 +931,7 @@ export default function FormBuilderCanvas({
     const target = sectionId || selectedSectionId
     if (!target) {
       const created = customSectionId()
-      addSection(created, [{ id: fieldId, colSpan: normalizeColSpan(colSpan, 25), required, ...extra }], 'Section')
+      addSection(created, [{ id: fieldId, colSpan: normalizeColSpan(colSpan, 25), required, ...extra }], 'Section', sectionMetaFromSelection())
       return
     }
     addSection(target, [{ id: fieldId, colSpan: normalizeColSpan(colSpan, 25), required, ...extra }])
@@ -945,7 +957,7 @@ export default function FormBuilderCanvas({
 
   const addCustomSection = () => {
     const id = customSectionId()
-    addSection(id, [], 'New section')
+    addSection(id, [], 'New section', sectionMetaFromSelection())
   }
 
   const addEquipmentPicker = () => {
@@ -1008,7 +1020,7 @@ export default function FormBuilderCanvas({
     const target = selectedSectionId
     if (!target) {
       const created = customSectionId()
-      addSection(created, [], 'Section')
+      addSection(created, [], 'Section', sectionMetaFromSelection())
       setEditor({
         isNew: true,
         sectionId: created,
@@ -1046,7 +1058,7 @@ export default function FormBuilderCanvas({
     }
     if (!target) {
       const created = customSectionId()
-      addSection(created, [], 'Section')
+      addSection(created, [], 'Section', sectionMetaFromSelection())
       setEditor({ ...base, sectionId: created })
       return
     }
@@ -1108,7 +1120,7 @@ export default function FormBuilderCanvas({
     const target = sectionId || selectedSectionId
     if (!target) {
       const created = customSectionId()
-      addSection(created, [], 'Section')
+      addSection(created, [], 'Section', sectionMetaFromSelection())
       setLayout((prev) => {
         const current = cloneLayout(prev)
         if (!Array.isArray(current.groups)) current.groups = []

@@ -105,6 +105,7 @@ function SortMenu({ sort }) {
         aria-haspopup="listbox"
         aria-label="Sort"
         title={selected ? `Sort: ${selected.label}` : 'Sort'}
+        data-tooltip={selected ? `Sort: ${selected.label}` : 'Sort'}
       >
         <IconMask url={SORT_ICON_URL} className="table-filter-menu__icon" />
       </button>
@@ -170,14 +171,18 @@ export default function TableFilterToolbar({
         />
       )}
 
-      {filterSlot}
-      {filter?.fields?.length > 0 && <FilterMenu filter={filter} />}
-      {sort?.options?.length > 0 && <SortMenu sort={sort} />}
+      {(filterSlot || filter?.fields?.length > 0 || sort?.options?.length > 0 || actions || columnPicker) && (
+        <div className="table-filter-toolbar__tools">
+          {filterSlot}
+          {filter?.fields?.length > 0 && <FilterMenu filter={filter} />}
+          {sort?.options?.length > 0 && <SortMenu sort={sort} />}
 
-      {(actions || columnPicker) && (
-        <div className="table-filter-toolbar__actions">
-          {actions}
-          {columnPicker}
+          {(actions || columnPicker) && (
+            <div className="table-filter-toolbar__actions">
+              {actions}
+              {columnPicker}
+            </div>
+          )}
         </div>
       )}
     </div>

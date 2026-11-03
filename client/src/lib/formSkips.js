@@ -17,3 +17,7 @@ export function layoutSkipsTechnicianAcceptance(layout, formId) {
   if (formId && !isWorkOrderProcessForm(formId)) return false
   return Boolean(layout?.processSkips?.technician_acceptance)
 }
+
+export function layoutRequiresChecklist(layout) {
+  return Boolean(layout?.processSkips?.checklist_required)
+}

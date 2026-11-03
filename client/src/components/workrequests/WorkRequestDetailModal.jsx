@@ -32,6 +32,8 @@ import EquipmentQrCode from '../equipment/EquipmentQrCode'
 import { AssetHierarchySummary } from './WorkRequestAssetFields'
 import { hierarchyDisplaySteps } from '../../lib/assetHierarchy'
 import WorkOrderAssignmentActions from '../workorders/WorkOrderAssignmentActions'
+import { useOrgStatusOptions } from '../../hooks/useOrgStatusOptions'
+import { workRequestStatusDisplay } from '../../lib/workRequestStatusLabel'
 
 function WorkRequestChecklistPanel({ detail }) {
   const fields = detail?.checklist_snapshot?.fields || []
@@ -47,32 +49,40 @@ function WorkRequestChecklistPanel({ detail }) {
   const missing = fields.filter((field) => field.is_required && !String(values?.[field.id] ?? '').trim())
 
   return (
-    <section className="wo-received-detail__section">
-      <h3>Checklist</h3>
-      <ChecklistExecution snapshot={detail.checklist_snapshot} values={values} onChange={setValues} disabled={saving} />
+    <section className="wo-received-detail__section wr-checklist-panel">
+      <ChecklistExecution
+        snapshot={detail.checklist_snapshot}
+        values={values}
+        onChange={setValues}
+        disabled={saving}
+        record={detail}
+        recordKind="work_request"
+      />
       {missing.length > 0 && (
         <p className="company-readonly-note">Required before save: {missing.map((field) => field.name).join(', ')}</p>
       )}
-      <button
-        type="button"
-        className="company-btn company-btn--secondary"
-        disabled={saving || missing.length > 0}
-        onClick={async () => {
-          setSaving(true)
-          setMessage('')
-          try {
-            await saveWorkRequestChecklist(detail.id, values)
-            setMessage('Checklist saved.')
-          } catch (err) {
-            setMessage(err.message || 'Could not save checklist')
-          } finally {
-            setSaving(false)
-          }
-        }}
-      >
-        {saving ? 'Saving…' : 'Save checklist'}
-      </button>
-      {message && <p className="company-readonly-note">{message}</p>}
+      <div className="wr-checklist-panel__actions">
+        <button
+          type="button"
+          className="company-btn company-btn--secondary"
+          disabled={saving || missing.length > 0}
+          onClick={async () => {
+            setSaving(true)
+            setMessage('')
+            try {
+              await saveWorkRequestChecklist(detail.id, values)
+              setMessage('Checklist saved.')
+            } catch (err) {
+              setMessage(err.message || 'Could not save checklist')
+            } finally {
+              setSaving(false)
+            }
+          }}
+        >
+          {saving ? 'Saving…' : 'Save checklist'}
+        </button>
+        {message && <p className="company-readonly-note">{message}</p>}
+      </div>
     </section>
   )
 }
@@ -530,6 +540,8 @@ export default function WorkRequestDetailModal({
   const { org } = useOrg()
   const { user } = useAuth()
   const { isOrgAdmin, session, canUpdate } = usePermissions()
+  const { labelByKey: requestStatusLabels } = useOrgStatusOptions('work_request', { includeInactive: true })
+  const { labelByKey: workOrderStatusLabels } = useOrgStatusOptions('work_order', { includeInactive: true })
   const { layout, catalogFields, hasLayout } = useFormLayout('work_request.create')
   const extras = useFormFieldValues('work_request.create', requestId || null)
   const handleBackdropClick = useBackdropClose(onClose)
@@ -624,6 +636,12 @@ export default function WorkRequestDetailModal({
 
   const hierarchy = detail?.asset_hierarchy || []
   const technicians = detail?.assigned_technicians || []
+  const statusDisplay = detail
+    ? workRequestStatusDisplay(detail, {
+      requestLabels: requestStatusLabels,
+      workOrderLabels: workOrderStatusLabels,
+    })
+    : null
   const workOrderId = detail?.linked_work_order?.id || detail?.manual_work_order_id || null
   const showPostApproveAssign = Boolean(
     canApprove
@@ -731,7 +749,7 @@ export default function WorkRequestDetailModal({
         <header className="wr-detail-sheet__header">
           <div className="wr-detail-sheet__header-main">
             <PageBack onClick={onClose} label="Back to Work Requests" />
-            <div>
+            <div className="wr-detail-sheet__heading">
               <p className="wr-detail-sheet__eyebrow">Work request</p>
               <h2 id="wr-detail-title" className="wr-detail-sheet__title">
                 {detail
@@ -754,8 +772,8 @@ export default function WorkRequestDetailModal({
               <div className="wr-detail-main">
                 <div className="wr-detail-meta">
                   <MetaItem label="Status">
-                    <span className={`wo-status wo-status--${detail.status}`}>
-                      {(detail.status || '').replace(/_/g, ' ')}
+                    <span className={`wo-status wo-status--${statusDisplay.key}`} title={statusDisplay.title}>
+                      {statusDisplay.label}
                     </span>
                   </MetaItem>
                   <MetaItem label="Priority">
@@ -810,9 +828,6 @@ export default function WorkRequestDetailModal({
                           ? `Linked · ${detail.manual_work_order_id.slice(0, 8)}…`
                           : '—')
                       )}
-                      {detail.execution_status
-                        ? ` · ${detail.execution_status.replace(/_/g, ' ')}`
-                        : ''}
                     </MetaItem>
                   )}
                 </div>
@@ -897,7 +912,7 @@ export default function WorkRequestDetailModal({
                 </p>
               )}
 
-                <WorkRequestChecklistPanel detail={detail} />
+                {formActors.isTechnician ? <WorkRequestChecklistPanel detail={detail} /> : null}
 
                 {breakdownFields.length > 0 && (
                   <section className="wo-received-detail__section">

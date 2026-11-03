@@ -12,11 +12,7 @@ import DuplicateIcon from '../ui/DuplicateIcon'
 import EditIcon from '../ui/EditIcon'
 import TrashIcon from '../ui/TrashIcon'
 import { PM_PLAN_COLUMNS, PM_PLAN_DEFAULT_COLUMN_IDS } from './pmPlanColumns'
-import StatusCountBar from '../shared/StatusCountBar'
-import { colorByStatus, tallyStatusCounts } from '../../lib/statusCounts'
 import { readCatalogText } from '../../lib/pickerFields'
-import { useOrgStatusOptions } from '../../hooks/useOrgStatusOptions'
-import '../shared/StatusCountBar.css'
 
 function formatDate(value) {
   if (!value) return '—'
@@ -58,17 +54,6 @@ export default function PmPlansTable({
   const visibleColumnIds = visibleColumnIdsProp?.length
     ? visibleColumnIdsProp
     : PM_PLAN_DEFAULT_COLUMN_IDS
-  const { statuses, labelByKey: orgStatusLabels } = useOrgStatusOptions('pm_plan', { includeInactive: true })
-  const statusLabels = useMemo(() => {
-    const map = { ...orgStatusLabels }
-    for (const plan of plans) {
-      const key = plan.status
-      if (key && !map[key]) map[key] = pmPlanStatusLabel(key)
-    }
-    return map
-  }, [orgStatusLabels, plans])
-  const statusColors = colorByStatus(statuses)
-  const statusCounts = tallyStatusCounts(plans)
 
   const renderCell = useCallback((plan, columnId) => {
     switch (columnId) {
@@ -145,13 +130,6 @@ export default function PmPlansTable({
 
   return (
     <div>
-      <StatusCountBar
-        counts={statusCounts}
-        statuses={statuses}
-        labelByKey={statusLabels}
-        colorByKey={statusColors}
-        ariaLabel="PM plan status counts"
-      />
       <div className="company-table-wrap">
       <div className="company-table-scroll">
         <table className="company-table master-table">

@@ -8,6 +8,7 @@ import { useFormFieldValues } from '../../hooks/useFormFieldValues'
 import { resolveFormActors } from '../../lib/formFillership'
 import { formFieldClassName } from '../../lib/formLayoutIds'
 import { requiredSystemKeys, workOrderFormIdForSource } from '../../lib/workOrderForms'
+import { hydrateMasterValues } from '../../lib/formFieldSources'
 import WorkOrderProcessLayout, { useWorkOrderProcessLayout } from './WorkOrderProcessLayout'
 import DateField from '../ui/DateField'
 import SpellcheckInput from '../shared/SpellcheckInput'
@@ -30,6 +31,10 @@ export default function WorkOrderAssignmentActions({ detail, onUpdated }) {
   const assignFormId = workOrderFormIdForSource(detail?.source_type)
   const { layout: assignLayout } = useWorkOrderProcessLayout(assignFormId, ['assignment'])
   const assignExtras = useFormFieldValues(assignFormId, detail?.id || null)
+  const extrasWithNative = useMemo(
+    () => hydrateMasterValues(assignFormId, assignLayout, detail, assignExtras.values),
+    [assignFormId, assignLayout, detail, assignExtras.values],
+  )
   const hasLayoutAssignment = Boolean(assignLayout?.sections?.length)
 
   const [departmentId, setDepartmentId] = useState(lockedDepartmentId)
@@ -317,7 +322,7 @@ export default function WorkOrderAssignmentActions({ detail, onUpdated }) {
     <WorkOrderProcessLayout
       formId={assignFormId}
       stages={['assignment']}
-      extrasValues={assignExtras.values}
+      extrasValues={extrasWithNative}
       onExtraChange={assignExtras.setFieldValue}
       actors={assignActors}
       currentEmployeeId={session?.employee_id || null}

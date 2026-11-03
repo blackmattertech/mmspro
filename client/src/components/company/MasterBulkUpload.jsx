@@ -158,26 +158,44 @@ export function MasterBulkActions({
           className="company-btn company-btn--secondary equipment-bulk-btn"
           onClick={handleDownload}
           disabled={bulkBusy || downloading}
+          title={downloading ? 'Preparing…' : 'Download sample'}
+          data-tooltip={downloading ? 'Preparing…' : 'Download sample'}
+          aria-label={downloading ? 'Preparing…' : 'Download sample'}
         >
           <span className="equipment-bulk-btn__icon" aria-hidden="true">
             <NavIcon name="download" />
           </span>
-          {downloading ? 'Preparing…' : 'Download sample'}
+          <span className="equipment-bulk-btn__label">{downloading ? 'Preparing…' : 'Download sample'}</span>
         </button>
       )}
       <button
         type="button"
         className="company-btn company-btn--secondary equipment-bulk-btn"
         onClick={() => setOpen(true)}
+        title={actionLabel}
+        data-tooltip={actionLabel}
+        aria-label={actionLabel}
       >
         <span className="equipment-bulk-btn__icon" aria-hidden="true">
           <NavIcon name="upload" />
         </span>
-        {actionLabel}
+        <span className="equipment-bulk-btn__label">{actionLabel}</span>
       </button>
       {onAdd && (
-        <button type="button" className="company-btn company-btn--primary" onClick={onAdd}>
-          {addLabel}
+        <button
+          type="button"
+          className="company-btn company-btn--primary equipment-bulk-btn"
+          onClick={onAdd}
+          title={String(addLabel || 'Add').replace(/^\+\s*/, '')}
+          data-tooltip={String(addLabel || 'Add').replace(/^\+\s*/, '')}
+          aria-label={String(addLabel || 'Add').replace(/^\+\s*/, '')}
+        >
+          <span className="equipment-bulk-btn__icon" aria-hidden="true">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+              <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+            </svg>
+          </span>
+          <span className="equipment-bulk-btn__label">{addLabel}</span>
         </button>
       )}
 

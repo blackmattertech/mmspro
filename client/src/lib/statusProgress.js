@@ -1,4 +1,4 @@
-/** Lifecycle progress for a work order, derived from status (not user-entered). */
+/** Fallback progress when a technician has not saved a manual percent. */
 export const WORK_ORDER_PROGRESS_BY_STATUS = {
   draft: 0,
   assigned: 10,
@@ -14,10 +14,16 @@ export const WORK_ORDER_PROGRESS_BY_STATUS = {
   closed: 100,
 }
 
+function verifiedStatus(statuses) {
+  return (statuses || []).find((row) => (row.key || row.value) === 'verified') || null
+}
+
 export function progressPercentForStatus(status, statuses = []) {
   const key = String(status || '').trim()
   if (!key) return 0
   if (Object.prototype.hasOwnProperty.call(WORK_ORDER_PROGRESS_BY_STATUS, key)) {
+    const verified = verifiedStatus(statuses)
+    if (key === 'completed' && verified && verified.is_active === false) return 100
     return WORK_ORDER_PROGRESS_BY_STATUS[key]
   }
   const def = (statuses || []).find((row) => (row.key || row.value) === key)
@@ -27,4 +33,13 @@ export function progressPercentForStatus(status, statuses = []) {
   const idx = ordered.findIndex((row) => (row.key || row.value) === key)
   if (idx < 0) return 0
   return Math.round((idx / Math.max(ordered.length - 1, 1)) * 90)
+}
+
+/** Saved technician progress when present, otherwise the status fallback. */
+export function resolveProgressPercent(record, statuses = []) {
+  if (record?.progress_percent != null && record.progress_percent !== '') {
+    const stored = Number(record.progress_percent)
+    if (Number.isFinite(stored)) return Math.max(0, Math.min(100, Math.round(stored)))
+  }
+  return progressPercentForStatus(record?.status, statuses)
 }

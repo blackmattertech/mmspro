@@ -14,6 +14,7 @@ import WorkOrderFieldSettingsModal from '../../components/workorders/WorkOrderFi
 import PageBack from '../../components/shared/PageBack'
 import OrderedFormLayout from '../../components/forms/OrderedFormLayout'
 import ChecklistOptIn from '../../components/forms/ChecklistOptIn'
+import { layoutRequiresChecklist } from '../../lib/formSkips'
 import {
   augmentLayoutWithEquipmentCatalog,
   catalogRowFromEquipmentDetail,
@@ -119,6 +120,7 @@ export default function ManualWorkOrderCreate() {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [checklistOn, setChecklistOn] = useState(false)
   const [checklistId, setChecklistId] = useState('')
+  const [checklistError, setChecklistError] = useState(null)
   const [settingsLoading, setSettingsLoading] = useState(false)
 
   const {
@@ -144,6 +146,7 @@ export default function ManualWorkOrderCreate() {
     initialEquipmentId,
   })
   const { layout, hasLayout, catalogFields } = useFormLayout('work_orders.manual')
+  const checklistRequired = layoutRequiresChecklist(layout)
   const extras = useFormFieldValues('work_orders.manual', workOrderId || null)
   const [equipmentId, setEquipmentId] = useState(initialEquipmentId || '')
   const [assetFieldValues, setAssetFieldValues] = useState({})
@@ -341,6 +344,11 @@ export default function ManualWorkOrderCreate() {
 
   const handleSubmit = useCallback(async (status) => {
     try {
+      if (status !== 'draft' && checklistRequired && !checklistId) {
+        setChecklistError('Select a checklist.')
+        return
+      }
+      setChecklistError(null)
       if (hasLayout) {
         const groupErrors = validateRepeatableGroups(layout, extras.values, { actors: formActors })
         if (groupErrors.length) {
@@ -348,7 +356,7 @@ export default function ManualWorkOrderCreate() {
         }
       }
       const saved = await submit(status, {
-        checklistTemplateId: checklistOn ? checklistId : null,
+        checklistTemplateId: (checklistRequired || checklistOn) ? checklistId : null,
         equipmentId: equipmentId || null,
         requireAssignedDepartment: showOrderToFallback || layoutHasOrderTo,
       })
@@ -366,7 +374,7 @@ export default function ManualWorkOrderCreate() {
     } catch {
       // Error is surfaced by the form hook
     }
-  }, [equipmentId, checklistId, checklistOn, extras, navigate, org?.slug, submit, isEdit, hasLayout, layout, formActors, showOrderToFallback, layoutHasOrderTo])
+  }, [equipmentId, checklistId, checklistOn, checklistRequired, extras, navigate, org?.slug, submit, isEdit, hasLayout, layout, formActors, showOrderToFallback, layoutHasOrderTo])
 
   const handleReset = useCallback(() => {
     resetValues()
@@ -473,7 +481,7 @@ export default function ManualWorkOrderCreate() {
 
   return (
     <>
-      {error && <div className="wo-alert wo-alert--error" role="alert">{error}</div>}
+      {(checklistError || error) && <div className="wo-alert wo-alert--error" role="alert">{checklistError || error}</div>}
 
       {linkedEquipment && (
         <div className="wo-linked-equipment">
@@ -582,7 +590,8 @@ export default function ManualWorkOrderCreate() {
         <ChecklistOptIn
           formId="work_orders.manual"
           moduleKey="work_order"
-          enabled={checklistOn}
+          required={checklistRequired}
+          enabled={checklistRequired || checklistOn}
           onEnabledChange={setChecklistOn}
           templateId={checklistId}
           onTemplateChange={setChecklistId}

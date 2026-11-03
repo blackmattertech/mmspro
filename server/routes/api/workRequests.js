@@ -1,4 +1,5 @@
 import { Router } from 'express'
+import { workRequestStatusDisplay } from '../../lib/workRequestStatusLabel.js'
 import { verifyAuth } from '../../middleware/auth.js'
 import { requireOrgAccess } from '../../middleware/orgAccess.js'
 import {
@@ -189,8 +190,11 @@ const WR_CSV_COLUMNS = [
   { id: 'problem', label: 'Short description', value: (row) => row.short_description || '' },
   { id: 'problem_description', label: 'Problem description', value: (row) => row.problem_description || '' },
   { id: 'priority', label: 'Priority', value: (row) => row.priority || '' },
-  { id: 'status', label: 'Status', value: (row) => row.status || '' },
-  { id: 'execution_status', label: 'Execution status', value: (row) => row.execution_status || '' },
+  { id: 'status', label: 'Status', value: (row) => workRequestStatusDisplay(row).label },
+  { id: 'execution_status', label: 'Work order status', value: (row) => {
+    const display = workRequestStatusDisplay(row)
+    return display.kind === 'work_order' ? display.label : ''
+  } },
   { id: 'job_nature', label: 'Job nature', value: (row) => row.job_nature || '' },
   { id: 'requester', label: 'Requested by', value: (row) => row.requester?.full_name || row.requester?.name || row.requester?.email || '' },
   { id: 'equipment', label: 'Asset', value: (row) => row.equipment?.name || row.equipment?.code || '' },

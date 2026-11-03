@@ -129,20 +129,21 @@ export default function TasksTable({
   }
 
   return (
-    <div className="company-table-wrap">
+    <div>
+      <div className="company-table-toolbar">
+        <TableColumnPicker
+          columnDefs={columnDefs}
+          visibleColumnIds={visibleColumnIds}
+          columnOrder={columnOrder}
+          onToggle={toggleColumn}
+          onReset={resetColumns}
+          onReorder={reorderColumns}
+          onMove={moveColumn}
+          onSave={saveColumns}
+        />
+      </div>
+      <div className="company-table-wrap">
       <div className="company-table-scroll">
-        <div className="company-table-toolbar">
-          <TableColumnPicker
-            columnDefs={columnDefs}
-            visibleColumnIds={visibleColumnIds}
-            columnOrder={columnOrder}
-            onToggle={toggleColumn}
-            onReset={resetColumns}
-            onReorder={reorderColumns}
-            onMove={moveColumn}
-            onSave={saveColumns}
-          />
-        </div>
         <table className="company-table master-table">
           <thead>
             <tr>
@@ -204,7 +205,8 @@ export default function TasksTable({
             ))}
           </tbody>
         </table>
-        <TablePagination {...pagination} />
+      </div>
+      <TablePagination {...pagination} />
       </div>
     </div>
   )

@@ -14,9 +14,10 @@ import { getWorkRequestsTemplate, bulkUploadWorkRequests } from '../lib/api-work
 import { getWorkOrdersTemplate, bulkUploadWorkOrders } from '../lib/api-work-orders'
 import { getPmPlansTemplate, bulkUploadPmPlans } from '../lib/api-pm'
 import { getTasksTemplate, bulkUploadTasks } from '../lib/api-tasks'
+import { getLogbookTemplate, bulkUploadLogbook } from '../lib/api-logbook'
 import { getWarrantiesTemplate, bulkUploadWarranties, previewWarrantyImport } from '../lib/api-warranties'
 
-/** @typedef {'locations' | 'departments' | 'employees' | 'areas' | 'equipment' | 'vendors' | 'work_requests' | 'work_orders' | 'pm_plans' | 'tasks' | 'warranties'} ImportTemplateId */
+/** @typedef {'locations' | 'departments' | 'employees' | 'areas' | 'equipment' | 'vendors' | 'work_requests' | 'work_orders' | 'pm_plans' | 'tasks' | 'warranties' | 'meter_readings'} ImportTemplateId */
 
 /**
  * @typedef {Object} ImportTemplateConfig
@@ -106,6 +107,10 @@ export const IMPORT_PREVIEW_COLUMNS = {
     { key: 'reference', label: 'PO / Invoice' },
     { key: 'items', label: 'Items' },
     { key: 'action', label: 'Result' },
+  ],
+  meter_readings: [
+    { key: 'name', label: 'Asset' },
+    { key: 'reading', label: 'Reading' },
   ],
 }
 
@@ -280,6 +285,21 @@ export const IMPORT_TEMPLATES = [
     preview: previewWarrantyImport,
     upload: bulkUploadWarranties,
     failedFilename: 'warranties-import-failed-rows.xlsx',
+  },
+  {
+    id: 'meter_readings',
+    label: 'Meter reading',
+    description: 'Bulk log meter readings for assets that require them.',
+    moduleKey: 'logbook',
+    instructions: [
+      'Download the Meter reading Excel template. It lists assets that require a reading.',
+      'Enter a number in the Meter reading column. Leave that cell blank to skip an asset.',
+      'Asset columns must match the Valid values sheet. Date, time, and your name are saved automatically.',
+      'Upload the .xlsx file. Failed rows can be downloaded, fixed, and re-uploaded.',
+    ],
+    downloadTemplate: getLogbookTemplate,
+    upload: bulkUploadLogbook,
+    failedFilename: 'meter-readings-import-failed-rows.xlsx',
   },
 ]
 

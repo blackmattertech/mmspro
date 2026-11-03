@@ -14,17 +14,15 @@ import TableColumnPicker from '../shared/TableColumnPicker'
 import AssignedToCell from './AssignedToCell'
 import EditIcon from '../ui/EditIcon'
 import TrashIcon from '../ui/TrashIcon'
-import StatusCountBar from '../shared/StatusCountBar'
 import { TableColumnHead } from '../shared/ListTableChrome'
 import RecordPdfButton from '../shared/RecordPdfButton'
 import { ColumnPickerPortal } from '../shared/ColumnPickerSlot'
 import { VirtualTableBody } from '../shared/VirtualTableBody'
 import TableEmptyRow from '../shared/TableEmptyRow'
 import '../shared/ListTableChrome.css'
-import { progressPercentForStatus } from '../../lib/statusProgress'
-import { colorByStatus, tallyStatusCounts } from '../../lib/statusCounts'
+import { resolveProgressPercent } from '../../lib/statusProgress'
+import { formatWorkOrderStatusLabel } from '../../lib/workOrderStatusLabel'
 import '../shared/TableColumnPicker.css'
-import '../shared/StatusCountBar.css'
 
 export const WORK_ORDER_COLUMN_CONFIG = {
   wo_number: { label: 'WO #', className: '' },
@@ -222,7 +220,6 @@ export default function WorkOrdersTable({
   emptyTitle,
   emptyHint,
   onView,
-  statusCounts,
   onApprove,
   onEdit,
   onDelete,
@@ -235,8 +232,6 @@ export default function WorkOrdersTable({
   onHeaderSort,
   columnFilters = {},
   onColumnFilter,
-  statusFilters = [],
-  onToggleStatus,
 }) {
   const { org } = useOrg()
   const formFields = useCatalogFields()
@@ -280,8 +275,6 @@ export default function WorkOrdersTable({
     saveColumns,
   } = useTableColumnPrefs(tableId, columnDefs)
   const { statuses, labelByKey: statusLabels } = useOrgStatusOptions('work_order', { includeInactive: true })
-  const statusColors = useMemo(() => colorByStatus(statuses), [statuses])
-  const displayCounts = statusCounts?.length ? statusCounts : tallyStatusCounts(orders)
 
   const localPagination = useTablePagination(totalCount ?? orders.length, { resetKey: paginationResetKey })
   const pagination = paginationProp || localPagination
@@ -318,7 +311,7 @@ export default function WorkOrdersTable({
       case 'status':
         return (
           <span className={`wo-status wo-status--${order.status}`}>
-            {statusLabels[order.status] || String(order.status || '').replace(/_/g, ' ')}
+            {formatWorkOrderStatusLabel(order, statusLabels)}
           </span>
         )
       case 'priority':
@@ -363,9 +356,7 @@ export default function WorkOrdersTable({
         )
       }
       case 'progress': {
-        const pct = Number.isFinite(Number(order.progress_percent))
-          ? Number(order.progress_percent)
-          : progressPercentForStatus(order.status, statuses)
+        const pct = resolveProgressPercent(order, statuses)
         return (
           <div className="wo-progress" title={`${pct}%`}>
             <div className="wo-progress__track">
@@ -390,18 +381,6 @@ export default function WorkOrdersTable({
     }
   }, [statusLabels, statuses, org?.slug, columnDefs])
 
-  const countBar = (
-    <StatusCountBar
-      counts={displayCounts}
-      statuses={statuses}
-      labelByKey={statusLabels}
-      colorByKey={statusColors}
-      ariaLabel="Work order status counts"
-      selectedKeys={statusFilters}
-      onToggle={onToggleStatus}
-    />
-  )
-
   const columnPicker = (
     <ColumnPickerPortal>
       <TableColumnPicker
@@ -420,7 +399,6 @@ export default function WorkOrdersTable({
   return (
     <div>
       {columnPicker}
-      {countBar}
       <div className="company-table-wrap">
       <div className="company-table-scroll">
       <table className="company-table master-table">

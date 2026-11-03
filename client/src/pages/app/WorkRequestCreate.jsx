@@ -39,6 +39,7 @@ import ChecklistOptIn from '../../components/forms/ChecklistOptIn'
 import { findLayoutField, layoutHasSection, layoutWithoutAreasMaster, shouldRequire, systemId, parseLayoutId } from '../../lib/formLayoutIds'
 import { missingRequiredLayoutValues, splitBoundValues } from '../../lib/formFieldSources'
 import { layoutHasOptionRules, isInterDepartmentRequestType, isSameDepartmentRequestType } from '../../lib/formOptionRules'
+import { layoutRequiresChecklist } from '../../lib/formSkips'
 import { resolveFormActors, validateRepeatableGroups } from '../../lib/formFillership'
 import {
   augmentLayoutWithEquipmentCatalog,
@@ -165,6 +166,7 @@ export default function WorkRequestCreate() {
   const { isOrgAdmin, session, canUpdate } = usePermissions()
   const { maxLength } = useTextFieldLimits()
   const { layout, catalogFields, isVisible, fieldClass, hasLayout } = useFormLayout('work_request.create')
+  const checklistRequired = layoutRequiresChecklist(layout)
   const extras = useFormFieldValues('work_request.create', null)
   const formActors = useMemo(() => resolveFormActors({
     formId: 'work_request.create',
@@ -603,6 +605,10 @@ export default function WorkRequestCreate() {
       const fromId = effectiveOrderFromId || native.order_from_department_id || null
       const toId = orderToId || native.order_to_department_id || null
       if (saveAs === 'submit') {
+        if (checklistRequired && !checklistId) {
+          setError('Select a checklist.')
+          return
+        }
         if (hasLayout) {
           const missing = missingRequiredLayoutValues(effectiveLayout || layout, {
             systemValues: {
@@ -698,7 +704,7 @@ export default function WorkRequestCreate() {
           order_from_department_id: fromId,
           order_to_department_id: toId,
           request_type: requestType || native.request_type || 'inter_department',
-          checklist_template_id: checklistOn ? (checklistId || null) : null,
+          checklist_template_id: (checklistRequired || checklistOn) ? (checklistId || null) : null,
         })
         if (created?.id) {
           const uploadedExtras = await persistFormFileValues(org.id, created.id, extraValues, 'work-requests')
@@ -729,6 +735,7 @@ export default function WorkRequestCreate() {
       attachmentFiles,
       checklistId,
       checklistOn,
+      checklistRequired,
       buildPayload,
       effectiveOrderFromId,
       equipmentId,
@@ -1277,7 +1284,8 @@ export default function WorkRequestCreate() {
           <ChecklistOptIn
             formId="work_request.create"
             moduleKey="work_request"
-            enabled={checklistOn}
+            required={checklistRequired}
+            enabled={checklistRequired || checklistOn}
             onEnabledChange={setChecklistOn}
             templateId={checklistId}
             onTemplateChange={setChecklistId}

@@ -23,7 +23,7 @@ import {
   WO_TERMINAL_STATUSES,
   workOrderDueAt,
 } from './reportConstants.js'
-import { progressPercentForStatus } from './statusProgress.js'
+import { resolveProgressPercent } from './statusProgress.js'
 import { tallyStatusCounts } from './statusCounts.js'
 
 const LOG_SELECT = 'id, org_id, work_order_id, log_date, started_at, ended_at, day_status, work_done, remarks, labour_count, materials'
@@ -53,6 +53,7 @@ const WO_SELECT = [
   'labour_count',
   'vendor_expense',
   'breakdown_duration_hours',
+  'progress_percent',
   'breakdown_start_at',
   'breakdown_end_at',
   'permit_required',
@@ -664,7 +665,10 @@ async function buildOverdueReport(orgId, filters, now) {
     statuses: WO_OPEN_STATUSES,
   })
   const overdue = workOrders.filter((row) => isWorkOrderOverdue(row, now))
-  const enriched = await enrichWorkOrders(orgId, overdue)
+  const [enriched, woStatuses] = await Promise.all([
+    enrichWorkOrders(orgId, overdue),
+    listOrgStatuses(orgId, 'work_order', { includeInactive: true }),
+  ])
 
   const rows = enriched
     .map((row) => {
@@ -680,7 +684,7 @@ async function buildOverdueReport(orgId, filters, now) {
         source: row.source_type || '',
         due_at: dueAt,
         aging_days: agingDays(dueAt, now),
-        progress_percent: progressPercentForStatus(row.status),
+        progress_percent: resolveProgressPercent(row, woStatuses),
         assignees: row.assignees,
         equipment: row.equipment,
         pm_plan_number: row.pm_plan_number,
@@ -900,7 +904,7 @@ async function buildUnifiedReport(orgId, filters, now) {
   ])
   const wrRequesterIds = [...wrMap.values()].map((row) => row.requested_by)
 
-  const [eqMap, locMap, deptMap, assigneeMap, fields, peopleMap, logs] = await Promise.all([
+  const [eqMap, locMap, deptMap, assigneeMap, fields, peopleMap, logs, woStatuses] = await Promise.all([
     fetchByIds('equipment', 'id, name, code, location_id, area_id, department_id', [
       ...eqIds,
       ...[...wrMap.values()].map((row) => row.equipment_id),
@@ -911,6 +915,7 @@ async function buildUnifiedReport(orgId, filters, now) {
     loadOrgFields(orgId),
     loadTimelineActors(orgId, [...creatorIds, ...requesterIds, ...wrRequesterIds]),
     loadDailyLogs(orgId, { dateFrom: filters.dateFrom, dateTo: filters.dateTo }),
+    listOrgStatuses(orgId, 'work_order', { includeInactive: true }),
   ])
 
   const logsByWo = new Map()
@@ -981,7 +986,7 @@ async function buildUnifiedReport(orgId, filters, now) {
       job_nature: workRequest?.job_nature || '',
       priority: row.priority || '',
       status: row.status || '',
-      progress_percent: progressPercentForStatus(row.status),
+      progress_percent: resolveProgressPercent(row, woStatuses),
       work_center: row.work_center || '',
       department: assignedDept?.name || '',
       created_by: creator?.name || creator?.full_name || '',

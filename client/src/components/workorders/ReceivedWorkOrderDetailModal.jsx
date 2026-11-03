@@ -13,7 +13,7 @@ import WorkOrderAssignmentActions from './WorkOrderAssignmentActions'
 import WorkOrderLifecyclePanel, { formatStatus } from './WorkOrderLifecyclePanel'
 import WorkRequestFormSections from './WorkRequestFormSections'
 import { requestTypeLabel } from '../workrequests/WorkRequestDetailModal'
-import { progressPercentForStatus } from '../../lib/statusProgress'
+import WorkOrderProgressControl from './WorkOrderProgressControl'
 import '../shared/RecordDetailLayout.css'
 import '../dashboard/CreateWorkOrderModal.css'
 import '../company/CompanyShared.css'
@@ -33,9 +33,9 @@ function creatorLabel(creator) {
   return creator?.display_name || creator?.full_name || creator?.email || '—'
 }
 
-function MetaItem({ label, children }) {
+function MetaItem({ label, children, wide = false }) {
   return (
-    <div className="wr-detail-meta__item">
+    <div className={`wr-detail-meta__item${wide ? ' wr-detail-meta__item--wide' : ''}`}>
       <span className="wo-received-detail__label">{label}</span>
       <div className="wr-detail-meta__value">{children}</div>
     </div>
@@ -169,7 +169,7 @@ export default function ReceivedWorkOrderDetailModal({
         <header className="wr-detail-sheet__header">
           <div className="wr-detail-sheet__header-main">
             <PageBack onClick={onClose} label="Back to Work Orders" />
-            <div>
+            <div className="wr-detail-sheet__heading">
               <p className="wr-detail-sheet__eyebrow">
                 {workRequest ? 'Work request' : 'Work order'}
               </p>
@@ -208,7 +208,7 @@ export default function ReceivedWorkOrderDetailModal({
                 <div className="wr-detail-meta">
                   <MetaItem label="Status">
                     <span className={`wo-status wo-status--${view.status}`}>
-                      {formatStatus(view.status, statusLabels)}
+                      {formatStatus(view.status, statusLabels, view)}
                     </span>
                   </MetaItem>
                   <MetaItem label="Priority">
@@ -243,6 +243,9 @@ export default function ReceivedWorkOrderDetailModal({
                   </MetaItem>
                   <MetaItem label="Request date">{formatDate(workRequest.request_date)}</MetaItem>
                   <MetaItem label="Work order">{view.wo_number || '—'}</MetaItem>
+                  <MetaItem label="Progress %" wide>
+                    <WorkOrderProgressControl detail={view} onUpdated={handleUpdated} />
+                  </MetaItem>
                 </div>
               ) : (
               <div className="wo-received-detail__meta">
@@ -279,20 +282,12 @@ export default function ReceivedWorkOrderDetailModal({
                 <div>
                   <span className="wo-received-detail__label">Status</span>
                   <span className={`wo-status wo-status--${view.status}`}>
-                    {formatStatus(view.status, statusLabels)}
+                    {formatStatus(view.status, statusLabels, view)}
                   </span>
                 </div>
-                <div>
+                <div className="wo-received-detail__meta-progress">
                   <span className="wo-received-detail__label">Progress %</span>
-                  <div className="wo-progress">
-                    <div className="wo-progress__track">
-                      <span
-                        className="wo-progress__fill"
-                        style={{ width: `${progressPercentForStatus(view.status)}%` }}
-                      />
-                    </div>
-                    <span className="wo-progress__value">{progressPercentForStatus(view.status)}%</span>
-                  </div>
+                  <WorkOrderProgressControl detail={view} onUpdated={handleUpdated} />
                 </div>
               </div>
               )}

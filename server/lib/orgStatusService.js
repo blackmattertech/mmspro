@@ -399,7 +399,7 @@ export async function getAllowedNextWorkOrderStatuses(orgId, fromStatus, extras 
     }
   }
 
-  if (fromStatus === 'assigned' && extras.skipTechnicianAcceptance) {
+  if (fromStatus === 'assigned') {
     for (const key of ['started', 'in_progress']) {
       const row = byKey.get(key)
       if ((!row || row.is_active !== false) && !next.includes(key)) next.push(key)

@@ -19,7 +19,7 @@ export default function AssignedWorkOrders() {
   const {
     search, locationFilter, sortBy, advancedRules, fieldFilter, locations,
     columnFilters = {}, setColumnFilter, headerSort = null, setHeaderSort,
-    statusFilters = [], toggleStatus,
+    statusFilters = [],
   } = useOutletContext()
   const debouncedSearch = useDebouncedValue(search)
   const [listTotal, setListTotal] = useState(0)
@@ -43,7 +43,7 @@ export default function AssignedWorkOrders() {
     })),
     [debouncedSearch, pagination.pageSize, pagination.offset, columnFilters, fieldFilter, statusFilters, headerSort, sortBy],
   )
-  const { orders, total, statusCounts, loading, error } = useWorkOrderList(fetchOrders)
+  const { orders, total, loading, error, reload } = useWorkOrderList(fetchOrders)
   useEffect(() => { setListTotal(total) }, [total])
 
   if (loading) {
@@ -63,7 +63,6 @@ export default function AssignedWorkOrders() {
         serverPaged
         columns={ASSIGNED_COLUMNS}
         tableId="work-orders-assigned"
-        statusCounts={statusCounts}
         emptyTitle="No work orders assigned yet."
         emptyHint="Work orders you requested or created and assigned to someone else appear here."
         onView={setSelectedId}
@@ -72,8 +71,6 @@ export default function AssignedWorkOrders() {
         onHeaderSort={setHeaderSort}
         columnFilters={columnFilters}
         onColumnFilter={setColumnFilter}
-        statusFilters={statusFilters}
-        onToggleStatus={toggleStatus}
       />
 
       {selectedId && (
@@ -81,6 +78,7 @@ export default function AssignedWorkOrders() {
           orderId={selectedId}
           fetchWorkOrder={getAssignedWorkOrder}
           onClose={closeSelected}
+          onAssignmentUpdated={() => reload({ silent: true })}
         />
       )}
     </>

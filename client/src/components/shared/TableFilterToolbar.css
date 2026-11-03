@@ -262,6 +262,10 @@
   color: var(--color-white);
 }
 
+.table-filter-toolbar__tools {
+  display: contents;
+}
+
 @media (max-width: 768px) {
   .table-filter-toolbar.wo-page__bar-controls .wo-page__search,
   .table-filter-toolbar.wo-page__bar-controls .spellcheck-field--inline {
@@ -270,8 +274,94 @@
     flex: 1 1 100%;
   }
 
-  .table-filter-toolbar__actions {
-    margin-left: 0;
+  #root .table-filter-toolbar__tools {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 8px;
     width: 100%;
+    min-width: 0;
+  }
+
+  #root .table-filter-toolbar__tools .table-filter-toolbar__actions {
+    display: inline-flex;
+    flex: 1 1 auto;
+    flex-wrap: nowrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    width: auto;
+    min-width: 0;
+    margin-left: auto;
+  }
+
+  #root .table-filter-toolbar__actions .company-btn:has(svg),
+  #root .table-filter-toolbar__actions .company-btn:has(.equipment-bulk-btn__icon),
+  #root .table-filter-toolbar__actions .table-column-picker__trigger {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 40px;
+    width: 40px;
+    min-width: 40px;
+    height: 40px;
+    padding: 0;
+    gap: 0;
+    font-size: 0;
+    line-height: 0;
+    white-space: nowrap;
+  }
+
+  #root .table-filter-toolbar__actions .equipment-bulk-btn__icon,
+  #root .table-filter-toolbar__actions .company-btn svg {
+    width: 18px;
+    height: 18px;
+    font-size: 18px;
+    line-height: 1;
+  }
+
+  #root .table-filter-toolbar [data-tooltip] {
+    position: relative;
+  }
+
+  #root .table-filter-toolbar [data-tooltip]::after {
+    content: attr(data-tooltip);
+    position: absolute;
+    left: 50%;
+    bottom: calc(100% + 8px);
+    z-index: 30;
+    padding: 6px 8px;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1.2;
+    letter-spacing: 0;
+    white-space: nowrap;
+    color: #fff;
+    background: #1f2430;
+    border-radius: 8px;
+    box-shadow: 0 6px 16px rgba(17, 24, 39, 0.18);
+    transform: translateX(-50%);
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+  }
+
+  #root .table-filter-toolbar [data-tooltip]:hover::after,
+  #root .table-filter-toolbar [data-tooltip]:focus::after,
+  #root .table-filter-toolbar [data-tooltip]:active::after {
+    opacity: 1;
+    visibility: visible;
+  }
+
+  #root .table-filter-toolbar__tools > :first-child [data-tooltip]::after {
+    left: 0;
+    transform: none;
+  }
+
+  #root .table-filter-toolbar__actions > :last-child [data-tooltip]::after {
+    left: auto;
+    right: 0;
+    transform: none;
   }
 }

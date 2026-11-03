@@ -158,7 +158,8 @@ export function AdvancedFilterMenu({
         aria-expanded={open}
         aria-haspopup="dialog"
         aria-label="Advanced filters"
-        title="Advanced filters"
+        title="Filters"
+        data-tooltip="Filters"
       >
         <IconMask url={FILTER_ICON_URL} className="table-filter-menu__icon" />
         {!hideLabel && <span className="advanced-filter__label">Advanced</span>}
@@ -383,6 +384,9 @@ export function ExportCsvButton({ onClick, busy = false, label = 'Export' }) {
       className="company-btn company-btn--secondary equipment-bulk-btn"
       onClick={onClick}
       disabled={busy}
+      title={busy ? 'Exporting…' : label}
+      data-tooltip={busy ? 'Exporting…' : label}
+      aria-label={busy ? 'Exporting…' : label}
     >
       <span className="equipment-bulk-btn__icon" aria-hidden="true">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -391,7 +395,7 @@ export function ExportCsvButton({ onClick, busy = false, label = 'Export' }) {
           <path d="M4 15V18.5C4 19.3284 4.67157 20 5.5 20H18.5C19.3284 20 20 19.3284 20 18.5V15" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
       </span>
-      {busy ? 'Exporting…' : label}
+      <span className="equipment-bulk-btn__label">{busy ? 'Exporting…' : label}</span>
     </button>
   )
 }

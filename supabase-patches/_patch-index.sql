@@ -111,6 +111,9 @@
 --   107-org-form-field-options.sql                   → 107-org-form-field-options — Company form dropdown option lists
 --   108-org-form-skips.sql                           → 108-org-form-skips — Company skip overlay for optional form fields
 --   109-open-work-order-pool.sql                     → 109-open-work-order-pool — Unclaimed work orders in every received inbox
+--   110-work-order-checklist-template.sql            → 110-work-order-checklist-template — Checklist template on work orders
+--   111-work-order-manual-progress.sql              → 111-work-order-manual-progress — Manual progress on work orders
+--   112-work-order-daily-field-snapshots.sql        → 112-work-order-daily-field-snapshots — Per-day execution field snapshots
 
 --
 -- OTHER:

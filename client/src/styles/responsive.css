@@ -65,8 +65,26 @@
   #root .wr-detail-main,
   #root .wr-detail-board,
   #root .wr-detail-sheet__body {
-    padding-left: 16px;
-    padding-right: 16px;
+    padding-left: 10px;
+    padding-right: 10px;
+  }
+
+  #root .company-page__header,
+  #root .wo-page__top,
+  #root .roles-page__header,
+  #root .admin-page__header,
+  #root .dash-header,
+  #root .tasks-page__header {
+    padding-top: 12px;
+  }
+
+  #root .company-page__content,
+  #root .wo-page__content,
+  #root .roles-page__content,
+  #root .admin-page__content,
+  #root .calendar-page__body {
+    padding-top: 12px;
+    padding-bottom: 20px;
   }
 
   #root .dash-header__subtitle {
@@ -203,9 +221,14 @@
 
   #root .wo-page__tabs,
   #root .wr-page__toolbar-row--tabs .wo-page__tabs,
-  #root .tasks-page__tabs-row .wo-page__tabs {
-    flex-wrap: wrap;
-    overflow: visible;
+  #root .tasks-page__tabs-row .wo-page__tabs,
+  #root .company-tabs {
+    flex-wrap: nowrap;
+    max-width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
   }
 
   #root .company-tabs__btn,
@@ -214,9 +237,8 @@
     flex-shrink: 0;
   }
 
-  #root .company-table-wrap,
   #root .company-table-scroll,
-  #root .reports-table-wrap,
+  #root .reports-table-wrap .company-table-scroll,
   #root .admin-table-wrap,
   #root .wr-table-wrap,
   #root .cal-table-wrap,
@@ -241,8 +263,11 @@
   #root .company-panel,
   #root .kpi-card,
   #root .dash-card,
-  #root .reports-kpi {
-    padding: 16px;
+  #root .reports-kpi,
+  #root .calendar-page__card,
+  #root .task-detail-card,
+  #root .task-form-page__panel {
+    padding: 12px;
     min-width: 0;
   }
 
@@ -325,10 +350,15 @@
 
   #root .company-modal__header,
   #root .modal__header,
+  #root .admin-modal__header,
   #root .company-modal--wide .company-modal__body,
+  #root .company-modal__body,
+  #root .company-modal__form,
+  #root .modal__body,
+  #root .admin-modal__body,
   #root .company-modal__header--profile {
-    padding-left: 16px;
-    padding-right: 16px;
+    padding-left: 12px;
+    padding-right: 12px;
   }
 
   #root .notif-panel {
@@ -372,9 +402,13 @@
   }
 
   #root .wo-section__header,
-  #root .wo-section__body {
-    padding-left: 16px;
-    padding-right: 16px;
+  #root .wo-section__body,
+  #root .company-form__layout-section-head,
+  #root .company-form__layout-section-body,
+  #root .wr-form-section,
+  #root .wr-section__head {
+    padding-left: 12px;
+    padding-right: 12px;
   }
 }
 
@@ -390,8 +424,8 @@
     flex-direction: column;
     align-items: flex-start;
     gap: 14px;
-    padding-top: 16px;
-    padding-bottom: 16px;
+    padding-top: 12px;
+    padding-bottom: 12px;
   }
 
   #root .dashboard .dash-header {
@@ -515,19 +549,249 @@
   }
 
   #root .tasks-page > .company-page__header {
-    padding-left: 16px;
-    padding-right: 16px;
-  }
-
-  #root .task-form-page__panel,
-  #root .task-detail-card {
-    padding: 16px;
+    padding-left: 10px;
+    padding-right: 10px;
   }
 
   #root .company-page__header-actions,
   #root .tasks-page__actions,
   #root .wo-page__actions {
     width: 100%;
+    justify-content: flex-start;
+  }
+
+  #root .app-shell .wr-detail-sheet__header,
+  #root .wr-detail-sheet__header {
+    padding-right: 12px;
+  }
+
+  #root .wr-detail-sheet__body {
+    padding: 8px 10px calc(16px + env(safe-area-inset-bottom, 0px));
+  }
+
+  #root .wr-detail-sheet .wr-detail-main,
+  #root .wr-detail-sheet .wr-detail-board {
+    padding-left: 0;
+    padding-right: 0;
+  }
+
+  #root .wr-detail-main .wo-section__header,
+  #root .wr-detail-main .wo-section__body,
+  #root .wr-detail-main .company-form__layout-section-head,
+  #root .wr-detail-main .company-form__layout-section-body {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+
+  #root .wr-detail-sheet__header > .record-detail-layout__actions {
+    width: auto;
+    flex: 0 0 auto;
+    flex-wrap: nowrap;
+    justify-content: flex-end;
+  }
+
+  #root .company-modal__header,
+  #root .modal__header,
+  #root .admin-modal__header {
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  #root .company-modal__header h2,
+  #root .modal__header h2,
+  #root .modal__title,
+  #root .admin-modal__title,
+  #root .record-detail-layout__titles,
+  #root .record-detail-layout__titles h2,
+  #root .company-page__title,
+  #root .wo-page__title,
+  #root .wo-page__subtitle,
+  #root .company-page__subtitle {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  #root .company-modal__header .record-detail-layout__heading,
+  #root .modal__header-main {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  #root .company-modal__close,
+  #root .modal__close,
+  #root .admin-modal__close,
+  #root .wr-detail-sheet__close {
+    flex-shrink: 0;
+  }
+
+  #root .company-modal__header .page-back__label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  #root .company-modal__header .page-back {
+    width: 36px;
+    height: 36px;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  #root .wo-page__toolbar--command {
+    padding-left: 10px;
+    padding-right: 10px;
+  }
+
+  #root .wo-command {
+    flex-wrap: wrap;
+    overflow: visible;
+  }
+
+  #root .wo-command__actions,
+  #root .wo-footer,
+  #root .company-form__actions,
+  #root .wr-form__actions,
+  #root .company-modal__actions,
+  #root .company-modal__footer,
+  #root .modal__actions {
+    flex-wrap: wrap;
+    min-width: 0;
+  }
+
+  #root .wr-detail-meta__value,
+  #root .wo-received-detail__field dd,
+  #root .detail-view__value {
+    overflow-wrap: anywhere;
+  }
+
+  #root .wr-page__toolbar-row--tabs,
+  #root .wo-page__toolbar-row--tabs {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 8px;
+    overflow: visible;
+  }
+
+  #root .wr-page__toolbar-row--tabs .wo-page__tabs,
+  #root .wo-page__toolbar-row--tabs .wo-page__tabs,
+  #root .wr-page__toolbar-row--tabs .warranty-tabs-cluster {
+    display: flex;
+    flex: 1 1 auto;
+    flex-wrap: nowrap;
+    align-items: center;
+    width: auto;
+    min-width: 0;
+    max-width: 100%;
+    overflow: visible;
+    gap: 8px;
+  }
+
+  #root .wo-page__tab:has(svg) {
+    position: relative;
+    flex: 0 0 40px;
+    width: 40px;
+    min-width: 40px;
+    height: 40px;
+    padding: 0;
+    gap: 0;
+    justify-content: center;
+  }
+
+  #root .wo-page__tab:has(svg) .wo-page__tab-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  #root .wo-page__tab:has(svg) svg {
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+  }
+
+  #root .wr-page__toolbar-row--tabs .wr-page__create-tab {
+    flex: 0 0 40px;
+    width: 40px;
+    min-width: 40px;
+    height: 40px;
+    margin-left: auto;
+    padding: 0;
+  }
+
+  #root .wo-page__tab:has(svg) .wo-page__tab-count {
+    position: absolute;
+    top: -5px;
+    right: -5px;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
+    font-size: 10px;
+    line-height: 16px;
+    color: #fff;
+    background: var(--color-primary);
+    border: 2px solid #fff;
+  }
+
+  #root .wo-page__tab--active:has(svg) .wo-page__tab-count,
+  #root .wo-page__tab.active:has(svg) .wo-page__tab-count {
+    color: var(--color-primary);
+    background: #fff;
+    border-color: var(--color-primary);
+  }
+
+  #root .wo-page__tab[data-tooltip]::after {
+    content: attr(data-tooltip);
+    position: absolute;
+    left: 50%;
+    bottom: calc(100% + 8px);
+    z-index: 30;
+    padding: 6px 8px;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1.2;
+    letter-spacing: 0;
+    white-space: nowrap;
+    color: #fff;
+    background: #1f2430;
+    border-radius: 8px;
+    box-shadow: 0 6px 16px rgba(17, 24, 39, 0.18);
+    transform: translateX(-50%);
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+  }
+
+  #root .wo-page__tab[data-tooltip]:hover::after,
+  #root .wo-page__tab[data-tooltip]:focus::after,
+  #root .wo-page__tab[data-tooltip]:active::after {
+    opacity: 1;
+    visibility: visible;
+  }
+
+  #root .wo-page__tabs > :first-child[data-tooltip]::after {
+    left: 0;
+    transform: none;
+  }
+
+  #root .wr-page__create-tab[data-tooltip]::after,
+  #root .wo-page__tabs > :last-child[data-tooltip]::after {
+    left: auto;
+    right: 0;
+    transform: none;
   }
 }
 
@@ -546,8 +810,8 @@
   #root .admin-page__content,
   #root .calendar-page__body,
   #root .placeholder-page {
-    padding-left: 12px;
-    padding-right: 12px;
+    padding-left: 10px;
+    padding-right: 10px;
   }
 
   #root .dash-header__logo-wrap {
@@ -581,5 +845,57 @@
 
   #root .app-shell .mobile-topbar {
     padding-right: 60px;
+  }
+
+  #root .wo-footer,
+  #root .company-form__actions,
+  #root .wr-form__actions,
+  #root .company-modal__actions,
+  #root .company-modal__footer,
+  #root .modal__actions,
+  #root .wr-actions--bar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  #root .wo-footer .company-btn,
+  #root .company-form__actions .company-btn,
+  #root .wr-form__actions .company-btn,
+  #root .company-modal__actions .company-btn,
+  #root .company-modal__footer .company-btn,
+  #root .modal__actions .modal__btn,
+  #root .modal__actions .company-btn,
+  #root .wr-actions--bar .company-btn,
+  #root .wr-page__header-actions .company-btn,
+  #root .wr-page__bar-actions .company-btn {
+    display: inline-flex;
+    align-items: center;
+    width: 100%;
+    justify-content: center;
+    white-space: normal;
+    height: auto;
+    min-height: 42px;
+    text-align: center;
+  }
+
+  #root .wr-detail-sheet__title {
+    font-size: 18px;
+  }
+
+  #root .wr-page__header-actions,
+  #root .wr-page__bar-actions,
+  #root .company-form__actions {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    width: 100%;
+    gap: 10px;
+  }
+
+  #root .wr-page__header-actions .company-btn,
+  #root .wr-page__bar-actions .company-btn,
+  #root .company-form__actions .company-btn {
+    width: 100%;
+    justify-content: center;
   }
 }

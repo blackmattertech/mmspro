@@ -1,7 +1,12 @@
 import { Router } from 'express'
 import { verifyAuth } from '../../middleware/auth.js'
 import { requireOrgAccess, assertOrgOwnership } from '../../middleware/orgAccess.js'
-import { requireModulePermission } from '../../middleware/modulePermission.js'
+import {
+  loadOrgPermissions,
+  requireModulePermission,
+  requireAnyModulePermission,
+} from '../../middleware/modulePermission.js'
+import { hasModulePermission } from '../../lib/orgPermissions.js'
 import {
   listVendors,
   getVendorDetail,
@@ -15,11 +20,22 @@ import { attachFailedFileToResult } from '../../lib/importErrorWorkbook.js'
 import { parseListControls } from '../../lib/listQuery.js'
 
 const router = Router()
+const canReadVendors = requireModulePermission('vendors', 'read')
 const canCreate = requireModulePermission('vendors', 'create')
 const canUpdate = requireModulePermission('vendors', 'update')
 const canDelete = requireModulePermission('vendors', 'delete')
+const canPickVendors = requireAnyModulePermission([
+  ['vendors', 'read'],
+  ['work_orders', 'read'],
+  ['work_orders_assigned', 'read'],
+  ['work_orders_received', 'read'],
+  ['work_orders_manual', 'read'],
+  ['work_orders_scheduled', 'read'],
+  ['warranty_manager', 'read'],
+  ['tasks_followups', 'read'],
+])
 
-router.use(verifyAuth, requireOrgAccess, requireModulePermission('vendors', 'read'))
+router.use(verifyAuth, requireOrgAccess, loadOrgPermissions)
 
 function parsePagination(query) {
   const rawLimit = Number(query.limit)
@@ -29,7 +45,7 @@ function parsePagination(query) {
   return { limit, offset }
 }
 
-router.get('/next-code', async (req, res) => {
+router.get('/next-code', canReadVendors, async (req, res) => {
   try {
     const code = await previewNextVendorCode(req.userProfile.org_id)
     res.json({ vendor_code: code })
@@ -38,15 +54,17 @@ router.get('/next-code', async (req, res) => {
   }
 })
 
-router.get('/', async (req, res) => {
+router.get('/', canPickVendors, async (req, res) => {
   try {
     const { limit, offset } = parsePagination(req.query)
     const controls = parseListControls(req.query)
+    const picker = !hasModulePermission(req.orgPermissions, 'vendors', 'read')
     const rows = await listVendors(req.userProfile.org_id, {
       search: req.query.search || null,
       filters: controls.filters,
       limit,
       offset,
+      picker,
     })
     res.json(rows)
   } catch (err) {
@@ -86,7 +104,7 @@ router.post('/bulk', canCreate, async (req, res) => {
   }
 })
 
-router.get('/:id', assertOrgOwnership('vendors'), async (req, res) => {
+router.get('/:id', canReadVendors, assertOrgOwnership('vendors'), async (req, res) => {
   try {
     const row = await getVendorDetail(req.userProfile.org_id, req.params.id)
     if (!row) return res.status(404).json({ error: 'Vendor not found' })

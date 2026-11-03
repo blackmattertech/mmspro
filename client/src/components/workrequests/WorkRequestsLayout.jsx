@@ -46,7 +46,7 @@ export default function WorkRequestsLayout() {
   const [sortBy, setSortBy] = useState('newest')
   const [columnFilters, setColumnFilters] = useState({})
   const [headerSort, setHeaderSort] = useState(null)
-  const [statusFilters, setStatusFilters] = useState([])
+  const [statusFilters] = useState([])
   const [tabCounts, setTabCounts] = useState(
     () => peekReferenceData('tab-counts', { module: 'work_requests' }) || {},
   )
@@ -168,11 +168,6 @@ export default function WorkRequestsLayout() {
     requestColumns,
   )
 
-  const toggleStatus = (key) => {
-    setStatusFilters((prev) => (
-      prev.includes(key) ? prev.filter((item) => item !== key) : [...prev, key]
-    ))
-  }
 
   const setColumnFilter = (columnId, value) => {
     setColumnFilters((prev) => {
@@ -222,7 +217,6 @@ export default function WorkRequestsLayout() {
     headerSort,
     setHeaderSort,
     statusFilters,
-    toggleStatus,
     visibleColumnIds,
     columnDefs: requestColumns,
     bulkReloadToken,
@@ -287,9 +281,12 @@ export default function WorkRequestsLayout() {
                 className={({ isActive }) =>
                   `wo-page__tab${isActive ? ' wo-page__tab--active' : ''}`
                 }
+                aria-label={tab.label}
+                title={tab.label}
+                data-tooltip={tab.label}
               >
                 {tab.icon ? <NavIcon name={tab.icon} /> : null}
-                {tab.label}
+                <span className="wo-page__tab-label">{tab.label}</span>
                 {Number.isFinite(Number(tabCounts[tab.id])) && (
                   <span className="wo-page__tab-count">{tabCounts[tab.id]}</span>
                 )}
@@ -303,9 +300,12 @@ export default function WorkRequestsLayout() {
               className={({ isActive }) =>
                 `wo-page__tab wr-page__create-tab${isActive ? ' wo-page__tab--active' : ''}`
               }
+              aria-label="Create"
+              title="Create"
+              data-tooltip="Create"
             >
               {createTab.icon ? <NavIcon name={createTab.icon} /> : null}
-              Create
+              <span className="wo-page__tab-label">Create</span>
             </NavLink>
           )}
           {canCreateRequest && isCreatePage && (

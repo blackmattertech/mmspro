@@ -33,7 +33,7 @@ export default function ManualWorkOrders() {
   const {
     search, locationFilter, sortBy, advancedRules, fieldFilter, locations, bulkReloadToken = 0,
     columnFilters = {}, setColumnFilter, headerSort = null, setHeaderSort,
-    statusFilters = [], toggleStatus,
+    statusFilters = [],
   } = useOutletContext()
   const debouncedSearch = useDebouncedValue(search)
   const [listTotal, setListTotal] = useState(0)
@@ -54,7 +54,7 @@ export default function ManualWorkOrders() {
     })),
     [debouncedSearch, pagination.pageSize, pagination.offset, bulkReloadToken, columnFilters, fieldFilter, statusFilters, headerSort, sortBy],
   )
-  const { orders, total, statusCounts, loading, error, reload } = useWorkOrderList(fetchManualOrders)
+  const { orders, total, loading, error, reload } = useWorkOrderList(fetchManualOrders)
   useEffect(() => { setListTotal(total) }, [total])
   const successMessage = location.state?.success
 
@@ -105,7 +105,6 @@ export default function ManualWorkOrders() {
         serverPaged
         columns={MANUAL_COLUMNS}
         tableId="work-orders-manual"
-        statusCounts={statusCounts}
         emptyTitle="No manual work orders yet."
         emptyHint="Click + Add Work Order to create a manual work order."
         onView={setSelectedId}
@@ -118,8 +117,6 @@ export default function ManualWorkOrders() {
         onHeaderSort={setHeaderSort}
         columnFilters={columnFilters}
         onColumnFilter={setColumnFilter}
-        statusFilters={statusFilters}
-        onToggleStatus={toggleStatus}
       />
 
       {selectedId && (
@@ -128,6 +125,7 @@ export default function ManualWorkOrders() {
           fetchWorkOrder={getManualWorkOrder}
           onClose={closeSelected}
           onEdit={canEdit ? handleEdit : undefined}
+          onAssignmentUpdated={() => reload({ silent: true })}
         />
       )}
     </>

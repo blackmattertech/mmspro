@@ -34,12 +34,10 @@ import {
 } from '../../../lib/reportColumns'
 import TableColumnPicker from '../../../components/shared/TableColumnPicker'
 import TableEmptyRow from '../../../components/shared/TableEmptyRow'
-import StatusCountBar from '../../../components/shared/StatusCountBar'
 import { useOrgStatusOptions } from '../../../hooks/useOrgStatusOptions'
-import { colorByStatus } from '../../../lib/statusCounts'
+import { formatWorkOrderStatusLabel } from '../../../lib/workOrderStatusLabel'
 import '../../../components/company/CompanyShared.css'
 import '../../../components/shared/TableColumnPicker.css'
-import '../../../components/shared/StatusCountBar.css'
 import '../../../components/reports/ReportsLayout.css'
 
 const REPORT_KEY = UNIFIED_REPORT_KEY
@@ -126,7 +124,7 @@ function ReportCell({ columnId, value, row, statusLabels }) {
     return <span className="company-table__name">{value || '—'}</span>
   }
   if (columnId === 'status') {
-    const label = statusLabels?.[row.status] || formatReportCell(columnId, value)
+    const label = formatWorkOrderStatusLabel(row, statusLabels)
     return <span className={`wo-status wo-status--${row.status || 'draft'}`}>{label}</span>
   }
   if (columnId === 'priority' || columnId === 'order_type') {
@@ -191,8 +189,7 @@ export default function ReportPage() {
   const { user } = useAuth()
   const { org } = useOrg()
   const { isOrgAdmin } = usePermissions()
-  const { statuses, labelByKey: statusLabels } = useOrgStatusOptions('work_order', { includeInactive: true })
-  const statusColors = useMemo(() => colorByStatus(statuses), [statuses])
+  const { labelByKey: statusLabels } = useOrgStatusOptions('work_order', { includeInactive: true })
   const defaults = useMemo(() => defaultReportDateRange(), [])
   const defaultColumnIds = useMemo(() => columnDefs.map((col) => col.id), [columnDefs])
   const initialFilters = useMemo(() => defaultReportFilters(defaults), [defaults])
@@ -532,16 +529,7 @@ export default function ReportPage() {
             </div>
 
             <div className="company-panel reports-results">
-            <StatusCountBar
-              counts={report?.status_counts || []}
-              statuses={statuses}
-              labelByKey={statusLabels}
-              colorByKey={statusColors}
-              ariaLabel="Work order status counts"
-            />
-
-            <div className="reports-table-wrap company-table-wrap">
-              <div className="company-table-toolbar">
+            <div className="company-table-toolbar">
                 <TableColumnPicker
                   columnDefs={columnDefs}
                   visibleColumnIds={selectedColumnIds}
@@ -576,7 +564,8 @@ export default function ReportPage() {
                     return true
                   }}
                 />
-              </div>
+            </div>
+            <div className="reports-table-wrap company-table-wrap">
               <div className="company-table-scroll">
               <table className="company-table master-table reports-table">
                 <thead>
@@ -607,7 +596,6 @@ export default function ReportPage() {
                           />
                         </td>
                       ))}
-                      <td className="reports-table__gear" />
                     </tr>
                   ))}
                 </tbody>

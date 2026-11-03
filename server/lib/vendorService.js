@@ -10,6 +10,8 @@ const VENDOR_SELECT = `
   is_active, created_at, updated_at
 `
 
+const VENDOR_PICKER_SELECT = 'id, vendor_code, name, is_active'
+
 function trimOrNull(value) {
   const text = String(value ?? '').trim()
   return text || null
@@ -87,25 +89,27 @@ async function assertUniqueCode(orgId, vendorCode, excludeId = null) {
   }
 }
 
-export async function listVendors(orgId, { search = null, limit = 100, offset = 0, filters = {} } = {}) {
+export async function listVendors(orgId, { search = null, limit = 100, offset = 0, filters = {}, picker = false } = {}) {
   let query = supabaseAdmin
     .from('vendors')
-    .select(VENDOR_SELECT, { count: 'exact' })
+    .select(picker ? VENDOR_PICKER_SELECT : VENDOR_SELECT, { count: 'exact' })
     .eq('org_id', orgId)
 
-  query = applyIlikeSearch(query, search, [
-    'vendor_code', 'name', 'contact_person', 'mobile', 'email', 'city', 'gstin',
-  ])
-  query = applyMappedFilters(query, filters, {
-    vendor_code: 'vendor_code',
-    name: 'name',
-    contact_person: 'contact_person',
-    mobile: 'mobile',
-    email: 'email',
-    city: 'city',
-    state: 'state',
-    gstin: 'gstin',
-  })
+  query = applyIlikeSearch(query, search, picker
+    ? ['vendor_code', 'name']
+    : ['vendor_code', 'name', 'contact_person', 'mobile', 'email', 'city', 'gstin'])
+  query = applyMappedFilters(query, filters, picker
+    ? { vendor_code: 'vendor_code', name: 'name' }
+    : {
+      vendor_code: 'vendor_code',
+      name: 'name',
+      contact_person: 'contact_person',
+      mobile: 'mobile',
+      email: 'email',
+      city: 'city',
+      state: 'state',
+      gstin: 'gstin',
+    })
   query = query.order('vendor_code', { ascending: true }).range(offset, offset + limit - 1)
 
   const { data, error, count } = await query

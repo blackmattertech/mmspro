@@ -2,13 +2,14 @@
   background: var(--color-white);
 }
 
-.org-configure-modal__header {
+.org-configure-modal__header.admin-modal__header {
   display: flex;
   flex-direction: column;
   align-items: stretch;
   justify-content: flex-start;
   gap: 18px;
   padding: 16px 28px;
+  text-align: left;
   background: var(--color-white);
   border-bottom: 1px solid var(--color-light-gray-1);
 }
@@ -16,16 +17,24 @@
 .org-configure-modal__header-top {
   display: flex;
   align-items: flex-start;
-  justify-content: space-between;
+  align-self: stretch;
+  justify-content: flex-start;
+  width: 100%;
   gap: 16px;
 }
 
 .org-configure-modal__heading {
   display: flex;
+  flex: 1;
   flex-direction: column;
   align-items: flex-start;
   gap: 10px;
   min-width: 0;
+  text-align: left;
+}
+
+.org-configure-modal__header .admin-modal__close {
+  margin-left: auto;
 }
 
 .org-configure-modal__back {

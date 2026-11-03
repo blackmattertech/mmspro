@@ -12,14 +12,15 @@ export default function ChecklistOptIn({
   onTemplateChange,
   disabled = false,
   embedded = false,
+  required = false,
 }) {
-  const [on, setOn] = useState(Boolean(enabled || templateId))
+  const [on, setOn] = useState(Boolean(required || enabled || templateId))
   const [options, setOptions] = useState([])
   const [loaded, setLoaded] = useState(false)
 
   useEffect(() => {
-    if (enabled || templateId) setOn(true)
-  }, [enabled, templateId])
+    if (required || enabled || templateId) setOn(true)
+  }, [required, enabled, templateId])
 
   useEffect(() => {
     let cancelled = false
@@ -38,15 +39,17 @@ export default function ChecklistOptIn({
   }, [formId, moduleKey])
 
   const visible = options.filter((row) => row.is_active !== false || row.id === templateId)
-  if (!loaded || (!visible.length && !templateId)) return null
+  if (!loaded) return null
+  if (!required && !visible.length && !templateId) return null
 
   const openPicker = () => {
-    if (disabled) return
+    if (disabled || required) return
     setOn(true)
     onEnabledChange(true)
   }
 
   const clearChecklist = () => {
+    if (required) return
     setOn(false)
     onEnabledChange(false)
     onTemplateChange('')
@@ -55,21 +58,26 @@ export default function ChecklistOptIn({
   const body = (
     <div className="checklist-opt-in__body">
       <div className="checklist-opt-in__row">
-        <span className="company-form__label">Checklist</span>
-        <button
-          type="button"
-          className="checklist-opt-in__add"
-          onClick={on ? clearChecklist : openPicker}
-          disabled={disabled}
-          aria-label={on ? 'Remove checklist' : 'Add checklist'}
-          title={on ? 'Remove checklist' : 'Add checklist'}
-        >
-          {on ? '−' : '+'}
-        </button>
+        <span className="company-form__label">Checklist{required ? ' *' : ''}</span>
+        {!required && (
+          <button
+            type="button"
+            className="checklist-opt-in__add"
+            onClick={on ? clearChecklist : openPicker}
+            disabled={disabled}
+            aria-label={on ? 'Remove checklist' : 'Add checklist'}
+            title={on ? 'Remove checklist' : 'Add checklist'}
+          >
+            {on ? '−' : '+'}
+          </button>
+        )}
       </div>
-      {on && (
+      {required && !visible.length ? (
+        <p className="company-form__hint">No checklists are available for this form yet.</p>
+      ) : null}
+      {(on || required) && visible.length > 0 && (
         <label className="company-form__field checklist-opt-in__picker">
-          <span className="company-form__label">Checklist template</span>
+          <span className="company-form__label">Checklist template{required ? ' *' : ''}</span>
           <FilterableSelect
             value={templateId}
             onChange={onTemplateChange}
