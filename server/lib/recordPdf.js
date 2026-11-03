@@ -4,7 +4,8 @@ import { displayWorkOrderNumber, loadWorkOrderTimeline } from './workOrderServic
 import { getWorkRequestById } from './workRequestService.js'
 import { listWorkOrderDailyLogs, sanitizeDailyLogMaterials } from './workOrderDailyLogService.js'
 import { loadOrgLetterhead } from './reportService.js'
-import { progressPercentForStatus } from './statusProgress.js'
+import { resolveProgressPercent } from './statusProgress.js'
+import { listOrgStatuses } from './orgStatusService.js'
 
 const COMPLETED_STATUSES = new Set(['completed', 'verified', 'closed'])
 
@@ -257,20 +258,51 @@ function timelineLines(events) {
   })
 }
 
-function dailyLogSections(logs) {
-  return (Array.isArray(logs) ? logs : []).map((log) => {
+function processExtraLines(extras) {
+  if (!extras || typeof extras !== 'object') return []
+  return Object.entries(extras).map(([key, value]) => {
+    if (value == null || value === '') return null
+    const label = prettyLabel(String(key).replace(/^catalog:/, '').replace(/[_-]+/g, ' '))
+    const display = Array.isArray(value)
+      ? value.map((item) => (item && typeof item === 'object' ? (item.name || item.label || item.id) : item)).filter(Boolean).join(', ')
+      : (typeof value === 'object' ? JSON.stringify(value) : value)
+    return maybeLine(label, display)
+  }).filter(Boolean)
+}
+
+function dailyLogSections(logs, checklistSnapshot = null) {
+  const sorted = [...(Array.isArray(logs) ? logs : [])].sort((a, b) => (
+    String(a.log_date || '').localeCompare(String(b.log_date || ''))
+  ))
+  return sorted.map((log) => {
+    const snap = log.field_snapshot && typeof log.field_snapshot === 'object'
+      ? log.field_snapshot
+      : {}
+    const hasSnap = Object.keys(snap).length > 0
     const lines = compact([
-      maybeLine('Status', prettyStatus(log.day_status)),
       maybeLine('Started', log.started_at),
-      maybeLine('Ended', log.ended_at),
-      maybeLine('Labour count', log.labour_count),
-      maybeLine('Work done', log.work_done),
-      maybeLine('Remarks', log.remarks),
+      maybeLine('Updated', log.updated_at || log.ended_at),
+      maybeLine('Labour count', snap.labour_count ?? log.labour_count),
+      maybeLine('Work start', snap.work_start_at),
+      maybeLine('Work end', snap.work_end_at),
+      maybeLine('Detailed job description', snap.job_description),
+      maybeLine('Root cause analysis', snap.root_cause),
+      maybeLine('Action taken', snap.action_taken),
+      maybeLine('Special tools used', snap.special_tools_used),
+      maybeLine('Safety precautions', snap.safety_precautions),
+      maybeLine("Do's and don'ts", formatDosDonts(snap.dos_and_donts)),
+      maybeLine('Lessons learned', snap.lessons_learned),
+      maybeLine('Execution remarks', snap.execution_remarks),
+      maybeLine('Work done', snap.work_done || (!hasSnap ? log.work_done : null)),
+      maybeLine('Remarks', snap.remarks || (!hasSnap ? log.remarks : null)),
+      ...processExtraLines(snap.process_extras),
+      ...checklistLines(checklistSnapshot, snap.checklist_values || {}),
     ])
-    const table = materialTable(log.materials)
+    const table = materialTable(snap.material_rows || log.materials)
     if (!lines.length && !table) return null
+    const stamp = formatWhen(log.updated_at || log.ended_at || log.started_at)
     return {
-      heading: `Daily log — ${log.log_date || formatWhen(log.started_at) || 'Day'}`,
+      heading: `Day record — ${log.log_date || stamp || 'Day'}${stamp ? ` · ${stamp}` : ''}`,
       lines,
       table,
     }
@@ -352,13 +384,13 @@ function workRequestSections(request) {
   ].filter(Boolean)
 }
 
-function workOrderSections(order, { includeAsset = true } = {}) {
+function workOrderSections(order, { includeAsset = true, statuses = [] } = {}) {
   if (!order) return []
   const assignees = (order.assignees || [])
     .map((row) => [row.name, row.emp_id && `(${row.emp_id})`].filter(Boolean).join(' '))
     .filter(Boolean)
     .join(', ')
-  const progress = progressPercentForStatus(order.status)
+  const progress = resolveProgressPercent(order, statuses)
   const source = SOURCE_LABELS[order.source_type] || prettyLabel(order.source_type)
 
   return [
@@ -394,30 +426,42 @@ function workOrderSections(order, { includeAsset = true } = {}) {
       maybeLine('Breakdown end', order.breakdown_end_at),
       maybeLine('Breakdown duration (hours)', order.breakdown_duration_hours),
     ]),
-    ...dailyLogSections(order.daily_logs),
+    ...dailyLogSections(order.daily_logs, order.checklist_snapshot),
     (() => {
       const table = materialTable(
         parseMaterialRows(order.material_summary).length
           ? order.material_summary
           : order.material_consumed,
       )
-      return table ? { heading: 'Materials consumed', lines: [], table } : null
+      return table ? { heading: 'Materials consumed (all days)', lines: [], table } : null
     })(),
-    section('Maintenance documentation', [
-      line('Detailed job description', order.job_description),
-      line('Root cause analysis', order.root_cause),
-      line('Action taken', order.action_taken),
-      maybeLine('Special tools used', order.special_tools_used),
-      maybeLine('Safety precautions', order.safety_precautions),
-      maybeLine("Do's and don'ts", formatDosDonts(order.dos_and_donts)),
-      maybeLine('Lessons learned', order.lessons_learned),
-      maybeLine('Remarks', order.execution_remarks),
-      maybeLine('Technician photos & files', attachmentNames(order.execution_attachments || order.attachments)),
-    ]),
+    // When day snapshots exist they are the source of truth for docs + checklist.
+    (Array.isArray(order.daily_logs) && order.daily_logs.some((log) => (
+      log.field_snapshot && Object.keys(log.field_snapshot).length
+    )))
+      ? null
+      : section('Maintenance documentation', [
+        line('Detailed job description', order.job_description),
+        line('Root cause analysis', order.root_cause),
+        line('Action taken', order.action_taken),
+        maybeLine('Special tools used', order.special_tools_used),
+        maybeLine('Safety precautions', order.safety_precautions),
+        maybeLine("Do's and don'ts", formatDosDonts(order.dos_and_donts)),
+        maybeLine('Lessons learned', order.lessons_learned),
+        maybeLine('Remarks', order.execution_remarks),
+        maybeLine('Technician photos & files', attachmentNames(order.execution_attachments || order.attachments)),
+      ]),
     section('Supervisor verification', [
       maybeLine('Verification remarks', order.verification_remarks),
     ]),
-    section('Work order checklist', checklistLines(order.checklist_snapshot, order.checklist_values)),
+    (Array.isArray(order.daily_logs) && order.daily_logs.some((log) => (
+      log.field_snapshot && Object.keys(log.field_snapshot).length
+    )))
+      ? null
+      : section('Work order checklist', checklistLines(order.checklist_snapshot, order.checklist_values)),
+    section('Attachments', [
+      maybeLine('Technician photos & files', attachmentNames(order.execution_attachments || order.attachments)),
+    ]),
     section('Work order progress', timelineLines(order.timeline)),
   ].filter(Boolean)
 }
@@ -692,12 +736,14 @@ async function loadWorkOrderDocument(orgId, id) {
     }
   }
 
+  const woStatuses = await listOrgStatuses(orgId, 'work_order', { includeInactive: true })
+
   return {
     title: order.wo_number || 'Work order',
     filename: `${order.wo_number || 'work-order'}.pdf`,
     sections: [
       ...workRequestSections(request),
-      ...workOrderSections(order, { includeAsset: !request }),
+      ...workOrderSections(order, { includeAsset: !request, statuses: woStatuses }),
     ],
   }
 }
@@ -717,12 +763,16 @@ async function loadWorkRequestDocument(orgId, id) {
     throw httpError('The report is available after this work request is completed.', 409)
   }
 
+  const woStatuses = order
+    ? await listOrgStatuses(orgId, 'work_order', { includeInactive: true })
+    : []
+
   return {
     title: request.request_number || 'Work request',
     filename: `${request.request_number || 'work-request'}.pdf`,
     sections: [
       ...workRequestSections(request),
-      ...workOrderSections(order, { includeAsset: !request }),
+      ...workOrderSections(order, { includeAsset: !request, statuses: woStatuses }),
     ],
   }
 }

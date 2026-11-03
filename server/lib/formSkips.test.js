@@ -50,6 +50,7 @@ test('WR→WO optional fields are skippable', () => {
   for (const key of [
     'assignment_remarks',
     'labour_count',
+    'vendor_id',
     'vendor_expense',
     'breakdown_times',
     'daily_logs',
@@ -111,6 +112,12 @@ test('normalizeSkipPayload accepts optional fields, mixed section skip, and tech
   assert.ok(rows.some((row) => row.kind === 'field' && row.target_id === systemId('labour_count')))
   assert.ok(rows.some((row) => row.kind === 'section' && row.target_id === systemId('wo_execution')))
   assert.ok(rows.some((row) => row.kind === 'process' && row.target_id === 'technician_acceptance'))
+  assert.equal(rows.some((row) => row.target_id === 'checklist_required'), false)
+
+  const withChecklist = normalizeSkipPayload(FORM_ID, layout, {
+    checklistRequired: true,
+  }, formDef)
+  assert.ok(withChecklist.some((row) => row.kind === 'process' && row.target_id === 'checklist_required'))
 })
 
 test('describeSkipBoard reflects saved field skips after load', () => {
@@ -135,6 +142,7 @@ test('runtime skip overlay hides optional fields and keeps required ones', () =>
 
   assert.equal(byId[systemId('assignment_remarks')].skipped, true)
   assert.equal(byId[systemId('labour_count')].skipped, true)
+  assert.equal(byId[systemId('vendor_id')].skipped, true)
   assert.equal(byId[systemId('vendor_expense')].skipped, true)
   assert.equal(byId[systemId('daily_logs')].skipped, true)
   assert.equal(Boolean(byId[systemId('work_stamps')].skipped), false)

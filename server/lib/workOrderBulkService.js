@@ -47,7 +47,7 @@ const PRIORITIES = [
 
 const STATUSES = [
   { value: 'draft', label: 'Draft' },
-  { value: 'assigned', label: 'Assigned' },
+  { value: 'assigned', label: 'Approval Pending' },
 ]
 
 function normalizeValue(fieldType, raw) {

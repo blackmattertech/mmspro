@@ -23,6 +23,7 @@ import CatalogExtrasGrid from '../forms/CatalogExtrasGrid'
 import OrderedFormLayout from '../forms/OrderedFormLayout'
 import ChecklistOptIn from '../forms/ChecklistOptIn'
 import { missingRequiredLayoutValues, splitBoundValues } from '../../lib/formFieldSources'
+import { layoutRequiresChecklist } from '../../lib/formSkips'
 import { layoutWithoutAreasMaster, masterId, parseLayoutId } from '../../lib/formLayoutIds'
 import { catalogRowFromEquipmentDetail, equipmentCatalogParents, prefillValuesForFields } from '../../lib/equipmentLayoutFields'
 import WorkRequestAssetFields from '../workrequests/WorkRequestAssetFields'
@@ -127,6 +128,7 @@ export default function PmPlanModal({ plan, saving, onClose, onSave }) {
   const formRef = useRef(null)
   const handleBackdropClick = useBackdropClose(onClose)
   const { layout, catalogFields, isVisible, fieldClass, hasLayout } = useFormLayout('pm.plan')
+  const checklistRequired = layoutRequiresChecklist(layout)
   const displayLayout = useMemo(() => layoutWithoutAreasMaster(layout), [layout])
   const extras = useFormFieldValues('pm.plan', plan?.id)
   const { departments } = useDepartments()
@@ -493,6 +495,10 @@ export default function PmPlanModal({ plan, saving, onClose, onSave }) {
     }
 
     if (!hasLayout && !validateDetails()) return
+    if (checklistRequired && !form.checklist_template_id) {
+      setError('Select a checklist.')
+      return
+    }
 
     try {
       const { native, extras: extraValues } = splitBoundValues('pm.plan', extras.values, layout)
@@ -720,8 +726,9 @@ export default function PmPlanModal({ plan, saving, onClose, onSave }) {
                         embedded
                         formId="pm.plan"
                         moduleKey="pm_plan"
-                        enabled={Boolean(form.checklist_template_id)}
-                        onEnabledChange={(checked) => { if (!checked) setField('checklist_template_id', '') }}
+                        required={checklistRequired}
+                        enabled={checklistRequired || Boolean(form.checklist_template_id)}
+                        onEnabledChange={(checked) => { if (!checked && !checklistRequired) setField('checklist_template_id', '') }}
                         templateId={form.checklist_template_id}
                         onTemplateChange={(id) => setField('checklist_template_id', id || '')}
                         disabled={saving}
@@ -1098,8 +1105,9 @@ export default function PmPlanModal({ plan, saving, onClose, onSave }) {
               embedded
               formId="pm.plan"
               moduleKey="pm_plan"
-              enabled={Boolean(form.checklist_template_id)}
-              onEnabledChange={(checked) => { if (!checked) setField('checklist_template_id', '') }}
+              required={checklistRequired}
+              enabled={checklistRequired || Boolean(form.checklist_template_id)}
+              onEnabledChange={(checked) => { if (!checked && !checklistRequired) setField('checklist_template_id', '') }}
               templateId={form.checklist_template_id}
               onTemplateChange={(id) => setField('checklist_template_id', id || '')}
               disabled={saving}

@@ -300,6 +300,8 @@ export default function LocationsTab({ canManage }) {
                   className="company-btn company-btn--danger"
                   disabled={bulkDeleting || saving}
                   onClick={handleBulkDelete}
+                  title={bulkDeleting ? 'Deleting...' : `Delete (${selected.size})`}
+                  data-tooltip={bulkDeleting ? 'Deleting...' : `Delete (${selected.size})`}
                 >
                   <TrashIcon />
                   {bulkDeleting ? 'Deleting...' : `Delete (${selected.size})`}

@@ -59,7 +59,6 @@ export default function ScheduledWorkOrders() {
     headerSort = null,
     setHeaderSort,
     statusFilters = [],
-    toggleStatus,
   } = outlet
   const { setToolbar, clearToolbar } = useWorkOrderToolbar()
   const { canCreate, canUpdate, canDelete } = usePermissions()
@@ -131,7 +130,7 @@ export default function ScheduledWorkOrders() {
     })),
     [debouncedSearch, pagination.pageSize, pagination.offset, columnFilters, fieldFilter, statusFilters, headerSort, sortBy],
   )
-  const { orders, total, statusCounts, loading, error: ordersError } = useWorkOrderList(fetchOrders)
+  const { orders, total, loading, error: ordersError, reload: reloadOrders } = useWorkOrderList(fetchOrders)
   useEffect(() => { setListTotal(total) }, [total])
 
   const loadPlans = useCallback(async () => {
@@ -226,8 +225,21 @@ export default function ScheduledWorkOrders() {
     const actions = (
       <>
         {view === 'plans' && (
-          <button type="button" className="company-btn company-btn--secondary" onClick={() => setShowActivityTypes(true)}>
-            Activity types
+          <button
+            type="button"
+            className="company-btn company-btn--secondary"
+            onClick={() => setShowActivityTypes(true)}
+            title="Activity types"
+            data-tooltip="Activity types"
+            aria-label="Activity types"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M8 6h12M8 12h12M8 18h12" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+              <circle cx="4" cy="6" r="1.2" fill="currentColor" />
+              <circle cx="4" cy="12" r="1.2" fill="currentColor" />
+              <circle cx="4" cy="18" r="1.2" fill="currentColor" />
+            </svg>
+            <span className="equipment-bulk-btn__label">Activity types</span>
           </button>
         )}
         {canAdd && view === 'plans' && (
@@ -374,7 +386,6 @@ export default function ScheduledWorkOrders() {
             serverPaged
             columns={SCHEDULED_COLUMNS}
             tableId="work-orders-scheduled"
-            statusCounts={statusCounts}
             emptyTitle="No scheduled work orders yet."
             emptyHint="Activate a PM plan and the scheduler will generate work orders before each due date. You can also click Generate on a plan."
             onView={setSelectedId}
@@ -383,8 +394,6 @@ export default function ScheduledWorkOrders() {
             onHeaderSort={setHeaderSort}
             columnFilters={columnFilters}
             onColumnFilter={setColumnFilter}
-            statusFilters={statusFilters}
-            onToggleStatus={toggleStatus}
           />
         )
       )}
@@ -394,6 +403,7 @@ export default function ScheduledWorkOrders() {
           orderId={selectedId}
           fetchWorkOrder={getScheduledWorkOrder}
           onClose={closeSelected}
+          onAssignmentUpdated={() => reloadOrders({ silent: true })}
         />
       )}
 

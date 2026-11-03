@@ -44,7 +44,7 @@ function PmScheduledLayoutInner() {
   const [advancedRules, setAdvancedRules] = useState([createPmPlanFilterRule()])
   const [columnFilters, setColumnFilters] = useState({})
   const [headerSort, setHeaderSort] = useState(null)
-  const [statusFilters, setStatusFilters] = useState([])
+  const [statusFilters] = useState([])
   const [exporting, setExporting] = useState(false)
   const [planRows, setPlanRows] = useState([])
   const [activityTypes, setActivityTypes] = useState([])
@@ -176,7 +176,7 @@ function PmScheduledLayoutInner() {
         type: 'select',
         emptyLabel: 'All Status',
         options: [
-          { value: 'assigned', label: 'Assigned' },
+          { value: 'assigned', label: 'Approval Pending / Technician assigned' },
           { value: 'in_progress', label: 'In progress' },
           { value: 'completed', label: 'Completed' },
           { value: 'verified', label: 'Verified' },
@@ -232,11 +232,6 @@ function PmScheduledLayoutInner() {
     headerSort,
     setHeaderSort,
     statusFilters,
-    toggleStatus: (key) => {
-      setStatusFilters((prev) => (
-        prev.includes(key) ? prev.filter((item) => item !== key) : [...prev, key]
-      ))
-    },
   }), [view, search, locationFilter, sortBy, advancedRules, activeLocations, pmVisibleColumnIds, columnFilters, headerSort, statusFilters])
 
   const exportRows = async () => {

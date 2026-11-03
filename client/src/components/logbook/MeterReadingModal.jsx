@@ -6,6 +6,7 @@ import '../company/CompanyShared.css'
 
 export default function MeterReadingModal({
   equipment,
+  assetLabel = '',
   lastReading = null,
   nested = false,
   onClose,
@@ -58,8 +59,7 @@ export default function MeterReadingModal({
         </div>
         <form className="company-modal__form" onSubmit={handleSubmit}>
           <p className="company-modal__hint">
-            {equipment?.name || 'Asset'}
-            {equipment?.code ? ` · ${equipment.code}` : ''}
+            {assetLabel || [equipment?.name, equipment?.code].filter(Boolean).join(' · ') || 'Asset'}
           </p>
           {lastReading != null && (
             <p className="company-form__hint">

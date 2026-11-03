@@ -354,9 +354,12 @@ export default function WarrantyManager() {
                   className={({ isActive }) =>
                     `wo-page__tab${isActive ? ' wo-page__tab--active' : ''}`
                   }
+                  aria-label={tab.label}
+                  title={tab.label}
+                  data-tooltip={tab.label}
                 >
                   {tab.icon ? <NavIcon name={tab.icon} /> : null}
-                  {tab.label}
+                  <span className="wo-page__tab-label">{tab.label}</span>
                   <span className="wo-page__tab-count">{tabCounts[tab.status] ?? 0}</span>
                 </NavLink>
               ))}
@@ -381,9 +384,12 @@ export default function WarrantyManager() {
               type="button"
               className="wo-page__tab wr-page__create-tab"
               onClick={openCreate}
+              aria-label="New Warranty"
+              title="New Warranty"
+              data-tooltip="New Warranty"
             >
               <NavIcon name="addSquare" />
-              New Warranty
+              <span className="wo-page__tab-label">New Warranty</span>
             </button>
           )}
         </div>

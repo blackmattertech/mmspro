@@ -11,7 +11,6 @@ export default function WorkRequestListPage({ filter, emptyHint }) {
     headerSort = null,
     setHeaderSort,
     statusFilters = [],
-    toggleStatus,
     visibleColumnIds,
     columnDefs,
     bulkReloadToken = 0,
@@ -29,7 +28,6 @@ export default function WorkRequestListPage({ filter, emptyHint }) {
       headerSort={headerSort}
       setHeaderSort={setHeaderSort}
       statusFilters={statusFilters}
-      toggleStatus={toggleStatus}
       visibleColumnIds={visibleColumnIds}
       columnDefs={columnDefs}
       bulkReloadToken={bulkReloadToken}

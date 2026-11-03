@@ -21,7 +21,7 @@ import { loadRuntimeFormLayout, attachFormFieldValueMaps } from './orgFormLayout
 import { applyMappedFilters, ilikePattern } from './listQuery.js'
 import { idsByIlike, NO_MATCH_ID, restrictToIds } from './relationFilters.js'
 import { shouldRequire, systemId } from './formLayoutIds.js'
-import { assignedStatusForTechnicians, maybePromoteAssignedToAccepted } from './formSkips.js'
+import { assignedStatusForTechnicians, assertChecklistSelected, maybePromoteAssignedToAccepted } from './formSkips.js'
 import { WORK_ORDER_FORM_IDS } from './workOrderForms.js'
 import { buildAssetHierarchy as buildEquipmentAssetHierarchy } from './workRequestService.js'
 import {
@@ -717,6 +717,7 @@ export async function createPmPlan(orgId, profileId, body = {}, { lean = false }
   if (payload.checklist_template_id) {
     await assertChecklistForForm(orgId, payload.checklist_template_id, 'pm.plan')
   }
+  await assertChecklistSelected(orgId, 'pm.plan', payload.checklist_template_id)
   payload.location_id = await resolveLocationId(orgId, payload)
   if (shouldRequire(layout, systemId('equipment_id'), true) && !payload.equipment_id) {
     throw httpError('Asset is required.')
@@ -774,6 +775,7 @@ export async function updatePmPlan(orgId, profileId, planId, body = {}) {
   if (payload.checklist_template_id) {
     await assertChecklistForForm(orgId, payload.checklist_template_id, 'pm.plan')
   }
+  await assertChecklistSelected(orgId, 'pm.plan', payload.checklist_template_id)
   payload.location_id = await resolveLocationId(orgId, payload)
   if (shouldRequire(layout, systemId('equipment_id'), true) && !payload.equipment_id) {
     throw httpError('Asset is required.')
@@ -953,6 +955,7 @@ export async function generateScheduledWorkOrder(orgId, planId, {
     return { skipped: true, reason: 'open_work_order' }
   }
 
+  await assertChecklistSelected(orgId, WORK_ORDER_FORM_IDS.FROM_PM, plan.checklist_template_id)
   const snapshot = await snapshotChecklistTemplate(orgId, plan.checklist_template_id)
   const hierarchy = await buildAssetHierarchy(orgId, plan)
   const activityName = plan.activity_type?.name || 'Planned maintenance'
@@ -993,6 +996,7 @@ export async function generateScheduledWorkOrder(orgId, planId, {
       vendor_id: plan.contractor_vendor_id || null,
       pm_plan_id: plan.id,
       scheduled_at: dueIso,
+      checklist_template_id: plan.checklist_template_id || null,
       checklist_snapshot: snapshot || {},
       checklist_values: {},
     })

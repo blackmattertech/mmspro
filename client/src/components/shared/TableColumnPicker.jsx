@@ -161,7 +161,8 @@ export default function TableColumnPicker({
         aria-haspopup="listbox"
         aria-controls={listId}
         aria-label="Configure columns"
-        title="Configure columns"
+        title="Columns"
+        data-tooltip="Columns"
         onClick={() => setOpen((value) => !value)}
       >
         <SettingsIcon />

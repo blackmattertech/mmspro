@@ -173,6 +173,50 @@ export async function addWorkOrderAuditEntry(
   if (error) throw error
 }
 
+export function formatTechnicianAssignmentMessage(names) {
+  const list = (names || []).map((name) => String(name || '').trim()).filter(Boolean)
+  if (list.length === 1) return `Technician assigned: ${list[0]}.`
+  if (list.length > 1) return `Technicians assigned: ${list.join(', ')}.`
+  return null
+}
+
+export async function recordTechnicianAssignment(orgId, actorId, workOrder, employeeIds) {
+  const ids = [...new Set((employeeIds || []).filter(Boolean))]
+  let names = []
+  if (ids.length) {
+    const { data, error } = await supabaseAdmin
+      .from('org_employees')
+      .select('id, name')
+      .eq('org_id', orgId)
+      .in('id', ids)
+    if (error) throw error
+    const nameById = new Map((data || []).map((row) => [row.id, row.name]))
+    names = ids.map((id) => nameById.get(id)).filter(Boolean)
+  }
+  const message = formatTechnicianAssignmentMessage(names)
+    || (ids.length ? 'Technician assigned.' : 'Technicians unassigned.')
+
+  await addWorkOrderTimelineEvent(
+    orgId,
+    workOrder.id,
+    'technician_assigned',
+    message,
+    actorId,
+    { newStatus: workOrder.status || null, metadata: { assignee_ids: ids } },
+  )
+
+  if (workOrder.work_request_id) {
+    await syncWorkRequestFromWorkOrder(
+      orgId,
+      workOrder,
+      'technician_assigned',
+      message,
+      actorId,
+      { assignee_ids: ids },
+    )
+  }
+}
+
 export async function syncWorkRequestFromWorkOrder(orgId, workOrder, eventType, message, actorId, metadata = {}) {
   if (!workOrder?.work_request_id) return
 
@@ -277,6 +321,12 @@ export function validatePermitForStart(workOrder) {
   }
 }
 
+function checklistFieldComplete(field, value) {
+  if (field.field_type === 'checkbox') return value === true
+  if (value == null) return false
+  return String(value).trim() !== ''
+}
+
 export function validateCompletionFields(workOrder, layout = null) {
   const missing = []
   const required = completionRequiredFromLayout(layout)
@@ -295,6 +345,19 @@ export function validateCompletionFields(workOrder, layout = null) {
   const permitOnLayout = !layout || layoutHasSystemKey(layout, 'permit_details')
   if (permitOnLayout && workOrder?.permit_required && !isPermitComplete(workOrder)) {
     missing.push('Permit details')
+  }
+
+  const checklistFields = (workOrder?.checklist_snapshot?.fields || []).filter((field) => field.section_id)
+  if (checklistFields.length) {
+    const values = workOrder?.checklist_values && typeof workOrder.checklist_values === 'object'
+      ? workOrder.checklist_values
+      : {}
+    const incomplete = checklistFields.filter((field) => !checklistFieldComplete(field, values[field.id]))
+    if (incomplete.length) {
+      const err = new Error('Complete the checklist before marking this work order completed.')
+      err.status = 400
+      throw err
+    }
   }
 
   if (missing.length) {
@@ -455,6 +518,10 @@ export async function updateWorkOrderLifecycle(orgId, profileId, workOrderId, bo
     'verification_remarks',
   ]
 
+  // Day forms often send null work stamps when that day never set them.
+  // Preserve existing WO rollup stamps instead of wiping them.
+  const preserveIfEmpty = new Set(['work_start_at', 'work_end_at'])
+
   for (const key of scalarKeys) {
     if (body[key] === undefined) continue
     if (key === 'material_consumed') {
@@ -467,6 +534,13 @@ export async function updateWorkOrderLifecycle(orgId, profileId, workOrderId, bo
     }
     if (limitedTextKeys.has(key)) {
       patch[key] = body[key] == null ? null : clipTrimmedToLimit(fieldLimits, key, body[key])
+      continue
+    }
+    if (
+      preserveIfEmpty.has(key)
+      && (body[key] == null || body[key] === '')
+      && existing[key]
+    ) {
       continue
     }
     patch[key] = body[key]
@@ -519,7 +593,39 @@ export async function updateWorkOrderLifecycle(orgId, profileId, workOrderId, bo
   if (body.vendor_id !== undefined) patch.vendor_id = body.vendor_id || null
 
   if (body.checklist_values !== undefined && body.checklist_values && typeof body.checklist_values === 'object') {
-    patch.checklist_values = body.checklist_values
+    const incoming = body.checklist_values
+    const hasAnswers = Object.values(incoming).some((value) => {
+      if (value === true) return true
+      if (value == null) return false
+      return String(value).trim() !== ''
+    })
+    const existingAnswers = existing.checklist_values && typeof existing.checklist_values === 'object'
+      ? existing.checklist_values
+      : {}
+    const existingHasAnswers = Object.values(existingAnswers).some((value) => {
+      if (value === true) return true
+      if (value == null) return false
+      return String(value).trim() !== ''
+    })
+    // Day forms may send {} when that day never answered the checklist — keep WO answers.
+    if (hasAnswers || !existingHasAnswers) {
+      patch.checklist_values = incoming
+    }
+  }
+
+  if (body.progress_percent !== undefined) {
+    const n = Number(body.progress_percent)
+    if (!Number.isInteger(n) || n < 0 || n > 100) {
+      const err = new Error('Progress must be a whole number from 0 to 100.')
+      err.status = 400
+      throw err
+    }
+    if (actors && !actors.isTechnician) {
+      const err = new Error('Only a technician assigned to this work request or work order can update progress.')
+      err.status = 403
+      throw err
+    }
+    patch.progress_percent = n
   }
 
   patch = computeDurations(patch, existing)
@@ -541,7 +647,10 @@ export async function updateWorkOrderLifecycle(orgId, profileId, workOrderId, bo
       reserved.push(key)
     }
     if (reserved.length) {
-      const err = new Error('Only the assigned technician can edit technician sections on this work order.')
+      const onlyProgress = reserved.length === 1 && reserved[0] === 'progress_percent'
+      const err = new Error(onlyProgress
+        ? 'Only a technician assigned to this work request or work order can update progress.'
+        : 'Only the assigned technician can edit technician sections on this work order.')
       err.status = 403
       throw err
     }
@@ -552,6 +661,46 @@ export async function updateWorkOrderLifecycle(orgId, profileId, workOrderId, bo
       validatePermitForStart({ ...existing, ...patch })
     }
     if (nextStatus === 'completed') {
+      const {
+        shouldSnapshotLifecycleDay,
+        upsertWorkOrderDaySnapshot,
+        buildFieldSnapshotFromLifecycle,
+        listWorkOrderDailyLogs,
+      } = await import('./workOrderDailyLogService.js')
+      // Persist today's execution fields before leaving an active status (complete skips post-update snapshot).
+      if (shouldSnapshotLifecycleDay(existing.status)) {
+        try {
+          await upsertWorkOrderDaySnapshot(orgId, profileId, workOrderId, {
+            timeZone: body.time_zone || body.timeZone,
+            snapshot: buildFieldSnapshotFromLifecycle(
+              { ...body, ...patch, status: existing.status },
+              { ...existing, ...patch },
+              body.process_extras || {},
+            ),
+            body: { ...body, ...patch, status: existing.status },
+            existing: { ...existing, ...patch, status: existing.status },
+          })
+          const { logs } = await listWorkOrderDailyLogs(orgId, workOrderId)
+          const withStart = logs
+            .map((row) => row.started_at || row.field_snapshot?.work_start_at)
+            .filter(Boolean)
+            .sort()
+          const withEnd = logs
+            .map((row) => row.ended_at || row.field_snapshot?.work_end_at)
+            .filter(Boolean)
+            .sort()
+          if (!patch.work_start_at && !existing.work_start_at && withStart.length) {
+            patch.work_start_at = withStart[0]
+          }
+          if (!patch.work_end_at && !existing.work_end_at && withEnd.length) {
+            patch.work_end_at = withEnd[withEnd.length - 1]
+          }
+        } catch (err) {
+          if (err?.status && err.status >= 400 && err.status < 500) throw err
+          console.error('Failed to snapshot day before complete:', err.message)
+        }
+      }
+
       const { workOrderFormIdForSource, layoutForStages } = await import('./workOrderForms.js')
       const { loadRuntimeFormLayout } = await import('./orgFormLayouts.js')
       const formId = workOrderFormIdForSource(existing.source_type)
@@ -580,7 +729,15 @@ export async function updateWorkOrderLifecycle(orgId, profileId, workOrderId, bo
     .select('*')
     .single()
 
-  if (updateError) throw updateError
+  if (updateError) {
+    const message = updateError.message || ''
+    if (/progress_percent/i.test(message) && /schema cache|does not exist|column/i.test(message)) {
+      const err = new Error('Apply supabase-patches/111-work-order-manual-progress.sql, then try again.')
+      err.status = 503
+      throw err
+    }
+    throw updateError
+  }
 
   if (nextStatus !== existing.status) {
     const label = nextStatus.replace(/_/g, ' ')
@@ -643,14 +800,60 @@ export async function updateWorkOrderLifecycle(orgId, profileId, workOrderId, bo
       }
     }
   } else if (Object.keys(patch).length > 1) {
+    const onlyProgress = Object.prototype.hasOwnProperty.call(patch, 'progress_percent')
+      && Object.keys(patch).every((key) => (
+        key === 'updated_at'
+        || key === 'progress_percent'
+        || key === 'planned_duration_hours'
+        || key === 'work_duration_hours'
+        || key === 'breakdown_duration_hours'
+      ))
     await addWorkOrderTimelineEvent(
       orgId,
       workOrderId,
-      'details_updated',
-      actionRemarks || 'Work order details updated.',
+      onlyProgress ? 'progress_updated' : 'details_updated',
+      onlyProgress
+        ? `Progress updated to ${patch.progress_percent}%.`
+        : (actionRemarks || 'Work order details updated.'),
       profileId,
-      { remarks: actionRemarks },
+      onlyProgress
+        ? { remarks: actionRemarks, metadata: { progress_percent: patch.progress_percent } }
+        : { remarks: actionRemarks },
     )
+  }
+
+  try {
+    const {
+      shouldSnapshotLifecycleDay,
+      upsertWorkOrderDaySnapshot,
+      buildFieldSnapshotFromLifecycle,
+    } = await import('./workOrderDailyLogService.js')
+    if (shouldSnapshotLifecycleDay(updated.status)) {
+      const onlyProgress = Object.prototype.hasOwnProperty.call(patch, 'progress_percent')
+        && Object.keys(patch).every((key) => (
+          key === 'updated_at'
+          || key === 'progress_percent'
+          || key === 'status'
+          || key === 'planned_duration_hours'
+          || key === 'work_duration_hours'
+          || key === 'breakdown_duration_hours'
+        ))
+      if (!onlyProgress) {
+        await upsertWorkOrderDaySnapshot(orgId, profileId, workOrderId, {
+          timeZone: body.time_zone || body.timeZone,
+          snapshot: buildFieldSnapshotFromLifecycle(
+            { ...body, ...patch },
+            updated,
+            body.process_extras || {},
+          ),
+          body: { ...body, status: updated.status },
+          existing: updated,
+        })
+      }
+    }
+  } catch (err) {
+    if (err?.status && err.status >= 400 && err.status < 500) throw err
+    console.error('Failed to upsert work order day snapshot:', err.message)
   }
 
   return updated

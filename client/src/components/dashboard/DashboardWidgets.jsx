@@ -122,10 +122,17 @@ export function KpiCards({ stats }) {
   )
 }
 
+function donutSlicePath(cx, cy, radius, startAngle, endAngle) {
+  const startX = cx + radius * Math.sin(startAngle)
+  const startY = cy - radius * Math.cos(startAngle)
+  const endX = cx + radius * Math.sin(endAngle)
+  const endY = cy - radius * Math.cos(endAngle)
+  const largeArc = endAngle - startAngle > Math.PI ? 1 : 0
+  return `M ${startX} ${startY} A ${radius} ${radius} 0 ${largeArc} 1 ${endX} ${endY}`
+}
+
 export function DonutChart({ title, total, segments, filterLabel }) {
   const radius = 70
-  const circumference = 2 * Math.PI * radius
-  let offset = 0
   const safeTotal = finiteNumber(total)
   const legend = (segments || []).map((seg) => ({
     ...seg,
@@ -134,11 +141,16 @@ export function DonutChart({ title, total, segments, filterLabel }) {
     label: statusLegendLabel(seg),
   }))
 
+  let angle = -Math.PI / 2
   const arcs = legend.filter((s) => s.count > 0).map((seg) => {
-    const pct = seg.count / (safeTotal || 1)
-    const dash = pct * circumference
-    const arc = { ...seg, dash, offset, color: seg.color || STATUS_COLORS[seg.status] || PRIORITY_COLORS[seg.priority] }
-    offset += dash
+    const sweep = (seg.count / (safeTotal || 1)) * Math.PI * 2
+    const arc = {
+      ...seg,
+      start: angle,
+      sweep,
+      color: seg.color || STATUS_COLORS[seg.status] || PRIORITY_COLORS[seg.priority],
+    }
+    angle += sweep
     return arc
   })
 
@@ -153,18 +165,26 @@ export function DonutChart({ title, total, segments, filterLabel }) {
           <svg width="180" height="180" viewBox="0 0 180 180">
             <circle cx="90" cy="90" r={radius} fill="none" stroke="#F1F5F9" strokeWidth="24"/>
             {arcs.map((arc) => (
-              <circle
-                key={arc.status || arc.priority || arc.label}
-                cx="90"
-                cy="90"
-                r={radius}
-                fill="none"
-                stroke={arc.color}
-                strokeWidth="24"
-                strokeDasharray={`${arc.dash} ${circumference - arc.dash}`}
-                strokeDashoffset={-arc.offset + circumference / 4}
-                transform="rotate(-90 90 90)"
-              />
+              arc.sweep >= Math.PI * 2 - 0.001 ? (
+                <circle
+                  key={arc.status || arc.priority || arc.label}
+                  cx="90"
+                  cy="90"
+                  r={radius}
+                  fill="none"
+                  stroke={arc.color}
+                  strokeWidth="24"
+                />
+              ) : (
+                <path
+                  key={arc.status || arc.priority || arc.label}
+                  d={donutSlicePath(90, 90, radius, arc.start, arc.start + arc.sweep)}
+                  fill="none"
+                  stroke={arc.color}
+                  strokeWidth="24"
+                  strokeLinecap="butt"
+                />
+              )
             ))}
           </svg>
           <div className="donut-chart__center">

@@ -376,8 +376,14 @@ export default function Equipment() {
                         type="button"
                         className="company-btn company-btn--secondary"
                         onClick={() => setLabelsOpen(true)}
+                        title="Export QR"
+                        data-tooltip="Export QR"
+                        aria-label="Export QR"
                       >
-                        Export QR
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                          <path d="M4 4h6v6H4V4Zm2 2v2h2V6H6Zm8-2h6v6h-6V4Zm2 2v2h2V6h-2ZM4 14h6v6H4v-6Zm2 2v2h2v-2H6Zm10-2h2v2h-2v-2Zm2 2h2v2h-2v-2Zm-2 2h2v2h-2v-2Z" fill="currentColor" />
+                        </svg>
+                        <span className="equipment-bulk-btn__label">Export QR</span>
                       </button>
                       {canManage && (
                       <>
@@ -387,6 +393,8 @@ export default function Equipment() {
                         className="company-btn company-btn--danger"
                         disabled={bulkDeleting || saving}
                         onClick={handleBulkDelete}
+                        title={bulkDeleting ? 'Deleting...' : `Delete (${selected.size})`}
+                        data-tooltip={bulkDeleting ? 'Deleting...' : `Delete (${selected.size})`}
                       >
                         <TrashIcon />
                         {bulkDeleting ? 'Deleting...' : `Delete (${selected.size})`}

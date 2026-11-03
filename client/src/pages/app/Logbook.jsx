@@ -1,20 +1,50 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { usePermissions } from '../../hooks/usePermissions'
 import { useDebouncedValue } from '../../hooks/useDebouncedValue'
-import { deleteMeterReading, getLogbook, getMeterReadings } from '../../lib/api-logbook'
+import { useDepartments } from '../../hooks/useDepartments'
+import { useLocations } from '../../hooks/useLocations'
+import { bulkUploadLogbook, deleteMeterReading, getLogbook, getLogbookTemplate, getMeterReadings } from '../../lib/api-logbook'
+import { getEquipmentColumnValues } from '../../lib/api-equipment'
 import { unwrapList } from '../../lib/listResponse'
-import { formatMeterDate, formatMeterLogger, formatMeterTime, formatMeterValue } from '../../lib/meterReading'
+import {
+  formatMeterDate,
+  formatMeterLogger,
+  formatMeterTime,
+  formatMeterValue,
+  meterAssetLabel,
+  meterFieldText,
+  meterListColumns,
+} from '../../lib/meterReading'
+import { TABLE_SORT_OPTIONS, selectFilterField, uniqueNameOptions } from '../../lib/tableFilters'
 import { stopTableRowClick, tableRowClickProps } from '../../lib/clickableTableRow'
 import TablePagination from '../../components/shared/TablePagination'
 import TableEmptyRow from '../../components/shared/TableEmptyRow'
 import TableFilterToolbar from '../../components/shared/TableFilterToolbar'
+import TableColumnPicker from '../../components/shared/TableColumnPicker'
+import { AdvancedFilterMenu, TableColumnHead } from '../../components/shared/ListTableChrome'
 import { useTablePagination } from '../../hooks/useTablePagination'
+import { useTableColumnPrefs } from '../../hooks/useTableColumnPrefs'
+import {
+  MasterBulkActions,
+  MasterBulkResult,
+  useMasterBulkUpload,
+} from '../../components/company/MasterBulkUpload'
 import MeterReadingModal from '../../components/logbook/MeterReadingModal'
 import { useBackdropClose } from '../../hooks/useBackdropClose'
 import '../../components/shared/TableFilterToolbar.css'
+import '../../components/shared/TableColumnPicker.css'
+import '../../components/shared/ListTableChrome.css'
 import '../../components/company/CompanyShared.css'
 
-function HistoryModal({ equipmentId, canCreate, canDelete, onClose, onChanged }) {
+function meterCellText(row, column) {
+  if (column.id === 'last_reading') return formatMeterValue(row.last_reading)
+  if (column.id === 'date') return formatMeterDate(row.last_reading_at)
+  if (column.id === 'time') return row.last_reading_at ? formatMeterTime(row.last_reading_at) : '—'
+  if (column.id === 'logged_by') return formatMeterLogger(row) || '—'
+  return meterFieldText(row, column) || '—'
+}
+
+function HistoryModal({ equipmentId, assetFields, canCreate, canDelete, onClose, onChanged }) {
   const handleBackdropClick = useBackdropClose(onClose)
   const [payload, setPayload] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -59,8 +89,8 @@ function HistoryModal({ equipmentId, canCreate, canDelete, onClose, onChanged })
       >
         <div className="company-modal__header">
           <div>
-            <h2 id="logbook-history-title">{equipment?.name || 'Meter readings'}</h2>
-            <p className="company-modal__hint">{equipment?.code || 'Reading history'}</p>
+            <h2 id="logbook-history-title">{meterAssetLabel(equipment, assetFields) || 'Meter readings'}</h2>
+            <p className="company-modal__hint">Reading history</p>
           </div>
           <button type="button" className="company-modal__close" onClick={onClose} aria-label="Close">×</button>
         </div>
@@ -138,8 +168,21 @@ function HistoryModal({ equipmentId, canCreate, canDelete, onClose, onChanged })
 
 export default function Logbook() {
   const { loading: permLoading, canCreate, canDelete } = usePermissions()
+  const { locations } = useLocations()
+  const { departments } = useDepartments()
   const [search, setSearch] = useState('')
+  const [columnFilters, setColumnFilters] = useState({})
+  const [sortBy, setSortBy] = useState('name_asc')
+  const [headerSort, setHeaderSort] = useState(null)
   const debouncedSearch = useDebouncedValue(search.trim())
+  const debouncedFilterKey = useDebouncedValue(JSON.stringify(columnFilters))
+  const debouncedFilters = useMemo(() => {
+    try {
+      return JSON.parse(debouncedFilterKey)
+    } catch {
+      return {}
+    }
+  }, [debouncedFilterKey])
   const [items, setItems] = useState([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
@@ -147,30 +190,149 @@ export default function Logbook() {
   const [reloadKey, setReloadKey] = useState(0)
   const [historyId, setHistoryId] = useState(null)
   const [adding, setAdding] = useState(null)
-  const pagination = useTablePagination(total, { resetKey: debouncedSearch })
+  const [assetFields, setAssetFields] = useState(null)
+  const [hierarchyValueOptions, setHierarchyValueOptions] = useState({})
+  const seenLoad = useRef(false)
+  const filterResetKey = `${debouncedSearch}|${debouncedFilterKey}|${sortBy}|${headerSort?.id || ''}|${headerSort?.dir || ''}`
+  const pagination = useTablePagination(total, { resetKey: filterResetKey })
+  const columnDefs = useMemo(() => (
+    meterListColumns(assetFields || []).map((column) => ({
+      ...column,
+      locked: column.id === 'actions',
+    }))
+  ), [assetFields])
+  const {
+    columnDefs: pickerColumns,
+    visibleColumnIds,
+    columnOrder,
+    toggleColumn,
+    resetColumns,
+    reorderColumns,
+    moveColumn,
+    saveColumns,
+  } = useTableColumnPrefs('meter-reading', columnDefs)
+  const dataColumns = useMemo(
+    () => columnDefs.filter((column) => column.id !== 'actions'),
+    [columnDefs],
+  )
+  const visibleDataColumns = useMemo(() => (
+    visibleColumnIds
+      .filter((id) => id !== 'actions')
+      .map((id) => columnDefs.find((column) => column.id === id))
+      .filter(Boolean)
+  ), [visibleColumnIds, columnDefs])
+  const showActions = visibleColumnIds.includes('actions')
+  const filterFields = useMemo(() => dataColumns.map((column) => {
+    if (column.id === 'location') {
+      return selectFilterField(
+        'location',
+        'Location',
+        uniqueNameOptions(locations.filter((row) => row.is_active !== false)),
+        'All locations',
+      )
+    }
+    if (column.id === 'department') {
+      return selectFilterField(
+        'department',
+        'Department',
+        uniqueNameOptions(departments.filter((row) => row.is_active !== false)),
+        'All departments',
+      )
+    }
+    if (String(column.id).startsWith('field:')) {
+      const fieldId = column.fieldId || column.id.slice('field:'.length)
+      return selectFilterField(
+        column.id,
+        column.label,
+        uniqueNameOptions((hierarchyValueOptions[fieldId] || []).map((value) => ({ name: value }))),
+        `All ${column.label}`,
+      )
+    }
+    return selectFilterField(column.id, column.label, [], `All ${column.label}`)
+  }), [dataColumns, locations, departments, hierarchyValueOptions])
 
-  const load = useCallback(() => {
-    setLoading(true)
+  const setColumnFilter = (columnId, value) => {
+    setColumnFilters((prev) => {
+      const next = { ...prev }
+      if (!String(value || '').trim()) delete next[columnId]
+      else next[columnId] = value
+      return next
+    })
+  }
+
+  useEffect(() => {
+    let cancelled = false
+    if (!seenLoad.current) setLoading(true)
     setError(null)
-    return getLogbook({
+    getLogbook({
       search: debouncedSearch,
+      filters: debouncedFilters,
+      sortBy: headerSort ? undefined : sortBy,
+      sort: headerSort?.id || '',
+      sortDir: headerSort?.dir || '',
       limit: pagination.pageSize,
       offset: pagination.offset,
     })
       .then((data) => {
+        if (cancelled) return
         const page = unwrapList(data)
         setItems(page.items)
         setTotal(page.total)
+        setAssetFields(Array.isArray(data?.asset_fields) ? data.asset_fields : [])
       })
-      .catch((err) => setError(err.message || 'Could not load meter readings'))
-      .finally(() => setLoading(false))
-  }, [debouncedSearch, pagination.pageSize, pagination.offset])
+      .catch((err) => {
+        if (!cancelled) setError(err.message || 'Could not load meter readings')
+      })
+      .finally(() => {
+        if (cancelled) return
+        seenLoad.current = true
+        setLoading(false)
+      })
+    return () => { cancelled = true }
+  }, [
+    debouncedSearch,
+    debouncedFilters,
+    sortBy,
+    headerSort,
+    pagination.pageSize,
+    pagination.offset,
+    reloadKey,
+  ])
+
+  const assetFieldKey = useMemo(
+    () => (assetFields || []).map((field) => field?.id).filter(Boolean).join('|'),
+    [assetFields],
+  )
 
   useEffect(() => {
-    load()
-  }, [load, reloadKey])
+    const ids = assetFieldKey.split('|').filter(Boolean)
+    if (!ids.length) return undefined
+    let cancelled = false
+    Promise.all(ids.map((fieldId) => (
+      getEquipmentColumnValues(fieldId)
+        .then((values) => [fieldId, values])
+        .catch(() => [fieldId, []])
+    ))).then((entries) => {
+      if (!cancelled) setHierarchyValueOptions(Object.fromEntries(entries))
+    })
+    return () => { cancelled = true }
+  }, [assetFieldKey])
 
   const refresh = () => setReloadKey((value) => value + 1)
+  const {
+    bulkInputRef,
+    bulkBusy,
+    bulkError,
+    bulkResult,
+    handleDownloadTemplate,
+    handleBulkFile,
+  } = useMasterBulkUpload({
+    downloadTemplate: getLogbookTemplate,
+    upload: bulkUploadLogbook,
+    onSuccess: refresh,
+    defaultFilename: 'meter-readings-template.xlsx',
+  })
+  const hasQuery = Boolean(debouncedSearch || Object.keys(debouncedFilters).length)
 
   if (permLoading) {
     return (
@@ -198,9 +360,52 @@ export default function Logbook() {
                 placeholder: 'Search assets...',
                 ariaLabel: 'Search meter readings',
               }}
+              sort={{
+                value: headerSort ? '' : sortBy,
+                onChange: (value) => {
+                  setSortBy(value)
+                  setHeaderSort(null)
+                },
+                options: TABLE_SORT_OPTIONS,
+              }}
+              filterSlot={(
+                <AdvancedFilterMenu
+                  fields={filterFields}
+                  values={columnFilters}
+                  onChange={setColumnFilters}
+                />
+              )}
+              actions={canCreate('logbook') ? (
+                <MasterBulkActions
+                  onDownload={handleDownloadTemplate}
+                  bulkBusy={bulkBusy}
+                  bulkInputRef={bulkInputRef}
+                  onFileChange={handleBulkFile}
+                  title="Import meter readings"
+                  description="Download the sample file. It lists assets that require a reading. Enter a number in Meter reading, then upload the .xlsx file. Date, time, and your name are saved automatically."
+                  actionLabel="Import"
+                  bulkError={bulkError}
+                  bulkResult={bulkResult}
+                  noun="reading"
+                />
+              ) : null}
+              columnPicker={(
+                <TableColumnPicker
+                  columnDefs={pickerColumns}
+                  visibleColumnIds={visibleColumnIds}
+                  columnOrder={columnOrder}
+                  onToggle={toggleColumn}
+                  onReset={resetColumns}
+                  onReorder={reorderColumns}
+                  onMove={moveColumn}
+                  onSave={saveColumns}
+                />
+              )}
             />
           </div>
           {error && <div className="company-alert" role="alert">{error}</div>}
+          {bulkError && <div className="company-error">{bulkError}</div>}
+          <MasterBulkResult result={bulkResult} noun="reading" />
           {loading ? (
             <div className="company-loading">Loading meter readings…</div>
           ) : (
@@ -210,62 +415,69 @@ export default function Logbook() {
                   <table className="company-table master-table">
                     <thead>
                       <tr>
-                        <th>Asset</th>
-                        <th>Code</th>
-                        <th>Location</th>
-                        <th>Department</th>
-                        <th>Last reading</th>
-                        <th>Date</th>
-                        <th>Time</th>
-                        <th>Logged by</th>
-                        <th>Actions</th>
+                        {visibleDataColumns.map((column) => (
+                          <TableColumnHead
+                            key={column.id}
+                            columnId={column.id}
+                            label={column.label}
+                            sort={headerSort}
+                            onSort={setHeaderSort}
+                            filterValue={columnFilters[column.id] || ''}
+                            onFilter={setColumnFilter}
+                          />
+                        ))}
+                        {showActions && <th>Actions</th>}
                       </tr>
                     </thead>
                     <tbody>
                       {items.length === 0 ? (
-                        <TableEmptyRow colSpan={9}>
-                          {debouncedSearch
-                            ? 'No assets match your search.'
+                        <TableEmptyRow colSpan={visibleDataColumns.length + (showActions ? 1 : 0)}>
+                          {hasQuery
+                            ? 'No assets match your filters.'
                             : 'No assets require a meter reading yet. Turn on Reading required on an asset record to log it here.'}
                         </TableEmptyRow>
-                      ) : items.map((row) => (
+                      ) : items.map((row) => {
+                        const assetLabel = meterAssetLabel(row, assetFields) || row.name || 'asset'
+                        return (
                         <tr
                           key={row.id}
                           {...tableRowClickProps({
                             onOpen: () => setHistoryId(row.id),
-                            label: `View readings for ${row.name}`,
+                            label: `View readings for ${assetLabel}`,
                           })}
                         >
-                          <td><span className="company-table__name">{row.name}</span></td>
-                          <td><code className="company-code">{row.code || '—'}</code></td>
-                          <td>{row.location_name || '—'}</td>
-                          <td>{row.department_name || '—'}</td>
-                          <td>{formatMeterValue(row.last_reading)}</td>
-                          <td>{formatMeterDate(row.last_reading_at)}</td>
-                          <td>{row.last_reading_at ? formatMeterTime(row.last_reading_at) : '—'}</td>
-                          <td>{formatMeterLogger(row) || '—'}</td>
-                          <td onClick={stopTableRowClick}>
-                            <div className="company-table__actions">
-                              {canCreate('logbook') && (
+                          {visibleDataColumns.map((column, index) => (
+                            <td key={column.id}>
+                              {index === 0 ? (
+                                <span className="company-table__name">{meterCellText(row, column)}</span>
+                              ) : meterCellText(row, column)}
+                            </td>
+                          ))}
+                          {showActions && (
+                            <td onClick={stopTableRowClick}>
+                              <div className="company-table__actions">
+                                {canCreate('logbook') && (
+                                  <button
+                                    type="button"
+                                    className="company-btn company-btn--primary company-btn--compact"
+                                    onClick={() => setAdding(row)}
+                                  >
+                                    Add reading
+                                  </button>
+                                )}
                                 <button
                                   type="button"
-                                  className="company-btn company-btn--primary company-btn--compact"
-                                  onClick={() => setAdding(row)}
+                                  className="company-btn company-btn--ghost company-btn--compact"
+                                  onClick={() => setHistoryId(row.id)}
                                 >
-                                  Add reading
+                                  History
                                 </button>
-                              )}
-                              <button
-                                type="button"
-                                className="company-btn company-btn--ghost company-btn--compact"
-                                onClick={() => setHistoryId(row.id)}
-                              >
-                                History
-                              </button>
-                            </div>
-                          </td>
+                              </div>
+                            </td>
+                          )}
                         </tr>
-                      ))}
+                        )
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -288,6 +500,7 @@ export default function Logbook() {
       {historyId && (
         <HistoryModal
           equipmentId={historyId}
+          assetFields={assetFields}
           canCreate={canCreate('logbook')}
           canDelete={canDelete('logbook')}
           onClose={() => setHistoryId(null)}
@@ -297,6 +510,7 @@ export default function Logbook() {
       {adding && (
         <MeterReadingModal
           equipment={adding}
+          assetLabel={meterAssetLabel(adding, assetFields)}
           lastReading={adding.last_reading}
           onClose={() => setAdding(null)}
           onSaved={() => {

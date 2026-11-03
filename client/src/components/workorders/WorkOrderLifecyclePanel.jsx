@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import { createManualWorkOrder, updateWorkOrderLifecycle } from '../../lib/api-work-orders'
 import { useFormFieldValues } from '../../hooks/useFormFieldValues'
 import { canEditFilledBy, resolveFormActors } from '../../lib/formFillership'
-import { formFieldClassName } from '../../lib/formLayoutIds'
+import { formFieldClassName, parseLayoutId } from '../../lib/formLayoutIds'
 import {
   layoutHasSystemKey,
   lifecycleStagesForStatus,
@@ -16,22 +17,30 @@ import { useProfile } from '../../hooks/useProfile'
 import { usePermissions } from '../../hooks/usePermissions'
 import { useOrgStatusOptions } from '../../hooks/useOrgStatusOptions'
 import { useTextFieldLimits } from '../../hooks/useTextFieldLimits'
+import { useBackdropClose } from '../../hooks/useBackdropClose'
 import { orgPath } from '../../config/navigation'
 import DateField from '../ui/DateField'
 import FilterableSelect from '../ui/FilterableSelect'
+import MasterPicker from '../forms/MasterPicker'
+import { hydrateMasterValues, splitBoundValues } from '../../lib/formFieldSources'
 import WorkOrderAttachmentsField from './WorkOrderAttachmentsField'
-import WorkOrderDailyLogSection from './WorkOrderDailyLogSection'
+import WorkOrderDayTabs from './WorkOrderDayTabs'
 import WorkOrderMaterialDetailsModal from './WorkOrderMaterialDetailsModal'
 import WorkOrderMaterialRowsTable, { normalizeMaterialRows } from './WorkOrderMaterialRowsTable'
 import WorkRequestFormSections from './WorkRequestFormSections'
-import ChecklistExecution from '../pm/ChecklistExecution'
+import ChecklistExecution, { isChecklistComplete } from '../pm/ChecklistExecution'
 import SpellcheckInput from '../shared/SpellcheckInput'
 import FormLabel from '../shared/FormLabel'
-import { progressPercentForStatus } from '../../lib/statusProgress'
 import { AssetHierarchySummary } from '../workrequests/WorkRequestAssetFields'
 import { hierarchyDisplaySteps } from '../../lib/assetHierarchy'
+import { formatWorkOrderStatusLabel } from '../../lib/workOrderStatusLabel'
+import {
+  DAILY_SNAPSHOT_ACTIVE_STATUSES,
+  blankExecutionForm,
+  formPatchFromSnapshot,
+  todayDateString,
+} from '../../lib/workOrderDaySnapshot'
 import './ManualWorkOrder.css'
-import '../shared/StatusCountBar.css'
 
 const PERMIT_LABELS = {
   hot_work: 'Hot Work Permit',
@@ -46,7 +55,7 @@ const PERMIT_LABELS = {
 
 const STATUS_LABELS = {
   draft: 'Draft',
-  assigned: 'Assigned',
+  assigned: 'Approval Pending',
   accepted: 'Accepted',
   started: 'Started',
   in_progress: 'In Progress',
@@ -67,7 +76,10 @@ const SOURCE_LABELS = {
   user_self_request: 'User self request',
 }
 
-function formatStatus(status, labelByKey = null) {
+function formatStatus(status, labelByKey = null, order = null) {
+  if (order || status === 'assigned') {
+    return formatWorkOrderStatusLabel(order ? { ...order, status } : status, labelByKey)
+  }
   if (labelByKey?.[status]) return labelByKey[status]
   return STATUS_LABELS[status] || String(status || '').replace(/_/g, ' ')
 }
@@ -75,12 +87,6 @@ function formatStatus(status, labelByKey = null) {
 function formatSource(sourceType) {
   if (!sourceType) return '—'
   return SOURCE_LABELS[sourceType] || String(sourceType).replace(/_/g, ' ')
-}
-
-function isBreakdownJobNature(detail) {
-  const nature = String(detail?.job_nature || '').trim().toLowerCase()
-  if (nature) return nature === 'breakdown'
-  return Boolean(detail?.is_breakdown)
 }
 
 const SUPERVISOR_STATUSES = new Set(['verified', 'closed', 'returned_rework'])
@@ -113,19 +119,6 @@ function toPendingFile(file) {
     type: file.type,
     previewUrl: file.type?.startsWith('image/') ? URL.createObjectURL(file) : null,
   }
-}
-
-function captureNowStamp() {
-  const now = new Date()
-  const pad = (n) => String(n).padStart(2, '0')
-  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`
-}
-
-function formatCapturedStamp(value) {
-  if (!value) return ''
-  const parsed = new Date(value)
-  if (Number.isNaN(parsed.getTime())) return String(value)
-  return parsed.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
 }
 
 function Field({ label, children, full = false, maxLength }) {
@@ -253,6 +246,62 @@ function initialPermitDetails(detail) {
   return rows
 }
 
+function CloseWorkOrderConfirm({ woNumber, statusLabel, saving, onCancel, onConfirm }) {
+  const handleBackdropClick = useBackdropClose(saving ? () => {} : onCancel)
+  return createPortal(
+    <div
+      className="company-modal-overlay company-modal-overlay--popup wo-close-confirm-overlay"
+      onMouseDown={handleBackdropClick}
+      role="presentation"
+    >
+      <div
+        className="company-modal company-modal--popup"
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="wo-close-confirm-title"
+      >
+        <div className="company-modal__header">
+          <h2 id="wo-close-confirm-title">Close work order</h2>
+          <button
+            type="button"
+            className="company-modal__close"
+            onClick={onCancel}
+            disabled={saving}
+            aria-label="Close"
+          >
+            ×
+          </button>
+        </div>
+        <div className="company-modal__form">
+          <p className="company-modal__hint">
+            This will mark {woNumber || 'this work order'} as {statusLabel}. Closed work orders cannot be reopened.
+          </p>
+          <div className="company-modal__actions">
+            <button
+              type="button"
+              className="company-btn company-btn--secondary"
+              onClick={onCancel}
+              disabled={saving}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="company-btn company-btn--primary"
+              onClick={onConfirm}
+              disabled={saving}
+            >
+              {saving ? 'Closing…' : 'Close work order'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  )
+}
+
 function formFromDetail(detail) {
   const dosDonts = parseDosDonts(detail?.dos_and_donts)
   return {
@@ -264,6 +313,7 @@ function formFromDetail(detail) {
     permit_expiry_at: detail?.permit_expiry_at || '',
     work_start_at: detail?.work_start_at || '',
     work_end_at: detail?.work_end_at || '',
+    vendor_id: detail?.vendor_id || '',
     vendor_expense: detail?.vendor_expense ?? '',
     vendor_currency: detail?.vendor_currency || 'USD',
     labour_count: detail?.labour_count ?? '',
@@ -317,42 +367,78 @@ export default function WorkOrderLifecyclePanel({
     priority: 'medium',
   })
   const [showRequestForm, setShowRequestForm] = useState(() => Boolean(detail?.work_request))
+  const [confirmClose, setConfirmClose] = useState(false)
+  const [activeDayId, setActiveDayId] = useState(null)
+  const [todayDraft, setTodayDraft] = useState(null)
 
-  const hasDailyLogs = (detail?.daily_logs || []).length > 0
-  const materialSummaryRows = useMemo(() => {
-    if (Array.isArray(detail?.material_summary) && detail.material_summary.length) {
-      return normalizeMaterialRows(detail.material_summary)
+  const dayLogs = detail?.daily_logs || []
+  const todayKey = todayDateString()
+  const todayLog = useMemo(
+    () => dayLogs.find((row) => row.log_date === todayKey) || null,
+    [dayLogs, todayKey],
+  )
+  const activeDay = useMemo(
+    () => dayLogs.find((row) => row.id === activeDayId) || null,
+    [dayLogs, activeDayId],
+  )
+  const viewingPastDay = Boolean(activeDay && activeDay.log_date !== todayKey)
+  const snapshotActive = DAILY_SNAPSHOT_ACTIVE_STATUSES.has(detail?.status)
+  const needsBlankToday = Boolean(snapshotActive && !todayLog && dayLogs.length > 0 && !viewingPastDay)
+
+  const hasDailyLogs = dayLogs.length > 0
+
+  const resolveFormForDetail = (nextDetail, preferredDayId = null) => {
+    const logs = nextDetail?.daily_logs || []
+    const today = todayDateString()
+    const todayRow = logs.find((row) => row.log_date === today) || null
+    const preferred = preferredDayId
+      ? logs.find((row) => row.id === preferredDayId) || null
+      : null
+    const base = formFromDetail(nextDetail)
+
+    if (preferred && preferred.log_date !== today) {
+      return {
+        dayId: preferred.id,
+        form: {
+          ...base,
+          ...formPatchFromSnapshot(preferred.field_snapshot || {}, { blankMissing: true }),
+        },
+        draft: null,
+      }
     }
-    return parseMaterialConsumed(detail?.material_consumed).filter((row) => (
-      row.code || row.description || row.uom || row.qty
-    ))
-  }, [detail?.material_summary, detail?.material_consumed])
+    if (DAILY_SNAPSHOT_ACTIVE_STATUSES.has(nextDetail?.status) && !todayRow && logs.length > 0) {
+      return {
+        dayId: null,
+        form: {
+          ...base,
+          ...formPatchFromSnapshot({}, { blankMissing: true }),
+          material_rows: blankExecutionForm().material_rows,
+          checklist_values: {},
+        },
+        draft: 'blank',
+      }
+    }
+    if (todayRow) {
+      return {
+        dayId: todayRow.id,
+        form: { ...base, ...formPatchFromSnapshot(todayRow.field_snapshot || {}) },
+        draft: null,
+      }
+    }
+    return { dayId: null, form: base, draft: null }
+  }
 
   useEffect(() => {
-    setForm(formFromDetail(detail))
+    const resolved = resolveFormForDetail(detail)
+    setForm(resolved.form)
+    setActiveDayId(resolved.dayId)
+    setTodayDraft(resolved.draft)
     setPendingFiles([])
     setRemovedPaths([])
     setError(null)
     setShowFollowUp(false)
-  }, [detail?.id])
-
-  useEffect(() => {
-    if (!hasDailyLogs) return
-    setForm((prev) => ({
-      ...prev,
-      material_rows: materialSummaryRows.length
-        ? materialSummaryRows
-        : [{ code: '', description: '', uom: '', qty: '' }],
-      work_start_at: detail?.work_start_at || prev.work_start_at,
-      work_end_at: detail?.work_end_at || prev.work_end_at,
-    }))
-  }, [
-    hasDailyLogs,
-    detail?.updated_at,
-    detail?.work_start_at,
-    detail?.work_end_at,
-    materialSummaryRows,
-  ])
+    setConfirmClose(false)
+  }, [detail?.id, detail?.updated_at, detail?.status, dayLogs.length, todayKey])
 
   const nextStatuses = useMemo(
     () => detail?.allowed_next_statuses || [],
@@ -374,6 +460,10 @@ export default function WorkOrderLifecyclePanel({
   const processStages = lifecycleStagesForStatus(detail?.status)
   const { layout: processLayout } = useWorkOrderProcessLayout(processFormId, processStages)
   const processExtras = useFormFieldValues(processFormId, detail?.id || null)
+  const extrasWithNative = useMemo(
+    () => hydrateMasterValues(processFormId, processLayout, detail, processExtras.values),
+    [processFormId, processLayout, detail, processExtras.values],
+  )
   const processActors = resolveFormActors({
     formId: processFormId,
     isOrgAdmin,
@@ -390,11 +480,8 @@ export default function WorkOrderLifecyclePanel({
       assignees: detail?.assignees,
     },
   })
-  const skipTechnicianAcceptance = Boolean(
-    detail?.skip_technician_acceptance || processLayout?.processSkips?.technician_acceptance,
-  )
   const visibleStatuses = nextStatuses.filter((status) => {
-    if (status === 'accepted' && skipTechnicianAcceptance) return false
+    if (status === 'accepted') return false
     if (SUPERVISOR_STATUSES.has(status)) return canSupervise
     return isTechnician || canSupervise
   })
@@ -481,6 +568,7 @@ export default function WorkOrderLifecyclePanel({
       permit_expiry_at: filledPermitDetails[0]?.expiry_at || form.permit_expiry_at || null,
       work_start_at: form.work_start_at || null,
       work_end_at: form.work_end_at || null,
+      vendor_id: form.vendor_id || null,
       vendor_expense: form.vendor_expense === '' ? null : Number(form.vendor_expense),
       vendor_currency: form.vendor_currency || 'USD',
       labour_count: form.labour_count === '' ? null : Number(form.labour_count),
@@ -507,28 +595,29 @@ export default function WorkOrderLifecyclePanel({
     setError(null)
     try {
       if (!org?.id) throw new Error('Organization is not available.')
-      const requiredFields = (detail.checklist_snapshot?.fields || []).filter(
-        (field) => field.is_required && field.section_id,
-      )
-      if (['completed', 'verified', 'closed'].includes(status) && requiredFields.length) {
-        const missing = requiredFields.filter((field) => {
-          const value = form.checklist_values?.[field.id]
-          if (field.field_type === 'checkbox') return value !== true
-          return value == null || String(value).trim() === ''
-        })
-        if (missing.length) {
-          throw new Error(`Complete required checklist fields: ${missing.map((field) => field.name).join(', ')}.`)
-        }
+      if (
+        ['completed', 'verified', 'closed'].includes(status)
+        && detail.checklist_snapshot
+        && !isChecklistComplete(detail.checklist_snapshot, form.checklist_values)
+      ) {
+        throw new Error('Complete the checklist before marking this work order completed.')
       }
       const uploaded = []
       for (const item of pendingFiles) {
         const meta = await uploadWorkOrderFile(org.id, detail.id, 'execution', item.file, 'file')
         uploaded.push({ ...meta, source: 'execution' })
       }
+      if (viewingPastDay) {
+        throw new Error('Past days are read-only. Select Today to edit and save.')
+      }
+      const { native } = splitBoundValues(processFormId, processExtras.values, processLayout)
       const payload = {
         ...buildPayload(status),
         execution_attachments: [...keptExecutionFiles, ...uploaded],
+        process_extras: processExtras.values || {},
+        time_zone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       }
+      if (native.vendor_id) payload.vendor_id = native.vendor_id
       const updated = await updateWorkOrderLifecycle(detail.id, payload)
       if (Object.keys(processExtras.values || {}).length) {
         await processExtras.save(detail.id)
@@ -544,6 +633,7 @@ export default function WorkOrderLifecyclePanel({
       setError(err.message)
     } finally {
       setSaving(false)
+      if (status === 'closed') setConfirmClose(false)
     }
   }
 
@@ -616,12 +706,21 @@ export default function WorkOrderLifecyclePanel({
   const isPmScheduled = detail.source_type === 'preventive_maintenance' || Boolean(detail.pm_plan_id)
   const hasChecklist = (detail.checklist_snapshot?.fields || []).some((field) => field.section_id)
 
-  const checklistBlock = hasChecklist ? (
+  const fieldsReadOnly = viewingPastDay
+    || !canUpdate
+    || !canEditFilledBy('technician', processActors)
+
+  const checklistComplete = !hasChecklist
+    || isChecklistComplete(detail.checklist_snapshot, form.checklist_values)
+
+  const checklistBlock = hasChecklist && isTechnician ? (
     <ChecklistExecution
       snapshot={detail.checklist_snapshot}
       values={form.checklist_values}
       onChange={(next) => setField('checklist_values', next)}
-      disabled={!canUpdate || !canEditFilledBy('technician', processActors)}
+      disabled={fieldsReadOnly}
+      record={detail}
+      recordKind="work_order"
     />
   ) : null
 
@@ -638,21 +737,16 @@ export default function WorkOrderLifecyclePanel({
             className="company-link"
             onClick={() => setShowMaterialDetails(true)}
           >
-            View details
+            All days
           </button>
         )}
       </div>
-      {hasDailyLogs ? (
-        <>
-          <p className="wo-permit__hint">
-            Summary across all daily logs. Open View details for day-wise consumables.
-          </p>
-          {materialSummaryRows.length ? (
-            <WorkOrderMaterialRowsTable rows={materialSummaryRows} readOnly />
-          ) : (
-            <p className="wo-permit__hint">No materials logged yet.</p>
-          )}
-        </>
+      {fieldsReadOnly ? (
+        <WorkOrderMaterialRowsTable
+          rows={normalizeMaterialRows(form.material_rows)}
+          readOnly
+          descriptionMaxLength={maxLength('material_consumed')}
+        />
       ) : (
         <WorkOrderMaterialRowsTable
           rows={form.material_rows}
@@ -812,39 +906,25 @@ export default function WorkOrderLifecyclePanel({
 
     if (key === 'work_stamps') {
       return (
-        <div key={key} className="company-form__grid" style={{ gridColumn: '1 / -1' }}>
-          <div className="company-form__field">
-            <FormLabel>Work start{requiredMark}</FormLabel>
-            <div className="wo-stamp">
-              {form.work_start_at ? (
-                <span className="wo-stamp__time">{formatCapturedStamp(form.work_start_at)}</span>
-              ) : (
-                <button
-                  type="button"
-                  className="company-btn company-btn--primary"
-                  disabled={locked}
-                  onClick={() => setField('work_start_at', captureNowStamp())}
-                >
-                  Start
-                </button>
-              )}
+        <div key={key} className={className} style={{ gridColumn: '1 / -1' }}>
+          <div className="company-form__grid">
+            <div className="company-form__field">
+              <FormLabel>Work start{requiredMark}</FormLabel>
+              <DateField
+                value={form.work_start_at}
+                onChange={(v) => setField('work_start_at', v)}
+                withTime
+                disabled={locked}
+              />
             </div>
-          </div>
-          <div className="company-form__field">
-            <FormLabel>Work end{requiredMark}</FormLabel>
-            <div className="wo-stamp">
-              {form.work_end_at ? (
-                <span className="wo-stamp__time">{formatCapturedStamp(form.work_end_at)}</span>
-              ) : (
-                <button
-                  type="button"
-                  className="company-btn company-btn--primary"
-                  disabled={locked || !form.work_start_at}
-                  onClick={() => setField('work_end_at', captureNowStamp())}
-                >
-                  End
-                </button>
-              )}
+            <div className="company-form__field">
+              <FormLabel>Work end{requiredMark}</FormLabel>
+              <DateField
+                value={form.work_end_at}
+                onChange={(v) => setField('work_end_at', v)}
+                withTime
+                disabled={locked}
+              />
             </div>
           </div>
         </div>
@@ -861,6 +941,22 @@ export default function WorkOrderLifecyclePanel({
             className="company-form__input"
             value={form.labour_count}
             onChange={(e) => setField('labour_count', e.target.value)}
+            disabled={locked}
+          />
+        </label>
+      )
+    }
+
+    if (key === 'vendor_id') {
+      return (
+        <label key={key} className={className}>
+          <span className="company-form__label">Vendor{requiredMark}</span>
+          <MasterPicker
+            sourceId="vendors"
+            formId={processFormId}
+            value={form.vendor_id}
+            onChange={(value) => setField('vendor_id', value || '')}
+            required={Boolean(props.required)}
             disabled={locked}
           />
         </label>
@@ -885,39 +981,31 @@ export default function WorkOrderLifecyclePanel({
     }
 
     if (key === 'breakdown_times') {
-      if (!isBreakdownJobNature(detail)) return null
       return (
-        <div key={key} className="company-form__grid" style={{ gridColumn: '1 / -1' }}>
-          <Field label="Breakdown start">
-            <DateField
-              value={form.breakdown_start_at}
-              onChange={(v) => setField('breakdown_start_at', v)}
-              withTime
-              disabled={locked}
-            />
-          </Field>
-          <Field label="Breakdown end">
-            <DateField
-              value={form.breakdown_end_at}
-              onChange={(v) => setField('breakdown_end_at', v)}
-              withTime
-              disabled={locked}
-            />
-          </Field>
+        <div key={key} className={className} style={{ gridColumn: '1 / -1' }}>
+          <div className="company-form__grid">
+            <Field label="Breakdown start">
+              <DateField
+                value={form.breakdown_start_at}
+                onChange={(v) => setField('breakdown_start_at', v)}
+                withTime
+                disabled={locked}
+              />
+            </Field>
+            <Field label="Breakdown end">
+              <DateField
+                value={form.breakdown_end_at}
+                onChange={(v) => setField('breakdown_end_at', v)}
+                withTime
+                disabled={locked}
+              />
+            </Field>
+          </div>
         </div>
       )
     }
 
-    if (key === 'daily_logs') {
-      if (!(detail.daily_log_visible || (detail.daily_logs || []).length > 0 || detail.daily_log_can_edit)) {
-        return null
-      }
-      return (
-        <div key={key} className={className}>
-          <WorkOrderDailyLogSection detail={detail} onUpdated={onUpdated} />
-        </div>
-      )
-    }
+    if (key === 'daily_logs') return null
 
     if (key === 'material_consumed') return <div key={key} className={className}>{materialConsumedField}</div>
     if (key === 'dos_and_donts') return <div key={key} className={className}>{dosDontsField}</div>
@@ -989,8 +1077,7 @@ export default function WorkOrderLifecyclePanel({
 
   const canEditExecution = canEditFilledBy('technician', processActors)
   const canEditCloseout = canEditFilledBy('supervisor', processActors)
-  const canSaveLifecycle = canUpdate && (canEditExecution || canEditCloseout)
-
+  const canSaveLifecycle = canUpdate && !viewingPastDay && (canEditExecution || canEditCloseout)
   const statusActionsBlock = canSaveLifecycle && !openForPickup ? (
     <section className={`wo-received-detail__section wo-assignment-actions${isPmScheduled ? ' wo-assignment-actions--pm' : ''}`}>
       {!isPmScheduled && (
@@ -1032,17 +1119,22 @@ export default function WorkOrderLifecyclePanel({
         >
           {saving ? 'Saving…' : isPmScheduled ? 'Save checklist' : 'Save details'}
         </button>
-        {visibleStatuses.map((status) => (
-          <button
-            key={status}
-            type="button"
-            className={`company-btn ${status === 'closed' || status === 'verified' ? 'company-btn--primary' : 'company-btn--secondary'}`}
-            disabled={saving || creatingFollowUp}
-            onClick={() => run(status)}
-          >
-            {formatStatus(status, statusLabels)}
-          </button>
-        ))}
+        {visibleStatuses.map((status) => {
+          const needsChecklist = ['completed', 'verified', 'closed'].includes(status)
+          const blockedByChecklist = needsChecklist && hasChecklist && isTechnician && !checklistComplete
+          return (
+            <button
+              key={status}
+              type="button"
+              className={`company-btn ${status === 'closed' || status === 'verified' || status === 'completed' ? 'company-btn--primary' : 'company-btn--secondary'}`}
+              disabled={saving || creatingFollowUp || blockedByChecklist}
+              title={blockedByChecklist ? 'Complete the checklist before marking completed' : undefined}
+              onClick={() => (status === 'closed' ? setConfirmClose(true) : run(status))}
+            >
+              {formatStatus(status, statusLabels)}
+            </button>
+          )
+        })}
         {isPmScheduled && canCreateManual && (
           <button
             type="button"
@@ -1147,20 +1239,6 @@ export default function WorkOrderLifecyclePanel({
             <dd style={{ textTransform: 'capitalize' }}>{detail.priority || '—'}</dd>
           </div>
           <div className="wo-received-detail__field">
-            <dt>Progress %</dt>
-            <dd>
-              <div className="wo-progress" title={`${progressPercentForStatus(detail.status)}%`}>
-                <div className="wo-progress__track">
-                  <span
-                    className="wo-progress__fill"
-                    style={{ width: `${progressPercentForStatus(detail.status)}%` }}
-                  />
-                </div>
-                <span className="wo-progress__value">{progressPercentForStatus(detail.status)}%</span>
-              </div>
-            </dd>
-          </div>
-          <div className="wo-received-detail__field">
             <dt>Work center</dt>
             <dd>{detail.work_center || '—'}</dd>
           </div>
@@ -1197,27 +1275,81 @@ export default function WorkOrderLifecyclePanel({
         </section>
       )}
 
+      {!openForPickup && hasDailyLogs && (
+        <div className="wo-received-detail__section wo-day-tabs-wrap">
+          <WorkOrderDayTabs
+            logs={dayLogs}
+            activeLogId={activeDayId}
+            todayLogId={todayLog?.id}
+            showNewToday={!todayLog}
+            newTodayActive={activeDayId == null && todayDraft === 'blank'}
+            onSelect={(logId) => {
+              if (logId == null) {
+                const resolved = resolveFormForDetail(detail, null)
+                setActiveDayId(null)
+                setTodayDraft('blank')
+                setForm(resolved.form)
+                return
+              }
+              const log = dayLogs.find((row) => row.id === logId)
+              if (!log) return
+              if (log.log_date === todayKey) {
+                const resolved = resolveFormForDetail(detail, log.id)
+                setActiveDayId(log.id)
+                setTodayDraft(null)
+                setForm(resolved.form)
+                return
+              }
+              setActiveDayId(log.id)
+              setTodayDraft(null)
+              setForm((prev) => {
+                const base = formFromDetail(detail)
+                const isPast = log.log_date !== todayKey
+                return {
+                  ...base,
+                  ...formPatchFromSnapshot(log.field_snapshot || {}, { blankMissing: isPast }),
+                }
+              })
+            }}
+          />
+          {needsBlankToday ? (
+            <p className="wo-day-tabs__hint">New calendar day — enter today’s work below, then save.</p>
+          ) : null}
+          {viewingPastDay ? (
+            <p className="wo-day-tabs__hint">Viewing a past day (read-only). Select Today to continue work.</p>
+          ) : null}
+        </div>
+      )}
+
       {!openForPickup && (
         <WorkOrderProcessLayout
           formId={processFormId}
           stages={processStages}
-          extrasValues={processExtras.values}
-          onExtraChange={canEditExecution ? processExtras.setFieldValue : () => {}}
+          extrasValues={
+            viewingPastDay && activeDay?.field_snapshot?.process_extras
+              ? { ...extrasWithNative, ...activeDay.field_snapshot.process_extras }
+              : todayDraft === 'blank'
+                ? {}
+                : extrasWithNative
+          }
+          onExtraChange={canEditExecution && !viewingPastDay ? (fieldId, value) => {
+            processExtras.setFieldValue(fieldId, value)
+            const field = (processLayout?.fields || []).find((item) => item.id === fieldId)
+            const parsed = parseLayoutId(fieldId)
+            if (
+              field?.bindKey === 'vendor_id'
+              || field?.masterSource === 'vendors'
+              || parsed.value === 'vendors'
+              || parsed.value === 'vendor_id'
+            ) {
+              setField('vendor_id', Array.isArray(value) ? (value[0] || '') : (value || ''))
+            }
+          } : () => {}}
           actors={processActors}
-          disabled={saving}
+          disabled={saving || viewingPastDay}
           renderField={renderLifecycleField}
         />
       )}
-
-      {!openForPickup && !layoutHasSystemKey(processLayout, 'daily_logs')
-        && (detail.daily_log_visible || (detail.daily_logs || []).length > 0 || detail.daily_log_can_edit)
-        && (
-          <WorkOrderDailyLogSection
-            detail={detail}
-            onUpdated={onUpdated}
-            canEdit={Boolean(detail.daily_log_can_edit && canEditExecution)}
-          />
-        )}
 
       {!openForPickup && !layoutHasSystemKey(processLayout, 'checklist_execution') && checklistBlock}
 
@@ -1241,6 +1373,16 @@ export default function WorkOrderLifecyclePanel({
         <WorkOrderMaterialDetailsModal
           logs={detail.daily_logs || []}
           onClose={() => setShowMaterialDetails(false)}
+        />
+      )}
+
+      {confirmClose && (
+        <CloseWorkOrderConfirm
+          woNumber={detail?.wo_number}
+          statusLabel={formatStatus('closed', statusLabels)}
+          saving={saving}
+          onCancel={() => { if (!saving) setConfirmClose(false) }}
+          onConfirm={() => run('closed')}
         />
       )}
     </div>

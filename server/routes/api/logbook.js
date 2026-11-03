@@ -7,6 +7,10 @@ import {
   loadOrgPermissions,
 } from '../../middleware/modulePermission.js'
 import { assertLocationAccess, resolveLocationFilter } from '../../lib/orgPermissions.js'
+import { parseListControls } from '../../lib/listQuery.js'
+import { bufferFromBase64Upload, excelFilePayload } from '../../lib/excelTemplate.js'
+import { attachFailedFileToResult } from '../../lib/importErrorWorkbook.js'
+import { buildMeterReadingTemplate, bulkImportMeterReadings } from '../../lib/logbookBulkService.js'
 import {
   addMeterReading,
   deleteMeterReading,
@@ -39,9 +43,14 @@ router.get('/', canRead, async (req, res) => {
   try {
     const { limit, offset } = parsePagination(req.query)
     const locationId = resolveLocationFilter(req.orgPermissions, req.query.location_id)
+    const controls = parseListControls(req.query)
     const page = await listLogbookEquipment(req.userProfile.org_id, {
       locationId,
       search: req.query.search || null,
+      filters: controls.filters,
+      sortBy: req.query.sort_by || 'name_asc',
+      sort: controls.sort,
+      sortDir: req.query.sort_dir === 'asc' || req.query.sort_dir === 'desc' ? req.query.sort_dir : 'asc',
       limit,
       offset,
     })
@@ -58,6 +67,32 @@ router.get('/latest', canReadLatest, async (req, res) => {
     const latest = await getLatestMeterReading(req.userProfile.org_id, equipmentId)
     assertLocationAccess(req.orgPermissions, latest.location_id)
     res.json(latest)
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message })
+  }
+})
+
+router.get('/template', canCreate, async (req, res) => {
+  try {
+    const locationId = resolveLocationFilter(req.orgPermissions, null)
+    const buffer = await buildMeterReadingTemplate(req.userProfile.org_id, { locationId })
+    res.json(excelFilePayload('meter-readings-template.xlsx', buffer))
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message })
+  }
+})
+
+router.post('/import', canCreate, async (req, res) => {
+  try {
+    const buffer = bufferFromBase64Upload(req.body?.data)
+    const locationId = resolveLocationFilter(req.orgPermissions, null)
+    const result = await bulkImportMeterReadings(
+      req.userProfile.org_id,
+      req.userProfile.id,
+      buffer,
+      { locationId },
+    )
+    res.json(await attachFailedFileToResult(result, buffer, 'meter-readings-import-failed-rows.xlsx'))
   } catch (err) {
     res.status(err.status || 500).json({ error: err.message })
   }

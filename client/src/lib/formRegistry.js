@@ -131,6 +131,7 @@ function woExecutionSections({ includePermit = true, includeDailyLogs = true, in
   sections.push(section('wo_execution', 'Work execution', [
     field('work_stamps', 'Work start / end', { compound: true, required: true, locked: true, colSpan: 100 }),
     field('labour_count', 'Labour count', { type: 'number' }),
+    field('vendor_id', 'Vendor', { type: 'dropdown' }),
     field('vendor_expense', 'Vendor expense', { type: 'number' }),
     field('breakdown_times', 'Breakdown times', { compound: true, colSpan: 100 }),
   ], { filledBy: 'technician', stage: 'execution' }))

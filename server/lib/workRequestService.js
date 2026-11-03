@@ -18,6 +18,8 @@ import { loadTimelineActors } from './timelineActors.js'
 import {
   generateWorkOrderNumber,
   addWorkOrderTimelineEvent,
+  formatTechnicianAssignmentMessage,
+  recordTechnicianAssignment,
   addWorkOrderAuditEntry,
   mapRequestTypeToSource,
 } from './workOrderService.js'
@@ -35,7 +37,7 @@ import { shouldRequire, systemId, parseLayoutId } from './formLayoutIds.js'
 import { getMasterSource } from './formFieldSources.js'
 import { assertChecklistForForm, snapshotChecklistTemplate } from './checklistService.js'
 import { normalizeOptions } from './formOptionRules.js'
-import { assignedStatusForTechnicians, maybePromoteAssignedToAccepted } from './formSkips.js'
+import { assignedStatusForTechnicians, assertChecklistSelected, maybePromoteAssignedToAccepted } from './formSkips.js'
 import { workOrderFormIdForSource } from './workOrderForms.js'
 import {
   resolveJobNatureChoiceList,
@@ -977,6 +979,14 @@ export async function createWorkRequest(orgId, profileId, email, body, { isOrgAd
     checklistTemplateId = template.id
     checklistSnapshot = await snapshotChecklistTemplate(orgId, template.id) || {}
   }
+  if (!isDraft) {
+    await assertChecklistSelected(orgId, 'work_request.create', checklistTemplateId)
+    await assertChecklistSelected(
+      orgId,
+      workOrderFormIdForSource(mapRequestTypeToSource(requestType)),
+      checklistTemplateId,
+    )
+  }
 
   const insertPayload = {
     org_id: orgId,
@@ -1145,11 +1155,14 @@ async function createLinkedWorkOrderFromRequest(orgId, profileId, wr, {
   const resolvedWorkCenter = String(workCenter || '').trim() || 'General'
   let woNumber = workOrder?.wo_number || null
 
+  const woFormId = workOrderFormIdForSource(sourceType)
+  await assertChecklistSelected(orgId, woFormId, wr.checklist_template_id)
+
   if (!workOrder) {
     woNumber = await generateWorkOrderNumber(orgId, departmentId)
     const initialStatus = await assignedStatusForTechnicians(
       orgId,
-      workOrderFormIdForSource(sourceType),
+      woFormId,
       Boolean(assigneeIds.length),
     )
     const insert = await supabaseAdmin
@@ -1182,6 +1195,9 @@ async function createLinkedWorkOrderFromRequest(orgId, profileId, wr, {
         planned_start_at: plannedStartAt || null,
         planned_end_at: plannedEndAt || null,
         planned_duration_hours: plannedDurationHours ?? null,
+        checklist_template_id: wr.checklist_template_id || null,
+        checklist_snapshot: wr.checklist_snapshot || {},
+        checklist_values: {},
       })
       .select('*')
       .single()
@@ -1223,17 +1239,6 @@ async function createLinkedWorkOrderFromRequest(orgId, profileId, wr, {
       profileId,
       { newStatus: workOrder.status, metadata: { work_request_id: wr.id, auto_approved: autoApproved } },
     )
-
-    if (assigneeIds.length) {
-      await addWorkOrderTimelineEvent(
-        orgId,
-        workOrder.id,
-        'technician_assigned',
-        'Technician(s) assigned.',
-        profileId,
-        { newStatus: workOrder.status, metadata: { assignee_ids: assigneeIds } },
-      )
-    }
 
     await addWorkOrderAuditEntry(
       orgId,
@@ -1293,14 +1298,10 @@ async function createLinkedWorkOrderFromRequest(orgId, profileId, wr, {
   )
 
   if (assigneeIds.length) {
-    await addTimelineEvent(
-      orgId,
-      wr.id,
-      'technician_assigned',
-      'Technician(s) assigned.',
-      profileId,
-      { assignee_ids: assigneeIds },
-    )
+    await recordTechnicianAssignment(orgId, profileId, {
+      ...workOrder,
+      work_request_id: workOrder.work_request_id || wr.id,
+    }, assigneeIds)
   }
 
   return { workOrder, updated, woNumber: linkedNumber }
@@ -1734,6 +1735,49 @@ export async function enrichWorkRequest(row) {
   return enriched ?? null
 }
 
+function assigneeIdsKey(ids) {
+  return [...(ids || [])].filter(Boolean).map(String).sort().join(',')
+}
+
+function ensureTechnicianAssignmentEvent(timeline, technicians, { workRequestId, workOrderId, assignedAt }) {
+  if (!technicians.length) return timeline
+  const message = formatTechnicianAssignmentMessage(technicians.map((tech) => tech.name))
+  if (!message) return timeline
+
+  const currentKey = assigneeIdsKey(technicians.map((tech) => tech.id))
+  const latest = [...timeline].reverse().find((event) => event.event_type === 'technician_assigned')
+  const latestKey = assigneeIdsKey(latest?.metadata?.assignee_ids)
+  const generic = !latest?.message || latest.message === 'Technician(s) assigned.'
+
+  if (latest && (latestKey === currentKey || (!latestKey && generic))) {
+    if (!generic && latest.message === message) return timeline
+    if (!generic && latestKey === currentKey) return timeline
+    return timeline.map((event) => (
+      event === latest
+        ? {
+          ...event,
+          message,
+          metadata: { ...(event.metadata || {}), assignee_ids: technicians.map((tech) => tech.id) },
+        }
+        : event
+    ))
+  }
+
+  const event = {
+    id: `technician-assigned-${workOrderId || workRequestId}`,
+    work_request_id: workRequestId,
+    event_type: 'technician_assigned',
+    message,
+    actor_id: null,
+    actor: technicians.length === 1 ? { name: technicians[0].name, department: null } : null,
+    metadata: { assignee_ids: technicians.map((tech) => tech.id) },
+    created_at: assignedAt || new Date().toISOString(),
+  }
+  return [...timeline, event].sort(
+    (a, b) => new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime(),
+  )
+}
+
 async function enrichWorkRequests(rows, { lean = false } = {}) {
   if (!rows?.length) return []
 
@@ -1753,7 +1797,7 @@ async function enrichWorkRequests(rows, { lean = false } = {}) {
     manualWorkOrderIds.length
       ? supabaseAdmin
         .from('manual_work_order_assignees')
-        .select('work_order_id, employee_id, org_employees(id, name, emp_id)')
+        .select('work_order_id, employee_id, created_at, org_employees(id, name, emp_id)')
         .in('work_order_id', manualWorkOrderIds)
       : Promise.resolve({ data: [], error: null }),
     manualWorkOrderIds.length
@@ -1790,12 +1834,19 @@ async function enrichWorkRequests(rows, { lean = false } = {}) {
   }
 
   const assigneesByWorkOrder = new Map()
+  const assignedAtByWorkOrder = new Map()
   for (const link of assigneeResult.data || []) {
     if (!assigneesByWorkOrder.has(link.work_order_id)) {
       assigneesByWorkOrder.set(link.work_order_id, [])
     }
     if (link.org_employees) {
       assigneesByWorkOrder.get(link.work_order_id).push(link.org_employees)
+    }
+    if (link.created_at) {
+      const previous = assignedAtByWorkOrder.get(link.work_order_id)
+      if (!previous || link.created_at > previous) {
+        assignedAtByWorkOrder.set(link.work_order_id, link.created_at)
+      }
     }
   }
 
@@ -1806,13 +1857,23 @@ async function enrichWorkRequests(rows, { lean = false } = {}) {
     const requester = row.requested_by
       ? (peopleById.get(row.requested_by) || row.requester || null)
       : row.requester || null
+    const assignedTechnicians = row.manual_work_order_id
+      ? (assigneesByWorkOrder.get(row.manual_work_order_id) || [])
+      : []
+    const timeline = lean
+      ? []
+      : ensureTechnicianAssignmentEvent(timelineByRequest.get(row.id) || [], assignedTechnicians, {
+        workRequestId: row.id,
+        workOrderId: row.manual_work_order_id,
+        assignedAt: row.manual_work_order_id
+          ? assignedAtByWorkOrder.get(row.manual_work_order_id)
+          : null,
+      })
     return {
       ...row,
       requester,
-      timeline: timelineByRequest.get(row.id) || [],
-      assigned_technicians: row.manual_work_order_id
-        ? (assigneesByWorkOrder.get(row.manual_work_order_id) || [])
-        : [],
+      timeline,
+      assigned_technicians: assignedTechnicians,
       is_breakdown_label: row.is_breakdown ? 'Yes' : 'No',
       job_nature_label: row.job_nature || (row.is_breakdown ? 'Breakdown' : null),
       linked_work_order: linkedWo

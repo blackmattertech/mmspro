@@ -335,6 +335,15 @@ function GrowthChart({ points }) {
   )
 }
 
+function donutSlicePath(cx, cy, radius, startAngle, endAngle) {
+  const startX = cx + radius * Math.sin(startAngle)
+  const startY = cy - radius * Math.cos(startAngle)
+  const endX = cx + radius * Math.sin(endAngle)
+  const endY = cy - radius * Math.cos(endAngle)
+  const largeArc = endAngle - startAngle > Math.PI ? 1 : 0
+  return `M ${startX} ${startY} A ${radius} ${radius} 0 ${largeArc} 1 ${endX} ${endY}`
+}
+
 function StatusDonut({ segments }) {
   const rows = (segments || []).map((slice) => ({
     key: slice.key || slice.status || slice.label,
@@ -344,8 +353,7 @@ function StatusDonut({ segments }) {
   }))
   const total = rows.reduce((sum, slice) => sum + slice.value, 0)
   const radius = 54
-  const circumference = 2 * Math.PI * radius
-  let offset = 0
+  let angle = 0
   const drawn = rows.filter((slice) => slice.value > 0)
 
   return (
@@ -356,23 +364,19 @@ function StatusDonut({ segments }) {
           <circle cx="80" cy="80" r={radius} fill="none" stroke={drawn[0].color} strokeWidth="18" />
         )}
         {drawn.length > 1 && drawn.map((slice) => {
-          const length = (slice.value / total) * circumference
-          const element = (
-            <circle
+          const sweep = (slice.value / total) * Math.PI * 2
+          const start = angle
+          angle += sweep
+          return (
+            <path
               key={slice.key}
-              cx="80"
-              cy="80"
-              r={radius}
+              d={donutSlicePath(80, 80, radius, start, start + sweep)}
               fill="none"
               stroke={slice.color}
               strokeWidth="18"
-              strokeDasharray={`${length} ${circumference - length}`}
-              strokeDashoffset={-offset}
-              transform="rotate(-90 80 80)"
+              strokeLinecap="butt"
             />
           )
-          offset += length
-          return element
         })}
         <text x="80" y="78" className="sa-donut__value" textAnchor="middle">{formatCount(total)}</text>
         <text x="80" y="96" className="sa-donut__caption" textAnchor="middle">Total</text>

@@ -15,7 +15,8 @@ export default function WorkOrderProcessLayout({
   omitField,
 }) {
   const { layout, catalogFields, hasLayout, loading } = useFormLayout(formId, { fallbackToDefault: true })
-  const staged = layoutForStages(layout, stages, { includeUnstaged: false })
+  const includeUnstaged = Array.isArray(stages) && stages.includes('execution')
+  const staged = layoutForStages(layout, stages, { includeUnstaged })
 
   if (loading) {
     return <p className="wo-permit__hint">Loading form…</p>
@@ -59,8 +60,9 @@ export default function WorkOrderProcessLayout({
 
 export function useWorkOrderProcessLayout(formId, stages) {
   const hook = useFormLayout(formId, { fallbackToDefault: true })
+  const includeUnstaged = Array.isArray(stages) && stages.includes('execution')
   return {
     ...hook,
-    layout: layoutForStages(hook.layout, stages, { includeUnstaged: false }),
+    layout: layoutForStages(hook.layout, stages, { includeUnstaged }),
   }
 }

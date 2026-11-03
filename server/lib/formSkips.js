@@ -2,9 +2,17 @@ import { supabaseAdmin } from '../services/supabase.js'
 import { cloneLayout, parseLayoutId, sortLayoutItems, systemId } from './formLayoutIds.js'
 import { getFormDef } from './formRegistry.js'
 import { isWorkOrderProcessForm } from './workOrderForms.js'
+import { CHECKLIST_FORMS } from './checklistService.js'
 import { normalizeOptions } from './formOptionRules.js'
 
 export const PROCESS_TECHNICIAN_ACCEPTANCE = 'technician_acceptance'
+export const PROCESS_CHECKLIST_REQUIRED = 'checklist_required'
+
+const CHECKLIST_FORM_IDS = new Set(CHECKLIST_FORMS.map((item) => item.formId))
+
+export function formSupportsChecklist(formId) {
+  return CHECKLIST_FORM_IDS.has(formId)
+}
 export const CLOSEOUT_SECTION_ID = systemId('wo_closeout')
 export const SKIP_KINDS = ['field', 'section', 'process']
 
@@ -99,6 +107,20 @@ export async function shouldSkipTechnicianAcceptance(orgId, formId) {
   if (!isWorkOrderProcessForm(formId)) return false
   const skips = await loadFormSkips(orgId, formId)
   return skips.process.has(PROCESS_TECHNICIAN_ACCEPTANCE)
+}
+
+export async function formRequiresChecklist(orgId, formId) {
+  if (!formSupportsChecklist(formId)) return false
+  const skips = await loadFormSkips(orgId, formId)
+  return skips.process.has(PROCESS_CHECKLIST_REQUIRED)
+}
+
+export async function assertChecklistSelected(orgId, formId, templateId) {
+  if (!await formRequiresChecklist(orgId, formId)) return
+  if (templateId) return
+  const err = new Error('A checklist is required for this form.')
+  err.status = 400
+  throw err
 }
 
 export async function assignedStatusForTechnicians(orgId, formId, hasAssignees) {
@@ -284,6 +306,7 @@ export function applyCompanySkipsToLayout(layout, skips, formDef) {
   })
   next.processSkips = {
     technician_acceptance: Boolean(skips?.process?.has(PROCESS_TECHNICIAN_ACCEPTANCE) && isWorkOrderProcessForm(formDef?.formId)),
+    checklist_required: Boolean(skips?.process?.has(PROCESS_CHECKLIST_REQUIRED) && formSupportsChecklist(formDef?.formId)),
   }
   return next
 }
@@ -296,6 +319,9 @@ export async function applyLoadedCompanySkips(orgId, formId, layout) {
   applied.processSkips = {
     technician_acceptance: Boolean(
       isWorkOrderProcessForm(formId) && skips.process.has(PROCESS_TECHNICIAN_ACCEPTANCE),
+    ),
+    checklist_required: Boolean(
+      formSupportsChecklist(formId) && skips.process.has(PROCESS_CHECKLIST_REQUIRED),
     ),
   }
   return applied
@@ -400,6 +426,9 @@ export function describeSkipBoard(formId, layout, skips, {
     supportsTechnicianAcceptance: isWorkOrderProcessForm(formId),
     skipTechnicianAcceptance: isWorkOrderProcessForm(formId)
       && skips.process.has(PROCESS_TECHNICIAN_ACCEPTANCE),
+    supportsChecklist: formSupportsChecklist(formId),
+    checklistRequired: formSupportsChecklist(formId)
+      && skips.process.has(PROCESS_CHECKLIST_REQUIRED),
     sections,
   }
 }
@@ -446,6 +475,9 @@ export function normalizeSkipPayload(formId, layout, body, formDef) {
   const processRows = []
   if (isWorkOrderProcessForm(formId) && body?.skipTechnicianAcceptance) {
     processRows.push({ kind: 'process', target_id: PROCESS_TECHNICIAN_ACCEPTANCE })
+  }
+  if (formSupportsChecklist(formId) && body?.checklistRequired) {
+    processRows.push({ kind: 'process', target_id: PROCESS_CHECKLIST_REQUIRED })
   }
 
   return [...fieldRows, ...sectionRows, ...processRows]

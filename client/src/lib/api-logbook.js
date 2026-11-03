@@ -7,6 +7,10 @@ export function getLogbook(params = {}) {
     location_id: params.locationId,
     limit: params.limit ?? 50,
     offset: params.offset ?? 0,
+    filters: params.filters,
+    sort_by: params.sortBy,
+    sort: params.sort,
+    sortDir: params.sortDir,
   })}`)
 }
 
@@ -28,4 +32,15 @@ export function addMeterReading(equipmentId, reading) {
 
 export function deleteMeterReading(readingId) {
   return apiFetch(`/api/logbook/readings/${readingId}`, { method: 'DELETE' })
+}
+
+export function getLogbookTemplate() {
+  return apiFetch('/api/logbook/template')
+}
+
+export function bulkUploadLogbook(base64Data) {
+  return apiFetch('/api/logbook/import', {
+    method: 'POST',
+    body: JSON.stringify({ data: base64Data }),
+  })
 }

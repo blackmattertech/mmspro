@@ -21,12 +21,14 @@ import {
 } from '../../lib/listQuery.js'
 import { withCatalogColumns } from '../../lib/csvExportColumns.js'
 import { countStatusesViaRpc, parseStatusCountPayload, rpcJson, isMissingRpcError } from '../../lib/statusCounts.js'
-import { progressPercentForStatus } from '../../lib/statusProgress.js'
+import { resolveProgressPercent } from '../../lib/statusProgress.js'
+import { listOrgStatuses } from '../../lib/orgStatusService.js'
 import {
   generateWorkOrderNumber,
   displayWorkOrderNumber,
   addWorkOrderTimelineEvent,
   addWorkOrderAuditEntry,
+  recordTechnicianAssignment,
   updateWorkOrderLifecycle,
   loadWorkOrderTimeline,
   WO_OPEN_LIST_STATUSES,
@@ -34,7 +36,7 @@ import {
   allowedPermitTypeValues,
 } from '../../lib/workOrderService.js'
 import { getAllowedNextWorkOrderStatuses } from '../../lib/orgStatusService.js'
-import { loadOrgProcessSkips, maybePromoteAssignedToAccepted } from '../../lib/formSkips.js'
+import { assertChecklistSelected, loadOrgProcessSkips, maybePromoteAssignedToAccepted } from '../../lib/formSkips.js'
 import { workOrderFormIdForSource } from '../../lib/workOrderForms.js'
 import { actorsFromRequest, loadFillershipRecord } from '../../lib/formFillershipRecord.js'
 import { buildAssetHierarchy } from '../../lib/workRequestService.js'
@@ -828,6 +830,34 @@ async function validateAssignedEmployees(orgId, rawIds, { locationId = null, dep
   return unique
 }
 
+function sameEmployeeIds(left, right) {
+  if (left.length !== right.length) return false
+  const ids = new Set(left)
+  return right.every((id) => ids.has(id))
+}
+
+async function applyTechnicianAssignment(orgId, profileId, workOrder, employeeIds) {
+  const ids = [...new Set((employeeIds || []).filter(Boolean))]
+  const { data: existing, error } = await supabaseAdmin
+    .from('manual_work_order_assignees')
+    .select('employee_id')
+    .eq('org_id', orgId)
+    .eq('work_order_id', workOrder.id)
+  if (error) throw error
+  const previousIds = (existing || []).map((row) => row.employee_id)
+  await syncWorkOrderAssignees(orgId, workOrder.id, ids)
+  const promoted = await promoteIfAcceptanceSkipped(orgId, workOrder, ids.length)
+  if (!sameEmployeeIds(previousIds, ids)) {
+    await recordTechnicianAssignment(
+      orgId,
+      profileId,
+      { ...workOrder, status: promoted.status },
+      ids,
+    )
+  }
+  return promoted
+}
+
 async function syncWorkOrderAssignees(orgId, workOrderId, employeeIds) {
   const { error: deleteError } = await supabaseAdmin
     .from('manual_work_order_assignees')
@@ -958,6 +988,7 @@ const WO_LIST_SELECT = [
   'planned_start_at',
   'planned_end_at',
   'pm_plan_id',
+  'progress_percent',
 ].join(', ')
 
 const WO_TEXT_FILTERS = {
@@ -1157,10 +1188,13 @@ async function buildWorkOrderListResponse(orgId, rows, existingAssigneesByWo = n
 
   const withValues = await attachFieldValues(withSummaries)
 
-  const processSkips = await loadOrgProcessSkips(orgId)
+  const [processSkips, woStatuses] = await Promise.all([
+    loadOrgProcessSkips(orgId),
+    listOrgStatuses(orgId, 'work_order', { includeInactive: true }),
+  ])
   return withValues.map((row) => ({
     ...row,
-    progress_percent: progressPercentForStatus(row.status),
+    progress_percent: resolveProgressPercent(row, woStatuses),
     assignees: assigneesByWo.get(row.id) || [],
     creator: creatorById.get(row.created_by) || null,
     skip_technician_acceptance: Boolean(processSkips.get(workOrderFormIdForSource(row.source_type))),
@@ -1771,6 +1805,9 @@ router.post('/manual', canCreateWorkOrders, async (req, res) => {
     if (status === 'assigned' && !departmentId) {
       return res.status(400).json({ error: 'Select an Order to department.' })
     }
+    if (status === 'assigned') {
+      await assertChecklistSelected(orgId, 'work_orders.manual', req.body?.checklist_template_id)
+    }
     let woNumber = null
     if (status === 'assigned' && departmentId) {
       woNumber = await generateWorkOrderNumber(orgId, departmentId)
@@ -1781,9 +1818,11 @@ router.post('/manual', canCreateWorkOrders, async (req, res) => {
     const shortDescription = clipTrimmedToLimit(fieldLimits, 'short_description', req.body?.short_description)
       || clipTrimmedToLimit(fieldLimits, 'short_description', problemDescription)
 
+    let checklistTemplateId = null
     let checklistSnapshot = {}
     if (req.body?.checklist_template_id) {
       const template = await assertChecklistForForm(orgId, req.body.checklist_template_id, 'work_orders.manual')
+      checklistTemplateId = template.id
       checklistSnapshot = await snapshotChecklistTemplate(orgId, template.id) || {}
     }
 
@@ -1806,6 +1845,7 @@ router.post('/manual', canCreateWorkOrders, async (req, res) => {
         special_instructions: req.body?.special_instructions?.trim() || null,
         planned_start_at: req.body?.planned_start_at || null,
         planned_end_at: req.body?.planned_end_at || null,
+        checklist_template_id: checklistTemplateId,
         checklist_snapshot: checklistSnapshot,
         checklist_values: {},
       })
@@ -1856,7 +1896,7 @@ router.patch('/manual/:id/assignment', canApproveWorkOrders, assertOrgOwnership(
 
     const { data: workOrder, error: woError } = await supabaseAdmin
       .from('manual_work_orders')
-      .select('id, status, assigned_department_id, assigned_location_id, created_by, source_type, work_request_id')
+      .select('id, status, wo_number, assigned_department_id, assigned_location_id, created_by, source_type, work_request_id')
       .eq('org_id', orgId)
       .eq('id', workOrderId)
       .maybeSingle()
@@ -1901,8 +1941,7 @@ router.patch('/manual/:id/assignment', canApproveWorkOrders, assertOrgOwnership(
         ? []
         : ((await loadAssigneesForWorkOrders(orgId, [workOrderId])).get(workOrderId) || [])
       const ids = [...new Set([...current.map((a) => a.id), employee.id])]
-      await syncWorkOrderAssignees(orgId, workOrderId, ids)
-      const promoted = await promoteIfAcceptanceSkipped(orgId, workOrder, ids.length)
+      const promoted = await applyTechnicianAssignment(orgId, profileId, workOrder, ids)
 
       const assignmentPatch = {}
       if (req.body?.work_center !== undefined) assignmentPatch.work_center = req.body.work_center || null
@@ -1982,8 +2021,7 @@ router.patch('/manual/:id/assignment', canApproveWorkOrders, assertOrgOwnership(
       if (updateError) throw updateError
 
       if (employeeIds) {
-        await syncWorkOrderAssignees(orgId, workOrderId, employeeIds)
-        await promoteIfAcceptanceSkipped(orgId, workOrder, employeeIds.length)
+        await applyTechnicianAssignment(orgId, profileId, workOrder, employeeIds)
       }
       return respondWithDetail()
     }
@@ -2007,8 +2045,7 @@ router.patch('/manual/:id/assignment', canApproveWorkOrders, assertOrgOwnership(
         locationId: workOrder.assigned_location_id,
         departmentId: workOrder.assigned_department_id,
       })
-      await syncWorkOrderAssignees(orgId, workOrderId, employeeIds)
-      await promoteIfAcceptanceSkipped(orgId, workOrder, employeeIds.length)
+      await applyTechnicianAssignment(orgId, profileId, workOrder, employeeIds)
       const details = assignmentDetailsFromBody(req.body)
       if (Object.keys(details).length) {
         const { error: detailsError } = await supabaseAdmin

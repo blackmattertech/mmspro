@@ -15,7 +15,6 @@ import TableFilterToolbar from '../../components/shared/TableFilterToolbar'
 import TaskKanban from '../../components/tasks/TaskKanban'
 import TaskKanbanSkeleton from '../../components/tasks/TaskKanbanSkeleton'
 import TaskKanbanProgress from '../../components/tasks/TaskKanbanProgress'
-import StatusCountBar from '../../components/shared/StatusCountBar'
 import TasksTable from '../../components/tasks/TasksTable'
 import TaskMetaSettingsModal from '../../components/tasks/TaskMetaSettingsModal'
 import SettingsIcon from '../../components/ui/SettingsIcon'
@@ -24,7 +23,6 @@ import {
   MasterBulkActions,
 } from '../../components/company/MasterBulkUpload'
 import '../../components/shared/TableFilterToolbar.css'
-import '../../components/shared/StatusCountBar.css'
 import '../../components/company/CompanyShared.css'
 import '../../components/tasks/Tasks.css'
 
@@ -123,7 +121,6 @@ export default function TasksManager() {
     items,
     total,
     board,
-    statusCounts,
     statuses,
     priorities,
     categories,
@@ -161,18 +158,6 @@ export default function TasksManager() {
       })),
     }
   }, [board, sortBy])
-
-  const displayStatusCounts = useMemo(() => {
-    if (filteredBoard?.columns) {
-      return filteredBoard.columns.map((column) => ({
-        status: column.status?.id,
-        count: (column.tasks || []).length,
-        label: column.status?.name,
-        color: column.status?.color,
-      }))
-    }
-    return statusCounts
-  }, [filteredBoard, statusCounts])
 
   const openCreate = () => {
     if (!org?.slug) return
@@ -353,11 +338,6 @@ export default function TasksManager() {
           </div>
 
           {error && <div className="company-alert" role="alert">{error}</div>}
-
-          <StatusCountBar
-            counts={displayStatusCounts}
-            ariaLabel="Task status counts"
-          />
 
           {viewMode === 'kanban' ? (
             loading ? (

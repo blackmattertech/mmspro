@@ -13,16 +13,14 @@ import RecordPdfButton from '../shared/RecordPdfButton'
 import '../shared/ListTableChrome.css'
 import WorkRequestDetailModal from './WorkRequestDetailModal'
 import TablePagination from '../shared/TablePagination'
-import StatusCountBar from '../shared/StatusCountBar'
-import { colorByStatus } from '../../lib/statusCounts'
 import { useTablePagination } from '../../hooks/useTablePagination'
 import { useDebouncedValue } from '../../hooks/useDebouncedValue'
 import { WORK_REQUEST_COLUMNS } from './workRequestColumns'
 import { readCatalogText } from '../../lib/pickerFields'
+import { workRequestStatusDisplay } from '../../lib/workRequestStatusLabel'
 import EmployeeAvatar from '../company/EmployeeAvatar'
 import './WorkRequests.css'
 import '../company/CompanyShared.css'
-import '../shared/StatusCountBar.css'
 import { VirtualTableBody } from '../shared/VirtualTableBody'
 import TableEmptyRow from '../shared/TableEmptyRow'
 
@@ -50,9 +48,16 @@ function wrNumberLabel(row) {
   return '—'
 }
 
-function statusLabel(status, labelByKey = null) {
-  if (labelByKey?.[status]) return labelByKey[status]
-  return (status || 'submitted').replace(/_/g, ' ')
+function StatusPill({ row, requestLabels, workOrderLabels }) {
+  const display = workRequestStatusDisplay(row, {
+    requestLabels,
+    workOrderLabels,
+  })
+  return (
+    <span className={`wo-status wo-status--${display.key}`} title={display.title}>
+      {display.label}
+    </span>
+  )
 }
 
 function equipmentLabel(row) {
@@ -113,6 +118,7 @@ const WorkRequestTableRow = memo(function WorkRequestTableRow({
   columns,
   columnById,
   statusLabels,
+  workOrderLabels,
   orgSlug,
   selected,
   onSelect,
@@ -133,7 +139,7 @@ const WorkRequestTableRow = memo(function WorkRequestTableRow({
     >
       {columns.map((columnId) => (
         <td key={columnId} className={cellClassName(columnId)}>
-          {renderCell(row, columnId, statusLabels, orgSlug, columnById?.get(columnId))}
+          {renderCell(row, columnId, statusLabels, orgSlug, columnById?.get(columnId), workOrderLabels)}
         </td>
       ))}
     </tr>
@@ -182,7 +188,7 @@ function clampText(value, className = 'wr-table__clamp') {
   )
 }
 
-function renderCell(row, columnId, statusLabels = null, orgSlug = '', column = null) {
+function renderCell(row, columnId, statusLabels = null, orgSlug = '', column = null, workOrderLabels = null) {
   switch (columnId) {
     case 'wr_number':
       return (
@@ -209,9 +215,7 @@ function renderCell(row, columnId, statusLabels = null, orgSlug = '', column = n
       )
     case 'status':
       return (
-        <span className={`wo-status wo-status--${row.status}`}>
-          {statusLabel(row.status, statusLabels)}
-        </span>
+        <StatusPill row={row} requestLabels={statusLabels} workOrderLabels={workOrderLabels} />
       )
     case 'breakdown':
       return row.is_breakdown_label || (row.is_breakdown ? 'Yes' : 'No')
@@ -245,8 +249,13 @@ function renderCell(row, columnId, statusLabels = null, orgSlug = '', column = n
       return clampText(formatDate(row.request_date), 'wr-table__ellipsis')
     case 'problem_description':
       return clampText(row.problem_description)
-    case 'execution_status':
-      return clampText(row.execution_status)
+    case 'execution_status': {
+      const display = workRequestStatusDisplay(row, {
+        requestLabels: statusLabels,
+        workOrderLabels,
+      })
+      return display.kind === 'work_order' ? clampText(display.label) : '—'
+    }
     case 'created_at':
     case 'updated_at':
       return clampText(formatDate(row[columnId]), 'wr-table__ellipsis')
@@ -270,7 +279,6 @@ export default function WorkRequestsTable({
   headerSort = null,
   setHeaderSort,
   statusFilters = [],
-  toggleStatus,
   visibleColumnIds = DEFAULT_VISIBLE,
   columnDefs = WORK_REQUEST_COLUMNS,
   bulkReloadToken = 0,
@@ -279,8 +287,8 @@ export default function WorkRequestsTable({
   const { org } = useOrg()
   const [selectedId, setSelectedId, closeSelected] = useOpenQueryId()
   const { canUpdate, isProductEnabled } = usePermissions()
-  const { statuses, labelByKey: statusLabels } = useOrgStatusOptions('work_request', { includeInactive: true })
-  const statusColors = colorByStatus(statuses)
+  const { labelByKey: statusLabels } = useOrgStatusOptions('work_request', { includeInactive: true })
+  const { labelByKey: workOrderLabels } = useOrgStatusOptions('work_order', { includeInactive: true })
   const canApprove = filter === 'incoming' && isProductEnabled('work_orders') && (
     canUpdate('work_request_approve') || canUpdate('work_request_incoming')
   )
@@ -320,7 +328,7 @@ export default function WorkRequestsTable({
       sortBy,
     ],
   )
-  const { orders: requests, total, statusCounts, loading, error, reload } = useWorkOrderList(fetchList)
+  const { orders: requests, total, loading, error, reload } = useWorkOrderList(fetchList)
   useEffect(() => { setListTotal(total) }, [total])
   useEffect(() => {
     if (loading) return undefined
@@ -348,16 +356,6 @@ export default function WorkRequestsTable({
         <div className="wo-alert wo-alert--success" role="status">{success}</div>
       )}
       {error && <div className="wo-alert wo-alert--error" role="alert">{error}</div>}
-
-      <StatusCountBar
-        counts={statusCounts}
-        statuses={statuses}
-        labelByKey={statusLabels}
-        colorByKey={statusColors}
-        ariaLabel="Work request status counts"
-        selectedKeys={statusFilters}
-        onToggle={toggleStatus}
-      />
 
       <div className="company-table-wrap wr-table-wrap">
         <div className="company-table-scroll">
@@ -399,6 +397,7 @@ export default function WorkRequestsTable({
                     columns={columns}
                     columnById={columnById}
                     statusLabels={statusLabels}
+                    workOrderLabels={workOrderLabels}
                     orgSlug={org?.slug}
                     selected={selectedId === row.id}
                     onSelect={setSelectedId}

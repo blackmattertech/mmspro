@@ -310,6 +310,7 @@ function applySkipPayloadToBoard(payload, nextPayload) {
   return {
     ...payload,
     skipTechnicianAcceptance: Boolean(nextPayload.skipTechnicianAcceptance),
+    checklistRequired: Boolean(nextPayload.checklistRequired),
     sections: (payload.sections || []).map((section) => ({
       ...section,
       skipped: skippedSections.has(section.id),
@@ -333,6 +334,7 @@ function skipSnapshot(payload) {
     skippedFieldIds: [...next.skippedFieldIds].sort(),
     skippedSectionIds: [...next.skippedSectionIds].sort(),
     skipTechnicianAcceptance: Boolean(next.skipTechnicianAcceptance),
+    checklistRequired: Boolean(next.checklistRequired),
   })
 }
 
@@ -363,6 +365,9 @@ function skipPayloadFromBoard(payload, overrides = {}) {
     skipTechnicianAcceptance: overrides.skipTechnicianAcceptance !== undefined
       ? overrides.skipTechnicianAcceptance
       : Boolean(payload?.skipTechnicianAcceptance),
+    checklistRequired: overrides.checklistRequired !== undefined
+      ? overrides.checklistRequired
+      : Boolean(payload?.checklistRequired),
   }
 }
 
@@ -463,6 +468,12 @@ function FieldList({ formId, fieldId }) {
     }))
   }
 
+  const toggleChecklist = () => {
+    updateDraft((current) => skipPayloadFromBoard(current, {
+      checklistRequired: !current?.checklistRequired,
+    }))
+  }
+
   const toggleSection = (section) => {
     if (!section.skippable) return
     updateDraft((current) => {
@@ -536,6 +547,24 @@ function FieldList({ formId, fieldId }) {
               </div>
               <p className="form-masters-skip__hint">
                 When skipped, assigning a technician marks the work order accepted. Supervisor verification stays.
+              </p>
+            </section>
+          ) : null}
+          {payload.supportsChecklist ? (
+            <section className="form-masters-skip__section">
+              <div className="form-masters-skip__head">
+                <h2>Checklist</h2>
+                <SkipToggle
+                  checked={Boolean(payload.checklistRequired)}
+                  disabled={!canManage}
+                  title="Require a checklist before this form can be saved"
+                  onToggle={toggleChecklist}
+                >
+                  Checklist needed
+                </SkipToggle>
+              </div>
+              <p className="form-masters-skip__hint">
+                When on, people must choose a checklist on this form before they submit.
               </p>
             </section>
           ) : null}

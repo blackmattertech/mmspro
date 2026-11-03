@@ -20,7 +20,7 @@ export default function ReceivedWorkOrders() {
   const {
     search, locationFilter, sortBy, advancedRules, fieldFilter, locations,
     columnFilters = {}, setColumnFilter, headerSort = null, setHeaderSort,
-    statusFilters = [], toggleStatus,
+    statusFilters = [],
   } = useOutletContext()
   const { canUpdate, isOrgAdmin } = usePermissions()
   const canUpdateReceived = isOrgAdmin
@@ -52,7 +52,7 @@ export default function ReceivedWorkOrders() {
     }),
     [debouncedSearch, pagination.pageSize, pagination.offset, listFilters, statusFilters, headerSort, sortBy],
   )
-  const { orders, total, statusCounts, loading, error, reload } = useWorkOrderList(fetchOrders)
+  const { orders, total, loading, error, reload } = useWorkOrderList(fetchOrders)
   useEffect(() => { setListTotal(total) }, [total])
 
   const filtered = useMemo(
@@ -96,7 +96,6 @@ export default function ReceivedWorkOrders() {
         serverPaged
         columns={RECEIVED_COLUMNS}
         tableId="work-orders-received"
-        statusCounts={statusCounts}
         emptyTitle="No work orders received yet."
         emptyHint="Incoming work assigned to you, your department, or your location appears here. Work you requested or assigned out is under Assigned."
         onView={setSelectedId}
@@ -108,8 +107,6 @@ export default function ReceivedWorkOrders() {
         onHeaderSort={setHeaderSort}
         columnFilters={columnFilters}
         onColumnFilter={setColumnFilter}
-        statusFilters={statusFilters}
-        onToggleStatus={toggleStatus}
       />
 
       {selectedId && (
@@ -117,6 +114,7 @@ export default function ReceivedWorkOrders() {
           orderId={selectedId}
           fetchWorkOrder={getReceivedWorkOrder}
           onClose={closeSelected}
+          onAssignmentUpdated={() => reload({ silent: true })}
         />
       )}
     </>

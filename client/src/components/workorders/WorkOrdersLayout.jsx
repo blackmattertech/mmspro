@@ -43,7 +43,7 @@ import './WorkOrdersPage.css'
 
 const WO_STATUS_FALLBACK = [
   { value: 'draft', label: 'Draft' },
-  { value: 'assigned', label: 'Assigned' },
+  { value: 'assigned', label: 'Approval Pending / Technician assigned' },
   { value: 'accepted', label: 'Accepted' },
   { value: 'started', label: 'Started' },
   { value: 'in_progress', label: 'In progress' },
@@ -79,7 +79,7 @@ export default function WorkOrdersLayout() {
   const [advancedRules, setAdvancedRules] = useState([createFilterRule()])
   const [columnFilters, setColumnFilters] = useState({})
   const [headerSort, setHeaderSort] = useState(null)
-  const [statusFilters, setStatusFilters] = useState([])
+  const [statusFilters] = useState([])
   const [exporting, setExporting] = useState(false)
   const [bulkReloadToken, setBulkReloadToken] = useState(0)
   const { counts: tabCounts } = useWorkOrderCounts()
@@ -213,11 +213,6 @@ export default function WorkOrdersLayout() {
       return next
     })
   }
-  const toggleStatus = (key) => {
-    setStatusFilters((prev) => (
-      prev.includes(key) ? prev.filter((item) => item !== key) : [...prev, key]
-    ))
-  }
   const exportPath = activeTab === 'received'
     ? '/received'
     : activeTab === 'assigned'
@@ -256,7 +251,6 @@ export default function WorkOrdersLayout() {
     headerSort,
     setHeaderSort,
     statusFilters,
-    toggleStatus,
   }), [
     debouncedSearch, locationFilter, sortBy, advancedRules,
     activeLocations, bulkReloadToken, columnFilters, headerSort, statusFilters,
@@ -322,9 +316,12 @@ export default function WorkOrdersLayout() {
                 className={({ isActive }) =>
                   `wo-page__tab${isActive ? ' wo-page__tab--active' : ''}`
                 }
+                aria-label={tab.label}
+                title={tab.label}
+                data-tooltip={tab.label}
               >
                 {tab.icon ? <NavIcon name={tab.icon} /> : null}
-                {tab.label}
+                <span className="wo-page__tab-label">{tab.label}</span>
                 {tab.countKey && Number.isFinite(Number(tabCounts?.[tab.countKey])) && (
                   <span className="wo-page__tab-count">{tabCounts[tab.countKey]}</span>
                 )}

@@ -30,6 +30,7 @@ const WORK_ORDER_NATIVE_COLUMNS = new Set([
   'planned_start_at',
   'planned_end_at',
   'equipment_id',
+  'vendor_id',
 ])
 
 export const FORM_NATIVE_COLUMNS = {
@@ -168,15 +169,16 @@ export function valuesByBindKey(layout, values = {}) {
 export function splitBoundValues(formId, values = {}, layout = null) {
   const native = { ...valuesByBindKey(layout, values) }
   const extras = {}
+  const byId = new Map((layout?.fields || []).map((field) => [field.id, field]))
   for (const [key, value] of Object.entries(values)) {
-    const parsed = parseLayoutId(key)
-    if (parsed.kind === 'master') {
-      const column = nativeColumnFor(formId, parsed.value)
-      if (column && native[column] == null) native[column] = value
-      extras[key] = value
-      continue
-    }
     extras[key] = value
+    const field = byId.get(key)
+    const parsed = parseLayoutId(key)
+    const source = fieldMasterSourceId(field) || (parsed.kind === 'master' ? parsed.value : '')
+    const column = nativeColumnFor(formId, source)
+    if (column && (native[column] == null || native[column] === '')) {
+      native[column] = value
+    }
   }
   return { native, extras }
 }
@@ -189,9 +191,7 @@ export function hydrateMasterValues(formId, layout, record = {}, extras = {}) {
       values[field.id] = record[field.bindKey]
       continue
     }
-    const parsed = parseLayoutId(field.id)
-    if (parsed.kind !== 'master') continue
-    const column = nativeColumnFor(formId, parsed.value)
+    const column = nativeColumnFor(formId, fieldMasterSourceId(field))
     if (column && record[column] != null && record[column] !== '') {
       values[field.id] = record[column]
     }

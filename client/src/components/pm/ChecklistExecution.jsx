@@ -1,119 +1,177 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import DateField from '../ui/DateField'
 import TimeField from '../ui/TimeField'
 import FilterableSelect from '../ui/FilterableSelect'
 import SpellcheckInput from '../shared/SpellcheckInput'
+import { useOrg } from '../../hooks/useOrg'
+import { useProfile } from '../../hooks/useProfile'
+import { getOrgAssetSignedUrl } from '../../lib/orgAssets'
 import './Pm.css'
 
-function FieldLabel({ field }) {
-  return (
-    <span className="pm-checklist-item__label">
-      {field.name}
-      {field.is_required ? <span className="pm-checklist-item__required">*</span> : null}
-    </span>
-  )
-}
-
-function isFieldComplete(field, value) {
+export function isFieldComplete(field, value) {
   if (field.field_type === 'checkbox') return value === true
   if (value == null) return false
   return String(value).trim() !== ''
 }
 
-function ChecklistField({ field, value, disabled, onChange }) {
+export function checklistVisibleFields(snapshot) {
+  const fields = Array.isArray(snapshot?.fields) ? snapshot.fields : []
+  return fields.filter((field) => field.section_id)
+}
+
+export function isChecklistComplete(snapshot, values) {
+  const fields = checklistVisibleFields(snapshot)
+  if (!fields.length) return true
+  return fields.every((field) => isFieldComplete(field, values?.[field.id]))
+}
+
+function formatStamp(value = new Date()) {
+  const date = value instanceof Date ? value : new Date(value)
+  if (Number.isNaN(date.getTime())) return '—'
+  return date.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
+}
+
+function peopleNames(list) {
+  return (list || [])
+    .map((row) => row?.name || row?.full_name || row?.display_name || row?.email)
+    .filter(Boolean)
+}
+
+function equipmentLabel(record) {
+  const equipment = record?.equipment
+  if (equipment) {
+    return [equipment.name, equipment.code].filter(Boolean).join(' · ') || '—'
+  }
+  const steps = record?.asset_hierarchy || []
+  const last = steps[steps.length - 1]
+  if (last?.value_label || last?.value) return last.value_label || last.value
+  return '—'
+}
+
+function buildChecklistMeta(record, recordKind, capturedAt) {
+  if (!record) {
+    return [{ label: 'Date / time', value: formatStamp(capturedAt) }]
+  }
+  const technicians = peopleNames(
+    record.assignees || record.assigned_technicians || record.work_request?.assigned_technicians,
+  )
+  const rows = []
+  const number = recordKind === 'work_request'
+    ? (record.request_number || record.wr_number || record.number)
+    : (record.wo_number || record.work_order_number || record.number)
+  if (number) {
+    rows.push({
+      label: recordKind === 'work_request' ? 'Request #' : 'Work order',
+      value: number,
+    })
+  }
+  const linkedWo = record.linked_work_order?.wo_number || record.work_order?.wo_number
+  if (recordKind === 'work_request' && linkedWo) {
+    rows.push({ label: 'Work order', value: linkedWo })
+  }
+  rows.push({
+    label: 'Date / time',
+    value: formatStamp(capturedAt),
+  })
+  const location = record.assigned_location?.name
+    || record.location?.name
+    || record.order_from?.location_name
+    || record.order_to?.location_name
+  if (location) rows.push({ label: 'Location', value: location })
+  const department = record.assigned_department?.name
+    || record.order_to?.name
+    || record.department?.name
+  if (department) rows.push({ label: 'Department', value: department })
+  const asset = equipmentLabel(record)
+  if (asset && asset !== '—') rows.push({ label: 'Asset', value: asset })
+  if (record.priority) {
+    rows.push({
+      label: 'Priority',
+      value: String(record.priority).replace(/_/g, ' '),
+    })
+  }
+  const jobNature = record.job_nature_label || record.job_nature || record.work_request?.job_nature_label
+  if (jobNature) rows.push({ label: 'Job nature', value: jobNature })
+  rows.push({
+    label: 'Technician(s)',
+    value: technicians.length ? technicians.join(', ') : '—',
+  })
+  return rows
+}
+
+function ChecklistAnswer({ field, value, disabled, onChange }) {
   const id = `pm-cl-${field.id}`
 
   if (field.field_type === 'checkbox') {
     return (
-      <label className={`pm-checklist-item pm-checklist-item--check${value ? ' is-done' : ''}`}>
+      <label className={`pm-checklist-table__check${value ? ' is-done' : ''}`}>
         <input
           type="checkbox"
           checked={Boolean(value)}
           disabled={disabled}
           onChange={(e) => onChange(e.target.checked)}
         />
-        <span className="pm-checklist-item__body">
-          <FieldLabel field={field} />
-        </span>
+        <span>{value ? 'Done' : 'Mark done'}</span>
       </label>
     )
   }
 
   if (field.field_type === 'dropdown') {
     return (
-      <div className="pm-checklist-item">
-        <FieldLabel field={field} />
-        <FilterableSelect
-          value={value}
-          onChange={onChange}
-          options={field.options || []}
-          disabled={disabled}
-          placeholder="Select"
-        />
-      </div>
+      <FilterableSelect
+        value={value}
+        onChange={onChange}
+        options={field.options || []}
+        disabled={disabled}
+        placeholder="Select"
+      />
     )
   }
 
   if (field.field_type === 'radio') {
     return (
-      <div className="pm-checklist-item">
-        <FieldLabel field={field} />
-        <div className="pm-checklist-options" role="radiogroup" aria-label={field.name}>
-          {(field.options || []).map((option) => {
-            const selected = value === option
-            return (
-              <label
-                key={option}
-                className={`pm-checklist-option${selected ? ' is-selected' : ''}`}
-              >
-                <input
-                  type="radio"
-                  name={id}
-                  checked={selected}
-                  disabled={disabled}
-                  onChange={() => onChange(option)}
-                />
-                <span>{option}</span>
-              </label>
-            )
-          })}
-        </div>
+      <div className="pm-checklist-options" role="radiogroup" aria-label={field.name}>
+        {(field.options || []).map((option) => {
+          const selected = value === option
+          return (
+            <label
+              key={option}
+              className={`pm-checklist-option${selected ? ' is-selected' : ''}`}
+            >
+              <input
+                type="radio"
+                name={id}
+                checked={selected}
+                disabled={disabled}
+                onChange={() => onChange(option)}
+              />
+              <span>{option}</span>
+            </label>
+          )
+        })}
       </div>
     )
   }
 
   if (field.field_type === 'multiline') {
     return (
-      <label className="pm-checklist-item">
-        <FieldLabel field={field} />
-        <SpellcheckInput
-          multiline
-          className="company-form__input company-form__textarea"
-          rows={3}
-          value={value}
-          disabled={disabled}
-          onChange={(e) => onChange(e.target.value)}
-        />
-      </label>
+      <SpellcheckInput
+        multiline
+        className="company-form__input company-form__textarea"
+        rows={2}
+        value={value}
+        disabled={disabled}
+        onChange={(e) => onChange(e.target.value)}
+      />
     )
   }
 
   if (field.field_type === 'date') {
-    return (
-      <label className="pm-checklist-item">
-        <FieldLabel field={field} />
-        <DateField value={value} onChange={onChange} disabled={disabled} />
-      </label>
-    )
+    return <DateField value={value} onChange={onChange} disabled={disabled} />
   }
 
   if (field.field_type === 'time') {
-    return (
-      <label className="pm-checklist-item">
-        <FieldLabel field={field} />
-        <TimeField value={value} onChange={onChange} disabled={disabled} />
-      </label>
-    )
+    return <TimeField value={value} onChange={onChange} disabled={disabled} />
   }
 
   const inputType = field.field_type === 'numeric' || field.field_type === 'decimal'
@@ -132,25 +190,53 @@ function ChecklistField({ field, value, disabled, onChange }) {
   const Control = inputType === 'number' || isIdentifier ? 'input' : SpellcheckInput
 
   return (
-    <label className="pm-checklist-item">
-      <FieldLabel field={field} />
-      <Control
-        id={id}
-        className="company-form__input"
-        type={inputType}
-        step={field.field_type === 'decimal' ? '0.01' : field.field_type === 'numeric' ? '1' : undefined}
-        value={value}
-        disabled={disabled}
-        placeholder={placeholder}
-        onChange={(e) => onChange(e.target.value)}
-      />
-    </label>
+    <Control
+      id={id}
+      className="company-form__input"
+      type={inputType}
+      step={field.field_type === 'decimal' ? '0.01' : field.field_type === 'numeric' ? '1' : undefined}
+      value={value}
+      disabled={disabled}
+      placeholder={placeholder}
+      onChange={(e) => onChange(e.target.value)}
+    />
   )
 }
 
-export default function ChecklistExecution({ snapshot, values, onChange, disabled = false }) {
+export default function ChecklistExecution({
+  snapshot,
+  values,
+  onChange,
+  disabled = false,
+  record = null,
+  recordKind = 'work_order',
+  defaultOpen = false,
+}) {
+  const { org } = useOrg()
+  const { employee, profile } = useProfile()
+  const [logoUrl, setLogoUrl] = useState(null)
+  const [open, setOpen] = useState(defaultOpen)
+  const [capturedAt, setCapturedAt] = useState(null)
   const fields = Array.isArray(snapshot?.fields) ? snapshot.fields : []
   const sections = Array.isArray(snapshot?.sections) ? snapshot.sections : []
+
+  useEffect(() => {
+    let cancelled = false
+    async function loadLogo() {
+      if (!org?.logo_url) {
+        setLogoUrl(null)
+        return
+      }
+      try {
+        const url = await getOrgAssetSignedUrl(org.logo_url)
+        if (!cancelled) setLogoUrl(url)
+      } catch {
+        if (!cancelled) setLogoUrl(null)
+      }
+    }
+    loadLogo()
+    return () => { cancelled = true }
+  }, [org?.logo_url])
 
   const groups = useMemo(() => {
     if (!fields.length) return []
@@ -172,8 +258,6 @@ export default function ChecklistExecution({ snapshot, values, onChange, disable
       }))
       .filter((group) => group.fields.length > 0)
 
-    // Only show fields that belong to a checklist section.
-    // Unsectioned / orphan template fields are omitted from execution.
     if (!grouped.length) {
       return [{
         id: 'all',
@@ -203,8 +287,23 @@ export default function ChecklistExecution({ snapshot, values, onChange, disable
       requiredTotal: required.length,
       requiredDone,
       percent: total ? Math.round((done / total) * 100) : 0,
+      complete: total > 0 && done === total,
     }
   }, [visibleFields, values])
+
+  useEffect(() => {
+    if (progress.complete) {
+      setCapturedAt((prev) => prev || new Date())
+      return
+    }
+    setCapturedAt(null)
+  }, [progress.complete])
+
+  const metaRows = useMemo(() => {
+    const rows = buildChecklistMeta(record, recordKind, capturedAt || new Date())
+    if (progress.complete && capturedAt) return rows
+    return rows.filter((row) => row.label !== 'Date / time')
+  }, [record, recordKind, capturedAt, progress.complete])
 
   if (!visibleFields.length) return null
 
@@ -212,55 +311,161 @@ export default function ChecklistExecution({ snapshot, values, onChange, disable
     onChange({ ...(values || {}), [fieldId]: value })
   }
 
+  const companyName = org?.name || 'Company'
+  const logoLetter = (companyName[0] || 'C').toUpperCase()
+  const checklistName = snapshot?.name || 'Checklist'
+  const techName = employee?.name
+    || profile?.full_name
+    || profile?.display_name
+    || peopleNames(record?.assignees || record?.assigned_technicians)[0]
+    || '—'
+  let itemIndex = 0
+
   return (
-    <section className="wo-received-detail__section pm-checklist-panel">
-      <div className="pm-checklist-panel__header">
-        <div className="pm-checklist-panel__titles">
-          <h3>Checklist</h3>
-          {(snapshot?.name || snapshot?.version) && (
-            <p className="pm-checklist-panel__meta">
-              {snapshot?.name || 'Inspection checklist'}
-              {snapshot?.version ? ` · v${snapshot.version}` : ''}
+    <section className="wo-received-detail__section pm-checklist-wrap">
+      <div className="pm-checklist-toggle">
+        <div className="pm-checklist-toggle__copy">
+          <h3 className="pm-checklist-toggle__title">{checklistName}</h3>
+          <p className="pm-checklist-toggle__meta">
+            {progress.done}/{progress.total} complete
+            {snapshot?.version ? ` · v${snapshot.version}` : ''}
+            {progress.complete ? ' · Ready' : ' · Required before Completed'}
+          </p>
+        </div>
+        <button
+          type="button"
+          className={`company-btn company-btn--compact ${open ? 'company-btn--secondary' : 'company-btn--primary'}`}
+          onClick={() => setOpen((prev) => !prev)}
+          aria-expanded={open}
+        >
+          {open ? 'Hide checklist' : 'View checklist'}
+        </button>
+      </div>
+
+      {open ? (
+        <div className="pm-checklist-sheet">
+          <header className="pm-checklist-sheet__letterhead">
+            <div className="pm-checklist-sheet__brand">
+              <div className="pm-checklist-sheet__logo" aria-hidden={!logoUrl}>
+                {logoUrl ? (
+                  <img src={logoUrl} alt="" className="pm-checklist-sheet__logo-img" />
+                ) : (
+                  <span className="pm-checklist-sheet__logo-fallback">{logoLetter}</span>
+                )}
+              </div>
+              <div className="pm-checklist-sheet__brand-text">
+                <p className="pm-checklist-sheet__company">{companyName}</p>
+                <p className="pm-checklist-sheet__doc-type">{checklistName}</p>
+              </div>
+            </div>
+            <div className="pm-checklist-sheet__progress" aria-label={`${progress.done} of ${progress.total} complete`}>
+              <span className="pm-checklist-sheet__progress-count">{progress.done}/{progress.total}</span>
+              <span className="pm-checklist-sheet__progress-label">complete</span>
+            </div>
+          </header>
+
+          <div className="pm-checklist-sheet__title-block">
+            {snapshot?.version ? (
+              <span className="pm-checklist-sheet__version">Version {snapshot.version}</span>
+            ) : null}
+            {progress.complete && capturedAt ? (
+              <span className="pm-checklist-sheet__captured">
+                Captured {formatStamp(capturedAt)}
+              </span>
+            ) : null}
+          </div>
+
+          {metaRows.length > 0 && (
+            <dl className="pm-checklist-sheet__meta">
+              {metaRows.map((row) => (
+                <div key={row.label} className="pm-checklist-sheet__meta-item">
+                  <dt>{row.label}</dt>
+                  <dd>{row.value}</dd>
+                </div>
+              ))}
+            </dl>
+          )}
+
+          <div className="pm-checklist-sheet__bar" aria-hidden="true">
+            <span style={{ width: `${progress.percent}%` }} />
+          </div>
+
+          {progress.requiredTotal > 0 && (
+            <p className="pm-checklist-sheet__hint">
+              Required items: {progress.requiredDone}/{progress.requiredTotal}
+              {disabled ? ' · View only' : ' · Fill each row below'}
             </p>
           )}
-        </div>
-        <div className="pm-checklist-panel__progress" aria-label={`${progress.done} of ${progress.total} complete`}>
-          <span className="pm-checklist-panel__progress-count">
-            {progress.done}/{progress.total}
-          </span>
-          <span className="pm-checklist-panel__progress-label">complete</span>
-        </div>
-      </div>
 
-      <div className="pm-checklist-panel__bar" aria-hidden="true">
-        <span style={{ width: `${progress.percent}%` }} />
-      </div>
-
-      {progress.requiredTotal > 0 && (
-        <p className="pm-checklist-panel__hint">
-          Required items: {progress.requiredDone}/{progress.requiredTotal}
-          {disabled ? ' · View only' : ''}
-        </p>
-      )}
-
-      <div className="pm-checklist-exec">
-        {groups.map((group) => (
-          <div key={group.id} className="pm-checklist-group">
-            <h4 className="pm-checklist-group__title">{group.name}</h4>
-            <div className="pm-checklist-group__fields">
-              {group.fields.map((field) => (
-                <ChecklistField
-                  key={field.id}
-                  field={field}
-                  value={values?.[field.id] ?? (field.field_type === 'checkbox' ? false : '')}
-                  disabled={disabled}
-                  onChange={(next) => setValue(field.id, next)}
-                />
-              ))}
-            </div>
+          <div className="pm-checklist-exec">
+            {groups.map((group) => (
+              <div key={group.id} className="pm-checklist-table-wrap">
+                <table className="pm-checklist-table">
+                  <thead>
+                    <tr>
+                      <th colSpan={3} className="pm-checklist-table__section">{group.name}</th>
+                    </tr>
+                    <tr>
+                      <th className="pm-checklist-table__col-no">#</th>
+                      <th className="pm-checklist-table__col-q">Question / item</th>
+                      <th className="pm-checklist-table__col-a">Response</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {group.fields.map((field) => {
+                      itemIndex += 1
+                      const answer = values?.[field.id] ?? (field.field_type === 'checkbox' ? false : '')
+                      const done = isFieldComplete(field, answer)
+                      return (
+                        <tr key={field.id} className={done ? 'is-done' : undefined}>
+                          <td className="pm-checklist-table__col-no">{itemIndex}</td>
+                          <td className="pm-checklist-table__col-q">
+                            <span className="pm-checklist-table__question">
+                              {field.name}
+                              {field.is_required ? <span className="pm-checklist-item__required">*</span> : null}
+                            </span>
+                          </td>
+                          <td className="pm-checklist-table__col-a">
+                            <ChecklistAnswer
+                              field={field}
+                              value={answer}
+                              disabled={disabled}
+                              onChange={(next) => setValue(field.id, next)}
+                            />
+                            {done && field.field_type !== 'checkbox' ? (
+                              <span className="pm-checklist-table__selected">
+                                Selected: {String(answer)}
+                              </span>
+                            ) : null}
+                            {done && field.field_type === 'checkbox' ? (
+                              <span className="pm-checklist-table__selected">Selected: Done</span>
+                            ) : null}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
+
+          {progress.complete ? (
+            <footer className="pm-checklist-sheet__footer">
+              <div className="pm-checklist-sheet__sign">
+                <span className="pm-checklist-sheet__sign-label">Technician acknowledgement</span>
+                <span className="pm-checklist-sheet__sign-value">{techName}</span>
+              </div>
+              <div className="pm-checklist-sheet__sign">
+                <span className="pm-checklist-sheet__sign-label">Date / time</span>
+                <span className="pm-checklist-sheet__sign-value">
+                  {capturedAt ? formatStamp(capturedAt) : '—'}
+                </span>
+              </div>
+            </footer>
+          ) : null}
+        </div>
+      ) : null}
     </section>
   )
 }

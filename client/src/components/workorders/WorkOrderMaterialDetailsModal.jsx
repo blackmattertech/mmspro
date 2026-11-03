@@ -30,7 +30,9 @@ export default function WorkOrderMaterialDetailsModal({ logs = [], onClose }) {
   const days = (logs || [])
     .map((log) => ({
       ...log,
-      materials: normalizeMaterialRows(log.materials).filter((row) => (
+      materials: normalizeMaterialRows(
+        log.field_snapshot?.material_rows ?? log.materials,
+      ).filter((row) => (
         row.code || row.description || row.uom || row.qty
       )),
     }))
