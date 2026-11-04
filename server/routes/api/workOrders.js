@@ -8,7 +8,7 @@ import {
 } from '../../middleware/modulePermission.js'
 import { supabaseAdmin } from '../../services/supabase.js'
 import { assertChecklistForForm, snapshotChecklistTemplate } from '../../lib/checklistService.js'
-import { getScopedLocationId, hasModulePermission } from '../../lib/orgPermissions.js'
+import { canViewAssociatedWorkRecord, getScopedLocationId, hasModulePermission } from '../../lib/orgPermissions.js'
 import { getSignedUrl, getSignedUrls } from '../../lib/signedUrlCache.js'
 import {
   applyIlikeSearch,
@@ -65,6 +65,11 @@ import {
 const router = Router()
 
 const canReadWorkOrders = requireModulePermission('work_orders', 'read')
+
+function requireWorkRecordView(req, res, next) {
+  if (canViewAssociatedWorkRecord(req.orgPermissions)) return next()
+  return res.status(403).json({ error: 'You do not have permission to view this record' })
+}
 const canCreateWorkOrders = requireModulePermission('work_orders', 'create')
 const canUpdateWorkOrders = requireModulePermission('work_orders', 'update')
 const canDeleteWorkOrders = requireModulePermission('work_orders', 'delete')
@@ -1363,25 +1368,6 @@ async function listAssignedByMeWorkOrders(orgId, profile, {
   return listEnvelope(rows, { total: count || 0, limit, offset, status_counts })
 }
 
-async function loadAssignedByMeDetail(orgId, workOrderId, profile) {
-  const profileId = profile?.id || profile
-  const employee = await getEmployeeByProfile(orgId, profileId, { email: profile?.email })
-  const myEmployeeId = employee?.id
-
-  const detail = await loadWorkOrderDetail(orgId, workOrderId)
-  if (!detail) return null
-  if (isScheduledWorkOrder(detail)) return null
-  if (detail.created_by !== profileId && detail.requester_id !== profileId) return null
-
-  const assignees = detail.assignees || []
-  const hasDepartment = Boolean(detail.assigned_department_id)
-  const hasLocation = Boolean(detail.assigned_location_id)
-  if (!assignees.length && !hasDepartment && !hasLocation) return null
-  if (!hasDepartment && !hasLocation && myEmployeeId && assignees.every((a) => a.id === myEmployeeId)) return null
-
-  return detail
-}
-
 async function enrichWorkOrderRow(orgId, row, assigneesByWo = null) {
   const [withDept] = await attachDepartmentAssignments([row])
   const [withSummary] = await attachSummaries(orgId, [withDept])
@@ -2677,23 +2663,11 @@ router.get('/manual/orders', canReadWorkOrders, async (req, res) => {
   }
 })
 
-router.get('/manual/orders/:id', canReadWorkOrders, async (req, res) => {
+router.get('/manual/orders/:id', requireWorkRecordView, async (req, res) => {
   const orgId = req.userProfile.org_id
-  const scopedLocationId = getScopedLocationId(req.orgPermissions)
   try {
     const detail = await loadWorkOrderDetail(orgId, req.params.id)
     if (!detail) return res.status(404).json({ error: 'Not found' })
-    if (isScheduledWorkOrder(detail)) {
-      return res.status(404).json({ error: 'Not found' })
-    }
-    if (
-      scopedLocationId
-      && detail.assigned_location_id
-      && detail.assigned_location_id !== scopedLocationId
-      && detail.created_by !== req.userProfile.id
-    ) {
-      return res.status(404).json({ error: 'Not found' })
-    }
     res.json(detail)
   } catch (err) {
     res.status(500).json({ error: err.message })
@@ -2722,10 +2696,10 @@ router.get('/assigned', canReadWorkOrders, async (req, res) => {
   }
 })
 
-router.get('/assigned/:id', canReadWorkOrders, async (req, res) => {
+router.get('/assigned/:id', requireWorkRecordView, async (req, res) => {
   const orgId = req.userProfile.org_id
   try {
-    const detail = await loadAssignedByMeDetail(orgId, req.params.id, req.userProfile)
+    const detail = await loadWorkOrderDetail(orgId, req.params.id)
     if (!detail) return res.status(404).json({ error: 'Not found' })
     res.json(detail)
   } catch (err) {
@@ -2782,22 +2756,11 @@ router.get('/scheduled', canReadWorkOrders, async (req, res) => {
   }
 })
 
-router.get('/scheduled/:id', canReadWorkOrders, async (req, res) => {
+router.get('/scheduled/:id', requireWorkRecordView, async (req, res) => {
   const orgId = req.userProfile.org_id
-  const scopedLocationId = getScopedLocationId(req.orgPermissions)
   try {
     const detail = await loadWorkOrderDetail(orgId, req.params.id)
-    if (!detail || !isScheduledWorkOrder(detail)) {
-      return res.status(404).json({ error: 'Not found' })
-    }
-    if (
-      scopedLocationId
-      && detail.assigned_location_id
-      && detail.assigned_location_id !== scopedLocationId
-      && detail.created_by !== req.userProfile.id
-    ) {
-      return res.status(404).json({ error: 'Not found' })
-    }
+    if (!detail) return res.status(404).json({ error: 'Not found' })
     res.json(detail)
   } catch (err) {
     res.status(500).json({ error: err.message })
@@ -2827,36 +2790,28 @@ router.get('/received', canReadWorkOrders, async (req, res) => {
   }
 })
 
-router.get('/received/:id', canReadWorkOrders, async (req, res) => {
+router.get('/received/:id', requireWorkRecordView, async (req, res) => {
   const orgId = req.userProfile.org_id
   const profileId = req.userProfile.id
   try {
     const employee = await getEmployeeByProfile(orgId, profileId, { email: req.userProfile.email })
-    if (!employee) return res.status(404).json({ error: 'Not found' })
-
-    const detail = await loadWorkOrderDetail(orgId, req.params.id, {
-      employee,
-      profile: req.userProfile,
-      session: req.orgPermissions,
-    })
+    const detail = await loadWorkOrderDetail(orgId, req.params.id)
     if (!detail) return res.status(404).json({ error: 'Not found' })
-    if (isScheduledWorkOrder(detail)) {
-      return res.status(404).json({ error: 'Not found' })
-    }
 
-    const scopedLocationId = getScopedLocationId(req.orgPermissions)
-    const isAssignee = (detail.assignees || []).some((row) => row.id === employee.id)
-    const unclaimedPool = Boolean(detail.work_request_id)
-      && !(detail.assignees || []).length
-      && ['assigned', 'accepted'].includes(detail.status)
-    if (
-      scopedLocationId
-      && detail.assigned_location_id
-      && detail.assigned_location_id !== scopedLocationId
-      && !isAssignee
-      && !unclaimedPool
-    ) {
-      return res.status(404).json({ error: 'Not found' })
+    const inReceivedFlow = Boolean(
+      employee
+      && !isScheduledWorkOrder(detail)
+      && await employeeCanViewReceivedWorkOrder(
+        orgId,
+        employee,
+        detail,
+        req.userProfile,
+        req.orgPermissions,
+      ),
+    )
+    if (!inReceivedFlow) {
+      res.json(detail)
+      return
     }
 
     const assignment_actions = await buildAssignmentActions(

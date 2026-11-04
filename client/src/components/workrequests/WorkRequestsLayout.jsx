@@ -246,7 +246,7 @@ export default function WorkRequestsLayout() {
   }
 
   if (!permsLoading && onIndex && org?.slug && fallbackTab) {
-    return <Navigate to={orgPath(org.slug, fallbackTab.segment)} replace />
+    return <Navigate to={`${orgPath(org.slug, fallbackTab.segment)}${location.search}`} replace />
   }
 
   if (
@@ -257,7 +257,7 @@ export default function WorkRequestsLayout() {
     && !tabs.some((tab) => tab.id === activeTab)
     && fallbackTab
   ) {
-    return <Navigate to={orgPath(org.slug, fallbackTab.segment)} replace />
+    return <Navigate to={`${orgPath(org.slug, fallbackTab.segment)}${location.search}`} replace />
   }
 
   return (

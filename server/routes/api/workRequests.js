@@ -25,7 +25,7 @@ import {
   listEquipmentCatalogForDepartment,
   getEmployeeByProfile,
 } from '../../lib/workRequestService.js'
-import { getScopedLocationId } from '../../lib/orgPermissions.js'
+import { canViewAssociatedWorkRecord, getScopedLocationId } from '../../lib/orgPermissions.js'
 import {
   buildWorkRequestsTemplate,
   bulkImportWorkRequests,
@@ -56,6 +56,11 @@ const canReadAny = requireAnyModulePermission([
   ['work_request_outgoing', 'read'],
   ['work_request_all', 'read'],
 ])
+
+function requireWorkRecordView(req, res, next) {
+  if (canViewAssociatedWorkRecord(req.orgPermissions)) return next()
+  return res.status(403).json({ error: 'You do not have permission to view this record' })
+}
 
 function sendError(res, err) {
   const status = err.status || 500
@@ -300,9 +305,10 @@ router.patch('/:id/checklist', canReadAny, async (req, res) => {
   }
 })
 
-router.get('/:id', canReadAny, async (req, res) => {
+router.get('/:id', requireWorkRecordView, async (req, res) => {
   try {
-    const row = await loadAccessibleWorkRequest(req)
+    const row = await getWorkRequestById(req.userProfile.org_id, req.params.id)
+    assertWorkRequestAccessible(row, { profileId: req.userProfile.id, locationId: null })
     const assignmentOptions = await loadWorkRequestAssignmentOptions(req.userProfile.org_id)
     res.json({
       ...row,

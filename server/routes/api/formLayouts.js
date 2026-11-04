@@ -2,7 +2,7 @@ import { Router } from 'express'
 import { verifyAuth } from '../../middleware/auth.js'
 import { requireOrgAccess } from '../../middleware/orgAccess.js'
 import { loadOrgPermissions } from '../../middleware/modulePermission.js'
-import { hasModulePermission } from '../../lib/orgPermissions.js'
+import { canViewAssociatedWorkRecord, hasModulePermission } from '../../lib/orgPermissions.js'
 import { getFormDef } from '../../lib/formRegistry.js'
 import { isWorkOrderProcessForm } from '../../lib/workOrderForms.js'
 import {
@@ -112,8 +112,12 @@ router.get('/:formId/values/:recordId', async (req, res) => {
     const formId = req.params.formId
     const formDef = getFormDef(formId)
     if (!formDef) return res.status(404).json({ error: 'Unknown form' })
+    const workRecordForm = formId === 'work_request.create'
+      || formId === 'pm.plan'
+      || isWorkOrderProcessForm(formId)
     const canRead = !formDef.permissionKey || (
-      hasModulePermission(req.orgPermissions, formDef.permissionKey, 'read')
+      (workRecordForm && canViewAssociatedWorkRecord(req.orgPermissions))
+      || hasModulePermission(req.orgPermissions, formDef.permissionKey, 'read')
       || (formId === 'work_request.create' && (
         hasModulePermission(req.orgPermissions, 'work_request_approve', 'update')
         || hasModulePermission(req.orgPermissions, 'work_request_incoming', 'read')
