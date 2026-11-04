@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import {
   catalogId,
   cloneLayout,
+  collapseToAssetPickerBlock,
   customFieldId,
   customSectionId,
   emptyLayout,
@@ -19,11 +20,19 @@ import {
   normalizeStage,
   parseLayoutId,
   repeatableGroupId,
+  systemId,
 } from '../../lib/formLayoutIds'
 import { getFormDef } from '../../lib/formRegistry'
 import { isWorkOrderProcessForm } from '../../lib/workOrderForms'
 import ReuseSectionDialog from './ReuseSectionDialog'
-import { getMasterSource, nativeColumnFor, publicMasterSources, canFilterMasterBy } from '../../lib/formFieldSources'
+import {
+  getMasterSource,
+  nativeColumnFor,
+  publicMasterSources,
+  canFilterMasterBy,
+  fieldMasterSourceId,
+  healLayoutFilterBy,
+} from '../../lib/formFieldSources'
 import { augmentLayoutWithEquipmentCatalog, isEquipmentMasterField } from '../../lib/equipmentLayoutFields'
 import { defaultQrFieldId } from '../../lib/equipmentQr'
 import {
@@ -39,6 +48,10 @@ import {
 } from '../../lib/formOptionRules'
 
 const EMPTY_OPTION = { label: '', value: '', rules: [] }
+
+function formUsesCompoundAssetPicker(formDef) {
+  return (formDef?.systemFields || []).some((field) => field.key === 'asset_picker' || field.id === systemId('asset_picker'))
+}
 
 function emptyOptionDraft() {
   return { ...EMPTY_OPTION, rules: [] }
@@ -653,12 +666,16 @@ export default function FormBuilderCanvas({
   const seedLayout = savedLayout || defaultLayout
 
   useEffect(() => {
-    setLayout(cloneLayout(seedLayout))
+    let next = healLayoutFilterBy(cloneLayout(seedLayout))
+    if (formUsesCompoundAssetPicker(formDef)) {
+      next = collapseToAssetPickerBlock(next)
+    }
+    setLayout(next)
     setSelectedSectionId(seedLayout.sections?.[0]?.id || null)
     setSelectedFieldId(null)
     setCollapsedSectionIds(new Set())
     setLocalError(null)
-  }, [layoutSignature(seedLayout)])
+  }, [layoutSignature(seedLayout), formDef?.formId])
 
   const dirty = useMemo(() => (
     layoutSignature(layout) !== layoutSignature(seedLayout)
@@ -742,20 +759,19 @@ export default function FormBuilderCanvas({
     return (layout.fields || [])
       .filter((field) => field.id !== editor?.id)
       .map((field) => {
-        const parsed = parseLayoutId(field.id)
-        const parentSource = field.masterSource
-          || (parsed.kind === 'master' ? parsed.value : '')
+        const parentSource = fieldMasterSourceId(field)
         if (!parentSource || !canFilterMasterBy(editor.masterSource, parentSource)) return null
         const master = getMasterSource(parentSource)
+        const sys = systemFieldById.get(field.id)
         return {
           id: field.id,
-          label: field.label || master?.label || parentSource,
+          label: field.label || sys?.label || master?.label || parentSource,
           masterLabel: master?.label || parentSource,
           masterSource: parentSource,
         }
       })
       .filter(Boolean)
-  }, [layout, editor?.id, editor?.masterSource, editor?.groupId])
+  }, [layout, editor?.id, editor?.masterSource, editor?.groupId, systemFieldById])
 
   const parentsBySection = useMemo(() => {
     const map = new Map()
@@ -787,7 +803,10 @@ export default function FormBuilderCanvas({
   }, [formDef])
 
   const canvasSections = useMemo(() => {
-    const canvasLayout = augmentLayoutWithEquipmentCatalog(layout, catalogParents)
+    const prepared = formUsesCompoundAssetPicker(formDef)
+      ? collapseToAssetPickerBlock(layout)
+      : layout
+    const canvasLayout = augmentLayoutWithEquipmentCatalog(prepared, catalogParents)
     if (!canvasLayout) return []
     if (!Array.isArray(canvasLayout.groups)) canvasLayout.groups = []
     return [...canvasLayout.sections]
@@ -854,7 +873,7 @@ export default function FormBuilderCanvas({
           groups,
         }
       })
-  }, [layout, systemSectionById, systemFieldById, catalogSections, catalogParents, masters])
+  }, [layout, systemSectionById, systemFieldById, catalogSections, catalogParents, masters, formDef])
 
   const ensureSection = (current, sectionId, label, extra = {}) => {
     if (!Array.isArray(current.groups)) current.groups = []
@@ -969,6 +988,25 @@ export default function FormBuilderCanvas({
       const current = cloneLayout(prev || emptyLayout())
       if (!current.sections.some((section) => section.id === sectionId)) {
         ensureSection(current, sectionId, 'Asset information')
+      }
+      if (formUsesCompoundAssetPicker(formDef)) {
+        const hasPicker = current.fields.some((field) => {
+          const parsed = parseLayoutId(field.id)
+          return parsed.kind === 'system' && parsed.value === 'asset_picker'
+        })
+        if (!hasPicker) {
+          const order = current.fields.filter((field) => field.sectionId === sectionId).length
+          current.fields.push({
+            id: systemId('asset_picker'),
+            sectionId,
+            order,
+            colSpan: 100,
+            required: true,
+            bindKey: 'asset_picker',
+            label: 'Asset picker',
+          })
+        }
+        return collapseToAssetPickerBlock(current)
       }
       const inSection = () => current.fields.filter((field) => field.sectionId === sectionId)
       const sourceOf = (field) => {
@@ -1509,7 +1547,9 @@ export default function FormBuilderCanvas({
   }, [form?.formId, layout, systemFieldById, catalogParents])
 
   const layoutToSave = () => {
-    let toSave = augmentLayoutWithEquipmentCatalog(layout, catalogParents)
+    let toSave = formUsesCompoundAssetPicker(formDef)
+      ? collapseToAssetPickerBlock(layout)
+      : augmentLayoutWithEquipmentCatalog(layout, catalogParents)
     if (form?.formId === 'equipment.create') {
       toSave = { ...toSave, qrFieldId: defaultQrFieldId(toSave) }
     }
@@ -1710,7 +1750,11 @@ export default function FormBuilderCanvas({
             onClick={addEquipmentPicker}
           >
             <span>Asset picker</span>
-            <small>Area and asset fields</small>
+            <small>
+              {formUsesCompoundAssetPicker(formDef)
+                ? 'Hierarchy block (same as work orders)'
+                : 'Area and asset fields'}
+            </small>
           </button>
           {masters.map((master) => (
             <button
@@ -2180,9 +2224,7 @@ export default function FormBuilderCanvas({
               let filterByFieldId = next.filterByFieldId || ''
               if (filterByFieldId && next.masterSource) {
                 const parent = (layout?.fields || []).find((item) => item.id === filterByFieldId)
-                const parsed = parent ? parseLayoutId(parent.id) : null
-                const parentSource = parent?.masterSource
-                  || (parsed?.kind === 'master' ? parsed.value : '')
+                const parentSource = fieldMasterSourceId(parent)
                 if (!canFilterMasterBy(next.masterSource, parentSource)) filterByFieldId = ''
               } else {
                 filterByFieldId = ''

@@ -21,6 +21,7 @@ import { loadRuntimeFormLayout, attachFormFieldValueMaps } from './orgFormLayout
 import { applyMappedFilters, ilikePattern } from './listQuery.js'
 import { idsByIlike, NO_MATCH_ID, restrictToIds } from './relationFilters.js'
 import { shouldRequire, systemId } from './formLayoutIds.js'
+import { getSignedUrls } from './signedUrlCache.js'
 import { assignedStatusForTechnicians, assertChecklistSelected, maybePromoteAssignedToAccepted } from './formSkips.js'
 import { WORK_ORDER_FORM_IDS } from './workOrderForms.js'
 import { buildAssetHierarchy as buildEquipmentAssetHierarchy } from './workRequestService.js'
@@ -330,6 +331,10 @@ async function loadTechnicians(orgId, planIds) {
     .in('plan_id', planIds)
 
   if (error) throw error
+  const signed = await getSignedUrls(
+    'org-assets',
+    (data || []).map((row) => row.org_employees?.photo_url),
+  )
   const map = new Map()
   for (const row of data || []) {
     const employee = row.org_employees
@@ -340,6 +345,7 @@ async function loadTechnicians(orgId, planIds) {
       name: employee.name,
       emp_id: employee.emp_id,
       photo_url: employee.photo_url || null,
+      photo_signed_url: employee.photo_url ? signed.get(employee.photo_url) || null : null,
       department_id: employee.department_id || null,
       location_id: employee.location_id || null,
     })

@@ -43,7 +43,7 @@ export const MASTERS_HUB_ITEMS = [
     id: 'others',
     label: 'Others',
     title: 'Others',
-    description: 'Statuses, checklists, and shared character limits.',
+    description: 'Reusable checklists shared across modules.',
     segment: 'masters/others',
     moduleKey: 'others',
     icon: 'dots',
@@ -52,7 +52,7 @@ export const MASTERS_HUB_ITEMS = [
     id: 'forms',
     label: 'Forms Master',
     title: 'Forms Master',
-    description: 'Dropdown lists Superadmin added to each module form, such as Job Nature.',
+    description: 'Per-module status, skip fields, dropdown values, and character limits.',
     segment: 'masters/forms',
     moduleKey: 'assets',
     icon: 'clipboard',
@@ -288,14 +288,7 @@ const SHORTCUT_TAB_GROUPS = {
 
 /** Inner destinations under Masters → Others. */
 const OTHERS_SHORTCUTS = [
-  { id: 'status', label: 'Status', segment: 'masters/others/status', icon: 'list' },
   { id: 'checklists', label: 'Checklists', segment: 'masters/others/checklists', icon: 'clipboard' },
-  {
-    id: 'character-limits',
-    label: 'Character limits',
-    segment: 'masters/others/character-limits',
-    icon: 'document',
-  },
 ]
 
 function shortcutLeaf({ id, label, path, icon, group = null }) {

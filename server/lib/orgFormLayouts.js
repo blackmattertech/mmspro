@@ -21,7 +21,13 @@ import {
   publicFormMeta,
 } from './formRegistry.js'
 import { shouldFallbackWorkOrderLayout } from './workOrderForms.js'
-import { getMasterSource, publicMasterSources, canFilterMasterBy } from './formFieldSources.js'
+import {
+  getMasterSource,
+  publicMasterSources,
+  canFilterMasterBy,
+  fieldMasterSourceId,
+  healFilterByFieldId,
+} from './formFieldSources.js'
 import { normalizeOptions, sanitizeOptionRule } from './formOptionRules.js'
 import { createTtlCache } from './ttlCache.js'
 
@@ -416,47 +422,22 @@ export function validateFormLayout(formDef, layout, catalogFields) {
           throw httpError(`Child field "${field.label || field.id}" needs parent options`)
         }
       }
-      if (field.filterByFieldId) {
-        // filterBy only applies among known siblings (top-level or within group)
-        const filterParentId = field.filterByFieldId
-        if (!knownFieldIds.has(filterParentId) && !cleaned.fields.some((item) => item.id === filterParentId)) {
-          throw httpError(`Field "${field.label || field.id}" filters by a missing field`)
-        }
-        if (field.filterByFieldId === field.id) {
-          throw httpError(`Field "${field.label || field.id}" cannot filter by itself`)
-        }
+      if (field.filterByFieldId === field.id) {
+        throw httpError(`Field "${field.label || field.id}" cannot filter by itself`)
       }
     }
     if ((parsed.kind === 'master' || parsed.kind === 'field') && field.filterByFieldId) {
-      if (parsed.kind === 'master') {
-        const filterParent = cleaned.fields.find((item) => item.id === field.filterByFieldId)
-        if (!filterParent) {
-          throw httpError(`Field "${field.label || field.id}" filters by a missing field`)
-        }
-        const parentSource = filterParent.masterSource
-          || (parseLayoutId(filterParent.id).kind === 'master' ? parseLayoutId(filterParent.id).value : '')
-        if (!canFilterMasterBy(parsed.value, parentSource)) {
-          throw httpError(
-            `Field "${field.label || field.id}" cannot filter by "${filterParent.label || filterParent.id}"`,
-          )
-        }
+      const childSource = fieldMasterSourceId(field) || (parsed.kind === 'master' ? parsed.value : '')
+      const parent = cleaned.fields.find((item) => item.id === field.filterByFieldId)
+        || (knownFieldIds.has(field.filterByFieldId) ? { id: field.filterByFieldId } : null)
+      if (!parent) {
+        throw httpError(`Field "${field.label || field.id}" filters by a missing field`)
       }
-      if (parsed.kind === 'field' && field.masterSource) {
-        const filterParent = cleaned.fields.find((item) => item.id === field.filterByFieldId)
-          || (knownFieldIds.has(field.filterByFieldId)
-            ? { id: field.filterByFieldId }
-            : null)
-        if (!filterParent) {
-          throw httpError(`Field "${field.label || field.id}" filters by a missing field`)
-        }
-        const parentSource = filterParent.masterSource
-          || (parseLayoutId(filterParent.id).kind === 'master' ? parseLayoutId(filterParent.id).value : '')
-        const childSource = field.masterSource
-        if (parentSource && !canFilterMasterBy(childSource, parentSource)) {
-          throw httpError(
-            `Field "${field.label || field.id}" cannot filter by "${filterParent.label || filterParent.id}"`,
-          )
-        }
+      const parentSource = fieldMasterSourceId(parent)
+      if (parentSource && childSource && !canFilterMasterBy(childSource, parentSource)) {
+        throw httpError(
+          `Field "${field.label || field.id}" cannot filter by "${parent.label || parent.id}"`,
+        )
       }
     }
     if (parsed.kind === 'custom') {
@@ -477,6 +458,13 @@ export function validateFormLayout(formDef, layout, catalogFields) {
     if (!FIELD_WIDTHS.includes(field.colSpan)) {
       throw httpError('Field width must be 25%, 33%, 50%, 75%, or 100%')
     }
+  }
+
+  cleaned.fields = cleaned.fields.map((field) => healFilterByFieldId(field, cleaned.fields))
+  for (const group of cleaned.groups) {
+    group.childFields = group.childFields.map((child) => (
+      healFilterByFieldId(child, group.childFields)
+    ))
   }
 
   const topFieldIds = new Set(cleaned.fields.map((field) => field.id))

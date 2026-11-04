@@ -42,11 +42,10 @@ const VendorDetailPage = lazyPage(() => import('./pages/app/VendorDetailPage'))
 const Masters = lazyPage(() => import('./pages/app/Masters'))
 const FormMasters = lazyPage(() => import('./pages/app/FormMasters'))
 const Others = lazyPage(() => import('./pages/app/Others'))
-const OthersStatusTypes = lazyPage(() => import('./pages/app/OthersStatusTypes'))
 const OthersStatusManage = lazyPage(() => import('./pages/app/OthersStatusManage'))
+const FormMasterStatusRedirect = lazyPage(() => import('./pages/app/FormMasterStatusRedirect'))
 const OthersChecklists = lazyPage(() => import('./pages/app/OthersChecklists'))
 const OthersChecklistBuilder = lazyPage(() => import('./pages/app/OthersChecklistBuilder'))
-const OthersCharacterLimits = lazyPage(() => import('./pages/app/OthersCharacterLimits'))
 const ConfigurationImport = lazyPage(() => import('./pages/app/ConfigurationImport'))
 const WorkRequestCreate = lazyPage(() => import('./pages/app/WorkRequestCreate'))
 const WorkRequestListPage = lazyPage(() => import('./pages/app/WorkRequestListPage'))
@@ -190,7 +189,12 @@ export default function App() {
                 <Route path=":taskId" element={withSuspense(<TaskDetailPage />)} />
               </Route>
               <Route path="masters" element={withModule(MASTER_HUB_MODULE_KEYS, <Masters />)} />
-              <Route path="masters/forms/:formId/:fieldId" element={withModule('assets', <FormMasters />)} />
+              <Route
+                path="masters/forms/status/:entityType"
+                element={withModule(['assets', 'others'], <OthersStatusManage />)}
+              />
+              <Route path="masters/forms/:formId/:section/:fieldId" element={withModule('assets', <FormMasters />)} />
+              <Route path="masters/forms/:formId/:section" element={withModule('assets', <FormMasters />)} />
               <Route path="masters/forms/:formId" element={withModule('assets', <FormMasters />)} />
               <Route path="masters/forms" element={withModule('assets', <FormMasters />)} />
               <Route path="masters/company" element={withModule(companyPageModules, <Company />)} />
@@ -200,11 +204,20 @@ export default function App() {
               <Route path="masters/vendors" element={withModule('vendors', <Vendors />)} />
               <Route path="masters/vendors/:vendorId" element={withModule('vendors', <VendorDetailPage />)} />
               <Route path="masters/others" element={withModule('others', <Others />)} />
-              <Route path="masters/others/status" element={withModule('others', <OthersStatusTypes />)} />
-              <Route path="masters/others/status/:entityType" element={withModule('others', <OthersStatusManage />)} />
+              <Route
+                path="masters/others/status/:entityType"
+                element={withSuspense(<FormMasterStatusRedirect />)}
+              />
+              <Route
+                path="masters/others/status"
+                element={withSuspense(<FormMasterStatusRedirect />)}
+              />
               <Route path="masters/others/checklists" element={withModule('others', <OthersChecklists />)} />
               <Route path="masters/others/checklists/:checklistId" element={withModule('others', <OthersChecklistBuilder />)} />
-              <Route path="masters/others/character-limits" element={withModule('others', <OthersCharacterLimits />)} />
+              <Route
+                path="masters/others/character-limits"
+                element={<Navigate to="../../forms" relative="path" replace />}
+              />
               <Route path="logbook" element={withModule('logbook', <Logbook />)} />
               <Route
                 path="work-orders/scheduled"

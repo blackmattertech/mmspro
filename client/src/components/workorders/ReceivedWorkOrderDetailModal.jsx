@@ -9,6 +9,7 @@ import { useOrgStatusOptions } from '../../hooks/useOrgStatusOptions'
 import PageBack from '../shared/PageBack'
 import EditIcon from '../ui/EditIcon'
 import EmployeeAvatar from '../company/EmployeeAvatar'
+import PersonChip from '../shared/PersonChip'
 import WorkOrderAssignmentActions from './WorkOrderAssignmentActions'
 import WorkOrderLifecyclePanel, { formatStatus } from './WorkOrderLifecyclePanel'
 import WorkRequestFormSections from './WorkRequestFormSections'
@@ -27,10 +28,6 @@ function formatDate(value) {
     dateStyle: 'medium',
     timeStyle: 'short',
   })
-}
-
-function creatorLabel(creator) {
-  return creator?.display_name || creator?.full_name || creator?.email || '—'
 }
 
 function MetaItem({ label, children, wide = false }) {
@@ -277,7 +274,7 @@ export default function ReceivedWorkOrderDetailModal({
                 </div>
                 <div>
                   <span className="wo-received-detail__label">Created by</span>
-                  <span>{creatorLabel(view.creator)}</span>
+                  <span>{view.creator ? <PersonChip person={view.creator} /> : '—'}</span>
                 </div>
                 <div>
                   <span className="wo-received-detail__label">Status</span>

@@ -114,6 +114,8 @@
 --   110-work-order-checklist-template.sql            → 110-work-order-checklist-template — Checklist template on work orders
 --   111-work-order-manual-progress.sql              → 111-work-order-manual-progress — Manual progress on work orders
 --   112-work-order-daily-field-snapshots.sql        → 112-work-order-daily-field-snapshots — Per-day execution field snapshots
+--   113-meter-logger-profile.sql                   → 113-meter-logger-profile — Profile id on the latest meter reading
+--   114-exclude-pm-from-regular-wo-lists.sql       → 114-exclude-pm-from-regular-wo-lists — PM WOs only on Scheduled
 
 --
 -- OTHER:

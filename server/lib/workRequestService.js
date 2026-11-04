@@ -15,6 +15,7 @@ import {
 import { countExactStatuses, countStatusesViaRpc } from './statusCounts.js'
 import { createTtlCache } from './ttlCache.js'
 import { loadTimelineActors } from './timelineActors.js'
+import { getSignedUrls } from './signedUrlCache.js'
 import {
   generateWorkOrderNumber,
   addWorkOrderTimelineEvent,
@@ -1797,7 +1798,7 @@ async function enrichWorkRequests(rows, { lean = false } = {}) {
     manualWorkOrderIds.length
       ? supabaseAdmin
         .from('manual_work_order_assignees')
-        .select('work_order_id, employee_id, created_at, org_employees(id, name, emp_id)')
+        .select('work_order_id, employee_id, created_at, org_employees(id, name, emp_id, photo_url)')
         .in('work_order_id', manualWorkOrderIds)
       : Promise.resolve({ data: [], error: null }),
     manualWorkOrderIds.length
@@ -1846,6 +1847,23 @@ async function enrichWorkRequests(rows, { lean = false } = {}) {
       const previous = assignedAtByWorkOrder.get(link.work_order_id)
       if (!previous || link.created_at > previous) {
         assignedAtByWorkOrder.set(link.work_order_id, link.created_at)
+      }
+    }
+  }
+
+  const photoPaths = []
+  for (const list of assigneesByWorkOrder.values()) {
+    for (const employee of list) {
+      if (employee?.photo_url) photoPaths.push(employee.photo_url)
+    }
+  }
+  if (photoPaths.length) {
+    const signed = await getSignedUrls('org-assets', photoPaths)
+    for (const list of assigneesByWorkOrder.values()) {
+      for (const employee of list) {
+        if (employee?.photo_url) {
+          employee.photo_signed_url = signed.get(employee.photo_url) || null
+        }
       }
     }
   }

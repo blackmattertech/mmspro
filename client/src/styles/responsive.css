@@ -339,13 +339,30 @@
 
   #root .company-modal--popup,
   #root .admin-modal--popup,
-  #root .company-modal.company-modal--popup.pm-modal,
+  #root .company-modal.company-modal--popup.pm-modal:not(.pm-plan-page),
   #root .company-modal.company-modal--popup.pm-modal--wide {
     width: min(560px, 100%);
     max-width: 100%;
     height: auto;
     max-height: min(92dvh, 900px);
     border-radius: var(--radius-md);
+  }
+
+  #root .company-modal-overlay.pm-modal-overlay.pm-plan-page {
+    padding: 0 !important;
+    align-items: stretch !important;
+    justify-content: stretch !important;
+    background: var(--color-white);
+  }
+
+  #root .company-modal.company-modal--popup.pm-modal.pm-plan-page {
+    width: 100%;
+    max-width: none;
+    height: 100%;
+    max-height: none;
+    margin: 0;
+    border-radius: 0;
+    box-shadow: none;
   }
 
   #root .company-modal__header,

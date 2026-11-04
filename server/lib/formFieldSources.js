@@ -63,11 +63,23 @@ export function getMasterSource(sourceId) {
   return MASTER_BY_ID.get(sourceId) || null
 }
 
+const SYSTEM_FIELD_MASTER_SOURCE = {
+  area_id: 'areas',
+  location_id: 'locations',
+  department_id: 'departments',
+  order_from_department_id: 'departments',
+  order_to_department_id: 'departments',
+  equipment_id: 'equipment',
+}
+
+/** Resolve the master source id for filter chains (custom, master:, or system:). */
 export function fieldMasterSourceId(field) {
   if (!field) return ''
   if (field.masterSource) return field.masterSource
   const parsed = parseLayoutId(field.id)
-  return parsed.kind === 'master' ? parsed.value : ''
+  if (parsed.kind === 'master') return parsed.value
+  if (parsed.kind === 'system') return SYSTEM_FIELD_MASTER_SOURCE[parsed.value] || ''
+  return ''
 }
 
 /**
@@ -88,6 +100,30 @@ export function masterFilterKey(childSourceId, parentSourceId) {
 
 export function canFilterMasterBy(childSourceId, parentSourceId) {
   return Boolean(masterFilterKey(childSourceId, parentSourceId))
+}
+
+/** Prefer Area, then Department, then Location when repairing a broken Asset filter. */
+const FILTER_PARENT_PREFERENCE = ['areas', 'departments', 'locations']
+
+export function healFilterByFieldId(field, siblings = []) {
+  if (!field?.filterByFieldId) return field
+  const parent = siblings.find((item) => item.id === field.filterByFieldId)
+  if (parent && parent.id !== field.id) return field
+
+  const childSource = fieldMasterSourceId(field)
+  if (childSource) {
+    for (const preferred of FILTER_PARENT_PREFERENCE) {
+      if (!canFilterMasterBy(childSource, preferred)) continue
+      const match = siblings.find((item) => (
+        item.id !== field.id && fieldMasterSourceId(item) === preferred
+      ))
+      if (match) return { ...field, filterByFieldId: match.id }
+    }
+  }
+
+  const next = { ...field }
+  delete next.filterByFieldId
+  return next
 }
 
 export function publicMasterSources() {

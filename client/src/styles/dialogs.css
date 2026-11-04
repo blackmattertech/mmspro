@@ -60,7 +60,7 @@ html body .advanced-filter__dialog {
 html body .company-modal--wide,
 html body .company-modal--popup-wide,
 html body .modal.company-modal--popup-wide,
-html body .company-modal.pm-modal,
+html body .company-modal.pm-modal:not(.pm-plan-page),
 html body .company-modal.pm-modal--wide,
 html body .advanced-filter__dialog,
 html body .modal.wo-settings-modal,
@@ -90,6 +90,24 @@ html body .org-configure-modal {
   height: 100%;
   max-height: none;
   border-radius: 0;
+}
+
+html body .pm-modal-overlay.pm-plan-page {
+  padding: 0;
+  align-items: stretch;
+  justify-content: stretch;
+  overflow: hidden;
+  background: var(--color-white);
+}
+
+html body .company-modal.company-modal--popup.pm-modal.pm-plan-page {
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  max-height: none;
+  margin: 0;
+  border-radius: 0;
+  box-shadow: none;
 }
 
 html body .image-crop-modal {
@@ -162,7 +180,7 @@ html body .advanced-filter__grid {
   html body .company-modal--wide,
   html body .company-modal--popup-wide,
   html body .modal.company-modal--popup-wide,
-  html body .company-modal.pm-modal,
+  html body .company-modal.pm-modal:not(.pm-plan-page),
   html body .company-modal.pm-modal--wide,
   html body .advanced-filter__dialog,
   html body .modal.wo-settings-modal,

@@ -17,7 +17,9 @@ import TableColumnPicker from '../shared/TableColumnPicker'
 import { AdvancedFilterMenu, ExportCsvButton } from '../shared/ListTableChrome'
 import { ColumnPickerMount, ColumnPickerScope } from '../shared/ColumnPickerSlot'
 import { exportWorkOrderList, getScheduledWorkOrders } from '../../lib/api-work-orders'
-import { getPmPlans, getPmActivityTypes, exportPmPlans } from '../../lib/api-pm'
+import { getPmPlans, getPmActivityTypes, exportPmPlans, getPmTabCounts } from '../../lib/api-pm'
+import { TAB_COUNTS_EVENT } from '../../lib/tabCountEvents'
+import NavIcon from '../layout/NavIcon'
 import { getEquipmentList } from '../../lib/api-equipment'
 import { downloadBlobFile } from '../../lib/api'
 import '../shared/ListTableChrome.css'
@@ -39,6 +41,7 @@ function PmScheduledLayoutInner() {
   const { toolbarLeft, toolbarRight } = useWorkOrderToolbar()
   const { isOrgAdmin, locationId: scopedLocationId } = usePermissions()
   const [view, setView] = useState('plans')
+  const [tabCounts, setTabCounts] = useState({ plans: 0, orders: 0 })
   const [search, setSearch] = useState('')
   const [sortBy, setSortBy] = useState('newest')
   const [advancedRules, setAdvancedRules] = useState([createPmPlanFilterRule()])
@@ -69,6 +72,29 @@ function PmScheduledLayoutInner() {
   }, [])
 
   const isPlansView = view === 'plans'
+  const scheduleTabs = [
+    { id: 'plans', label: 'PM Plans', icon: 'plans' },
+    { id: 'orders', label: 'Scheduled work orders', icon: 'clipboard' },
+  ]
+
+  useEffect(() => {
+    let cancelled = false
+    const load = () => {
+      getPmTabCounts()
+        .then((counts) => { if (!cancelled && counts) setTabCounts(counts) })
+        .catch(() => {})
+    }
+    load()
+    const onChange = (event) => {
+      if (event.detail?.module && event.detail.module !== 'pm' && event.detail.module !== 'work_orders') return
+      load()
+    }
+    window.addEventListener(TAB_COUNTS_EVENT, onChange)
+    return () => {
+      cancelled = true
+      window.removeEventListener(TAB_COUNTS_EVENT, onChange)
+    }
+  }, [view])
   const catalogFields = useCatalogFields()
   const pmColumns = useMemo(
     () => mergePickerColumns(PM_PLAN_COLUMNS, catalogFields),
@@ -268,7 +294,27 @@ function PmScheduledLayoutInner() {
         </div>
       </header>
 
-      <div className="wo-page__bar">
+      <div className="wo-page__toolbar">
+        <div className="wo-page__toolbar-row wo-page__toolbar-row--tabs">
+          <nav className="wo-page__tabs" aria-label="PM schedule views">
+            {scheduleTabs.map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                className={`wo-page__tab${view === tab.id ? ' wo-page__tab--active' : ''}`}
+                aria-current={view === tab.id ? 'page' : undefined}
+                title={tab.label}
+                data-tooltip={tab.label}
+                onClick={() => setView(tab.id)}
+              >
+                <NavIcon name={tab.icon} />
+                <span className="wo-page__tab-label">{tab.label}</span>
+                <span className="wo-page__tab-count">{tabCounts[tab.id] ?? 0}</span>
+              </button>
+            ))}
+          </nav>
+        </div>
+        <div className="wo-page__toolbar-row wo-page__toolbar-row--filters">
         <div className="wo-page__bar-controls">
           {toolbarLeft}
           <TableFilterToolbar
@@ -305,6 +351,7 @@ function PmScheduledLayoutInner() {
               />
             ) : <ColumnPickerMount />}
           />
+        </div>
         </div>
       </div>
 

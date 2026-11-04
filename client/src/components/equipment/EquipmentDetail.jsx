@@ -9,7 +9,8 @@ import { layoutWithoutCatalogFields } from '../../lib/formLayoutIds'
 import OrderedFormLayout from '../forms/OrderedFormLayout'
 import { isAllowedImageFile, resolveImageMime } from '../../lib/imageFiles'
 import { readFileAsDataUrl } from '../../config/warrantyDocuments'
-import { formatMeterLogger, formatMeterStamp, formatMeterValue } from '../../lib/meterReading'
+import { formatMeterStamp, formatMeterValue } from '../../lib/meterReading'
+import PersonChip from '../shared/PersonChip'
 import './EquipmentDetail.css'
 
 const HIDDEN_FIELD_NAMES = new Set([
@@ -96,13 +97,25 @@ function detailFacts(equipment) {
       : [
         formatMeterValue(equipment.last_meter_reading),
         formatMeterStamp(equipment.last_meter_reading_at),
-        formatMeterLogger({
-          logged_by_name: equipment.last_meter_logged_by_name,
-          logged_by_department: equipment.last_meter_logged_by_department,
-          logged_by_designation: equipment.last_meter_logged_by_designation,
-        }),
       ].filter(Boolean)
     facts.push({ label: 'Last meter reading', value: parts.join(' · ') })
+    const loggerName = equipment.logged_by_person?.name || equipment.last_meter_logged_by_name
+    if (loggerName) {
+      const subtitle = [
+        equipment.last_meter_logged_by_department,
+        equipment.last_meter_logged_by_designation,
+      ].filter(Boolean).join(' · ')
+      facts.push({
+        label: 'Logged by',
+        value: (
+          <PersonChip
+            person={equipment.logged_by_person || { name: loggerName }}
+            name={loggerName}
+            subtitle={subtitle}
+          />
+        ),
+      })
+    }
   }
 
   for (const field of equipment.field_values || []) {

@@ -1315,6 +1315,71 @@
   max-width: none;
 }
 
+.wo-lifecycle {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.wo-lifecycle > .wr-form-section,
+.wo-lifecycle > .wo-received-detail__section,
+.wo-lifecycle > .wo-assignment-actions {
+  margin: 0;
+}
+
+.wo-lifecycle__checklist {
+  width: 100%;
+  min-width: 0;
+}
+
+.wo-status-actions {
+  align-items: stretch;
+  gap: 12px;
+  margin-top: 4px;
+  padding-top: 4px;
+}
+
+.wo-status-actions__save {
+  border-radius: 10px;
+  min-height: 42px;
+  padding: 0 18px;
+}
+
+.wo-status-actions__group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  flex: 1 1 auto;
+  align-items: center;
+}
+
+.wo-status-actions__chip {
+  min-height: 40px;
+  padding: 0 14px;
+  border-radius: 10px;
+  font-size: 13px;
+}
+
+.wo-status-actions__chip.is-current {
+  box-shadow: 0 0 0 2px rgba(230, 57, 70, 0.2);
+}
+
+.wo-status-actions__chip--rework {
+  color: #b42318;
+  border-color: #fecdca;
+  background: #fff;
+}
+
+.wo-status-actions__chip--rework:hover:not(:disabled) {
+  background: #fef3f2;
+}
+
+.pm-wo-followup-btn {
+  margin-left: auto;
+  border-radius: 10px;
+  min-height: 42px;
+}
+
 .wo-received-detail__body {
   flex: 1;
   min-height: 0;

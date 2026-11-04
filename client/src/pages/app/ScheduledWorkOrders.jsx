@@ -7,7 +7,6 @@ import {
 import {
   getPmPlan,
   getPmPlans,
-  getPmTabCounts,
   createPmPlan,
   updatePmPlan,
   deletePmPlan,
@@ -17,7 +16,7 @@ import {
   bulkUploadPmPlans,
 } from '../../lib/api-pm'
 import { useWorkOrderList } from '../../hooks/useWorkOrderList'
-import { notifyTabCountsChanged, TAB_COUNTS_EVENT } from '../../lib/tabCountEvents'
+import { notifyTabCountsChanged } from '../../lib/tabCountEvents'
 import { useWorkOrderToolbar } from '../../hooks/useWorkOrderToolbar'
 import { usePermissions } from '../../hooks/usePermissions'
 import { useDebouncedValue } from '../../hooks/useDebouncedValue'
@@ -31,7 +30,6 @@ import WorkOrdersTable from '../../components/workorders/WorkOrdersTable'
 import { getEquipment } from '../../lib/api-equipment'
 import PmPlansTable from '../../components/pm/PmPlansTable'
 import PmPlanModal from '../../components/pm/PmPlanModal'
-import PmActivityTypesModal from '../../components/pm/PmActivityTypesModal'
 import {
   useMasterBulkUpload,
   MasterBulkActions,
@@ -67,13 +65,11 @@ export default function ScheduledWorkOrders() {
   const canRemove = canDelete('work_orders_scheduled') || canDelete('work_orders')
 
   const [plans, setPlans] = useState([])
-  const [tabCounts, setTabCounts] = useState({ plans: 0, orders: 0 })
   const [loadingMeta, setLoadingMeta] = useState(true)
   const [error, setError] = useState(null)
   const [saving, setSaving] = useState(false)
   const [planModal, setPlanModal] = useState(null)
   const [duplicatingId, setDuplicatingId] = useState(null)
-  const [showActivityTypes, setShowActivityTypes] = useState(false)
   const [selectedId, setSelectedId, closeSelected] = useOpenQueryId()
   const [params, setParams] = useSearchParams()
   const planId = params.get('plan')
@@ -203,45 +199,8 @@ export default function ScheduledWorkOrders() {
   }, [reloadMeta])
 
   useEffect(() => {
-    let cancelled = false
-    const load = () => {
-      getPmTabCounts()
-        .then((counts) => { if (!cancelled && counts) setTabCounts(counts) })
-        .catch(() => {})
-    }
-    load()
-    const onChange = (event) => {
-      if (event.detail?.module && event.detail.module !== 'pm') return
-      load()
-    }
-    window.addEventListener(TAB_COUNTS_EVENT, onChange)
-    return () => {
-      cancelled = true
-      window.removeEventListener(TAB_COUNTS_EVENT, onChange)
-    }
-  }, [view, plans.length])
-
-  useEffect(() => {
     const actions = (
       <>
-        {view === 'plans' && (
-          <button
-            type="button"
-            className="company-btn company-btn--secondary"
-            onClick={() => setShowActivityTypes(true)}
-            title="Activity types"
-            data-tooltip="Activity types"
-            aria-label="Activity types"
-          >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M8 6h12M8 12h12M8 18h12" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-              <circle cx="4" cy="6" r="1.2" fill="currentColor" />
-              <circle cx="4" cy="12" r="1.2" fill="currentColor" />
-              <circle cx="4" cy="18" r="1.2" fill="currentColor" />
-            </svg>
-            <span className="equipment-bulk-btn__label">Activity types</span>
-          </button>
-        )}
         {canAdd && view === 'plans' && (
           <MasterBulkActions
             onDownload={() => bulkActionsRef.current.handleDownloadTemplate()}
@@ -332,25 +291,6 @@ export default function ScheduledWorkOrders() {
 
   return (
     <>
-      <div className="pm-subtabs" role="tablist" aria-label="Scheduled maintenance">
-        {[
-          { id: 'plans', label: 'PM Plans' },
-          { id: 'orders', label: 'Scheduled work orders' },
-        ].map((tab) => (
-          <button
-            key={tab.id}
-            type="button"
-            role="tab"
-            aria-selected={view === tab.id}
-            className={`pm-subtabs__btn${view === tab.id ? ' pm-subtabs__btn--active' : ''}`}
-            onClick={() => setView?.(tab.id)}
-          >
-            {tab.label}
-            <span className="wo-page__tab-count">{tabCounts[tab.id] ?? 0}</span>
-          </button>
-        ))}
-      </div>
-
       {(error || ordersError) && (
         <div className="wo-alert wo-alert--error" role="alert">{error || ordersError}</div>
       )}
@@ -416,9 +356,6 @@ export default function ScheduledWorkOrders() {
         />
       )}
 
-      {showActivityTypes && (
-        <PmActivityTypesModal onClose={() => setShowActivityTypes(false)} />
-      )}
     </>
   )
 }

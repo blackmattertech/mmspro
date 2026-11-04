@@ -713,14 +713,21 @@ export default function WorkOrderLifecyclePanel({
   const checklistComplete = !hasChecklist
     || isChecklistComplete(detail.checklist_snapshot, form.checklist_values)
 
-  const checklistBlock = hasChecklist && isTechnician ? (
+  const checklistInLayout = layoutHasSystemKey(processLayout, 'checklist_execution')
+  const canEditChecklist = isTechnician && !fieldsReadOnly
+  const checklistBlock = hasChecklist && (isTechnician || canSupervise) ? (
     <ChecklistExecution
       snapshot={detail.checklist_snapshot}
       values={form.checklist_values}
       onChange={(next) => setField('checklist_values', next)}
-      disabled={fieldsReadOnly}
+      disabled={!canEditChecklist}
       record={detail}
       recordKind="work_order"
+      embedded={checklistInLayout}
+      defaultOpen={!checklistComplete}
+      onSave={canEditChecklist ? () => run(undefined) : null}
+      saving={saving}
+      saveLabel="Save checklist"
     />
   ) : null
 
@@ -1009,7 +1016,10 @@ export default function WorkOrderLifecyclePanel({
 
     if (key === 'material_consumed') return <div key={key} className={className}>{materialConsumedField}</div>
     if (key === 'dos_and_donts') return <div key={key} className={className}>{dosDontsField}</div>
-    if (key === 'checklist_execution') return <div key={key} className={className}>{checklistBlock}</div>
+    if (key === 'checklist_execution') {
+      if (!checklistBlock) return null
+      return <div key={key} className={`${className} wo-lifecycle__checklist`.trim()}>{checklistBlock}</div>
+    }
 
     const textMap = {
       job_description: ['Detailed job description', 'job_description'],
@@ -1110,35 +1120,50 @@ export default function WorkOrderLifecyclePanel({
       {followUpSuccess && (
         <div className="wo-alert wo-alert--success" role="status">{followUpSuccess}</div>
       )}
-      <div className="wr-actions" style={{ flexWrap: 'wrap' }}>
+      <div className="wr-actions wr-actions--bar wo-status-actions">
         <button
           type="button"
-          className="company-btn company-btn--secondary"
+          className="company-btn company-btn--primary wo-status-actions__save"
           disabled={saving || creatingFollowUp}
           onClick={() => run(undefined)}
         >
-          {saving ? 'Saving…' : isPmScheduled ? 'Save checklist' : 'Save details'}
+          {saving
+            ? 'Saving…'
+            : hasChecklist && canEditChecklist
+              ? (isPmScheduled ? 'Save checklist' : 'Save progress')
+              : 'Save details'}
         </button>
-        {visibleStatuses.map((status) => {
-          const needsChecklist = ['completed', 'verified', 'closed'].includes(status)
-          const blockedByChecklist = needsChecklist && hasChecklist && isTechnician && !checklistComplete
-          return (
-            <button
-              key={status}
-              type="button"
-              className={`company-btn ${status === 'closed' || status === 'verified' || status === 'completed' ? 'company-btn--primary' : 'company-btn--secondary'}`}
-              disabled={saving || creatingFollowUp || blockedByChecklist}
-              title={blockedByChecklist ? 'Complete the checklist before marking completed' : undefined}
-              onClick={() => (status === 'closed' ? setConfirmClose(true) : run(status))}
-            >
-              {formatStatus(status, statusLabels)}
-            </button>
-          )
-        })}
+        <div className="wo-status-actions__group" role="group" aria-label="Update status">
+          {visibleStatuses.map((status) => {
+            const needsChecklist = ['completed', 'verified', 'closed'].includes(status)
+            const blockedByChecklist = needsChecklist && hasChecklist && isTechnician && !checklistComplete
+            const isDoneStatus = status === 'closed' || status === 'verified' || status === 'completed'
+            const isCurrent = detail?.status === status
+            const isRework = status === 'returned' || status === 'rework' || status === 'returned_rework'
+            return (
+              <button
+                key={status}
+                type="button"
+                className={[
+                  'company-btn',
+                  'wo-status-actions__chip',
+                  isDoneStatus ? 'company-btn--primary' : 'company-btn--outline',
+                  isRework ? 'wo-status-actions__chip--rework' : '',
+                  isCurrent ? 'is-current' : '',
+                ].filter(Boolean).join(' ')}
+                disabled={saving || creatingFollowUp || blockedByChecklist}
+                title={blockedByChecklist ? 'Complete the checklist before marking completed' : undefined}
+                onClick={() => (status === 'closed' ? setConfirmClose(true) : run(status))}
+              >
+                {formatStatus(status, statusLabels)}
+              </button>
+            )
+          })}
+        </div>
         {isPmScheduled && canCreateManual && (
           <button
             type="button"
-            className="company-btn company-btn--secondary pm-wo-followup-btn"
+            className="company-btn company-btn--outline pm-wo-followup-btn"
             disabled={saving || creatingFollowUp}
             onClick={openFollowUpForm}
           >

@@ -14,6 +14,7 @@ import {
   formatTaskActivityValue,
 } from '../../lib/taskActivity'
 import EmployeeAvatar from '../company/EmployeeAvatar'
+import PersonChip from '../shared/PersonChip'
 import NavIcon from '../layout/NavIcon'
 import { formatPhoneDisplay } from '../shared/PhoneInput'
 import { CommentIcon, AttachmentIcon } from './TaskCardIcons'
@@ -79,10 +80,6 @@ function reminderLabel(value) {
 
 function referenceTypeLabel(value) {
   return REFERENCE_TYPE_OPTIONS.find((opt) => opt.value === value)?.label || value
-}
-
-function profileLabel(person) {
-  return person?.display_name || person?.full_name || person?.email || 'User'
 }
 
 function duePillVariant(status) {
@@ -260,7 +257,7 @@ export function TaskActivityTimeline({
                 <span className="task-detail-activity__by">
                   by
                   {' '}
-                  {profileLabel(item.actor)}
+                  {item.actor ? <PersonChip person={item.actor} /> : 'User'}
                 </span>
               </div>
               <time className="task-detail-activity__time" dateTime={item.created_at}>
@@ -284,7 +281,7 @@ export function TaskComments({ comments = [], onAdd, saving }) {
           {comments.map((comment) => (
             <div key={comment.id} className="task-detail-comments__item">
               <div className="task-detail-comments__meta">
-                <strong>{profileLabel(comment.author)}</strong>
+                {comment.author ? <PersonChip person={comment.author} /> : <strong>User</strong>}
                 <span>{formatActivityTime(comment.created_at)}</span>
               </div>
               <p className="task-detail-comments__text">{comment.body}</p>

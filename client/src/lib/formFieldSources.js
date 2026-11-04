@@ -69,11 +69,22 @@ export function isCurrentUserMaster(sourceId) {
   return sourceId === 'employees' || sourceId === 'employees_multi'
 }
 
+const SYSTEM_FIELD_MASTER_SOURCE = {
+  area_id: 'areas',
+  location_id: 'locations',
+  department_id: 'departments',
+  order_from_department_id: 'departments',
+  order_to_department_id: 'departments',
+  equipment_id: 'equipment',
+}
+
 export function fieldMasterSourceId(field) {
   if (!field) return ''
   if (field.masterSource) return field.masterSource
   const parsed = parseLayoutId(field.id)
-  return parsed.kind === 'master' ? parsed.value : ''
+  if (parsed.kind === 'master') return parsed.value
+  if (parsed.kind === 'system') return SYSTEM_FIELD_MASTER_SOURCE[parsed.value] || ''
+  return ''
 }
 
 /** Value to store when a field should start as the signed-in employee. */
@@ -118,15 +129,49 @@ export function canFilterMasterBy(childSourceId, parentSourceId) {
   return Boolean(masterFilterKey(childSourceId, parentSourceId))
 }
 
+const FILTER_PARENT_PREFERENCE = ['areas', 'departments', 'locations']
+
+/** Drop or rebind filterBy when the parent field was removed from the layout. */
+export function healFilterByFieldId(field, siblings = []) {
+  if (!field?.filterByFieldId) return field
+  const parent = siblings.find((item) => item.id === field.filterByFieldId)
+  if (parent && parent.id !== field.id) return field
+
+  const childSource = fieldMasterSourceId(field)
+  if (childSource) {
+    for (const preferred of FILTER_PARENT_PREFERENCE) {
+      if (!canFilterMasterBy(childSource, preferred)) continue
+      const match = siblings.find((item) => (
+        item.id !== field.id && fieldMasterSourceId(item) === preferred
+      ))
+      if (match) return { ...field, filterByFieldId: match.id }
+    }
+  }
+
+  const next = { ...field }
+  delete next.filterByFieldId
+  return next
+}
+
+export function healLayoutFilterBy(layout) {
+  if (!layout) return layout
+  const fields = (layout.fields || []).map((field) => healFilterByFieldId(field, layout.fields || []))
+  const groups = (layout.groups || []).map((group) => ({
+    ...group,
+    childFields: (group.childFields || []).map((child) => (
+      healFilterByFieldId(child, group.childFields || [])
+    )),
+  }))
+  return { ...layout, fields, groups }
+}
+
 /** Resolve MasterPicker filters from a field's filterByFieldId + current values. */
 export function resolveMasterFilters(field, layout, values = {}) {
-  const childSource = field?.masterSource
-    || (parseLayoutId(field?.id).kind === 'master' ? parseLayoutId(field.id).value : '')
+  const childSource = fieldMasterSourceId(field)
   if (!childSource || !field?.filterByFieldId) return {}
   const parentField = (layout?.fields || []).find((item) => item.id === field.filterByFieldId)
   if (!parentField) return {}
-  const parentSource = parentField.masterSource
-    || (parseLayoutId(parentField.id).kind === 'master' ? parseLayoutId(parentField.id).value : '')
+  const parentSource = fieldMasterSourceId(parentField)
   const filterKey = masterFilterKey(childSource, parentSource)
   if (!filterKey) return {}
   const parentValue = values[parentField.id]
