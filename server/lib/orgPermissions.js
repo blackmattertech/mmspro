@@ -6,6 +6,8 @@ import {
   MODULE_LEGACY_EXPAND,
   MODULE_PARENT_GRANTS,
   WORK_ORDER_MODULE_KEYS,
+  WORK_REQUEST_MODULE_KEYS,
+  APPROVAL_MODULE_KEYS,
   REPORT_MODULE_KEYS,
 } from './accessModules.js'
 import { canManageOrg } from './accountRoles.js'
@@ -278,6 +280,26 @@ export function hasModulePermission(session, moduleKey, action) {
 
 export function hasAnyModulePermission(session, checks) {
   return (checks || []).some(([moduleKey, action]) => hasModulePermission(session, moduleKey, action))
+}
+
+const WORK_RECORD_MODULE_KEYS = [
+  ...WORK_REQUEST_MODULE_KEYS,
+  ...WORK_ORDER_MODULE_KEYS,
+  ...APPROVAL_MODULE_KEYS,
+]
+
+/**
+ * Org admins, Super Admins, and any profile that can read or update a work
+ * request, work order, or approval module may open those detail pages.
+ * List membership and edit rights stay on their own checks.
+ */
+export function canViewAssociatedWorkRecord(session) {
+  if (!session) return false
+  if (session.is_org_admin) return true
+  return WORK_RECORD_MODULE_KEYS.some((key) => (
+    hasModulePermission(session, key, 'read')
+    || hasModulePermission(session, key, 'update')
+  ))
 }
 
 /** Non-admins are limited to their employee location when set.

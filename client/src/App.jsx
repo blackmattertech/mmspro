@@ -70,6 +70,10 @@ const workOrderModules = [
   'work_orders_received',
   'work_orders_assigned',
   'work_orders_manual',
+  'work_orders_scheduled',
+  'work_orders_approve',
+  ...WORK_REQUEST_MODULE_KEYS,
+  'work_request_approve',
 ]
 
 function PrefetchAuthenticatedShell() {
@@ -130,7 +134,7 @@ export default function App() {
               <Route path="dashboard" element={withModule('dashboard', <Dashboard />)} />
               <Route
                 path="work-request"
-                element={withModule([...WORK_REQUEST_MODULE_KEYS, 'work_request'], <WorkRequestsRouteLayout />)}
+                element={withModule([...WORK_REQUEST_MODULE_KEYS, 'work_request', ...workOrderModules], <WorkRequestsRouteLayout />)}
               >
                 <Route index element={<Navigate to="incoming" replace />} />
                 <Route path="create" element={withSuspense(<WorkRequestCreate />)} />

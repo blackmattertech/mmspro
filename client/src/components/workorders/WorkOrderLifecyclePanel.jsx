@@ -715,7 +715,7 @@ export default function WorkOrderLifecyclePanel({
 
   const checklistInLayout = layoutHasSystemKey(processLayout, 'checklist_execution')
   const canEditChecklist = isTechnician && !fieldsReadOnly
-  const checklistBlock = hasChecklist && (isTechnician || canSupervise) ? (
+  const checklistBlock = hasChecklist ? (
     <ChecklistExecution
       snapshot={detail.checklist_snapshot}
       values={form.checklist_values}
@@ -780,6 +780,7 @@ export default function WorkOrderLifecyclePanel({
             onChange={(e) => setField('dos', e.target.value)}
             aria-label="Do's"
             maxLength={maxLength('dos_and_donts')}
+            disabled={fieldsReadOnly}
           />
         </div>
         <div className="wo-dos-donts__col">
@@ -795,6 +796,7 @@ export default function WorkOrderLifecyclePanel({
             onChange={(e) => setField('donts', e.target.value)}
             aria-label="Don'ts"
             maxLength={maxLength('dos_and_donts')}
+            disabled={fieldsReadOnly}
           />
         </div>
       </div>

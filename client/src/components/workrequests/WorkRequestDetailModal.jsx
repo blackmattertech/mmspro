@@ -35,7 +35,7 @@ import WorkOrderAssignmentActions from '../workorders/WorkOrderAssignmentActions
 import { useOrgStatusOptions } from '../../hooks/useOrgStatusOptions'
 import { workRequestStatusDisplay } from '../../lib/workRequestStatusLabel'
 
-function WorkRequestChecklistPanel({ detail }) {
+function WorkRequestChecklistPanel({ detail, readOnly = false }) {
   const fields = detail?.checklist_snapshot?.fields || []
   const [values, setValues] = useState(detail?.checklist_values || {})
   const [saving, setSaving] = useState(false)
@@ -67,16 +67,16 @@ function WorkRequestChecklistPanel({ detail }) {
         snapshot={detail.checklist_snapshot}
         values={values}
         onChange={setValues}
-        disabled={saving}
+        disabled={saving || readOnly}
         record={detail}
         recordKind="work_request"
         embedded
         defaultOpen={missing.length > 0}
-        onSave={handleSave}
+        onSave={readOnly ? null : handleSave}
         saving={saving}
         saveLabel="Save checklist"
       />
-      {missing.length > 0 && (
+      {!readOnly && missing.length > 0 && (
         <p className="company-readonly-note">Required before save: {missing.map((field) => field.name).join(', ')}</p>
       )}
       {message && <p className="company-readonly-note wr-checklist-panel__message">{message}</p>}
@@ -909,7 +909,7 @@ export default function WorkRequestDetailModal({
                 </p>
               )}
 
-                {formActors.isTechnician ? <WorkRequestChecklistPanel detail={detail} /> : null}
+                <WorkRequestChecklistPanel detail={detail} readOnly={!formActors.isTechnician} />
 
                 {breakdownFields.length > 0 && (
                   <section className="wo-received-detail__section">
