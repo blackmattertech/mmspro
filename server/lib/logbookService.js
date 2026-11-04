@@ -1,12 +1,13 @@
 import { supabaseAdmin } from '../services/supabase.js'
 import { applyIlikeSearch, listEnvelope } from './listQuery.js'
 import { hierarchyParentFields } from './equipmentService.js'
+import { loadTimelineActors } from './timelineActors.js'
 
 const LIST_CAP = 5000
 
 const EQUIPMENT_LIST_SELECT = `
   id, name, code, location_id, department_id, area_id, is_active, reading_required,
-  last_meter_reading, last_meter_reading_at, last_meter_logged_by_name,
+  last_meter_reading, last_meter_reading_at, last_meter_logged_by, last_meter_logged_by_name,
   last_meter_logged_by_department, last_meter_logged_by_designation,
   org_locations(id, name),
   departments(id, name),
@@ -41,6 +42,7 @@ function mapEquipment(row) {
     area_name: row.areas?.name || null,
     last_reading: asReading(row.last_meter_reading),
     last_reading_at: row.last_meter_reading_at || null,
+    logged_by: row.last_meter_logged_by || null,
     logged_by_name: row.last_meter_logged_by_name || null,
     logged_by_department: row.last_meter_logged_by_department || null,
     logged_by_designation: row.last_meter_logged_by_designation || null,
@@ -120,6 +122,29 @@ async function attachFieldValues(orgId, rows) {
   for (const row of rows) {
     row.field_values = byEquipment.get(row.id) || []
   }
+}
+
+async function withLoggerPeople(orgId, rows) {
+  const list = rows || []
+  if (!list.length) return list
+  const ids = [...new Set(list.map((row) => row.logged_by).filter(Boolean))]
+  const actors = ids.length ? await loadTimelineActors(orgId, ids) : new Map()
+  return list.map((row) => {
+    const actor = row.logged_by ? actors.get(row.logged_by) : null
+    const name = actor?.name || row.logged_by_name || null
+    return {
+      ...row,
+      logged_by_person: name
+        ? {
+          id: actor?.id || row.logged_by || null,
+          name,
+          photo_url: actor?.photo_url || null,
+          avatar_url: actor?.avatar_url || null,
+          photo_signed_url: actor?.photo_signed_url || null,
+        }
+        : null,
+    }
+  })
 }
 
 function mapReading(row) {
@@ -207,7 +232,7 @@ async function readerContext(orgId, userId) {
 async function refreshLatest(orgId, equipmentId) {
   const { data, error } = await supabaseAdmin
     .from('equipment_meter_readings')
-    .select('reading, reading_at, logged_by_name, logged_by_department, logged_by_designation')
+    .select('reading, reading_at, logged_by, logged_by_name, logged_by_department, logged_by_designation')
     .eq('org_id', orgId)
     .eq('equipment_id', equipmentId)
     .order('reading_at', { ascending: false })
@@ -220,6 +245,7 @@ async function refreshLatest(orgId, equipmentId) {
     .update({
       last_meter_reading: data?.reading ?? null,
       last_meter_reading_at: data?.reading_at ?? null,
+      last_meter_logged_by: data?.logged_by ?? null,
       last_meter_logged_by_name: data?.logged_by_name ?? null,
       last_meter_logged_by_department: data?.logged_by_department ?? null,
       last_meter_logged_by_designation: data?.logged_by_designation ?? null,
@@ -384,7 +410,8 @@ export async function listLogbookEquipment(orgId, {
   await attachFieldValues(orgId, rows)
   const assetFields = await loadLogbookAssetFields(orgId)
   if (!needsMemory) {
-    return listEnvelope(rows.map(mapEquipment), {
+    const page = await withLoggerPeople(orgId, rows.map(mapEquipment))
+    return listEnvelope(page, {
       total: count || 0,
       limit,
       offset,
@@ -396,7 +423,8 @@ export async function listLogbookEquipment(orgId, {
     rows.map(mapEquipment).filter((row) => matchesColumnFilters(row, columnFilters)),
     { sort, sortDir, sortBy },
   )
-  return listEnvelope(matched.slice(offset, offset + limit), {
+  const page = await withLoggerPeople(orgId, matched.slice(offset, offset + limit))
+  return listEnvelope(page, {
     total: matched.length,
     limit,
     offset,
@@ -405,7 +433,7 @@ export async function listLogbookEquipment(orgId, {
 }
 
 export async function getLatestMeterReading(orgId, equipmentId) {
-  const equipment = mapEquipment(await getEquipmentRow(orgId, equipmentId))
+  const [equipment] = await withLoggerPeople(orgId, [mapEquipment(await getEquipmentRow(orgId, equipmentId))])
   return {
     equipment_id: equipment.id,
     equipment_name: equipment.name,
@@ -414,9 +442,11 @@ export async function getLatestMeterReading(orgId, equipmentId) {
     reading_required: equipment.reading_required,
     reading: equipment.last_reading,
     reading_at: equipment.last_reading_at,
+    logged_by: equipment.logged_by,
     logged_by_name: equipment.logged_by_name,
     logged_by_department: equipment.logged_by_department,
     logged_by_designation: equipment.logged_by_designation,
+    logged_by_person: equipment.logged_by_person,
   }
 }
 
@@ -432,9 +462,13 @@ export async function listMeterReadings(orgId, equipmentId) {
     .order('reading_at', { ascending: false })
     .limit(200)
   if (error) throw error
-  return {
+  const [withEquipment, ...readings] = await withLoggerPeople(orgId, [
     equipment,
-    readings: (data || []).map(mapReading),
+    ...(data || []).map(mapReading),
+  ])
+  return {
+    equipment: withEquipment,
+    readings,
   }
 }
 
@@ -470,7 +504,8 @@ export async function addMeterReading(orgId, equipmentId, body, userId, { readin
   if (error) throw error
 
   await refreshLatest(orgId, equipmentId)
-  return mapReading(data)
+  const [saved] = await withLoggerPeople(orgId, [mapReading(data)])
+  return saved
 }
 
 export async function deleteMeterReading(orgId, readingId, { assertEquipment } = {}) {

@@ -6,6 +6,7 @@ import { usePermissions } from '../../hooks/usePermissions'
 import { useOrgStatuses } from '../../hooks/useOrgStatuses'
 import { isCompanyAdmin, canManageOrg } from '../../lib/accountRoles'
 import { orgPath } from '../../config/navigation'
+import { STATUS_ENTITY_LABELS } from '../../lib/formMasterStatuses'
 import { reorderItemsById } from '../../lib/assetFormSchema'
 import PageBack from '../../components/shared/PageBack'
 import EditIcon from '../../components/ui/EditIcon'
@@ -14,13 +15,6 @@ import OrgStatusEditModal from '../../components/others/OrgStatusEditModal'
 import '../../components/company/CompanyShared.css'
 import '../../components/tasks/TaskMetaSettings.css'
 import './Others.css'
-
-const TYPE_LABELS = {
-  work_request: 'Work Request',
-  work_order: 'Work Order',
-  task: 'Tasks & Follow-ups',
-  pm_plan: 'Planned Maintenance',
-}
 
 function DragHandle() {
   return (
@@ -35,19 +29,26 @@ function DragHandle() {
   )
 }
 
-export default function OthersStatusManage() {
-  const { entityType } = useParams()
+export default function OthersStatusManage({
+  entityType: entityTypeProp = null,
+  backTo: backToProp = null,
+  backLabel = 'Forms Master',
+} = {}) {
+  const params = useParams()
+  const entityType = entityTypeProp || params.entityType
   const { org } = useOrg()
   const { role } = useAuth()
-  const { canCreate, canUpdate, canDelete } = usePermissions()
+  const { canCreate, canUpdate, canDelete, isOrgAdmin } = usePermissions()
   const canManage = (
-    isCompanyAdmin(role)
+    isOrgAdmin
+    || isCompanyAdmin(role)
     || canManageOrg(role)
+    || canUpdate('assets')
     || canCreate('others')
     || canUpdate('others')
     || canDelete('others')
   )
-  const label = TYPE_LABELS[entityType] || entityType
+  const label = STATUS_ENTITY_LABELS[entityType] || entityType
   const {
     statuses,
     loading,
@@ -72,7 +73,8 @@ export default function OthersStatusManage() {
   }, [statuses])
 
   const rows = draggingId ? localRows : statuses
-  const backTo = org?.slug ? orgPath(org.slug, 'masters/others/status') : '#'
+  const backTo = backToProp
+    || (org?.slug ? orgPath(org.slug, 'masters/forms') : '#')
 
   const handleDragStart = (event, id) => {
     if (!canManage) return
@@ -130,7 +132,7 @@ export default function OthersStatusManage() {
   return (
     <div className="company-page others-page">
       <header className="company-page__header">
-        <PageBack to={backTo} label="Status" />
+        <PageBack to={backTo} label={backLabel} />
         <div className="others-manage__header-row">
           <div>
             <h1 className="company-page__title">{label} statuses</h1>

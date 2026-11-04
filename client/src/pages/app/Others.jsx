@@ -8,25 +8,11 @@ import './Others.css'
 
 const HUB_CARDS = [
   {
-    id: 'status',
-    title: 'Status',
-    description: 'Create and manage statuses for work requests, work orders, tasks, and more.',
-    icon: 'list',
-    segment: 'masters/others/status',
-  },
-  {
     id: 'checklists',
     title: 'Checklists',
     description: 'Build reusable checklists with sections and typed inspection fields.',
     icon: 'clipboard',
     segment: 'masters/others/checklists',
-  },
-  {
-    id: 'character-limits',
-    title: 'Character limits',
-    description: 'Set how many characters users can enter in descriptions, remarks, and related fields.',
-    icon: 'document',
-    segment: 'masters/others/character-limits',
   },
 ]
 
@@ -40,7 +26,7 @@ export default function Others() {
         <MastersBack />
         <h1 className="company-page__title">Others</h1>
         <p className="company-page__subtitle">
-          Shared masters used across requests, orders, and related modules.
+          Shared checklists used across requests, orders, and related modules.
         </p>
       </header>
 

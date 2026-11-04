@@ -48,6 +48,19 @@ function WorkRequestChecklistPanel({ detail }) {
   if (!fields.length) return null
   const missing = fields.filter((field) => field.is_required && !String(values?.[field.id] ?? '').trim())
 
+  const handleSave = async () => {
+    setSaving(true)
+    setMessage('')
+    try {
+      await saveWorkRequestChecklist(detail.id, values)
+      setMessage('Checklist saved.')
+    } catch (err) {
+      setMessage(err.message || 'Could not save checklist')
+    } finally {
+      setSaving(false)
+    }
+  }
+
   return (
     <section className="wo-received-detail__section wr-checklist-panel">
       <ChecklistExecution
@@ -57,32 +70,16 @@ function WorkRequestChecklistPanel({ detail }) {
         disabled={saving}
         record={detail}
         recordKind="work_request"
+        embedded
+        defaultOpen={missing.length > 0}
+        onSave={handleSave}
+        saving={saving}
+        saveLabel="Save checklist"
       />
       {missing.length > 0 && (
         <p className="company-readonly-note">Required before save: {missing.map((field) => field.name).join(', ')}</p>
       )}
-      <div className="wr-checklist-panel__actions">
-        <button
-          type="button"
-          className="company-btn company-btn--secondary"
-          disabled={saving || missing.length > 0}
-          onClick={async () => {
-            setSaving(true)
-            setMessage('')
-            try {
-              await saveWorkRequestChecklist(detail.id, values)
-              setMessage('Checklist saved.')
-            } catch (err) {
-              setMessage(err.message || 'Could not save checklist')
-            } finally {
-              setSaving(false)
-            }
-          }}
-        >
-          {saving ? 'Saving…' : 'Save checklist'}
-        </button>
-        {message && <p className="company-readonly-note">{message}</p>}
-      </div>
+      {message && <p className="company-readonly-note wr-checklist-panel__message">{message}</p>}
     </section>
   )
 }
@@ -815,7 +812,7 @@ export default function WorkRequestDetailModal({
                     <MetaItem label="Work order">
                       {org?.slug && workOrderId ? (
                         <Link
-                          to={orgPath(org.slug, `work-orders/received?open=${workOrderId}`)}
+                          to={orgPath(org.slug, `work-orders/manual?open=${encodeURIComponent(workOrderId)}`)}
                           className="company-link"
                         >
                           {detail.linked_work_order?.wo_number
@@ -992,7 +989,7 @@ export default function WorkRequestDetailModal({
                         </button>
                         <button
                           type="button"
-                          className="company-btn wr-actions__info"
+                          className="company-btn company-btn--outline wr-actions__info"
                           onClick={() => setMode('info')}
                           disabled={acting || mode === 'reject'}
                         >
@@ -1000,7 +997,7 @@ export default function WorkRequestDetailModal({
                         </button>
                         <button
                           type="button"
-                          className="company-btn wr-actions__reject"
+                          className="company-btn company-btn--outline wr-actions__reject"
                           onClick={() => setMode('reject')}
                           disabled={acting || mode === 'reject'}
                         >

@@ -1,6 +1,6 @@
 import { useState, useCallback, useMemo, useEffect } from 'react'
 import { useOutletContext } from 'react-router-dom'
-import { getReceivedWorkOrders, getReceivedWorkOrder, updateWorkOrderLifecycle } from '../../lib/api-work-orders'
+import { getReceivedWorkOrders, getReceivedWorkOrder, getWorkOrderDetail, updateWorkOrderLifecycle } from '../../lib/api-work-orders'
 import { useWorkOrderList } from '../../hooks/useWorkOrderList'
 import { useDebouncedValue } from '../../hooks/useDebouncedValue'
 import { useTablePagination } from '../../hooks/useTablePagination'
@@ -112,7 +112,7 @@ export default function ReceivedWorkOrders() {
       {selectedId && (
         <ReceivedWorkOrderDetailModal
           orderId={selectedId}
-          fetchWorkOrder={getReceivedWorkOrder}
+          fetchWorkOrder={(id) => getWorkOrderDetail(id, { prefer: getReceivedWorkOrder })}
           onClose={closeSelected}
           onAssignmentUpdated={() => reload({ silent: true })}
         />

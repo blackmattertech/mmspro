@@ -236,8 +236,7 @@ const PM_PLAN = form('pm.plan', 'PM plan', [
     field('priority', 'Priority', { required: true }),
     field('status', 'Status', { required: true }),
     field('location_id', 'Location', { type: 'dropdown' }),
-    field('area_id', 'Area', { type: 'dropdown' }),
-    field('equipment_id', 'Asset', { type: 'dropdown', required: true }),
+    field('asset_picker', 'Asset picker', { compound: true, required: true, colSpan: 100 }),
     field('schedule', 'Schedule', { compound: true, required: true, colSpan: 100 }),
   ]),
   section('pm_technicians', 'Technicians', [

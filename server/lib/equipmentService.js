@@ -10,12 +10,13 @@ import {
   uploadEquipmentImageFile,
   deleteEquipmentImageFile,
 } from './equipmentImageStorage.js'
+import { loadTimelineActors } from './timelineActors.js'
 const ORG_ASSETS_BUCKET = 'org-assets'
 
 const EQUIPMENT_SELECT = `
   id, org_id, location_id, department_id, area_id,
   name, code, qr_code, image_path, is_active, reading_required,
-  last_meter_reading, last_meter_reading_at, last_meter_logged_by_name,
+  last_meter_reading, last_meter_reading_at, last_meter_logged_by, last_meter_logged_by_name,
   last_meter_logged_by_department, last_meter_logged_by_designation,
   created_at, updated_at,
   org_locations(id, name, code),
@@ -474,6 +475,31 @@ async function loadEquipmentActivity(orgId, equipment) {
   return activity
 }
 
+async function attachMeterLogger(orgId, equipment) {
+  if (!equipment) return equipment
+  const profileId = equipment.last_meter_logged_by
+  if (!profileId) {
+    return {
+      ...equipment,
+      logged_by_person: equipment.last_meter_logged_by_name
+        ? { name: equipment.last_meter_logged_by_name }
+        : null,
+    }
+  }
+  const actors = await loadTimelineActors(orgId, [profileId])
+  const actor = actors.get(profileId)
+  return {
+    ...equipment,
+    logged_by_person: {
+      id: actor?.id || profileId,
+      name: actor?.name || equipment.last_meter_logged_by_name || null,
+      photo_url: actor?.photo_url || null,
+      avatar_url: actor?.avatar_url || null,
+      photo_signed_url: actor?.photo_signed_url || null,
+    },
+  }
+}
+
 export async function getEquipmentDetail(orgId, id) {
   const equipment = await getEquipmentById(orgId, id)
   if (!equipment) return null
@@ -501,7 +527,7 @@ export async function getEquipmentDetail(orgId, id) {
       }
     })
 
-  let withImage = await attachImageUrl(equipment)
+  let withImage = await attachMeterLogger(orgId, await attachImageUrl(equipment))
   if (!withImage.qr_code) {
     const qrCode = await writeEquipmentQr(orgId, id)
     if (qrCode) withImage = { ...withImage, qr_code: qrCode }

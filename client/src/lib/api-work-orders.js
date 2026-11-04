@@ -134,6 +134,23 @@ export function getManualWorkOrder(id) {
   return workOrdersFetch(`/manual/orders/${id}`)
 }
 
+/** Load a work order the viewer can read, even when a list-specific endpoint hides it. */
+export async function getWorkOrderDetail(id, { prefer } = {}) {
+  const loaders = []
+  if (typeof prefer === 'function') loaders.push(prefer)
+  if (prefer !== getManualWorkOrder) loaders.push(getManualWorkOrder)
+  let lastError = null
+  for (const load of loaders) {
+    try {
+      return await load(id)
+    } catch (err) {
+      lastError = err
+      if (err?.status && err.status !== 404) throw err
+    }
+  }
+  throw lastError || new Error('Not found')
+}
+
 export function updateWorkOrderAssignment(workOrderId, payload) {
   return workOrdersFetch(`/manual/${workOrderId}/assignment`, {
     method: 'PATCH',

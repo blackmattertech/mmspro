@@ -1,14 +1,20 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { useNavigate, useParams } from 'react-router-dom'
+import { Navigate, useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
 import { useOrg } from '../../hooks/useOrg'
 import { usePermissions } from '../../hooks/usePermissions'
 import { useBackdropClose } from '../../hooks/useBackdropClose'
+import { useTextFieldLimits } from '../../hooks/useTextFieldLimits'
 import { canManageOrg } from '../../lib/accountRoles'
 import { orgPath } from '../../config/navigation'
 import { MODULE_FORM_GROUPS } from '../../lib/formRegistry'
 import { isProductModuleEnabled } from '../../lib/orgModules'
+import {
+  statusMasterForForm,
+  statusMasterForModule,
+} from '../../lib/formMasterStatuses'
+import OthersStatusManage from './OthersStatusManage'
 import {
   encodeFormMasterSegment,
   getFormMasterField,
@@ -18,14 +24,28 @@ import {
   saveFormMasterSkips,
 } from '../../lib/api-form-masters'
 import { invalidateFormLayoutCache } from '../../lib/api-form-layouts'
+import {
+  clearTextFieldLimitsCache,
+  updateTextFieldLimits,
+} from '../../lib/api-text-field-limits'
+import {
+  DEFAULT_TEXT_FIELD_LIMITS,
+  TEXT_FIELD_LIMIT_MAX,
+  TEXT_FIELD_LIMIT_MIN,
+  limitKeyFromField,
+} from '../../lib/textFieldLimits'
 import { fieldTypeLabel } from '../../lib/assetFieldTypes'
+import { parseLayoutId } from '../../lib/formLayoutIds'
 import PageBack from '../../components/shared/PageBack'
 import MastersBack from '../../components/company/MastersBack'
 import NavIcon from '../../components/layout/NavIcon'
 import SpellcheckInput from '../../components/shared/SpellcheckInput'
+import PmActivityTypesModal from '../../components/pm/PmActivityTypesModal'
 import '../../components/company/CompanyShared.css'
 import '../../components/assets/AssetsFields.css'
 import './Others.css'
+
+const FORM_SECTIONS = new Set(['skips', 'options', 'limits', 'status'])
 
 function optionLabels(options) {
   if (!Array.isArray(options) || !options.length) return ['']
@@ -37,11 +57,11 @@ function optionLabels(options) {
   return labels.length ? labels : ['']
 }
 
-function HubCard({ title, description, onClick }) {
+function HubCard({ title, description, icon = 'document', onClick }) {
   return (
     <button type="button" className="others-hub__card" onClick={onClick}>
       <span className="others-hub__icon" aria-hidden="true">
-        <NavIcon name="document" />
+        <NavIcon name={icon} />
       </span>
       <span className="others-hub__body">
         <span className="others-hub__title">{title}</span>
@@ -53,7 +73,7 @@ function HubCard({ title, description, onClick }) {
 }
 
 function modulesFromRegistry(org) {
-  return MODULE_FORM_GROUPS
+  const modules = MODULE_FORM_GROUPS
     .filter((group) => isProductModuleEnabled(org?.disabled_modules, group.moduleId))
     .map((group) => ({
       moduleId: group.moduleId,
@@ -64,12 +84,126 @@ function modulesFromRegistry(org) {
         fieldCount: null,
       })),
     }))
+  if (
+    isProductModuleEnabled(org?.disabled_modules, 'tasks_followups')
+    && !modules.some((group) => group.moduleId === 'tasks_followups')
+  ) {
+    modules.push({
+      moduleId: 'tasks_followups',
+      label: 'Tasks & Follow-ups',
+      forms: [],
+    })
+  }
+  return modules
 }
 
-function fieldCountLabel(fieldCount) {
-  if (fieldCount == null) return 'Dropdown lists on this form'
-  if (!fieldCount) return 'No dropdown lists on this form yet'
-  return `${fieldCount} dropdown ${fieldCount === 1 ? 'list' : 'lists'}`
+function withTaskStatusModule(modules, org) {
+  const list = [...(modules || [])]
+  if (
+    isProductModuleEnabled(org?.disabled_modules, 'tasks_followups')
+    && !list.some((group) => group.moduleId === 'tasks_followups')
+  ) {
+    list.push({
+      moduleId: 'tasks_followups',
+      label: 'Tasks & Follow-ups',
+      forms: [],
+    })
+  }
+  return list
+}
+
+function isActivityTypeField(field) {
+  const parsed = parseLayoutId(field?.id)
+  return parsed.value === 'activity_type_id' || field?.id === 'activity_type_id'
+}
+
+function canManageFormMasters(role, canUpdate, isOrgAdmin) {
+  return Boolean(isOrgAdmin || canManageOrg(role) || canUpdate?.('assets'))
+}
+
+function formMasterPath(org, formId, section = '', fieldId = '') {
+  if (!org?.slug || !formId) return '#'
+  const base = `masters/forms/${encodeFormMasterSegment(formId)}`
+  if (!section) return orgPath(org.slug, base)
+  const withSection = `${base}/${section}`
+  if (!fieldId) return orgPath(org.slug, withSection)
+  return orgPath(org.slug, `${withSection}/${encodeFormMasterSegment(fieldId)}`)
+}
+
+function flattenFormFields(payload) {
+  return (payload?.sections || []).flatMap((section) => section.fields || [])
+}
+
+function dropdownFields(payload) {
+  return flattenFormFields(payload).filter((field) => (
+    field.hasOptions || isActivityTypeField(field)
+  ))
+}
+
+function limitKeysForForm(payload) {
+  const keys = new Set()
+  for (const field of flattenFormFields(payload)) {
+    const parsed = parseLayoutId(field.id)
+    const key = limitKeyFromField({
+      key: parsed?.value || field.id,
+      label: field.label,
+      name: field.label,
+    })
+    if (key) keys.add(key)
+  }
+  return [...keys]
+}
+
+function formSectionCards(payload, formId) {
+  const cards = []
+  const statusMaster = statusMasterForForm(formId)
+  if (statusMaster) {
+    cards.push({
+      id: 'status',
+      title: statusMaster.title,
+      description: statusMaster.description,
+      icon: 'list',
+    })
+  }
+
+  const fields = flattenFormFields(payload)
+  const hasSkipSurface = Boolean(
+    fields.length
+    || payload?.supportsTechnicianAcceptance
+    || payload?.supportsChecklist,
+  )
+  if (hasSkipSurface) {
+    cards.push({
+      id: 'skips',
+      title: 'Skip fields',
+      description: 'Hide optional sections and fields, and set process rules for this form.',
+      icon: 'list',
+    })
+  }
+
+  const dropdownCount = dropdownFields(payload).length
+  const hasActivityTypes = formId === 'pm.plan' || fields.some(isActivityTypeField)
+  if (dropdownCount || hasActivityTypes) {
+    cards.push({
+      id: 'options',
+      title: 'Dropdown values',
+      description: hasActivityTypes
+        ? 'Manage dropdown lists and maintenance activity types for this form.'
+        : 'Add, rename, and reorder the options people see in this form’s dropdowns.',
+      icon: 'document',
+    })
+  }
+
+  if (limitKeysForForm(payload).length) {
+    cards.push({
+      id: 'limits',
+      title: 'Character limits',
+      description: 'Set how many characters users can enter in this form’s text fields.',
+      icon: 'document',
+    })
+  }
+
+  return cards
 }
 
 function FormList() {
@@ -93,7 +227,7 @@ function FormList() {
     return () => { cancelled = true }
   }, [])
 
-  const modules = payload?.modules || previewModules
+  const modules = withTaskStatusModule(payload?.modules || previewModules, org)
 
   return (
     <div className="company-page others-page">
@@ -101,31 +235,107 @@ function FormList() {
         <MastersBack />
         <h1 className="company-page__title">Forms Master</h1>
         <p className="company-page__subtitle">
-          Choose a module form Superadmin configured, then skip optional fields or manage dropdown lists.
+          Choose a module form, then open Status, Skip fields, Dropdown values, or Character limits.
         </p>
       </header>
       {error ? <p className="company-error">{error}</p> : null}
       {!error && !modules.length ? (
         <p className="company-empty">No configurable forms are available for this company.</p>
       ) : null}
-      {modules.map((group) => (
-        <section key={group.moduleId} className="form-masters-group">
-          <h2 className="form-masters-group__title">{group.label}</h2>
-          <div className="others-hub">
-            {group.forms.map((form) => (
-              <HubCard
-                key={form.formId}
-                title={form.label}
-                description={fieldCountLabel(form.fieldCount)}
-                onClick={() => org?.slug && navigate(orgPath(
-                  org.slug,
-                  `masters/forms/${encodeFormMasterSegment(form.formId)}`,
-                ))}
-              />
-            ))}
-          </div>
-        </section>
-      ))}
+      {modules.map((group) => {
+        // Status-only modules (e.g. Tasks) keep a Status card here; forms with a hub show Status inside.
+        const statusMaster = !group.forms?.length
+          ? statusMasterForModule(group.moduleId)
+          : null
+        return (
+          <section key={group.moduleId} className="form-masters-group">
+            <h2 className="form-masters-group__title">{group.label}</h2>
+            <div className="others-hub">
+              {statusMaster ? (
+                <HubCard
+                  title={statusMaster.title}
+                  description={statusMaster.description}
+                  icon="list"
+                  onClick={() => org?.slug && navigate(orgPath(
+                    org.slug,
+                    `masters/forms/status/${statusMaster.entityType}`,
+                  ))}
+                />
+              ) : null}
+              {group.forms.map((form) => (
+                <HubCard
+                  key={form.formId}
+                  title={form.label}
+                  description="Status, skip fields, dropdown values, and character limits"
+                  icon="document"
+                  onClick={() => org?.slug && navigate(formMasterPath(org, form.formId))}
+                />
+              ))}
+            </div>
+          </section>
+        )
+      })}
+    </div>
+  )
+}
+
+function FormHub({ formId }) {
+  const navigate = useNavigate()
+  const { org } = useOrg()
+  const [payload, setPayload] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+  const backTo = org?.slug ? orgPath(org.slug, 'masters/forms') : '#'
+
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      setLoading(true)
+      setError(null)
+      try {
+        const data = await getFormMasterFields(formId)
+        if (!cancelled) setPayload(data)
+      } catch (err) {
+        if (!cancelled) setError(err.message || 'Could not load this form')
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [formId])
+
+  const cards = useMemo(() => formSectionCards(payload, formId), [payload, formId])
+
+  return (
+    <div className="company-page others-page">
+      <header className="company-page__header">
+        <PageBack to={backTo} label="Forms Master" />
+        <h1 className="company-page__title">{payload?.label || 'Form'}</h1>
+        <p className="company-page__subtitle">
+          Open one card at a time so status, skip settings, dropdown lists, and character limits stay separate.
+          {payload?.moduleLabel ? ` ${payload.moduleLabel}.` : ''}
+        </p>
+      </header>
+      {loading ? <div className="company-loading">Loading…</div> : null}
+      {error ? <p className="company-error">{error}</p> : null}
+      {!loading && !error && !cards.length ? (
+        <p className="company-empty">
+          Superadmin has not added configurable sections on this form yet.
+        </p>
+      ) : null}
+      {!loading && cards.length ? (
+        <div className="others-hub form-masters-hub">
+          {cards.map((card) => (
+            <HubCard
+              key={card.id}
+              title={card.title}
+              description={card.description}
+              icon={card.icon}
+              onClick={() => navigate(formMasterPath(org, formId, card.id))}
+            />
+          ))}
+        </div>
+      ) : null}
     </div>
   )
 }
@@ -299,10 +509,6 @@ function OptionEditorModal({ formId, fieldId, onClose, onSaved }) {
   )
 }
 
-function canManageFormMasters(role, canUpdate, isOrgAdmin) {
-  return Boolean(isOrgAdmin || canManageOrg(role) || canUpdate?.('assets'))
-}
-
 function applySkipPayloadToBoard(payload, nextPayload) {
   if (!payload) return payload
   const skippedFields = new Set(nextPayload.skippedFieldIds || [])
@@ -388,8 +594,7 @@ function SkipToggle({ checked, disabled, title, onToggle, children }) {
   )
 }
 
-function FieldList({ formId, fieldId }) {
-  const navigate = useNavigate()
+function SkipFieldsView({ formId }) {
   const { role } = useAuth()
   const { org } = useOrg()
   const { canUpdate, isOrgAdmin } = usePermissions()
@@ -400,21 +605,10 @@ function FieldList({ formId, fieldId }) {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
   const payloadRef = useRef(null)
-  const dirtyRef = useRef(false)
-  const backTo = org?.slug ? orgPath(org.slug, 'masters/forms') : '#'
-  const formPath = org?.slug
-    ? orgPath(org.slug, `masters/forms/${encodeFormMasterSegment(formId)}`)
-    : '#'
+  const backTo = formMasterPath(org, formId)
 
   payloadRef.current = payload
   const dirty = Boolean(payload && savedPayload && skipSnapshot(payload) !== skipSnapshot(savedPayload))
-  dirtyRef.current = dirty
-
-  const loadFields = async () => {
-    const data = await getFormMasterFields(formId)
-    setPayload(data)
-    setSavedPayload(data)
-  }
 
   useEffect(() => {
     let cancelled = false
@@ -428,17 +622,13 @@ function FieldList({ formId, fieldId }) {
           setSavedPayload(data)
         }
       } catch (err) {
-        if (!cancelled) setError(err.message || 'Could not load form masters')
+        if (!cancelled) setError(err.message || 'Could not load skip settings')
       } finally {
         if (!cancelled) setLoading(false)
       }
     })()
     return () => { cancelled = true }
   }, [formId])
-
-  const closeEditor = () => {
-    navigate(formPath)
-  }
 
   const updateDraft = (buildNext) => {
     if (!canManage) return
@@ -516,14 +706,13 @@ function FieldList({ formId, fieldId }) {
   return (
     <div className="company-page others-page">
       <header className="company-page__header">
-        <PageBack to={backTo} label="Forms Master" />
-        <h1 className="company-page__title">{payload?.label || 'Form'}</h1>
+        <PageBack to={backTo} label={payload?.label || 'Form'} />
+        <h1 className="company-page__title">Skip fields</h1>
         <p className="company-page__subtitle">
           Tick Skip on optional fields, then Save. Greyed boxes are Superadmin-required and cannot be skipped.
-          {payload?.moduleLabel ? ` ${payload.moduleLabel}.` : ''}
         </p>
       </header>
-      {loading ? <div className="company-loading">Loading...</div> : null}
+      {loading ? <div className="company-loading">Loading…</div> : null}
       {error ? <p className="company-error">{error}</p> : null}
       {!loading && payload ? (
         <div className="form-masters-skip">
@@ -621,18 +810,6 @@ function FieldList({ formId, fieldId }) {
                           : ''}
                       </span>
                     </div>
-                    {field.hasOptions ? (
-                      <button
-                        type="button"
-                        className="form-masters-skip__options"
-                        onClick={() => org?.slug && navigate(orgPath(
-                          org.slug,
-                          `masters/forms/${encodeFormMasterSegment(formId)}/${encodeFormMasterSegment(field.id)}`,
-                        ))}
-                      >
-                        Options
-                      </button>
-                    ) : null}
                   </div>
                 ))}
               </div>
@@ -658,18 +835,132 @@ function FieldList({ formId, fieldId }) {
           ) : null}
         </div>
       ) : null}
+    </div>
+  )
+}
+
+function DropdownValuesView({ formId, fieldId }) {
+  const navigate = useNavigate()
+  const { org } = useOrg()
+  const [payload, setPayload] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+  const [showActivityTypes, setShowActivityTypes] = useState(false)
+  const backTo = formMasterPath(org, formId)
+  const optionsPath = formMasterPath(org, formId, 'options')
+
+  const loadFields = async () => {
+    const data = await getFormMasterFields(formId)
+    setPayload(data)
+  }
+
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      setLoading(true)
+      setError(null)
+      try {
+        const data = await getFormMasterFields(formId)
+        if (!cancelled) setPayload(data)
+      } catch (err) {
+        if (!cancelled) setError(err.message || 'Could not load dropdown values')
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [formId])
+
+  const optionFields = useMemo(() => dropdownFields(payload), [payload])
+  const showActivityCard = formId === 'pm.plan' || optionFields.some(isActivityTypeField)
+
+  return (
+    <div className="company-page others-page">
+      <header className="company-page__header">
+        <PageBack to={backTo} label={payload?.label || 'Form'} />
+        <h1 className="company-page__title">Dropdown values</h1>
+        <p className="company-page__subtitle">
+          Manage the option lists people see in this form’s dropdowns.
+        </p>
+      </header>
+      {loading ? <div className="company-loading">Loading…</div> : null}
+      {error ? <p className="company-error">{error}</p> : null}
+      {!loading && payload ? (
+        <div className="form-masters-skip">
+          {showActivityCard ? (
+            <section className="form-masters-skip__section">
+              <div className="form-masters-skip__head">
+                <h2>Maintenance activity types</h2>
+                <button
+                  type="button"
+                  className="form-masters-skip__options"
+                  onClick={() => setShowActivityTypes(true)}
+                >
+                  Manage
+                </button>
+              </div>
+              <p className="form-masters-skip__hint">
+                System types can be deactivated. Add custom types without a software change.
+              </p>
+            </section>
+          ) : null}
+
+          <section className="form-masters-skip__section">
+            <div className="form-masters-skip__head">
+              <h2>Form dropdowns</h2>
+            </div>
+            <div className="form-masters-skip__rows">
+              {optionFields.length === 0 ? (
+                <p className="company-empty">No editable dropdown lists on this form.</p>
+              ) : optionFields.map((field) => (
+                <div key={field.id} className="form-masters-skip__row">
+                  <div className="form-masters-skip__copy">
+                    <div className="form-masters-skip__name">
+                      <strong>{field.label}</strong>
+                    </div>
+                    <span>
+                      {field.kind === 'group' ? 'Repeatable group' : fieldTypeLabel(field.fieldType)}
+                      {field.required || field.locked ? ' · Required' : ''}
+                    </span>
+                  </div>
+                  {isActivityTypeField(field) ? (
+                    <button
+                      type="button"
+                      className="form-masters-skip__options"
+                      onClick={() => setShowActivityTypes(true)}
+                    >
+                      Options
+                    </button>
+                  ) : field.hasOptions ? (
+                    <button
+                      type="button"
+                      className="form-masters-skip__options"
+                      onClick={() => navigate(formMasterPath(org, formId, 'options', field.id))}
+                    >
+                      Options
+                    </button>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          </section>
+        </div>
+      ) : null}
+      {showActivityTypes ? (
+        <PmActivityTypesModal onClose={() => setShowActivityTypes(false)} />
+      ) : null}
       {fieldId ? (
         <OptionEditorModal
           formId={formId}
           fieldId={fieldId}
-          onClose={closeEditor}
+          onClose={() => navigate(optionsPath)}
           onSaved={async () => {
             try {
-              if (!dirtyRef.current) await loadFields()
+              await loadFields()
             } catch {
               // Keep the list as-is if refresh fails; the save already succeeded.
             }
-            closeEditor()
+            navigate(optionsPath)
           }}
         />
       ) : null}
@@ -677,13 +968,239 @@ function FieldList({ formId, fieldId }) {
   )
 }
 
+function valuesFromFields(fields) {
+  const next = {}
+  for (const row of fields || []) next[row.key] = String(row.max_length)
+  return next
+}
+
+function CharacterLimitsView({ formId }) {
+  const { role } = useAuth()
+  const { org } = useOrg()
+  const { canUpdate, isOrgAdmin } = usePermissions()
+  const canManage = canManageFormMasters(role, canUpdate, isOrgAdmin)
+  const { fields, loading: limitsLoading, error: limitsError } = useTextFieldLimits()
+  const [payload, setPayload] = useState(null)
+  const [formLoading, setFormLoading] = useState(true)
+  const [formError, setFormError] = useState(null)
+  const [values, setValues] = useState({})
+  const [saving, setSaving] = useState(false)
+  const [actionError, setActionError] = useState(null)
+  const [success, setSuccess] = useState(null)
+  const backTo = formMasterPath(org, formId)
+
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      setFormLoading(true)
+      setFormError(null)
+      try {
+        const data = await getFormMasterFields(formId)
+        if (!cancelled) setPayload(data)
+      } catch (err) {
+        if (!cancelled) setFormError(err.message || 'Could not load this form')
+      } finally {
+        if (!cancelled) setFormLoading(false)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [formId])
+
+  const allowedKeys = useMemo(() => new Set(limitKeysForForm(payload)), [payload])
+  const visibleFields = useMemo(
+    () => (fields || []).filter((row) => allowedKeys.has(row.key)),
+    [fields, allowedKeys],
+  )
+
+  useEffect(() => {
+    setValues(valuesFromFields(visibleFields))
+  }, [visibleFields])
+
+  const setValue = (key, value) => {
+    setValues((prev) => ({ ...prev, [key]: value }))
+    setSuccess(null)
+  }
+
+  const handleSave = async (event) => {
+    event.preventDefault()
+    if (!canManage) return
+    setSaving(true)
+    setActionError(null)
+    setSuccess(null)
+    try {
+      const limits = {}
+      for (const row of visibleFields) {
+        const num = Number(values[row.key])
+        if (!Number.isInteger(num)) {
+          throw new Error(`${row.label} must be a whole number.`)
+        }
+        if (num < TEXT_FIELD_LIMIT_MIN || num > TEXT_FIELD_LIMIT_MAX) {
+          throw new Error(
+            `${row.label} must be between ${TEXT_FIELD_LIMIT_MIN} and ${TEXT_FIELD_LIMIT_MAX} characters.`,
+          )
+        }
+        limits[row.key] = num
+      }
+      const saved = await updateTextFieldLimits(limits)
+      const nextVisible = (saved.fields || []).filter((row) => allowedKeys.has(row.key))
+      setValues(valuesFromFields(nextVisible))
+      setSuccess('Character limits saved. Shared fields keep the same limit on every form that uses them.')
+    } catch (err) {
+      setActionError(err.message || 'Could not save character limits.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleReset = async () => {
+    if (!canManage || !visibleFields.length) return
+    if (!window.confirm('Reset these character limits to defaults?')) return
+    setSaving(true)
+    setActionError(null)
+    setSuccess(null)
+    try {
+      const limits = {}
+      for (const row of visibleFields) {
+        limits[row.key] = row.default_max_length ?? DEFAULT_TEXT_FIELD_LIMITS[row.key]
+      }
+      clearTextFieldLimitsCache()
+      const saved = await updateTextFieldLimits(limits)
+      const nextVisible = (saved.fields || []).filter((row) => allowedKeys.has(row.key))
+      setValues(valuesFromFields(nextVisible))
+      setSuccess('Character limits restored to defaults for this form.')
+    } catch (err) {
+      setActionError(err.message || 'Could not reset character limits.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const loading = formLoading || limitsLoading
+  const error = formError || limitsError
+
+  return (
+    <div className="company-page others-page">
+      <header className="company-page__header">
+        <PageBack to={backTo} label={payload?.label || 'Form'} />
+        <div className="others-manage__header-row">
+          <div>
+            <h1 className="company-page__title">Character limits</h1>
+            <p className="company-page__subtitle">
+              Limits for text fields on this form. Each limit must be between {TEXT_FIELD_LIMIT_MIN} and {TEXT_FIELD_LIMIT_MAX}.
+              Shared fields keep one company-wide value.
+            </p>
+          </div>
+          {canManage && visibleFields.length ? (
+            <div className="others-manage__actions">
+              <button
+                type="button"
+                className="company-btn company-btn--secondary"
+                onClick={handleReset}
+                disabled={saving || loading}
+              >
+                Reset defaults
+              </button>
+            </div>
+          ) : null}
+        </div>
+      </header>
+
+      {(error || actionError) && (
+        <div className="company-alert">{error || actionError}</div>
+      )}
+      {success && <div className="company-alert company-alert--success">{success}</div>}
+
+      {loading && !visibleFields.length ? (
+        <div className="company-loading">Loading character limits…</div>
+      ) : !visibleFields.length ? (
+        <p className="company-empty">This form has no text fields with character limits.</p>
+      ) : (
+        <form className="others-limits" onSubmit={handleSave}>
+          {visibleFields.map((row) => (
+            <label key={row.key} className="others-limits__row">
+              <span className="others-limits__meta">
+                <span className="others-limits__name">{row.label}</span>
+                <span className="others-limits__key">{row.key}</span>
+                <span className="others-limits__desc">{row.description}</span>
+              </span>
+              <span className="others-limits__control">
+                <input
+                  type="number"
+                  min={TEXT_FIELD_LIMIT_MIN}
+                  max={TEXT_FIELD_LIMIT_MAX}
+                  step="1"
+                  className="company-form__input"
+                  value={values[row.key] ?? ''}
+                  onChange={(e) => setValue(row.key, e.target.value)}
+                  disabled={!canManage || saving}
+                  required
+                />
+                <span className="others-limits__suffix">characters</span>
+              </span>
+            </label>
+          ))}
+
+          {canManage && (
+            <div className="company-form__actions">
+              <button
+                type="submit"
+                className="company-btn company-btn--primary"
+                disabled={saving || loading}
+              >
+                {saving ? 'Saving…' : 'Save limits'}
+              </button>
+            </div>
+          )}
+        </form>
+      )}
+    </div>
+  )
+}
+
 export default function FormMasters() {
   const params = useParams()
+  const { org } = useOrg()
   const formId = params.formId ? decodeURIComponent(params.formId) : ''
+  const rawSection = params.section ? decodeURIComponent(params.section) : ''
   const fieldId = params.fieldId ? decodeURIComponent(params.fieldId) : ''
 
-  const view = useMemo(() => (formId ? 'fields' : 'forms'), [formId])
+  if (!formId) return <FormList />
 
-  if (view === 'fields') return <FieldList formId={formId} fieldId={fieldId} />
-  return <FormList />
+  // Legacy bookmarks: /masters/forms/:formId/:fieldId → options editor
+  if (rawSection && !FORM_SECTIONS.has(rawSection) && !fieldId) {
+    if (!org?.slug) return <div className="company-loading">Loading…</div>
+    return (
+      <Navigate
+        to={formMasterPath(org, formId, 'options', rawSection)}
+        replace
+      />
+    )
+  }
+
+  if (!rawSection) return <FormHub formId={formId} />
+  if (rawSection === 'skips') return <SkipFieldsView formId={formId} />
+  if (rawSection === 'options') {
+    return <DropdownValuesView formId={formId} fieldId={fieldId} />
+  }
+  if (rawSection === 'limits') return <CharacterLimitsView formId={formId} />
+  if (rawSection === 'status') {
+    const statusMaster = statusMasterForForm(formId)
+    if (!statusMaster) return <Navigate to={formMasterPath(org, formId)} replace />
+    return (
+      <OthersStatusManage
+        entityType={statusMaster.entityType}
+        backTo={formMasterPath(org, formId)}
+        backLabel={payloadLabelFallback(formId)}
+      />
+    )
+  }
+
+  return <Navigate to={formMasterPath(org, formId)} replace />
+}
+
+function payloadLabelFallback(formId) {
+  const match = MODULE_FORM_GROUPS
+    .flatMap((group) => group.forms)
+    .find((form) => form.formId === formId)
+  return match?.label || 'Form'
 }

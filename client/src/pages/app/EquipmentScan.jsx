@@ -108,9 +108,11 @@ export default function EquipmentScan() {
                 ...current,
                 last_meter_reading: saved.reading,
                 last_meter_reading_at: saved.reading_at,
+                last_meter_logged_by: saved.logged_by,
                 last_meter_logged_by_name: saved.logged_by_name,
                 last_meter_logged_by_department: saved.logged_by_department,
                 last_meter_logged_by_designation: saved.logged_by_designation,
+                logged_by_person: saved.logged_by_person || null,
               } : current))
               setAddingReading(false)
             }}

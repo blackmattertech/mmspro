@@ -3,6 +3,7 @@ import DateField from '../ui/DateField'
 import TimeField from '../ui/TimeField'
 import FilterableSelect from '../ui/FilterableSelect'
 import SpellcheckInput from '../shared/SpellcheckInput'
+import PersonChip from '../shared/PersonChip'
 import { useOrg } from '../../hooks/useOrg'
 import { useProfile } from '../../hooks/useProfile'
 import { getOrgAssetSignedUrl } from '../../lib/orgAssets'
@@ -31,10 +32,28 @@ function formatStamp(value = new Date()) {
   return date.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
 }
 
-function peopleNames(list) {
+function peopleRecords(list) {
   return (list || [])
-    .map((row) => row?.name || row?.full_name || row?.display_name || row?.email)
+    .map((row) => row?.employee || row)
+    .filter((row) => row?.name || row?.full_name || row?.display_name || row?.email)
+}
+
+function peopleNames(list) {
+  return peopleRecords(list)
+    .map((row) => row.name || row.full_name || row.display_name || row.email)
     .filter(Boolean)
+}
+
+function technicianChips(list) {
+  const people = peopleRecords(list)
+  if (!people.length) return '—'
+  return (
+    <span className="company-employee-ref-list">
+      {people.map((person, index) => (
+        <PersonChip key={person.id || person.employee_id || index} person={person} />
+      ))}
+    </span>
+  )
 }
 
 function equipmentLabel(record) {
@@ -52,9 +71,9 @@ function buildChecklistMeta(record, recordKind, capturedAt) {
   if (!record) {
     return [{ label: 'Date / time', value: formatStamp(capturedAt) }]
   }
-  const technicians = peopleNames(
-    record.assignees || record.assigned_technicians || record.work_request?.assigned_technicians,
-  )
+  const technicianList = record.assignees
+    || record.assigned_technicians
+    || record.work_request?.assigned_technicians
   const rows = []
   const number = recordKind === 'work_request'
     ? (record.request_number || record.wr_number || record.number)
@@ -94,7 +113,7 @@ function buildChecklistMeta(record, recordKind, capturedAt) {
   if (jobNature) rows.push({ label: 'Job nature', value: jobNature })
   rows.push({
     label: 'Technician(s)',
-    value: technicians.length ? technicians.join(', ') : '—',
+    value: technicianChips(technicianList),
   })
   return rows
 }
@@ -133,10 +152,17 @@ function ChecklistAnswer({ field, value, disabled, onChange }) {
       <div className="pm-checklist-options" role="radiogroup" aria-label={field.name}>
         {(field.options || []).map((option) => {
           const selected = value === option
+          const tone = /^(yes|ok|pass|done)$/i.test(String(option).trim())
+            ? 'is-yes'
+            : /^(no|fail|failing)$/i.test(String(option).trim())
+              ? 'is-no'
+              : /^(na|n\/a|not applicable)$/i.test(String(option).trim())
+                ? 'is-na'
+                : ''
           return (
             <label
               key={option}
-              className={`pm-checklist-option${selected ? ' is-selected' : ''}`}
+              className={`pm-checklist-option ${tone}${selected ? ' is-selected' : ''}`.trim()}
             >
               <input
                 type="radio"
@@ -211,14 +237,22 @@ export default function ChecklistExecution({
   record = null,
   recordKind = 'work_order',
   defaultOpen = false,
+  embedded = false,
+  onSave = null,
+  saving = false,
+  saveLabel = 'Save checklist',
 }) {
   const { org } = useOrg()
-  const { employee, profile } = useProfile()
+  const { employee, profile, avatarUrl } = useProfile()
   const [logoUrl, setLogoUrl] = useState(null)
   const [open, setOpen] = useState(defaultOpen)
   const [capturedAt, setCapturedAt] = useState(null)
   const fields = Array.isArray(snapshot?.fields) ? snapshot.fields : []
   const sections = Array.isArray(snapshot?.sections) ? snapshot.sections : []
+
+  useEffect(() => {
+    if (defaultOpen) setOpen(true)
+  }, [defaultOpen])
 
   useEffect(() => {
     let cancelled = false
@@ -321,8 +355,14 @@ export default function ChecklistExecution({
     || '—'
   let itemIndex = 0
 
+  const canSave = typeof onSave === 'function' && !disabled
+  const Wrapper = embedded ? 'div' : 'section'
+  const wrapperClass = embedded
+    ? 'pm-checklist-wrap pm-checklist-wrap--embedded'
+    : 'wo-received-detail__section pm-checklist-wrap'
+
   return (
-    <section className="wo-received-detail__section pm-checklist-wrap">
+    <Wrapper className={wrapperClass}>
       <div className="pm-checklist-toggle">
         <div className="pm-checklist-toggle__copy">
           <h3 className="pm-checklist-toggle__title">{checklistName}</h3>
@@ -332,14 +372,26 @@ export default function ChecklistExecution({
             {progress.complete ? ' · Ready' : ' · Required before Completed'}
           </p>
         </div>
-        <button
-          type="button"
-          className={`company-btn company-btn--compact ${open ? 'company-btn--secondary' : 'company-btn--primary'}`}
-          onClick={() => setOpen((prev) => !prev)}
-          aria-expanded={open}
-        >
-          {open ? 'Hide checklist' : 'View checklist'}
-        </button>
+        <div className="pm-checklist-toggle__actions">
+          {canSave ? (
+            <button
+              type="button"
+              className="company-btn company-btn--primary company-btn--compact"
+              disabled={saving}
+              onClick={onSave}
+            >
+              {saving ? 'Saving…' : saveLabel}
+            </button>
+          ) : null}
+          <button
+            type="button"
+            className={`company-btn company-btn--compact ${open ? 'company-btn--secondary' : 'company-btn--secondary company-btn--outline'}`}
+            onClick={() => setOpen((prev) => !prev)}
+            aria-expanded={open}
+          >
+            {open ? 'Hide checklist' : 'View checklist'}
+          </button>
+        </div>
       </div>
 
       {open ? (
@@ -454,7 +506,18 @@ export default function ChecklistExecution({
             <footer className="pm-checklist-sheet__footer">
               <div className="pm-checklist-sheet__sign">
                 <span className="pm-checklist-sheet__sign-label">Technician acknowledgement</span>
-                <span className="pm-checklist-sheet__sign-value">{techName}</span>
+                <span className="pm-checklist-sheet__sign-value">
+                  {techName ? (
+                    <PersonChip
+                      person={{
+                        ...(employee || {}),
+                        name: techName,
+                        photo_signed_url: employee?.photo_signed_url || avatarUrl || null,
+                        avatar_url: avatarUrl || null,
+                      }}
+                    />
+                  ) : '—'}
+                </span>
               </div>
               <div className="pm-checklist-sheet__sign">
                 <span className="pm-checklist-sheet__sign-label">Date / time</span>
@@ -464,8 +527,21 @@ export default function ChecklistExecution({
               </div>
             </footer>
           ) : null}
+
+          {canSave ? (
+            <div className="pm-checklist-sheet__actions">
+              <button
+                type="button"
+                className="company-btn company-btn--primary"
+                disabled={saving}
+                onClick={onSave}
+              >
+                {saving ? 'Saving…' : saveLabel}
+              </button>
+            </div>
+          ) : null}
         </div>
       ) : null}
-    </section>
+    </Wrapper>
   )
 }

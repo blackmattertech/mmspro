@@ -118,47 +118,147 @@ export function isGroupId(id) {
 
 const ASSET_PICKER_KEYS = new Set(['asset_picker', 'equipment_id', 'area_id'])
 
+export function isAssetPickerControlField(field) {
+  if (!field) return false
+  if (field.autoFromEquipment) return true
+  const parsed = parseLayoutId(field.id)
+  if (parsed.kind === 'system' && ASSET_PICKER_KEYS.has(parsed.value)) return true
+  if (parsed.kind === 'master' && (parsed.value === 'areas' || parsed.value === 'equipment')) return true
+  if (field.masterSource === 'areas' || field.masterSource === 'equipment') return true
+  if (field.bindKey === 'area_id' || field.bindKey === 'equipment_id' || field.bindKey === 'asset_picker') {
+    return true
+  }
+  return false
+}
+
+/**
+ * Collapse Area / Asset / hierarchy catalog fields into one compound Asset picker block
+ * (same component work requests and work orders use at runtime).
+ */
+export function collapseToAssetPickerBlock(layout) {
+  if (!layout?.fields?.length) return layout
+  const assetFields = layout.fields.filter(isAssetPickerControlField)
+  if (!assetFields.length) return layout
+
+  const sectionId = assetFields[0].sectionId
+  const order = Math.min(...assetFields.map((field) => Number(field.order) || 0))
+  const required = assetFields.some((field) => {
+    const parsed = parseLayoutId(field.id)
+    if (parsed.kind === 'system' && parsed.value === 'area_id') return false
+    return Boolean(field.required)
+  })
+  const existingPicker = assetFields.find((field) => {
+    const parsed = parseLayoutId(field.id)
+    return parsed.kind === 'system' && parsed.value === 'asset_picker'
+  })
+
+  const picker = {
+    ...(existingPicker || {}),
+    id: systemId('asset_picker'),
+    sectionId,
+    order,
+    colSpan: 100,
+    required: existingPicker ? (existingPicker.required ?? required) : required,
+    bindKey: 'asset_picker',
+    masterSource: '',
+    label: existingPicker?.label || 'Asset picker',
+    autoFromEquipment: undefined,
+    filterByFieldId: undefined,
+  }
+
+  const fields = []
+  let inserted = false
+  for (const field of layout.fields) {
+    if (isAssetPickerControlField(field)) {
+      if (inserted) continue
+      fields.push(picker)
+      inserted = true
+      continue
+    }
+    fields.push(field)
+  }
+  return { ...layout, fields }
+}
+
 /**
  * Drop the Areas master. If that was the only asset control, keep one picker in its place.
  * A system area_id stays so the form can render the hierarchy picker, but it is not required.
  */
 export function layoutWithoutAreasMaster(layout) {
+  return collapseToAssetPickerBlock(layout)
+}
+
+function isPmAssetControlField(field) {
+  return isAssetPickerControlField(field)
+}
+
+function isPmScheduleField(field) {
+  const parsed = parseLayoutId(field?.id)
+  return parsed.kind === 'system' && parsed.value === 'schedule'
+}
+
+/**
+ * Rescue Asset picker / Schedule if they landed under Checklist.
+ * Otherwise keep each field in the section configured in Form Builder.
+ */
+export function normalizePmPlanLayout(layout) {
   if (!layout?.fields?.length) return layout
-  const hasPicker = layout.fields.some((field) => {
-    const parsed = parseLayoutId(field.id)
-    return parsed.kind === 'system' && ASSET_PICKER_KEYS.has(parsed.value)
+
+  const sections = layout.sections || []
+  const detailsId = sections.find((section) => section.id === systemId('pm_details'))?.id
+    || sections.find((section) => /plan\s*details/i.test(String(section.label || '')))?.id
+    || sections[0]?.id
+  if (!detailsId) return layout
+
+  const checklistId = sections.find((section) => section.id === systemId('pm_checklist'))?.id
+    || sections.find((section) => /checklist/i.test(String(section.label || '')))?.id
+  const assetSectionId = sections.find((section) => /asset/i.test(String(section.label || '')))?.id
+    || detailsId
+  const scheduleSectionId = sections.find((section) => /schedule/i.test(String(section.label || '')))?.id
+    || detailsId
+
+  let fields = layout.fields.map((field) => {
+    if (!checklistId || field.sectionId !== checklistId) return field
+    if (isPmScheduleField(field)) return { ...field, sectionId: scheduleSectionId }
+    if (isPmAssetControlField(field)) return { ...field, sectionId: assetSectionId }
+    return field
   })
-  let inserted = hasPicker
-  const fields = []
-  for (const field of layout.fields) {
-    const parsed = parseLayoutId(field.id)
-    if (parsed.kind === 'system' && ASSET_PICKER_KEYS.has(parsed.value)) {
-      fields.push({ ...field, colSpan: 100, required: parsed.value === 'area_id' ? false : field.required })
-      continue
-    }
-    const isAreas = (parsed.kind === 'master' && parsed.value === 'areas')
-      || field.masterSource === 'areas'
-      || field.bindKey === 'area_id'
-    const isEquipmentMaster = (parsed.kind === 'master' && parsed.value === 'equipment')
-      || field.masterSource === 'equipment'
-      || field.bindKey === 'equipment_id'
-    if (!isAreas && !isEquipmentMaster) {
-      fields.push(field)
-      continue
-    }
-    if (inserted) continue
-    inserted = true
-    fields.push({
-      ...field,
-      id: systemId('asset_picker'),
-      bindKey: 'asset_picker',
-      masterSource: '',
-      required: field.required,
-      colSpan: 100,
-      label: field.label || 'Asset information',
-    })
+
+  if (!fields.some(isPmScheduleField)) {
+    const maxOrder = fields
+      .filter((field) => field.sectionId === scheduleSectionId)
+      .reduce((max, field) => Math.max(max, Number(field.order) || 0), 0)
+    fields = [
+      ...fields,
+      {
+        id: systemId('schedule'),
+        sectionId: scheduleSectionId,
+        order: maxOrder + 1,
+        colSpan: 100,
+        required: true,
+      },
+    ]
   }
-  return { ...layout, fields }
+
+  const hasAssetControl = fields.some(isPmAssetControlField)
+  if (!hasAssetControl) {
+    const maxOrder = fields
+      .filter((field) => field.sectionId === assetSectionId)
+      .reduce((max, field) => Math.max(max, Number(field.order) || 0), 0)
+    fields = [
+      ...fields,
+      {
+        id: systemId('asset_picker'),
+        sectionId: assetSectionId,
+        order: maxOrder + 1,
+        colSpan: 100,
+        required: true,
+        bindKey: 'asset_picker',
+      },
+    ]
+  }
+
+  return collapseToAssetPickerBlock({ ...layout, fields })
 }
 
 export function normalizeFilledBy(value) {

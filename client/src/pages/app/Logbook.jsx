@@ -8,13 +8,13 @@ import { getEquipmentColumnValues } from '../../lib/api-equipment'
 import { unwrapList } from '../../lib/listResponse'
 import {
   formatMeterDate,
-  formatMeterLogger,
   formatMeterTime,
   formatMeterValue,
   meterAssetLabel,
   meterFieldText,
   meterListColumns,
 } from '../../lib/meterReading'
+import PersonChip from '../../components/shared/PersonChip'
 import { TABLE_SORT_OPTIONS, selectFilterField, uniqueNameOptions } from '../../lib/tableFilters'
 import { stopTableRowClick, tableRowClickProps } from '../../lib/clickableTableRow'
 import TablePagination from '../../components/shared/TablePagination'
@@ -36,11 +36,27 @@ import '../../components/shared/TableColumnPicker.css'
 import '../../components/shared/ListTableChrome.css'
 import '../../components/company/CompanyShared.css'
 
+function loggerSubtitle(row) {
+  return [row?.logged_by_department, row?.logged_by_designation].filter(Boolean).join(' · ')
+}
+
+function LoggerCell({ row }) {
+  const name = row?.logged_by_person?.name || row?.logged_by_name
+  if (!name) return '—'
+  return (
+    <PersonChip
+      person={row.logged_by_person || { name }}
+      name={name}
+      subtitle={loggerSubtitle(row)}
+    />
+  )
+}
+
 function meterCellText(row, column) {
   if (column.id === 'last_reading') return formatMeterValue(row.last_reading)
   if (column.id === 'date') return formatMeterDate(row.last_reading_at)
   if (column.id === 'time') return row.last_reading_at ? formatMeterTime(row.last_reading_at) : '—'
-  if (column.id === 'logged_by') return formatMeterLogger(row) || '—'
+  if (column.id === 'logged_by') return null
   return meterFieldText(row, column) || '—'
 }
 
@@ -128,7 +144,7 @@ function HistoryModal({ equipmentId, assetFields, canCreate, canDelete, onClose,
                         <td>{formatMeterValue(row.reading)}</td>
                         <td>{formatMeterDate(row.reading_at)}</td>
                         <td>{formatMeterTime(row.reading_at)}</td>
-                        <td>{formatMeterLogger(row) || '—'}</td>
+                        <td><LoggerCell row={row} /></td>
                         {canDelete && (
                           <td>
                             <button
@@ -448,7 +464,9 @@ export default function Logbook() {
                         >
                           {visibleDataColumns.map((column, index) => (
                             <td key={column.id}>
-                              {index === 0 ? (
+                              {column.id === 'logged_by' ? (
+                                <LoggerCell row={row} />
+                              ) : index === 0 ? (
                                 <span className="company-table__name">{meterCellText(row, column)}</span>
                               ) : meterCellText(row, column)}
                             </td>

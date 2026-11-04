@@ -22,6 +22,7 @@ import {
 import { withCatalogColumns } from '../../lib/csvExportColumns.js'
 import { countStatusesViaRpc, parseStatusCountPayload, rpcJson, isMissingRpcError } from '../../lib/statusCounts.js'
 import { resolveProgressPercent } from '../../lib/statusProgress.js'
+import { loadTimelineActors } from '../../lib/timelineActors.js'
 import { listOrgStatuses } from '../../lib/orgStatusService.js'
 import {
   generateWorkOrderNumber,
@@ -88,6 +89,17 @@ function parsePagination(query, { defaultLimit = 50, maxLimit = 200 } = {}) {
     : defaultLimit
   const offset = Number.isFinite(rawOffset) ? Math.max(0, rawOffset) : 0
   return { limit, offset }
+}
+
+/** PM scheduled WOs belong only on Scheduled until converted to a regular source. */
+const SCHEDULED_WO_SOURCE = 'preventive_maintenance'
+
+function isScheduledWorkOrder(row) {
+  return row?.source_type === SCHEDULED_WO_SOURCE
+}
+
+function excludeScheduledWorkOrders(query) {
+  return query.neq('source_type', SCHEDULED_WO_SOURCE)
 }
 
 async function loadOrgWorkOrderFields(orgId) {
@@ -428,9 +440,10 @@ async function listVisibleReceivedWorkOrderIds(orgId, profile, employee, session
 
   let query = supabaseAdmin
     .from('manual_work_orders')
-    .select('id, created_by, requester_id')
+    .select('id, created_by, requester_id, source_type')
     .eq('org_id', orgId)
     .or(orFilter)
+  query = excludeScheduledWorkOrders(query)
   query = applyWorkOrderStatusFilter(query, status)
 
   const { data, error } = await query
@@ -535,6 +548,7 @@ async function listUnclaimedWorkRequestPoolIds(orgId) {
 
 async function employeeCanViewReceivedWorkOrder(orgId, employee, workOrder, profile, session) {
   if (!employee || !workOrder) return false
+  if (isScheduledWorkOrder(workOrder)) return false
   if (await isUnclaimedWorkRequestPool(orgId, workOrder)) return true
   if (isOutgoingWorkOrder(workOrder, profile?.id || profile)) return false
 
@@ -1166,6 +1180,26 @@ async function attachFieldValues(rows) {
   }))
 }
 
+function personFromActor(actor, fallback = null) {
+  if (!actor && !fallback) return null
+  const name = actor?.name
+    || fallback?.name
+    || fallback?.full_name
+    || fallback?.display_name
+    || fallback?.email
+    || null
+  return {
+    id: actor?.id || fallback?.id || null,
+    email: actor?.email || fallback?.email || null,
+    full_name: actor?.full_name || fallback?.full_name || name,
+    display_name: name,
+    name,
+    photo_url: actor?.photo_url || fallback?.photo_url || null,
+    avatar_url: actor?.avatar_url || fallback?.avatar_url || null,
+    photo_signed_url: actor?.photo_signed_url || fallback?.photo_signed_url || null,
+  }
+}
+
 async function buildWorkOrderListResponse(orgId, rows, existingAssigneesByWo = null) {
   if (!rows.length) return []
 
@@ -1174,17 +1208,10 @@ async function buildWorkOrderListResponse(orgId, rows, existingAssigneesByWo = n
   const assigneesByWo = existingAssigneesByWo
     || await loadAssigneesForWorkOrders(orgId, withSummaries.map((r) => r.id))
   const creatorIds = [...new Set(withSummaries.map((r) => r.created_by).filter(Boolean))]
-
-  const { data: creators } = creatorIds.length
-    ? await supabaseAdmin.from('profiles').select('id, email, full_name').in('id', creatorIds)
-    : { data: [] }
-
-  const creatorById = new Map((creators || []).map((c) => [c.id, {
-    id: c.id,
-    email: c.email || null,
-    full_name: c.full_name || null,
-    display_name: c.full_name || c.email || null,
-  }]))
+  const creatorActors = creatorIds.length ? await loadTimelineActors(orgId, creatorIds) : new Map()
+  const creatorById = new Map(
+    [...creatorActors].map(([id, actor]) => [id, personFromActor(actor)]),
+  )
 
   const withValues = await attachFieldValues(withSummaries)
 
@@ -1288,6 +1315,7 @@ async function countAssignedByMe(orgId, profile, { status = 'all' } = {}) {
     .select('id', { count: 'exact', head: true })
     .eq('org_id', orgId)
     .or(assignedOutgoingOrFilter(profileId))
+  query = excludeScheduledWorkOrders(query)
   query = applyWorkOrderStatusFilter(query, status)
   const { count, error } = await query
   if (error) throw error
@@ -1309,6 +1337,7 @@ async function listAssignedByMeWorkOrders(orgId, profile, {
     .select(WO_LIST_SELECT, { count: 'exact' })
     .eq('org_id', orgId)
     .or(assignedOutgoingOrFilter(profileId))
+  query = excludeScheduledWorkOrders(query)
 
   query = applyIlikeSearch(query, search, searchColumns)
   query = applyWorkOrderStatusFilter(query, status)
@@ -1341,6 +1370,7 @@ async function loadAssignedByMeDetail(orgId, workOrderId, profile) {
 
   const detail = await loadWorkOrderDetail(orgId, workOrderId)
   if (!detail) return null
+  if (isScheduledWorkOrder(detail)) return null
   if (detail.created_by !== profileId && detail.requester_id !== profileId) return null
 
   const assignees = detail.assignees || []
@@ -1359,26 +1389,14 @@ async function enrichWorkOrderRow(orgId, row, assigneesByWo = null) {
     ?? (await loadAssigneesForWorkOrders(orgId, [row.id])).get(row.id)
     ?? []
 
-  const creator = row.created_by
-    ? await supabaseAdmin
-      .from('profiles')
-      .select('id, email, full_name')
-      .eq('id', row.created_by)
-      .maybeSingle()
-      .then(({ data }) => data)
-    : null
+  const creatorActors = row.created_by
+    ? await loadTimelineActors(orgId, [row.created_by])
+    : new Map()
 
   return {
     ...withSummary,
     assignees,
-    creator: creator
-      ? {
-          id: creator.id,
-          email: creator.email || null,
-          full_name: creator.full_name || null,
-          display_name: creator.full_name || creator.email || null,
-        }
-      : null,
+    creator: personFromActor(row.created_by ? creatorActors.get(row.created_by) : null),
   }
 }
 
@@ -1532,12 +1550,12 @@ async function loadWorkOrderDetail(orgId, workOrderId, { employee = null, profil
         remarks: linked.remarks || null,
         priority: linked.priority || null,
         requested_by: linked.requested_by || null,
-        requester: linked.requester ? {
-          id: linked.requester.id,
-          full_name: linked.requester.full_name || null,
-          email: linked.requester.email || null,
-          name: linked.requester.full_name || linked.requester.email || null,
-        } : null,
+        requester: personFromActor(
+          linked.requested_by
+            ? (await loadTimelineActors(orgId, [linked.requested_by])).get(linked.requested_by)
+            : null,
+          linked.requester,
+        ),
         order_from_department_id: linked.order_from_department_id || null,
         order_to_department_id: linked.order_to_department_id || null,
         order_from: linked.order_from || null,
@@ -2567,11 +2585,12 @@ router.get('/counts', canReadWorkOrders, async (req, res) => {
       .select('id', { count: 'exact', head: true })
       .eq('org_id', orgId)
       .neq('status', 'draft')
+    manualCountQuery = excludeScheduledWorkOrders(manualCountQuery)
     let scheduledCountQuery = supabaseAdmin
       .from('manual_work_orders')
       .select('id', { count: 'exact', head: true })
       .eq('org_id', orgId)
-      .eq('source_type', 'preventive_maintenance')
+      .eq('source_type', SCHEDULED_WO_SOURCE)
       .neq('status', 'draft')
     if (scopedLocationId) {
       manualCountQuery = manualCountQuery.eq('assigned_location_id', scopedLocationId)
@@ -2624,6 +2643,7 @@ router.get('/manual/orders', canReadWorkOrders, async (req, res) => {
       .from('manual_work_orders')
       .select(WO_LIST_SELECT, { count: 'exact' })
       .eq('org_id', orgId)
+    query = excludeScheduledWorkOrders(query)
 
     if (scopedLocationId) query = query.eq('assigned_location_id', scopedLocationId)
     query = applyIlikeSearch(query, req.query.search, searchColumns)
@@ -2663,6 +2683,9 @@ router.get('/manual/orders/:id', canReadWorkOrders, async (req, res) => {
   try {
     const detail = await loadWorkOrderDetail(orgId, req.params.id)
     if (!detail) return res.status(404).json({ error: 'Not found' })
+    if (isScheduledWorkOrder(detail)) {
+      return res.status(404).json({ error: 'Not found' })
+    }
     if (
       scopedLocationId
       && detail.assigned_location_id
@@ -2724,7 +2747,7 @@ router.get('/scheduled', canReadWorkOrders, async (req, res) => {
       .from('manual_work_orders')
       .select(WO_LIST_SELECT, { count: 'exact' })
       .eq('org_id', orgId)
-      .eq('source_type', 'preventive_maintenance')
+      .eq('source_type', SCHEDULED_WO_SOURCE)
 
     if (scopedLocationId) query = query.eq('assigned_location_id', scopedLocationId)
     query = applyIlikeSearch(query, req.query.search, searchColumns)
@@ -2741,7 +2764,7 @@ router.get('/scheduled', canReadWorkOrders, async (req, res) => {
           p_org_id: orgId,
           p_location_id: scopedLocationId || null,
           p_profile_id: null,
-          p_source_type: 'preventive_maintenance',
+          p_source_type: SCHEDULED_WO_SOURCE,
           p_search: req.query.search ? String(req.query.search).trim() || null : null,
         },
         () => [],
@@ -2764,7 +2787,7 @@ router.get('/scheduled/:id', canReadWorkOrders, async (req, res) => {
   const scopedLocationId = getScopedLocationId(req.orgPermissions)
   try {
     const detail = await loadWorkOrderDetail(orgId, req.params.id)
-    if (!detail || detail.source_type !== 'preventive_maintenance') {
+    if (!detail || !isScheduledWorkOrder(detail)) {
       return res.status(404).json({ error: 'Not found' })
     }
     if (
@@ -2817,6 +2840,9 @@ router.get('/received/:id', canReadWorkOrders, async (req, res) => {
       session: req.orgPermissions,
     })
     if (!detail) return res.status(404).json({ error: 'Not found' })
+    if (isScheduledWorkOrder(detail)) {
+      return res.status(404).json({ error: 'Not found' })
+    }
 
     const scopedLocationId = getScopedLocationId(req.orgPermissions)
     const isAssignee = (detail.assignees || []).some((row) => row.id === employee.id)

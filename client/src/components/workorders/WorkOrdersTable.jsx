@@ -12,6 +12,7 @@ import { useOrgStatusOptions } from '../../hooks/useOrgStatusOptions'
 import TablePagination from '../shared/TablePagination'
 import TableColumnPicker from '../shared/TableColumnPicker'
 import AssignedToCell from './AssignedToCell'
+import PersonChip from '../shared/PersonChip'
 import EditIcon from '../ui/EditIcon'
 import TrashIcon from '../ui/TrashIcon'
 import { TableColumnHead } from '../shared/ListTableChrome'
@@ -302,7 +303,7 @@ export default function WorkOrdersTable({
           />
         )
       case 'creator':
-        return order.creator?.display_name || order.creator?.email || '—'
+        return order.creator ? <PersonChip person={order.creator} /> : '—'
       case 'created_at':
       case 'received_at':
         return formatWorkOrderDate(order.created_at)

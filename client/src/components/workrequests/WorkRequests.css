@@ -1167,9 +1167,10 @@
   min-width: 0;
 }
 
+.wr-detail-main .wr-form-section,
+.wr-detail-main .wo-received-detail__section,
 .wr-detail-main .wo-section,
-.wr-detail-main .company-form__layout-section,
-.wr-detail-main .wr-form-section {
+.wr-detail-main .company-form__layout-section {
   margin: 0;
   border: 1px solid #e6e8ee;
   border-radius: 12px;
@@ -1278,6 +1279,15 @@
 .wr-actions--bar .company-btn {
   min-height: 42px;
   padding: 10px 16px;
+  border-radius: 10px;
+}
+
+.wr-actions--bar .company-btn--primary {
+  border: none;
+}
+
+.wr-actions--bar .wr-actions__info,
+.wr-actions--bar .wr-actions__reject {
   border-radius: 10px;
 }
 

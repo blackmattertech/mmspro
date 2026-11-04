@@ -230,10 +230,11 @@ function renderCell(row, columnId, statusLabels = null, orgSlug = '', column = n
     case 'assigned':
       return clampText(techniciansLabel(row))
     case 'work_order': {
+      const orderId = row.manual_work_order_id || row.linked_work_order?.id
       const number = row.linked_work_order?.wo_number
-      if (!row.manual_work_order_id || !number) return row.manual_work_order_id ? 'Linked' : '—'
+      if (!orderId) return '—'
       const href = orgSlug
-        ? orgPath(orgSlug, `work-orders/received?open=${row.manual_work_order_id}`)
+        ? orgPath(orgSlug, `work-orders/manual?open=${encodeURIComponent(orderId)}`)
         : '#'
       return (
         <Link
@@ -241,7 +242,7 @@ function renderCell(row, columnId, statusLabels = null, orgSlug = '', column = n
           className="company-link"
           onClick={(event) => event.stopPropagation()}
         >
-          {number}
+          {number || 'Linked'}
         </Link>
       )
     }
