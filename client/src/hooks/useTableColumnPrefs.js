@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAuth } from './useAuth'
 import { useOrg } from './useOrg'
+import { usePermissions } from './usePermissions'
 import {
   buildTableColumnStorageKey,
   loadTableColumnPrefs,
@@ -8,7 +9,13 @@ import {
   saveTableColumnPrefs,
   pinActionsLast,
   visibleIdsFromPrefs,
+  withOrgVersion,
+  readStoredOrgVersion,
 } from '../lib/tableColumnPrefs'
+import {
+  getTableColumnDefault,
+  saveTableColumnDefault,
+} from '../lib/api-table-column-defaults'
 
 function buildColumnsSignature(columnDefs) {
   if (!columnDefs?.length) return ''
@@ -49,16 +56,20 @@ function applyColumnOrder(previousOrder, orderedIds) {
 
 /**
  * Per-user, per-org column visibility and order for a table.
+ * Org admins can publish defaults that force-refresh every user's prefs.
  * @param {string} tableId
  * @param {{ id: string, label: string, defaultVisible?: boolean, locked?: boolean }[]} columnDefs
  */
 export function useTableColumnPrefs(tableId, columnDefs) {
   const { user } = useAuth()
   const { org } = useOrg()
+  const { isOrgAdmin } = usePermissions()
   const columnsSignature = buildColumnsSignature(columnDefs)
 
   const [prefs, setPrefs] = useState(() => resolveColumnPrefs(null, columnDefs))
   const [loadedKey, setLoadedKey] = useState(null)
+  const [orgDefault, setOrgDefault] = useState(null)
+  const [makingDefault, setMakingDefault] = useState(false)
 
   const storageKey = useMemo(
     () => buildTableColumnStorageKey(org?.id, user?.id, tableId),
@@ -67,13 +78,17 @@ export function useTableColumnPrefs(tableId, columnDefs) {
   const columnDefsRef = useRef(columnDefs)
   const storageKeyRef = useRef(storageKey)
   const loadedKeyRef = useRef(loadedKey)
+  const orgDefaultRef = useRef(orgDefault)
   columnDefsRef.current = columnDefs
   storageKeyRef.current = storageKey
   loadedKeyRef.current = loadedKey
+  orgDefaultRef.current = orgDefault
 
-  const writePrefs = useCallback((next) => {
+  const writePrefs = useCallback((next, orgVersion) => {
     const key = storageKeyRef.current
-    if (key && loadedKeyRef.current === key) saveTableColumnPrefs(key, next)
+    if (!key || loadedKeyRef.current !== key) return
+    const version = orgVersion ?? orgDefaultRef.current?.version ?? readStoredOrgVersion(next)
+    saveTableColumnPrefs(key, withOrgVersion(next, version))
   }, [])
 
   const savedOrderIds = (saved) => {
@@ -84,23 +99,55 @@ export function useTableColumnPrefs(tableId, columnDefs) {
   useEffect(() => {
     if (!tableId || !columnDefs.length) {
       setLoadedKey(null)
-      return
+      setOrgDefault(null)
+      return undefined
     }
+    let cancelled = false
     const saved = storageKey ? loadTableColumnPrefs(storageKey) : null
-    const next = resolveColumnPrefs(saved, columnDefs)
-    const valid = new Set(columnDefs.map((col) => col.id))
-    const currentHasFields = columnDefs.some((col) => String(col.id).startsWith('field:'))
-    const dropsUnloadedField = savedOrderIds(saved).some((id) => (
-      String(id).startsWith('field:') && !valid.has(id) && !currentHasFields
-    ))
-    setPrefs((prev) => (samePrefs(prev, next) ? prev : next))
-    setLoadedKey(dropsUnloadedField ? null : (storageKey ?? `memory:${tableId}`))
+
+    getTableColumnDefault(tableId)
+      .then((row) => {
+        if (cancelled) return
+        const version = Number(row?.version) || 0
+        const orgPrefs = row?.prefs
+          && version > 0
+          && (row.prefs.order?.length || row.prefs.hidden?.length)
+          ? row.prefs
+          : null
+        setOrgDefault(orgPrefs ? { prefs: orgPrefs, version } : null)
+
+        const userVersion = readStoredOrgVersion(saved)
+        const forceOrg = Boolean(orgPrefs && version > 0 && version > userVersion)
+        const source = forceOrg ? orgPrefs : saved
+        const next = resolveColumnPrefs(source, columnDefs)
+        const valid = new Set(columnDefs.map((col) => col.id))
+        const currentHasFields = columnDefs.some((col) => String(col.id).startsWith('field:'))
+        const dropsUnloadedField = savedOrderIds(saved).some((id) => (
+          String(id).startsWith('field:') && !valid.has(id) && !currentHasFields
+        ))
+        setPrefs((prev) => (samePrefs(prev, next) ? prev : next))
+        const key = dropsUnloadedField ? null : (storageKey ?? `memory:${tableId}`)
+        setLoadedKey(key)
+        if (forceOrg && storageKey && key === storageKey) {
+          saveTableColumnPrefs(storageKey, withOrgVersion(next, version))
+        }
+      })
+      .catch(() => {
+        if (cancelled) return
+        const next = resolveColumnPrefs(saved, columnDefs)
+        setOrgDefault(null)
+        setPrefs((prev) => (samePrefs(prev, next) ? prev : next))
+        setLoadedKey(storageKey ?? `memory:${tableId}`)
+      })
+
+    return () => { cancelled = true }
   }, [tableId, storageKey, columnsSignature])
 
   useEffect(() => {
     if (!storageKey || loadedKey !== storageKey) return
-    saveTableColumnPrefs(storageKey, prefs)
-  }, [storageKey, prefs, loadedKey])
+    const version = orgDefault?.version || readStoredOrgVersion(prefs)
+    saveTableColumnPrefs(storageKey, withOrgVersion(prefs, version))
+  }, [storageKey, prefs, loadedKey, orgDefault?.version])
 
   const visibleColumnIds = useMemo(
     () => visibleIdsFromPrefs(prefs, columnDefs),
@@ -124,8 +171,9 @@ export function useTableColumnPrefs(tableId, columnDefs) {
   }, [writePrefs])
 
   const resetColumns = useCallback(() => {
-    const next = resolveColumnPrefs(null, columnDefsRef.current)
-    writePrefs(next)
+    const org = orgDefaultRef.current
+    const next = resolveColumnPrefs(org?.prefs || null, columnDefsRef.current)
+    writePrefs(next, org?.version || 0)
     setPrefs(next)
   }, [writePrefs])
 
@@ -164,11 +212,33 @@ export function useTableColumnPrefs(tableId, columnDefs) {
     const key = storageKeyRef.current
     if (!key) return false
     const next = resolveColumnPrefs(prefs, columnDefsRef.current)
-    saveTableColumnPrefs(key, next)
+    const version = orgDefaultRef.current?.version || readStoredOrgVersion(prefs)
+    saveTableColumnPrefs(key, withOrgVersion(next, version))
     setLoadedKey(key)
     setPrefs((prev) => (samePrefs(prev, next) ? prev : next))
     return true
   }, [prefs])
+
+  const makeDefaultColumns = useCallback(async () => {
+    if (!tableId || !isOrgAdmin) return false
+    setMakingDefault(true)
+    try {
+      const next = resolveColumnPrefs(prefs, columnDefsRef.current)
+      const saved = await saveTableColumnDefault(tableId, {
+        order: next.order,
+        hidden: next.hidden,
+        known: next.known,
+      })
+      const version = Number(saved?.version) || 1
+      setOrgDefault({ prefs: next, version })
+      const key = storageKeyRef.current
+      if (key) saveTableColumnPrefs(key, withOrgVersion(next, version))
+      setPrefs(next)
+      return true
+    } finally {
+      setMakingDefault(false)
+    }
+  }, [tableId, isOrgAdmin, prefs])
 
   return {
     columnDefs,
@@ -180,5 +250,8 @@ export function useTableColumnPrefs(tableId, columnDefs) {
     reorderColumns,
     moveColumn,
     saveColumns,
+    makeDefaultColumns: isOrgAdmin ? makeDefaultColumns : undefined,
+    makingDefault,
+    canMakeDefault: Boolean(isOrgAdmin && tableId),
   }
 }

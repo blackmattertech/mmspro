@@ -343,6 +343,12 @@
   }
 }
 
+.admin-org-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .admin-org-configure {
   position: relative;
   display: inline-flex;
@@ -367,6 +373,16 @@
 .admin-org-configure__btn:hover {
   color: #d42f3c;
   background: var(--color-light-pink-1);
+}
+
+.admin-org-actions .admin-org-configure:last-child .admin-org-configure__btn {
+  color: #b42318;
+  background: #fef3f2;
+}
+
+.admin-org-actions .admin-org-configure:last-child .admin-org-configure__btn:hover {
+  color: #912018;
+  background: #fee4e2;
 }
 
 .admin-org-configure__tooltip {

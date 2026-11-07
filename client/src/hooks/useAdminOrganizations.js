@@ -3,6 +3,7 @@ import {
   getOrganizations,
   createOrganization,
   updateOrganization,
+  deleteOrganization,
 } from '../lib/api'
 
 export function useAdminOrganizations() {
@@ -77,6 +78,38 @@ export function useAdminOrganizations() {
     }
   }
 
+  const updateOrgDetails = async (id, payload) => {
+    setSaving(true)
+    setError(null)
+    try {
+      const updated = await updateOrganization(id, payload)
+      setOrganizations((prev) =>
+        prev.map((org) => (org.id === id ? updated : org))
+      )
+      return updated
+    } catch (err) {
+      setError(err.message)
+      throw err
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const deleteOrg = async (id, { password } = {}) => {
+    setSaving(true)
+    setError(null)
+    try {
+      const result = await deleteOrganization(id, { password })
+      setOrganizations((prev) => prev.filter((org) => org.id !== id))
+      return result
+    } catch (err) {
+      setError(err.message)
+      throw err
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const patchOrg = (updated) => {
     if (!updated?.id) return
     setOrganizations((prev) =>
@@ -92,6 +125,8 @@ export function useAdminOrganizations() {
     createOrg,
     toggleOrgStatus,
     updateOrgLimits,
+    updateOrgDetails,
+    deleteOrg,
     patchOrg,
     refresh: fetchOrganizations,
   }

@@ -31,6 +31,7 @@ import SpellcheckInput from '../../components/shared/SpellcheckInput'
 import '../../components/company/CompanyShared.css'
 import './Others.css'
 import './OthersChecklistBuilder.css'
+import { useConfirmDelete } from '../../hooks/useConfirmDelete'
 
 function presetForField(field) {
   if (!field) return CHECKLIST_FIELD_PRESETS[0]
@@ -61,6 +62,7 @@ function parseOptions(text) {
 }
 
 export default function OthersChecklistBuilder() {
+  const { requestDelete, deleteModal } = useConfirmDelete()
   const { checklistId } = useParams()
   const isNew = !checklistId || checklistId === 'new'
   const navigate = useNavigate()
@@ -249,7 +251,7 @@ export default function OthersChecklistBuilder() {
 
   const handleDeleteSection = async (section) => {
     if (!template?.id) return
-    if (!window.confirm(`Delete section "${section.name}" and its fields?`)) return
+    if (!(await requestDelete({ title: 'Delete section', message: `Delete section "${section.name}" and its fields?` }))) return
     setBusy(true)
     setError(null)
     try {
@@ -329,6 +331,12 @@ export default function OthersChecklistBuilder() {
 
   const handleDeleteField = async (fieldId) => {
     if (!template?.id) return
+    const field = (template.fields || []).find((item) => item.id === fieldId)
+      || selectedFields?.find?.((item) => item.id === fieldId)
+    if (!(await requestDelete({
+      title: 'Delete field',
+      message: `Delete field "${field?.name || 'this field'}"?`,
+    }))) return
     setBusy(true)
     setError(null)
     try {
@@ -655,6 +663,7 @@ export default function OthersChecklistBuilder() {
         </button>
       </footer>
       </div>
+      {deleteModal}
     </div>
   )
 }

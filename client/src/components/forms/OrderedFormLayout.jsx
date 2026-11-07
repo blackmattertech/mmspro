@@ -463,6 +463,17 @@ export default function OrderedFormLayout({
       }
 
       if (parsed.kind === 'master' || parsed.kind === 'field') {
+        const bindKey = typeof item.bindKey === 'string' ? item.bindKey.trim() : ''
+        if (bindKey && renderField) {
+          const bound = renderField(bindKey, {
+            className,
+            colSpan: item.colSpan,
+            field: item,
+            required,
+            disabled: locked,
+          })
+          if (bound) return bound
+        }
         const sourceId = item.masterSource || (parsed.kind === 'master' ? parsed.value : '')
         const master = getMasterSource(sourceId)
         const label = item.label || master?.label || 'Field'

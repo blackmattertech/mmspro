@@ -1,5 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
-import { getAdminFormLayout, getAdminFormLayouts, markAdminFormDefault, saveAdminFormLayout } from '../../lib/api-form-layouts'
+import {
+  getAdminFormLayout,
+  getAdminFormLayouts,
+  markAdminFormDefault,
+  saveAdminFormLayout,
+  useAdminFormDefault,
+} from '../../lib/api-form-layouts'
 import { MODULE_FORM_GROUPS } from '../../lib/formRegistry'
 import { isProductModuleEnabled } from '../../lib/orgModules'
 import FormBuilderCanvas from './FormBuilderCanvas'
@@ -21,6 +27,7 @@ export default function FormBuilderPanel({ org, onGoToSections }) {
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [marking, setMarking] = useState(false)
+  const [applyingDefault, setApplyingDefault] = useState(false)
   const [error, setError] = useState(null)
   const [defaultFormIds, setDefaultFormIds] = useState(() => new Set())
 
@@ -112,9 +119,10 @@ export default function FormBuilderPanel({ org, onGoToSections }) {
 
   const handleMarkDefault = async (layout) => {
     const moduleLabel = payload?.form?.moduleLabel || 'this module'
+    const currentSource = payload?.platformDefault?.sourceOrgName
     const replacing = payload?.platformDefault && !payload.platformDefault.isSource
     const message = replacing
-      ? `Replace the default ${moduleLabel} form? New companies will start with this one.`
+      ? `Replace the default ${moduleLabel} form${currentSource ? ` (currently from ${currentSource})` : ''} with this company's form? New companies will start with this one.`
       : `Mark this as the default ${moduleLabel} form? New companies will start with it.`
     if (!window.confirm(message)) return
     setMarking(true)
@@ -132,6 +140,31 @@ export default function FormBuilderPanel({ org, onGoToSections }) {
     }
   }
 
+  const handleUseDefault = async () => {
+    const formLabel = payload?.form?.label || 'this form'
+    const sourceName = payload?.platformDefault?.sourceOrgName
+    if (!payload?.platformDefault) {
+      setError('No default form is set for this module yet. Mark a form as default first.')
+      return
+    }
+    if (!window.confirm(
+      sourceName
+        ? `Replace this company's ${formLabel} with the default from ${sourceName}? The saved layout for this form will be overwritten.`
+        : `Replace this company's ${formLabel} with the platform default? The saved layout for this form will be overwritten.`
+    )) return
+    setApplyingDefault(true)
+    setError(null)
+    try {
+      const next = await useAdminFormDefault(org.id, formId)
+      setPayload(next)
+    } catch (err) {
+      setError(err.message)
+      throw err
+    } finally {
+      setApplyingDefault(false)
+    }
+  }
+
   if (formId) {
     return (
       <div className="form-builder">
@@ -141,10 +174,12 @@ export default function FormBuilderPanel({ org, onGoToSections }) {
           loading={loading}
           saving={saving}
           marking={marking}
+          applyingDefault={applyingDefault}
           error={error}
           onBack={handleBack}
           onSave={handleSave}
           onMarkDefault={handleMarkDefault}
+          onUseDefault={handleUseDefault}
           onGoToSections={onGoToSections}
           formChoices={enabledGroups.flatMap((group) => group.forms.map((item) => ({
             formId: item.formId,

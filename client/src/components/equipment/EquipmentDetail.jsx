@@ -16,7 +16,6 @@ import './EquipmentDetail.css'
 const HIDDEN_FIELD_NAMES = new Set([
   'name',
   'code',
-  'area',
   'image',
   'equipment name',
   'equipment code',
@@ -87,7 +86,6 @@ function detailFacts(equipment) {
     { label: 'Code', value: equipment.code },
     { label: 'Location', value: equipment.org_locations?.name || equipment.locations?.name, icon: 'pin' },
     { label: 'Department', value: equipment.departments?.name, icon: 'dept' },
-    { label: 'Area', value: equipment.areas?.name },
     { label: 'Status', status: equipment.is_active === false ? 'inactive' : 'active' },
     { label: 'Reading required', value: equipment.reading_required ? 'Yes' : 'No' },
   ]

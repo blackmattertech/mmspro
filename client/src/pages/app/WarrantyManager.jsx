@@ -41,6 +41,7 @@ import '../../components/workorders/WorkOrdersPage.css'
 import '../../components/workrequests/WorkRequests.css'
 import '../../components/company/CompanyShared.css'
 import '../../components/warranty/WarrantyManager.css'
+import { useConfirmDelete } from '../../hooks/useConfirmDelete'
 
 const WARRANTY_COLUMNS = [
   { id: 'serial_number', label: 'S.No' },
@@ -182,6 +183,7 @@ function renderWarrantyCell(row, columnId) {
 }
 
 export default function WarrantyManager() {
+  const { requestDelete, deleteModal } = useConfirmDelete()
   const navigate = useNavigate()
   const location = useLocation()
   const { org } = useOrg()
@@ -294,6 +296,8 @@ export default function WarrantyManager() {
     reorderColumns,
     moveColumn,
     saveColumns,
+    makeDefaultColumns,
+    makingDefault,
   } = useTableColumnPrefs('warranty-manager', columnDefs)
 
   const openCreate = () => {
@@ -313,7 +317,7 @@ export default function WarrantyManager() {
 
   const handleDelete = async (row) => {
     const label = row.serial_number != null ? row.serial_number : 'this warranty'
-    if (!window.confirm(`Delete warranty ${label}?`)) return
+    if (!(await requestDelete({ title: 'Delete warranty', message: `Delete warranty ${label}?` }))) return
     await remove(row.id)
   }
 
@@ -440,6 +444,8 @@ export default function WarrantyManager() {
                   onReorder={reorderColumns}
                   onMove={moveColumn}
                   onSave={saveColumns}
+                  onMakeDefault={makeDefaultColumns}
+                  makingDefault={makingDefault}
                 />
               )}
             />
@@ -541,6 +547,7 @@ export default function WarrantyManager() {
           </div>
         </div>
       </div>
+      {deleteModal}
     </div>
   )
 }

@@ -722,7 +722,8 @@ export default function WorkRequestCreate() {
             ? 'Work request saved as draft.'
             : 'Work request submitted successfully.'
           notifyTabCountsChanged('work_requests')
-          navigate(orgPath(org.slug, 'work-request/my'), { state: { success: message } })
+          const segment = saveAs === 'draft' ? 'work-request/drafts' : 'work-request/my'
+          navigate(orgPath(org.slug, segment), { state: { success: message } })
         }
       } catch (err) {
         setError(err.message)
@@ -926,6 +927,9 @@ export default function WorkRequestCreate() {
             maxLength={maxLength('short_description')}
             required={required}
           />
+          <p className="company-form__hint">
+            One-line summary used in work request lists, tables, and notifications.
+          </p>
         </label>
       )
     }
@@ -943,6 +947,9 @@ export default function WorkRequestCreate() {
             maxLength={maxLength('problem_description')}
             required={required}
           />
+          <p className="company-form__hint">
+            Full details for reviewers and technicians: symptoms, impact, and any safety notes.
+          </p>
         </label>
       )
     }
@@ -1195,6 +1202,9 @@ export default function WorkRequestCreate() {
                     placeholder="Brief summary shown in lists and tables"
                     maxLength={maxLength('short_description')}
                   />
+                  <p className="company-form__hint">
+                    One-line summary used in work request lists, tables, and notifications.
+                  </p>
                 </label>
                 )}
                 {isVisible('problem_description') && (
@@ -1209,6 +1219,9 @@ export default function WorkRequestCreate() {
                     placeholder="Describe the issue or maintenance need"
                     maxLength={maxLength('problem_description')}
                   />
+                  <p className="company-form__hint">
+                    Full details for reviewers and technicians: symptoms, impact, and any safety notes.
+                  </p>
                 </label>
                 )}
                 <div className="wr-form__meta-row">

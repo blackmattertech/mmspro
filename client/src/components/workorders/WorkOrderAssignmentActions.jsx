@@ -17,7 +17,7 @@ import EmployeeAvatar from '../company/EmployeeAvatar'
 import FilterableSelect from '../ui/FilterableSelect'
 import '../company/CompanyShared.css'
 
-export default function WorkOrderAssignmentActions({ detail, onUpdated }) {
+export default function WorkOrderAssignmentActions({ detail, onUpdated, readOnly = false }) {
   const actions = detail?.assignment_actions || {}
   const canLH = Boolean(actions.can_reassign_as_location_head)
   const canDept = Boolean(actions.can_assign_department_technicians)
@@ -36,6 +36,18 @@ export default function WorkOrderAssignmentActions({ detail, onUpdated }) {
     [assignFormId, assignLayout, detail, assignExtras.values],
   )
   const hasLayoutAssignment = Boolean(assignLayout?.sections?.length)
+  const assignees = detail?.assignees || []
+  const hasAssignmentData = Boolean(
+    assignees.length
+    || detail?.work_center
+    || detail?.planned_start_at
+    || detail?.planned_end_at
+    || detail?.special_instructions
+    || detail?.assigned_department_id
+    || detail?.priority
+  )
+  const canAct = canAssign || canClaim
+  const viewOnly = readOnly || !canAct
 
   const [departmentId, setDepartmentId] = useState(lockedDepartmentId)
   const [employeeIds, setEmployeeIds] = useState(
@@ -105,7 +117,7 @@ export default function WorkOrderAssignmentActions({ detail, onUpdated }) {
     [employees],
   )
 
-  if (!canAssign && !canClaim) return null
+  if (viewOnly && !hasLayoutAssignment && !hasAssignmentData) return null
 
   const toggleEmployee = (id) => {
     setEmployeeIds((prev) => (
@@ -201,10 +213,42 @@ export default function WorkOrderAssignmentActions({ detail, onUpdated }) {
     ? 'This work order is in your department pool.'
     : 'This work order is in your location pool.'
 
+  const renderAssigneesReadOnly = (props = {}) => {
+    const className = props.className || 'company-form__field'
+    const people = assignees.length
+      ? assignees
+      : activeEmployees.filter((emp) => employeeIds.includes(emp.id))
+    return (
+      <div key="assignee_ids" className={className}>
+        <span className="company-form__label">Technicians</span>
+        {people.length ? (
+          <div className="wo-assignment-actions__employees wo-assignment-actions__employees--readonly" role="list">
+            {people.map((emp) => (
+              <div key={emp.id} className="wo-assignment-actions__emp is-selected" role="listitem">
+                <EmployeeAvatar employee={emp} size="sm" />
+                <span className="wo-assignment-actions__emp-meta">
+                  <span className="wo-assignment-actions__emp-name">{emp.name}</span>
+                  {(emp.departments?.name || emp.department?.name) && (
+                    <span className="wo-assignment-actions__emp-sub">
+                      {emp.departments?.name || emp.department?.name}
+                    </span>
+                  )}
+                </span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="wo-assignment-actions__hint">—</p>
+        )}
+      </div>
+    )
+  }
+
   const renderTechnicianPicker = (props = {}) => {
     const className = props.className || 'company-form__field'
     const requiredMark = props.required ? ' *' : ''
     const label = canLH ? 'Employees' : 'Technicians'
+    if (viewOnly) return renderAssigneesReadOnly({ ...props, className })
     return (
       <div key="assignee_ids" className={className}>
         <span className="company-form__label">
@@ -248,9 +292,10 @@ export default function WorkOrderAssignmentActions({ detail, onUpdated }) {
 
   const renderAssignmentField = (key, props = {}) => {
     const className = props.className || formFieldClassName(props.field)
-    const requiredMark = props.required ? ' *' : ''
-    const locked = saving || Boolean(props.disabled)
+    const requiredMark = viewOnly ? '' : (props.required ? ' *' : '')
+    const locked = viewOnly || saving || Boolean(props.disabled)
     if (key === 'assignee_ids') {
+      if (viewOnly) return renderAssigneesReadOnly({ ...props, className })
       if (!canAssign) return null
       return renderTechnicianPicker({ ...props, className })
     }
@@ -323,13 +368,39 @@ export default function WorkOrderAssignmentActions({ detail, onUpdated }) {
       formId={assignFormId}
       stages={['assignment']}
       extrasValues={extrasWithNative}
-      onExtraChange={assignExtras.setFieldValue}
+      onExtraChange={viewOnly ? () => {} : assignExtras.setFieldValue}
       actors={assignActors}
       currentEmployeeId={session?.employee_id || null}
-      disabled={saving}
+      disabled={viewOnly || saving}
       renderField={renderAssignmentField}
     />
   )
+
+  if (viewOnly) {
+    return (
+      <section className="wo-received-detail__section wo-assignment-actions">
+        <h3>Assignment</h3>
+        <div className="wo-assignment-actions__form">
+          {detail?.assigned_department?.name && (
+            <div className="company-form__field">
+              <span className="company-form__label">Department</span>
+              <p className="wo-assignment-actions__readonly-value">{detail.assigned_department.name}</p>
+            </div>
+          )}
+          {hasLayoutAssignment ? assignmentFields : (
+            <>
+              {renderAssigneesReadOnly()}
+              {renderAssignmentField('work_center')}
+              {renderAssignmentField('priority')}
+              {renderAssignmentField('planned_start_at')}
+              {renderAssignmentField('planned_end_at')}
+              {renderAssignmentField('assignment_remarks')}
+            </>
+          )}
+        </div>
+      </section>
+    )
+  }
 
   if (selfStart) {
     return (

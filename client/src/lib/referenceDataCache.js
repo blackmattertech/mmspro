@@ -11,6 +11,7 @@ function createReferenceCache() {
 }
 
 const caches = new Map()
+const invalidationListeners = new Set()
 
 function getCacheKey(namespace, params = {}) {
   const sorted = Object.keys(params).sort().map((key) => `${key}:${params[key] ?? ''}`).join('|')
@@ -21,6 +22,25 @@ function getCache(namespace, params) {
   const key = getCacheKey(namespace, params)
   if (!caches.has(key)) caches.set(key, createReferenceCache())
   return caches.get(key)
+}
+
+/** Notify hooks when a namespace is invalidated so every cached query reloads. */
+export function subscribeReferenceInvalidation(namespace, listener) {
+  const entry = { namespace: namespace || '*', listener }
+  invalidationListeners.add(entry)
+  return () => invalidationListeners.delete(entry)
+}
+
+function notifyReferenceInvalidation(namespace) {
+  for (const entry of invalidationListeners) {
+    if (entry.namespace === '*' || !namespace || entry.namespace === namespace) {
+      try {
+        entry.listener(namespace)
+      } catch {
+        // Ignore listener errors so one stale hook cannot break others.
+      }
+    }
+  }
 }
 
 export function peekReferenceData(namespace, params) {
@@ -44,11 +64,13 @@ export function seedReferenceData(namespace, params, data) {
 export function invalidateReferenceCache(namespace) {
   if (!namespace) {
     caches.clear()
+    notifyReferenceInvalidation(null)
     return
   }
   for (const key of caches.keys()) {
     if (key.startsWith(`${namespace}|`)) caches.delete(key)
   }
+  notifyReferenceInvalidation(namespace)
 }
 
 export function fetchReferenceData(namespace, params, fetcher, { force = false } = {}) {

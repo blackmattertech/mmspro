@@ -25,6 +25,7 @@ import {
 import '../../components/shared/TableFilterToolbar.css'
 import '../../components/company/CompanyShared.css'
 import '../../components/tasks/Tasks.css'
+import { useConfirmDelete } from '../../hooks/useConfirmDelete'
 
 const TaskVoiceAssistant = lazy(() => import('../../components/tasks/TaskVoiceAssistant'))
 const VoiceAgentIcon = lazy(() => import('../../components/ui/VoiceAgentIcon'))
@@ -51,6 +52,7 @@ function filterTasks(tasks, { sortBy }) {
 }
 
 export default function TasksManager() {
+  const { requestDelete, deleteModal } = useConfirmDelete()
   const navigate = useNavigate()
   const { org } = useOrg()
   const { canCreate, canUpdate, canDelete, isOrgAdmin, role } = usePermissions()
@@ -170,7 +172,7 @@ export default function TasksManager() {
   }
 
   const handleDelete = async (task) => {
-    if (!window.confirm(`Delete task "${task.title}"?`)) return
+    if (!(await requestDelete({ title: 'Delete task', message: `Delete task "${task.title}"?` }))) return
     setDeleting(true)
     try {
       await deleteTask(task.id)
@@ -380,6 +382,7 @@ export default function TasksManager() {
           />
         </Suspense>
       )}
+      {deleteModal}
     </>
   )
 }

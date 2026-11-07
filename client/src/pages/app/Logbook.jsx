@@ -35,6 +35,7 @@ import '../../components/shared/TableFilterToolbar.css'
 import '../../components/shared/TableColumnPicker.css'
 import '../../components/shared/ListTableChrome.css'
 import '../../components/company/CompanyShared.css'
+import { useConfirmDelete } from '../../hooks/useConfirmDelete'
 
 function loggerSubtitle(row) {
   return [row?.logged_by_department, row?.logged_by_designation].filter(Boolean).join(' · ')
@@ -61,6 +62,7 @@ function meterCellText(row, column) {
 }
 
 function HistoryModal({ equipmentId, assetFields, canCreate, canDelete, onClose, onChanged }) {
+  const { requestDelete, deleteModal } = useConfirmDelete()
   const handleBackdropClick = useBackdropClose(onClose)
   const [payload, setPayload] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -84,7 +86,7 @@ function HistoryModal({ equipmentId, assetFields, canCreate, canDelete, onClose,
   const readings = payload?.readings || []
 
   const handleDelete = async (row) => {
-    if (!window.confirm('Delete this meter reading?')) return
+    if (!(await requestDelete({ title: 'Delete reading', message: 'Delete this meter reading?' }))) return
     try {
       await deleteMeterReading(row.id)
       await load()
@@ -178,6 +180,7 @@ function HistoryModal({ equipmentId, assetFields, canCreate, canDelete, onClose,
           />
         )}
       </div>
+      {deleteModal}
     </div>
   )
 }
@@ -226,6 +229,8 @@ export default function Logbook() {
     reorderColumns,
     moveColumn,
     saveColumns,
+    makeDefaultColumns,
+    makingDefault,
   } = useTableColumnPrefs('meter-reading', columnDefs)
   const dataColumns = useMemo(
     () => columnDefs.filter((column) => column.id !== 'actions'),
@@ -415,6 +420,8 @@ export default function Logbook() {
                   onReorder={reorderColumns}
                   onMove={moveColumn}
                   onSave={saveColumns}
+                  onMakeDefault={makeDefaultColumns}
+                  makingDefault={makingDefault}
                 />
               )}
             />

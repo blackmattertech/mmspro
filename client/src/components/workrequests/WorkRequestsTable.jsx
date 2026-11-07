@@ -53,9 +53,26 @@ function StatusPill({ row, requestLabels, workOrderLabels }) {
     requestLabels,
     workOrderLabels,
   })
+  const pending = display.pendingApprover && Array.isArray(row?.pending_approvers)
+    ? row.pending_approvers[0]
+    : null
   return (
-    <span className={`wo-status wo-status--${display.key}`} title={display.title}>
-      {display.label}
+    <span
+      className={`wo-status wo-status--${display.key}${pending ? ' wo-status--with-avatar' : ''}`}
+      title={display.title}
+    >
+      {pending && (
+        <EmployeeAvatar
+          employee={{
+            name: pending.name,
+            photo_signed_url: pending.photo_signed_url,
+            photo_url: pending.photo_url,
+          }}
+          size="sm"
+          className="wo-status__avatar"
+        />
+      )}
+      <span className="wo-status__text">{display.label}</span>
     </span>
   )
 }
@@ -305,14 +322,21 @@ export default function WorkRequestsTable({
   }, [columnFilters, debouncedField])
   const paginationResetKey = `${debouncedSearch}|${JSON.stringify(mergedFilters)}|${sortBy}|${headerSort?.id || ''}|${headerSort?.dir || ''}|${statusFilters.join(',')}|${filter}`
   const pagination = useTablePagination(listTotal, { resetKey: paginationResetKey })
+  const draftOnly = filter === 'drafts'
+  const listFilters = useMemo(() => {
+    if (!draftOnly) return mergedFilters
+    const next = { ...mergedFilters }
+    delete next.status
+    return next
+  }, [draftOnly, mergedFilters])
   const fetchList = useCallback(
     () => listWorkRequests(filter, {
       search: debouncedSearch,
       limit: pagination.pageSize,
       offset: pagination.offset,
-      filters: mergedFilters,
-      statuses: statusFilters,
-      excludeStatuses: statusFilters.length ? [] : ['draft'],
+      filters: listFilters,
+      statuses: draftOnly ? ['draft'] : statusFilters,
+      excludeStatuses: draftOnly || statusFilters.length ? [] : ['draft'],
       sort: headerSort?.id || '',
       sortDir: headerSort?.dir || '',
       sortBy: headerSort ? '' : sortBy,
@@ -323,8 +347,9 @@ export default function WorkRequestsTable({
       pagination.pageSize,
       pagination.offset,
       bulkReloadToken,
-      mergedFilters,
+      listFilters,
       statusFilters,
+      draftOnly,
       headerSort,
       sortBy,
     ],

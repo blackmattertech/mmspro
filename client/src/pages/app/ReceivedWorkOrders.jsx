@@ -9,6 +9,7 @@ import { usePermissions } from '../../hooks/usePermissions'
 import { applyWorkOrderFilters } from '../../lib/workOrderFilters'
 import ReceivedWorkOrderDetailModal from '../../components/workorders/ReceivedWorkOrderDetailModal'
 import WorkOrdersTable from '../../components/workorders/WorkOrdersTable'
+import { notifyTabCountsChanged } from '../../lib/tabCountEvents'
 import '../../components/company/CompanyShared.css'
 import '../../components/workorders/WorkOrdersPage.css'
 
@@ -71,6 +72,7 @@ export default function ReceivedWorkOrders() {
     setActionError(null)
     try {
       await updateWorkOrderLifecycle(order.id, { status: 'accepted' })
+      notifyTabCountsChanged('work_orders')
       await reload({ silent: true })
     } catch (err) {
       setActionError(err.message || 'Could not approve this work order.')

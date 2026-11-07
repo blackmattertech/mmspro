@@ -200,18 +200,27 @@ async function assertOrgDepartment(orgId, departmentId) {
 }
 
 async function assertPlacement(orgId, { location_id, department_id, area_id }) {
-  await assertOrgLocation(orgId, location_id)
+  if (location_id) await assertOrgLocation(orgId, location_id)
 
-  const { data: department } = await supabaseAdmin
-    .from('departments')
-    .select('id, location_id, all_locations')
-    .eq('id', department_id)
-    .eq('org_id', orgId)
-    .maybeSingle()
-  if (!department) throw new Error('Invalid department')
-  if (!department.all_locations && department.location_id && department.location_id !== location_id) {
-    throw new Error('Department does not belong to the selected location')
+  if (department_id) {
+    const { data: department } = await supabaseAdmin
+      .from('departments')
+      .select('id, location_id, all_locations')
+      .eq('id', department_id)
+      .eq('org_id', orgId)
+      .maybeSingle()
+    if (!department) throw new Error('Invalid department')
+    if (
+      location_id
+      && !department.all_locations
+      && department.location_id
+      && department.location_id !== location_id
+    ) {
+      throw new Error('Department does not belong to the selected location')
+    }
   }
+
+  if (!area_id) return
 
   const { data: area } = await supabaseAdmin
     .from('areas')
@@ -220,8 +229,12 @@ async function assertPlacement(orgId, { location_id, department_id, area_id }) {
     .eq('org_id', orgId)
     .maybeSingle()
   if (!area) throw new Error('Invalid area')
-  if (area.location_id !== location_id || area.department_id !== department_id) {
-    throw new Error('Area does not belong to the selected location and department')
+  // Null area placement is allowed (optional placement); otherwise it must match.
+  if (area.location_id && location_id && area.location_id !== location_id) {
+    throw new Error('Area does not belong to the selected location')
+  }
+  if (area.department_id && department_id && area.department_id !== department_id) {
+    throw new Error('Area does not belong to the selected department')
   }
 }
 
@@ -685,16 +698,17 @@ export async function updateEquipment(orgId, id, body) {
     || body.department_id !== undefined
     || body.area_id !== undefined
   ) {
+    if (body.location_id !== undefined) await assertOrgLocation(orgId, locationId)
+    if (body.department_id !== undefined) await assertOrgDepartment(orgId, departmentId)
     if (body.area_id !== undefined) {
-      await assertPlacement(orgId, {
-        location_id: locationId,
-        department_id: departmentId,
-        area_id: areaId,
-      })
-      updates.area_id = areaId
-    } else {
-      if (body.location_id !== undefined) await assertOrgLocation(orgId, locationId)
-      if (body.department_id !== undefined) await assertOrgDepartment(orgId, departmentId)
+      if (areaId) {
+        await assertPlacement(orgId, {
+          location_id: locationId,
+          department_id: departmentId,
+          area_id: areaId,
+        })
+      }
+      updates.area_id = areaId || null
     }
     if (body.location_id !== undefined) updates.location_id = locationId
     if (body.department_id !== undefined) updates.department_id = departmentId

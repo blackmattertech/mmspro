@@ -88,7 +88,6 @@ export const ACCESS_MODULE_GROUPS = [
       { key: 'company', label: 'Company profile', actions: ['read', 'update'] },
       { key: 'locations', label: 'Locations', actions: ['create', 'read', 'update', 'delete'] },
       { key: 'departments', label: 'Departments', actions: ['create', 'read', 'update', 'delete'] },
-      { key: 'work_centers', label: 'Work Center', actions: ['create', 'read', 'update', 'delete'] },
       { key: 'employees', label: 'Employees', actions: ['create', 'read', 'update', 'delete'] },
     ],
   },
@@ -96,6 +95,8 @@ export const ACCESS_MODULE_GROUPS = [
     id: 'masters',
     label: 'Masters',
     modules: [
+      // Hidden for now — work centers are form dropdown values only
+      // { key: 'work_centers', label: 'Work Center', actions: ['create', 'read', 'update', 'delete'] },
       { key: 'vendors', label: 'Vendors', actions: ['create', 'read', 'update', 'delete'] },
       { key: 'others', label: 'Others (Status, Checklists, Limits)', actions: ['create', 'read', 'update', 'delete'] },
       { key: 'assets', label: 'Forms Master', actions: ['create', 'read', 'update', 'delete'] },
@@ -346,7 +347,6 @@ export const COMPANY_PAGE_MODULE_KEYS = [
   'company',
   'locations',
   'departments',
-  'work_centers',
   'areas',
   'employees',
 ]

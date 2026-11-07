@@ -11,7 +11,8 @@
     "dev": "node scripts/build-openapi.js && nodemon index.js",
     "start": "node index.js",
     "wipe": "node scripts/wipe-all.js",
-    "wipe:keep-admin": "node scripts/wipe-keep-admin.js"
+    "wipe:keep-admin": "node scripts/wipe-keep-admin.js",
+    "delete:org": "node scripts/delete-organization.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.39.0",

@@ -2,8 +2,12 @@ import { useEffect, useMemo, useState, lazy, Suspense } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useAdminOrganizations } from '../../hooks/useAdminOrganizations'
 import CreateOrgModal from '../../components/admin/CreateOrgModal'
+import EditOrgDetailsModal from '../../components/admin/EditOrgDetailsModal'
+import DeleteOrgModal from '../../components/admin/DeleteOrgModal'
 import OrgLimitsModal from '../../components/admin/OrgLimitsModal'
 import GooToggle from '../../components/ui/GooToggle'
+import EditIcon from '../../components/ui/EditIcon'
+import TrashIcon from '../../components/ui/TrashIcon'
 import SettingsIcon from '../../components/ui/SettingsIcon'
 import TablePagination from '../../components/shared/TablePagination'
 import TableFilterToolbar from '../../components/shared/TableFilterToolbar'
@@ -161,17 +165,17 @@ function LimitsSummary({ org, onManage, disabled }) {
   )
 }
 
-function OrgConfigureButton({ onClick }) {
+function OrgActionButton({ label, onClick, children }) {
   return (
     <div className="admin-org-configure">
       <button
         type="button"
         className="admin-org-configure__btn"
-        aria-label="Configure"
+        aria-label={label}
         onClick={onClick}
       >
-        <SettingsIcon size={18} />
-        <span className="admin-org-configure__tooltip" role="tooltip">Configure</span>
+        {children}
+        <span className="admin-org-configure__tooltip" role="tooltip">{label}</span>
       </button>
     </div>
   )
@@ -203,6 +207,7 @@ const ORG_COLUMNS = [
   { id: 'usage', label: 'Usage / Limits' },
   { id: 'created', label: 'Created' },
   { id: 'enabled', label: 'Enabled' },
+  { id: 'id', label: 'Organization ID', defaultVisible: false },
   { id: 'slug', label: 'Slug', defaultVisible: false },
   { id: 'email', label: 'Email', defaultVisible: false },
   { id: 'phone', label: 'Phone', defaultVisible: false },
@@ -217,7 +222,13 @@ function orgFieldValue(org, key) {
   if (key === 'plan') return org.plan
   if (key === 'created') return org.created_at
   if (key === 'enabled' || key === 'status') return org.is_active === false ? 'inactive' : 'active'
+  if (key === 'id') return org.id
   if (key === 'slug') return org.slug
+  if (key === 'email') return org.email
+  if (key === 'phone') return org.phone
+  if (key === 'city') return org.city
+  if (key === 'state') return org.state
+  if (key === 'country') return org.country
   return ''
 }
 
@@ -227,7 +238,10 @@ function filterAndSort(organizations, { search, filterField, filterValue, sortBy
 
   if (query) {
     rows = rows.filter((org) => {
-      const haystack = [org.name, org.slug, org.plan].filter(Boolean).join(' ').toLowerCase()
+      const haystack = [org.name, org.slug, org.id, org.plan, org.email, org.city, org.country]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase()
       return haystack.includes(query)
     })
   }
@@ -279,6 +293,8 @@ export default function Organizations() {
   const [params, setParams] = useSearchParams()
   const [showModal, setShowModal] = useState(() => params.get('new') === '1')
   const [limitsOrg, setLimitsOrg] = useState(null)
+  const [editOrg, setEditOrg] = useState(null)
+  const [deleteOrgTarget, setDeleteOrgTarget] = useState(null)
   const [configureOrg, setConfigureOrg] = useState(null)
   const [success, setSuccess] = useState(null)
   const [search, setSearch] = useState('')
@@ -303,6 +319,8 @@ export default function Organizations() {
     createOrg,
     toggleOrgStatus,
     updateOrgLimits,
+    updateOrgDetails,
+    deleteOrg,
     patchOrg,
   } = useAdminOrganizations()
 
@@ -328,6 +346,8 @@ export default function Organizations() {
     reorderColumns,
     moveColumn,
     saveColumns,
+    makeDefaultColumns,
+    makingDefault,
   } = useTableColumnPrefs('admin-organizations', ORG_COLUMNS)
 
   const paginationResetKey = `${search}|${JSON.stringify(columnFilters)}|${sortBy}`
@@ -417,6 +437,7 @@ export default function Organizations() {
                 <ExportCsvButton
                   onClick={() => downloadClientCsv('organizations.csv', filtered, [
                     { label: 'Organization', value: (row) => row.name },
+                    { label: 'Organization ID', value: (row) => row.id },
                     { label: 'Plan', value: (row) => row.plan },
                     { label: 'Locations', value: (row) => row.usage?.locations ?? '' },
                     { label: 'Employees', value: (row) => row.usage?.employees ?? '' },
@@ -442,6 +463,8 @@ export default function Organizations() {
                   onReorder={reorderColumns}
                   onMove={moveColumn}
                   onSave={saveColumns}
+                  onMakeDefault={makeDefaultColumns}
+                  makingDefault={makingDefault}
                 />
               )}
             />
@@ -493,6 +516,11 @@ export default function Organizations() {
                               <div>
                                 <div className="admin-table__name">{org.name}</div>
                                 <div className="admin-table__slug">/{org.slug}</div>
+                                {org.id && (
+                                  <div className="admin-table__slug" title={org.id}>
+                                    ID {org.id}
+                                  </div>
+                                )}
                               </div>
                             </div>
                           </td>
@@ -532,7 +560,17 @@ export default function Organizations() {
                           />
                           {visibleColumnIds.includes('actions') && (
                           <td>
-                            <OrgConfigureButton onClick={() => setConfigureOrg(org)} />
+                            <div className="admin-org-actions">
+                              <OrgActionButton label="Edit details" onClick={() => setEditOrg(org)}>
+                                <EditIcon size={16} />
+                              </OrgActionButton>
+                              <OrgActionButton label="Configure" onClick={() => setConfigureOrg(org)}>
+                                <SettingsIcon size={18} />
+                              </OrgActionButton>
+                              <OrgActionButton label="Delete company" onClick={() => setDeleteOrgTarget(org)}>
+                                <TrashIcon size={16} />
+                              </OrgActionButton>
+                            </div>
                           </td>
                           )}
                         </tr>
@@ -572,6 +610,40 @@ export default function Organizations() {
                 : `Organization "${org.name}" created for ${org.owner_email}, but the password setup email was not sent. Check Mailjet settings in server/.env and the server logs for the setup link.`
             )
             return org
+          }}
+          saving={saving}
+        />
+      )}
+
+      {editOrg && (
+        <EditOrgDetailsModal
+          org={editOrg}
+          onClose={() => setEditOrg(null)}
+          onSubmit={async (id, payload) => {
+            const updated = await updateOrgDetails(id, payload)
+            if (updated.owner_login_changed) {
+              setSuccess(
+                updated.owner_email_sent
+                  ? `Company details updated for "${updated.name}". Owner login is now ${updated.owner_email}, and a password setup email was sent.`
+                  : `Company details updated for "${updated.name}". Owner login is now ${updated.owner_email}, but the password setup email was not sent. Check Mailjet settings.`
+              )
+            } else {
+              setSuccess(`Company details updated for "${updated.name}".`)
+            }
+            return updated
+          }}
+          saving={saving}
+        />
+      )}
+
+      {deleteOrgTarget && (
+        <DeleteOrgModal
+          org={deleteOrgTarget}
+          onClose={() => setDeleteOrgTarget(null)}
+          onSubmit={async (id, payload) => {
+            const result = await deleteOrg(id, payload)
+            setSuccess(`Organization "${result.organization?.name || deleteOrgTarget.name}" was permanently deleted.`)
+            return result
           }}
           saving={saving}
         />

@@ -28,6 +28,23 @@ export function saveTableColumnPrefs(storageKey, prefs) {
   }
 }
 
+/** Persist prefs with the org default version that was last applied (force-all sync). */
+export function withOrgVersion(prefs, orgVersion) {
+  if (!prefs || typeof prefs !== 'object' || Array.isArray(prefs)) return prefs
+  const version = Number(orgVersion) || 0
+  if (!version) {
+    const next = { ...prefs }
+    delete next.orgVersion
+    return next
+  }
+  return { ...prefs, orgVersion: version }
+}
+
+export function readStoredOrgVersion(saved) {
+  if (!saved || typeof saved !== 'object' || Array.isArray(saved)) return 0
+  return Number(saved.orgVersion) || 0
+}
+
 function uniqueValid(ids, valid) {
   const seen = new Set()
   const list = []

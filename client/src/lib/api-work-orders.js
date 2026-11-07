@@ -137,8 +137,13 @@ export function getManualWorkOrder(id) {
 /** Load a work order the viewer can read, even when a list-specific endpoint hides it. */
 export async function getWorkOrderDetail(id, { prefer } = {}) {
   const loaders = []
-  if (typeof prefer === 'function') loaders.push(prefer)
-  if (prefer !== getManualWorkOrder) loaders.push(getManualWorkOrder)
+  const pushUnique = (fn) => {
+    if (typeof fn === 'function' && !loaders.includes(fn)) loaders.push(fn)
+  }
+  pushUnique(prefer)
+  pushUnique(getReceivedWorkOrder)
+  pushUnique(getAssignedWorkOrder)
+  pushUnique(getManualWorkOrder)
   let lastError = null
   for (const load of loaders) {
     try {

@@ -19,6 +19,7 @@ import { useWorkOrderList } from '../../hooks/useWorkOrderList'
 import { notifyTabCountsChanged } from '../../lib/tabCountEvents'
 import { useWorkOrderToolbar } from '../../hooks/useWorkOrderToolbar'
 import { usePermissions } from '../../hooks/usePermissions'
+import { useConfirmDelete } from '../../hooks/useConfirmDelete'
 import { useDebouncedValue } from '../../hooks/useDebouncedValue'
 import { useTablePagination } from '../../hooks/useTablePagination'
 import { useOpenQueryId } from '../../hooks/useOpenQueryId'
@@ -41,6 +42,7 @@ import '../../components/pm/Pm.css'
 const SCHEDULED_COLUMNS = ['wo_number', 'summary', 'work_request', 'scheduled_at', 'assignees', 'status', 'priority', 'progress']
 
 export default function ScheduledWorkOrders() {
+  const { requestDelete, deleteModal } = useConfirmDelete()
   const outlet = useOutletContext() || {}
   const {
     view = 'plans',
@@ -265,6 +267,10 @@ export default function ScheduledWorkOrders() {
   }
 
   const handleDeletePlan = async (plan) => {
+    if (!(await requestDelete({
+      title: 'Delete PM plan',
+      message: `Delete plan "${plan.name || plan.title || 'this plan'}"?`,
+    }))) return
     setError(null)
     try {
       await deletePmPlan(plan.id)
@@ -355,7 +361,7 @@ export default function ScheduledWorkOrders() {
           onSave={handleSavePlan}
         />
       )}
-
+      {deleteModal}
     </>
   )
 }

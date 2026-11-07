@@ -1,0 +1,56 @@
+.admin-modal.admin-modal--popup.edit-org-modal {
+  width: min(760px, 100%);
+  max-width: 760px;
+  max-height: min(92vh, 900px);
+  overflow: auto;
+}
+
+.edit-org-modal__form {
+  gap: 20px;
+}
+
+.edit-org-modal .company-form__grid {
+  margin: 0;
+}
+
+.edit-org-modal .admin-modal__hint {
+  margin-top: 4px;
+}
+
+.edit-org-modal__id-row {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.edit-org-modal__id-input {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 13px;
+}
+
+.edit-org-modal__copy-btn {
+  flex-shrink: 0;
+  min-width: 72px;
+  height: 40px;
+  padding: 0 14px;
+  border: 1px solid var(--color-light-gray-2);
+  border-radius: var(--radius-sm);
+  background: var(--color-light-gray-1);
+  color: var(--color-dark-navy);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.edit-org-modal__copy-btn:hover:not(:disabled) {
+  background: #e8ebf0;
+}
+
+.edit-org-modal__copy-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.edit-org-modal .admin-modal__hint code {
+  font-size: 12px;
+}

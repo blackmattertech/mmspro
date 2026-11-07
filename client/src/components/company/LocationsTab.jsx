@@ -35,8 +35,10 @@ import '../shared/TableColumnPicker.css'
 import '../shared/TableFilterToolbar.css'
 import '../workorders/WorkOrdersPage.css'
 import './CompanyShared.css'
+import { useConfirmDelete } from '../../hooks/useConfirmDelete'
 
 export default function LocationsTab({ canManage }) {
+  const { requestDelete, deleteModal } = useConfirmDelete()
   const [search, setSearch] = useState('')
   const [sortBy, setSortBy] = useState('name_asc')
   const [columnFilters, setColumnFilters] = useState({})
@@ -133,6 +135,8 @@ export default function LocationsTab({ canManage }) {
     reorderColumns: reorderLocationColumns,
     moveColumn: moveLocationColumn,
     saveColumns: saveLocationColumns,
+    makeDefaultColumns,
+    makingDefault,
     columnDefs: locationPickerColumns,
     visibleColumnIds: locationVisibleColumnIds,
   } = useTableColumnPrefs('company-locations', locationColumnDefs)
@@ -167,7 +171,7 @@ export default function LocationsTab({ canManage }) {
   }
 
   const handleDelete = async (loc) => {
-    if (!window.confirm(`Delete location "${loc.name}"? This cannot be undone.`)) return
+    if (!(await requestDelete({ title: 'Delete location', message: `Delete location "${loc.name}"?` }))) return
     setDeleteError(null)
     try {
       await remove(loc.id)
@@ -207,7 +211,7 @@ export default function LocationsTab({ canManage }) {
     const ids = [...selected]
     if (!ids.length) return
     const label = ids.length === 1 ? 'this location' : `${ids.length} locations`
-    if (!window.confirm(`Delete ${label}? This cannot be undone.`)) return
+    if (!(await requestDelete({ title: 'Delete locations', message: `Delete ${label}?` }))) return
     setBulkDeleting(true)
     setDeleteError(null)
     try {
@@ -334,6 +338,8 @@ export default function LocationsTab({ canManage }) {
               onReorder={reorderLocationColumns}
               onMove={moveLocationColumn}
               onSave={saveLocationColumns}
+                  onMakeDefault={makeDefaultColumns}
+                  makingDefault={makingDefault}
             />
           )}
         />
@@ -519,6 +525,7 @@ export default function LocationsTab({ canManage }) {
       {limitVisible && (
         <LimitExceededCard resource={limitResource} overflow={limitOverflow} onClose={dismissLimit} />
       )}
+      {deleteModal}
     </div>
   )
 }

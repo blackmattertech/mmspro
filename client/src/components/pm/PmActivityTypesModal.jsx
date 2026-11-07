@@ -11,10 +11,12 @@ import {
   updatePmActivityType,
   deletePmActivityType,
 } from '../../lib/api-pm'
+import { useConfirmDelete } from '../../hooks/useConfirmDelete'
 import '../company/CompanyShared.css'
 import './Pm.css'
 
 export default function PmActivityTypesModal({ onClose }) {
+  const { requestDelete, deleteModal } = useConfirmDelete()
   const [rows, setRows] = useState([])
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
@@ -68,6 +70,10 @@ export default function PmActivityTypesModal({ onClose }) {
   }
 
   const handleDelete = async (row) => {
+    if (!(await requestDelete({
+      title: 'Delete activity type',
+      message: `Delete "${row.name}"?`,
+    }))) return
     setError(null)
     try {
       await deletePmActivityType(row.id)
@@ -150,6 +156,7 @@ export default function PmActivityTypesModal({ onClose }) {
           </form>
         </div>
       </div>
+      {deleteModal}
     </div>
   )
 }

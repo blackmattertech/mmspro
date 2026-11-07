@@ -37,19 +37,34 @@ function hasTechnician(row) {
   return (row?.assigned_technicians || []).some((tech) => tech?.id || tech?.employee_id || tech?.name)
 }
 
+function pendingApproverLabel(row) {
+  const people = Array.isArray(row?.pending_approvers) ? row.pending_approvers : []
+  const names = people.map((person) => String(person?.name || '').trim()).filter(Boolean)
+  if (!names.length) return ''
+  if (names.length === 1) return names[0]
+  return `${names[0]} +${names.length - 1}`
+}
+
 /**
  * Status shown on a work request.
  * Before a work order exists, this is the request status.
  * After approval, it follows the work order: generated, technician assigned,
  * then each status the technician (or supervisor) sets on the work order.
+ * When approval is waiting, the pending department head is included in the label.
  */
 export function workRequestStatusDisplay(row, { requestLabels = null, workOrderLabels = null } = {}) {
   const requestStatus = String(row?.status || '').trim() || 'submitted'
   const hasWorkOrder = Boolean(row?.manual_work_order_id || row?.linked_work_order?.id)
 
   if (!hasWorkOrder || requestStatus !== 'approved') {
-    const label = requestLabels?.[requestStatus] || REQUEST_FALLBACK[requestStatus] || pretty(requestStatus)
-    return { key: requestStatus, label, kind: 'request', title: 'Work request status' }
+    const base = requestLabels?.[requestStatus] || REQUEST_FALLBACK[requestStatus] || pretty(requestStatus)
+    const waiting = requestStatus === 'pending_approval' || requestStatus === 'need_info' || requestStatus === 'info_provided'
+    const approver = waiting ? pendingApproverLabel(row) : ''
+    const label = approver ? `${base} · ${approver}` : base
+    const title = approver
+      ? `Awaiting approval from ${approver}`
+      : 'Work request status'
+    return { key: requestStatus, label, kind: 'request', title, pendingApprover: approver || null }
   }
 
   const woStatus = String(row?.linked_work_order?.status || row?.execution_status || '').trim()

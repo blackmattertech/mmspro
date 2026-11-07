@@ -4,7 +4,6 @@ import CompanyDetailsTab from '../../components/company/CompanyDetailsTab'
 import LocationsTab from '../../components/company/LocationsTab'
 import DepartmentsTab from '../../components/company/DepartmentsTab'
 import EmployeesTab from '../../components/company/EmployeesTab'
-import WorkCentersTab from '../../components/company/WorkCentersTab'
 import MastersBack from '../../components/company/MastersBack'
 import './Company.css'
 
@@ -12,7 +11,6 @@ const ALL_TABS = [
   { id: 'details', label: 'Company Details', moduleKey: 'company', manage: 'update' },
   { id: 'locations', label: 'Locations', moduleKey: 'locations', manage: 'crud' },
   { id: 'departments', label: 'Departments', moduleKey: 'departments', manage: 'crud' },
-  { id: 'work_centers', label: 'Work Center', moduleKey: 'work_centers', manage: 'crud' },
   { id: 'employees', label: 'Employees', moduleKey: 'employees', manage: 'crud' },
 ]
 
@@ -56,11 +54,11 @@ export default function Company() {
   }
 
   return (
-    <div className={`company-page${visibleTab === 'employees' || visibleTab === 'work_centers' ? ' company-page--fill' : ''}`}>
+    <div className={`company-page${visibleTab === 'employees' ? ' company-page--fill' : ''}`}>
       <header className="company-page__header">
         <MastersBack />
         <h1 className="company-page__title">Company</h1>
-        <p className="company-page__subtitle">Manage your organization settings, sites, departments, work centers, and employees</p>
+        <p className="company-page__subtitle">Manage your organization settings, sites, departments, and employees</p>
 
         <nav className="company-tabs" aria-label="Company sections">
           {tabs.map((tab) => (
@@ -80,7 +78,6 @@ export default function Company() {
         {visibleTab === 'details' && <CompanyDetailsTab canManage={canManageActive} />}
         {visibleTab === 'locations' && <LocationsTab canManage={canManageActive} />}
         {visibleTab === 'departments' && <DepartmentsTab canManage={canManageActive} />}
-        {visibleTab === 'work_centers' && <WorkCentersTab canManage={canManageActive} />}
         {visibleTab === 'employees' && <EmployeesTab canManage={canManageActive} />}
       </div>
     </div>

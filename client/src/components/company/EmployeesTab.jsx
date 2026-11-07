@@ -41,6 +41,7 @@ import '../workorders/WorkOrdersPage.css'
 import { formatPhoneDisplay } from '../shared/PhoneInput'
 import { isLocationHeadEmployee } from '../../lib/employeeRoles'
 import './CompanyShared.css'
+import { useConfirmDelete } from '../../hooks/useConfirmDelete'
 
 function canPickAnyLocation({ isOrgAdmin, accessRole }) {
   if (isOrgAdmin) return true
@@ -49,6 +50,7 @@ function canPickAnyLocation({ isOrgAdmin, accessRole }) {
 }
 
 export default function EmployeesTab({ canManage }) {
+  const { requestDelete, deleteModal } = useConfirmDelete()
   const { org } = useOrg()
   const { isOrgAdmin, locationId: myLocationId, accessRole } = usePermissions()
   const canSelectAnyLocation = canPickAnyLocation({ isOrgAdmin, accessRole })
@@ -90,10 +92,16 @@ export default function EmployeesTab({ canManage }) {
     listFilters,
     sortBy,
   })
-  const { employees: employeeOptions } = useEmployees({
+  const { employees: employeeOptions, reload: reloadEmployeeOptions } = useEmployees({
     locationId: scopedLocationId,
-    limit: 200,
+    limit: 500,
   })
+
+  useEffect(() => {
+    if (!modalOpen) return undefined
+    reloadEmployeeOptions({ silent: true, force: true })
+    return undefined
+  }, [modalOpen, reloadEmployeeOptions])
 
   useEffect(() => {
     setEmployeeTotal(total)
@@ -237,6 +245,8 @@ export default function EmployeesTab({ canManage }) {
     reorderColumns: reorderEmployeeColumns,
     moveColumn: moveEmployeeColumn,
     saveColumns: saveEmployeeColumns,
+    makeDefaultColumns,
+    makingDefault,
   } = useTableColumnPrefs('company-employees', employeeColumnDefs)
 
   const refreshMasters = async () => {
@@ -330,7 +340,7 @@ export default function EmployeesTab({ canManage }) {
   }
 
   const handleDelete = async (employee) => {
-    if (!window.confirm(`Delete employee "${employee.name}"? This cannot be undone.`)) return false
+    if (!(await requestDelete({ title: 'Delete employee', message: `Delete employee "${employee.name}"?` }))) return false
     setDeleteError(null)
     await remove(employee.id)
     setSelected((prev) => {
@@ -367,7 +377,7 @@ export default function EmployeesTab({ canManage }) {
     const ids = [...selected]
     if (!ids.length) return
     const label = ids.length === 1 ? 'this employee' : `${ids.length} employees`
-    if (!window.confirm(`Delete ${label}? This cannot be undone.`)) return
+    if (!(await requestDelete({ title: 'Delete employees', message: `Delete ${label}?` }))) return
     setBulkDeleting(true)
     setDeleteError(null)
     try {
@@ -375,7 +385,10 @@ export default function EmployeesTab({ canManage }) {
         await deleteEmployee(id)
       }
       invalidateReferenceCache('employees')
-      await reload({ silent: true, force: true })
+      await Promise.all([
+        reload({ silent: true, force: true }),
+        reloadEmployeeOptions({ silent: true, force: true }),
+      ])
       await reloadLimits()
       setSelected(new Set())
       if (viewing && ids.includes(viewing.id)) setViewing(null)
@@ -384,7 +397,10 @@ export default function EmployeesTab({ canManage }) {
         setDeleteError(err.message || 'Could not delete the selected employees')
       }
       invalidateReferenceCache('employees')
-      await reload({ silent: true, force: true })
+      await Promise.all([
+        reload({ silent: true, force: true }),
+        reloadEmployeeOptions({ silent: true, force: true }),
+      ])
     } finally {
       setBulkDeleting(false)
     }
@@ -460,6 +476,8 @@ export default function EmployeesTab({ canManage }) {
               onReorder={reorderEmployeeColumns}
               onMove={moveEmployeeColumn}
               onSave={saveEmployeeColumns}
+                  onMakeDefault={makeDefaultColumns}
+                  makingDefault={makingDefault}
             />
           )}
         />
@@ -735,6 +753,7 @@ export default function EmployeesTab({ canManage }) {
       {limitVisible && (
         <LimitExceededCard resource={limitResource} overflow={limitOverflow} onClose={dismissLimit} />
       )}
+      {deleteModal}
     </div>
   )
 }

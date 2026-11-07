@@ -47,6 +47,7 @@ export function DepartmentDetailContent({ department }) {
         <DetailGrid>
           <DetailField label="Code" value={department.code} />
           <DetailField label="Name" value={department.name} />
+          <DetailField label="Parent department" value={department.parent?.name} />
           <DetailField label="Location" value={formatDepartmentLocation(department)} />
           <DetailField label="Headcount" value={String(department.headcount ?? 0)} />
           <DetailField label="Description" value={department.description} fullWidth />

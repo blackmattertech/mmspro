@@ -24,6 +24,7 @@ import '../../components/shared/TableFilterToolbar.css'
 import '../../components/workorders/WorkOrdersPage.css'
 import '../../components/company/CompanyShared.css'
 import './RolesAccess.css'
+import { useConfirmDelete } from '../../hooks/useConfirmDelete'
 
 const EMPTY_CAPS = {
   is_org_admin: false,
@@ -42,6 +43,7 @@ const EMPTY_CAPS = {
 
 
 export default function RolesAccess() {
+  const { requestDelete, deleteModal } = useConfirmDelete()
   const { org, loading: orgLoading } = useOrg()
   const [capability, setCapability] = useState(EMPTY_CAPS)
   const [capsLoading, setCapsLoading] = useState(true)
@@ -147,6 +149,8 @@ export default function RolesAccess() {
     reorderColumns: reorderRoleColumns,
     moveColumn: moveRoleColumn,
     saveColumns: saveRoleColumns,
+    makeDefaultColumns,
+    makingDefault,
   } = useTableColumnPrefs('roles-access', roleColumnDefs)
 
   const selectedRole = useMemo(
@@ -241,7 +245,7 @@ export default function RolesAccess() {
 
   const handleDelete = async (role) => {
     if (!canManageRole(role)) return
-    if (!window.confirm(`Delete role "${role.name}"? Assigned employees will lose this role.`)) return
+    if (!(await requestDelete({ title: 'Delete role', message: `Delete role "${role.name}"? Assigned employees will lose this role.` }))) return
     await remove(role.id)
     if (selectedId === role.id) {
       setSelectedId(null)
@@ -347,6 +351,8 @@ export default function RolesAccess() {
                     onReorder={reorderRoleColumns}
                     onMove={moveRoleColumn}
                     onSave={saveRoleColumns}
+                  onMakeDefault={makeDefaultColumns}
+                  makingDefault={makingDefault}
                   />
                 )}
               />
@@ -621,6 +627,7 @@ export default function RolesAccess() {
           onSave={handleAssign}
         />
       )}
+      {deleteModal}
     </div>
   )
 }

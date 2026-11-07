@@ -39,6 +39,7 @@ import { formatWorkOrderStatusLabel } from '../../../lib/workOrderStatusLabel'
 import '../../../components/company/CompanyShared.css'
 import '../../../components/shared/TableColumnPicker.css'
 import '../../../components/reports/ReportsLayout.css'
+import { useConfirmDelete } from '../../../hooks/useConfirmDelete'
 
 const REPORT_KEY = UNIFIED_REPORT_KEY
 const WRAP_COLUMNS = new Set([
@@ -184,6 +185,7 @@ function toQuery(filters, search) {
 }
 
 export default function ReportPage() {
+  const { requestDelete, deleteModal } = useConfirmDelete()
   const title = 'Reports'
   const columnDefs = useMemo(() => columnsForReportKey(REPORT_KEY), [])
   const { user } = useAuth()
@@ -375,7 +377,7 @@ export default function ReportPage() {
 
   const removeCustom = async () => {
     if (!selectedCustomId) return
-    if (!window.confirm('Delete this custom report? Schedules that use it must be removed first.')) return
+    if (!(await requestDelete({ title: 'Delete report', message: 'Delete this custom report? Schedules that use it must be removed first.' }))) return
     setSavingCustom(true)
     setError(null)
     try {
@@ -636,6 +638,7 @@ export default function ReportPage() {
           onClose={() => setScheduleOpen(false)}
         />
       )}
+      {deleteModal}
     </>
   )
 }

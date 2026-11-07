@@ -18,6 +18,7 @@ import {
   reorderChecklistFields,
   getChecklistTemplate,
 } from '../../lib/api-pm'
+import { useConfirmDelete } from '../../hooks/useConfirmDelete'
 import '../company/CompanyShared.css'
 import './Pm.css'
 
@@ -41,6 +42,7 @@ export default function ChecklistBuilderModal({
   onClose,
   onSaveTemplate,
 }) {
+  const { requestDelete, deleteModal } = useConfirmDelete()
   const [form, setForm] = useState({
     name: template?.name || '',
     description: template?.description || '',
@@ -130,6 +132,11 @@ export default function ChecklistBuilderModal({
 
   const handleDeleteField = async (fieldId) => {
     if (!template?.id) return
+    const field = fields.find((item) => item.id === fieldId)
+    if (!(await requestDelete({
+      title: 'Delete field',
+      message: `Delete field "${field?.name || 'this field'}"?`,
+    }))) return
     setBusy(true)
     setError(null)
     try {
@@ -303,6 +310,7 @@ export default function ChecklistBuilderModal({
 
         {error && <p className="company-alert" style={{ margin: '0 20px 16px' }}>{error}</p>}
       </div>
+      {deleteModal}
     </div>
   )
 }

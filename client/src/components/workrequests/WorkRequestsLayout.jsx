@@ -71,8 +71,9 @@ export default function WorkRequestsLayout() {
     () => (permsLoading ? [] : visibleWorkRequestTabs(canRead)),
     [canRead, permsLoading],
   )
-  const listTabs = tabs.filter((tab) => tab.id !== 'create')
+  const listTabs = tabs.filter((tab) => tab.id !== 'create' && tab.placement !== 'action')
   const createTab = tabs.find((tab) => tab.id === 'create') || null
+  const draftTab = tabs.find((tab) => tab.id === 'drafts') || null
   const activeTab = getWorkRequestActiveTab(location.pathname)
   const listFilter = activeTab && activeTab !== 'create' ? activeTab : null
   const isCreatePage = activeTab === 'create'
@@ -148,7 +149,7 @@ export default function WorkRequestsLayout() {
       options: WR_STATUS_FILTER_OPTIONS.filter((option) => option.value !== 'all'),
     },
     { id: 'request_date', label: 'Requested Date', type: 'date-range' },
-  ]), [departments, filterRows])
+  ].filter((field) => listFilter !== 'drafts' || field.id !== 'status')), [departments, filterRows, listFilter])
   const catalogFields = useCatalogFields()
   const requestColumns = useMemo(
     () => mergePickerColumns(WORK_REQUEST_COLUMNS, catalogFields),
@@ -161,6 +162,8 @@ export default function WorkRequestsLayout() {
     reorderColumns,
     moveColumn,
     saveColumns,
+    makeDefaultColumns,
+    makingDefault,
     columnOrder,
     columnDefs,
   } = useTableColumnPrefs(
@@ -189,6 +192,7 @@ export default function WorkRequestsLayout() {
             incoming: Number(counts.incoming) || 0,
             outgoing: Number(counts.outgoing) || 0,
             all: Number(counts.all) || 0,
+            drafts: Number(counts.drafts) || 0,
           }
           setTabCounts(next)
           seedReferenceData('tab-counts', { module: 'work_requests' }, next)
@@ -230,11 +234,12 @@ export default function WorkRequestsLayout() {
     setExporting(true)
     try {
       const filters = { ...columnFilters }
+      if (listFilter === 'drafts') delete filters.status
       const file = await exportWorkRequests(listFilter, {
         search: debouncedSearch,
         filters,
-        statuses: statusFilters,
-        excludeStatuses: statusFilters.length ? [] : ['draft'],
+        statuses: listFilter === 'drafts' ? ['draft'] : statusFilters,
+        excludeStatuses: listFilter === 'drafts' || statusFilters.length ? [] : ['draft'],
         sort: headerSort?.id || '',
         sortDir: headerSort?.dir || '',
         sortBy: headerSort ? '' : sortBy,
@@ -293,20 +298,42 @@ export default function WorkRequestsLayout() {
               </NavLink>
             ))}
           </nav>
-          {createTab && (
-            <NavLink
-              to={org?.slug ? orgPath(org.slug, createTab.segment) : '#'}
-              end
-              className={({ isActive }) =>
-                `wo-page__tab wr-page__create-tab${isActive ? ' wo-page__tab--active' : ''}`
-              }
-              aria-label="Create"
-              title="Create"
-              data-tooltip="Create"
-            >
-              {createTab.icon ? <NavIcon name={createTab.icon} /> : null}
-              <span className="wo-page__tab-label">Create</span>
-            </NavLink>
+          {(draftTab || createTab) && (
+            <div className="wr-page__toolbar-actions">
+              {draftTab && (
+                <NavLink
+                  to={org?.slug ? orgPath(org.slug, draftTab.segment) : '#'}
+                  end
+                  className={({ isActive }) =>
+                    `wo-page__tab wr-page__draft-tab${isActive ? ' wo-page__tab--active' : ''}`
+                  }
+                  aria-label="Draft"
+                  title="Draft"
+                  data-tooltip="Draft"
+                >
+                  {draftTab.icon ? <NavIcon name={draftTab.icon} /> : null}
+                  <span className="wo-page__tab-label">Draft</span>
+                  {Number.isFinite(Number(tabCounts.drafts)) && (
+                    <span className="wo-page__tab-count">{tabCounts.drafts}</span>
+                  )}
+                </NavLink>
+              )}
+              {createTab && (
+                <NavLink
+                  to={org?.slug ? orgPath(org.slug, createTab.segment) : '#'}
+                  end
+                  className={({ isActive }) =>
+                    `wo-page__tab wr-page__create-tab${isActive ? ' wo-page__tab--active' : ''}`
+                  }
+                  aria-label="Create"
+                  title="Create"
+                  data-tooltip="Create"
+                >
+                  {createTab.icon ? <NavIcon name={createTab.icon} /> : null}
+                  <span className="wo-page__tab-label">Create</span>
+                </NavLink>
+              )}
+            </div>
           )}
           {canCreateRequest && isCreatePage && (
             <div className="wr-page__tab-actions">
@@ -374,6 +401,8 @@ export default function WorkRequestsLayout() {
                   onReorder={reorderColumns}
                   onMove={moveColumn}
                   onSave={saveColumns}
+                  onMakeDefault={makeDefaultColumns}
+                  makingDefault={makingDefault}
                 />
               )}
             />

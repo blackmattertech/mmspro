@@ -13,7 +13,7 @@ import {
   replyToWorkRequest,
   saveWorkRequestChecklist,
 } from '../../lib/api-work-requests'
-import { getReceivedWorkOrder } from '../../lib/api-work-orders'
+import { getReceivedWorkOrder, getWorkOrderDetail } from '../../lib/api-work-orders'
 import { notifyTabCountsChanged } from '../../lib/tabCountEvents'
 import { orgPath } from '../../config/navigation'
 import ChecklistExecution from '../pm/ChecklistExecution'
@@ -32,6 +32,7 @@ import EquipmentQrCode from '../equipment/EquipmentQrCode'
 import { AssetHierarchySummary } from './WorkRequestAssetFields'
 import { hierarchyDisplaySteps } from '../../lib/assetHierarchy'
 import WorkOrderAssignmentActions from '../workorders/WorkOrderAssignmentActions'
+import WorkOrderLifecyclePanel from '../workorders/WorkOrderLifecyclePanel'
 import { useOrgStatusOptions } from '../../hooks/useOrgStatusOptions'
 import { workRequestStatusDisplay } from '../../lib/workRequestStatusLabel'
 
@@ -589,12 +590,13 @@ export default function WorkRequestDetailModal({
     return () => document.removeEventListener('keydown', onKey)
   }, [closeRejectDialog, mode, onClose])
 
-  const runAction = async (fn) => {
+  const runAction = async (fn, { refreshWorkOrders = false } = {}) => {
     setActing(true)
     setActionError(null)
     try {
       await fn()
       notifyTabCountsChanged('work_requests')
+      if (refreshWorkOrders) notifyTabCountsChanged('work_orders')
       onUpdated?.()
       reload()
       setMode(null)
@@ -648,12 +650,12 @@ export default function WorkRequestDetailModal({
   )
 
   useEffect(() => {
-    if (!showPostApproveAssign || !workOrderId) {
+    if (!workOrderId) {
       setLinkedOrder(null)
       return undefined
     }
     let cancelled = false
-    getReceivedWorkOrder(workOrderId)
+    getWorkOrderDetail(workOrderId, { prefer: getReceivedWorkOrder })
       .then((row) => {
         if (!cancelled) setLinkedOrder(row)
       })
@@ -661,7 +663,7 @@ export default function WorkRequestDetailModal({
         if (!cancelled) setLinkedOrder(null)
       })
     return () => { cancelled = true }
-  }, [showPostApproveAssign, workOrderId])
+  }, [workOrderId])
 
   const handleLinkedOrderUpdated = (updated) => {
     setLinkedOrder(updated)
@@ -769,8 +771,22 @@ export default function WorkRequestDetailModal({
               <div className="wr-detail-main">
                 <div className="wr-detail-meta">
                   <MetaItem label="Status">
-                    <span className={`wo-status wo-status--${statusDisplay.key}`} title={statusDisplay.title}>
-                      {statusDisplay.label}
+                    <span
+                      className={`wo-status wo-status--${statusDisplay.key}${statusDisplay.pendingApprover && detail.pending_approvers?.[0] ? ' wo-status--with-avatar' : ''}`}
+                      title={statusDisplay.title}
+                    >
+                      {statusDisplay.pendingApprover && detail.pending_approvers?.[0] && (
+                        <EmployeeAvatar
+                          employee={{
+                            name: detail.pending_approvers[0].name,
+                            photo_signed_url: detail.pending_approvers[0].photo_signed_url,
+                            photo_url: detail.pending_approvers[0].photo_url,
+                          }}
+                          size="sm"
+                          className="wo-status__avatar"
+                        />
+                      )}
+                      <span className="wo-status__text">{statusDisplay.label}</span>
                     </span>
                   </MetaItem>
                   <MetaItem label="Priority">
@@ -807,6 +823,54 @@ export default function WorkRequestDetailModal({
                       </span>
                     ) : '—'}
                   </MetaItem>
+                  {Array.isArray(detail.pending_approvers) && detail.pending_approvers.length > 0 && (
+                    <MetaItem label="Approval required from">
+                      <div className="wr-approvers">
+                        {detail.pending_approvers.map((person) => (
+                          <span key={person.id || person.name} className="wr-requester">
+                            <EmployeeAvatar
+                              employee={{
+                                name: person.name,
+                                photo_signed_url: person.photo_signed_url,
+                              }}
+                              size="sm"
+                            />
+                            <span className="wr-requester__copy">
+                              <span className="wr-requester__name">{person.name || '—'}</span>
+                              {(person.department?.name || person.department_name || person.role) && (
+                                <span className="wr-requester__meta">
+                                  {[
+                                    person.department?.name || person.department_name,
+                                    person.role,
+                                  ].filter(Boolean).join(' · ')}
+                                </span>
+                              )}
+                            </span>
+                          </span>
+                        ))}
+                      </div>
+                    </MetaItem>
+                  )}
+                  {detail.approver && !detail.pending_approvers?.length && (
+                    <MetaItem label="Approved by">
+                      <span className="wr-requester">
+                        <EmployeeAvatar employee={detail.approver} size="sm" />
+                        <span className="wr-requester__copy">
+                          <span className="wr-requester__name">
+                            {detail.approver.name || detail.approver.full_name || detail.approver.email || '—'}
+                          </span>
+                          {(detail.approver.department_name || detail.approver.department?.name || detail.approver.role) && (
+                            <span className="wr-requester__meta">
+                              {[
+                                detail.approver.department_name || detail.approver.department?.name,
+                                detail.approver.role,
+                              ].filter(Boolean).join(' · ')}
+                            </span>
+                          )}
+                        </span>
+                      </span>
+                    </MetaItem>
+                  )}
                   <MetaItem label="Request date">{formatDate(detail.request_date)}</MetaItem>
                   {(detail.linked_work_order || detail.manual_work_order_id) && (
                     <MetaItem label="Work order">
@@ -902,12 +966,6 @@ export default function WorkRequestDetailModal({
                       </dl>
                     </section>
                   )}
-
-              {technicians.length > 0 && (
-                <p className="wr-detail-technicians">
-                  Assigned technicians: {technicians.map((t) => t.name).join(', ')}
-                </p>
-              )}
 
                 <WorkRequestChecklistPanel detail={detail} readOnly={!formActors.isTechnician} />
 
@@ -1017,7 +1075,7 @@ export default function WorkRequestDetailModal({
                             type="button"
                             className="company-btn company-btn--primary"
                             disabled={acting}
-                            onClick={() => runAction(() => approveWorkRequest(requestId, {}))}
+                            onClick={() => runAction(() => approveWorkRequest(requestId, {}), { refreshWorkOrders: true })}
                           >
                             {acting ? 'Saving…' : 'Confirm approval'}
                           </button>
@@ -1067,16 +1125,30 @@ export default function WorkRequestDetailModal({
                   </section>
                 )}
 
-                {showPostApproveAssign && linkedOrder && (
-                  <WorkOrderAssignmentActions
-                    detail={linkedOrder}
-                    onUpdated={handleLinkedOrderUpdated}
-                  />
+                {linkedOrder && (
+                  <>
+                    <WorkOrderAssignmentActions
+                      detail={linkedOrder}
+                      onUpdated={handleLinkedOrderUpdated}
+                      readOnly={!showPostApproveAssign}
+                    />
+                    <WorkOrderLifecyclePanel
+                      key={linkedOrder.id}
+                      detail={linkedOrder}
+                      onUpdated={handleLinkedOrderUpdated}
+                      canUpdate={false}
+                      hideHeader
+                      hideWorkRequestForm
+                    />
+                  </>
                 )}
               </div>
               <aside className="wr-detail-timeline" aria-label="Timeline">
                 <h3 className="wr-detail-timeline__title">Timeline</h3>
-                <RecordTimeline events={hydrateTimelineAttachments(detail.timeline, detail.attachments)} />
+                <RecordTimeline
+                  events={hydrateTimelineAttachments(detail.timeline, detail.attachments)}
+                  pendingApprovers={detail.pending_approvers}
+                />
               </aside>
             </div>
           )}

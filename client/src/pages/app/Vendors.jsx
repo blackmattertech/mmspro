@@ -24,6 +24,7 @@ import '../../components/shared/TableFilterToolbar.css'
 import '../../components/workorders/WorkOrdersPage.css'
 import '../../components/company/CompanyShared.css'
 import '../../components/vendors/Vendors.css'
+import { useConfirmDelete } from '../../hooks/useConfirmDelete'
 
 const VENDOR_COLUMNS = [
   { id: 'vendor_code', label: 'Vendor ID' },
@@ -89,6 +90,7 @@ function renderVendorCell(row, columnId) {
 }
 
 export default function Vendors() {
+  const { requestDelete, deleteModal } = useConfirmDelete()
   const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
   const { org } = useOrg()
@@ -151,6 +153,8 @@ export default function Vendors() {
     reorderColumns: reorderVendorColumns,
     moveColumn: moveVendorColumn,
     saveColumns: saveVendorColumns,
+    makeDefaultColumns,
+    makingDefault,
   } = useTableColumnPrefs('masters-vendors', VENDOR_COLUMNS)
 
   const openCreate = () => {
@@ -176,7 +180,7 @@ export default function Vendors() {
 
   const handleDelete = async (row) => {
     const label = row.vendor_code || row.name
-    if (!window.confirm(`Delete vendor "${label}"?`)) return
+    if (!(await requestDelete({ title: 'Delete vendor', message: `Delete vendor "${label}"?` }))) return
     await remove(row.id)
   }
 
@@ -242,6 +246,8 @@ export default function Vendors() {
                   onReorder={reorderVendorColumns}
                   onMove={moveVendorColumn}
                   onSave={saveVendorColumns}
+                  onMakeDefault={makeDefaultColumns}
+                  makingDefault={makingDefault}
                 />
               )}
             />
@@ -391,6 +397,7 @@ export default function Vendors() {
           onSave={handleSave}
         />
       )}
+      {deleteModal}
     </div>
   )
 }

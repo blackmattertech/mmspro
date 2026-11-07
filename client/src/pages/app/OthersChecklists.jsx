@@ -16,8 +16,10 @@ import RecordPdfButton from '../../components/shared/RecordPdfButton'
 import TrashIcon from '../../components/ui/TrashIcon'
 import '../../components/company/CompanyShared.css'
 import './Others.css'
+import { useConfirmDelete } from '../../hooks/useConfirmDelete'
 
 export default function OthersChecklists() {
+  const { requestDelete, deleteModal } = useConfirmDelete()
   const navigate = useNavigate()
   const { org } = useOrg()
   const { role } = useAuth()
@@ -72,7 +74,7 @@ export default function OthersChecklists() {
   }
 
   const handleDelete = async (row) => {
-    if (!window.confirm(`Delete checklist "${row.name}"?`)) return
+    if (!(await requestDelete({ title: 'Delete checklist', message: `Delete checklist "${row.name}"?` }))) return
     try {
       await deleteChecklistTemplate(row.id)
       await reload()
@@ -182,6 +184,7 @@ export default function OthersChecklists() {
           </div>
         </div>
       )}
+      {deleteModal}
     </div>
   )
 }

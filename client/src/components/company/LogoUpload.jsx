@@ -3,8 +3,10 @@ import { uploadOrgLogo, deleteOrgLogo, getOrgAssetSignedUrl, validateLogoFile } 
 import { IMAGE_ACCEPT } from '../../lib/imageFiles'
 import { updateCompanyDetails } from '../../lib/api'
 import './CompanyShared.css'
+import { useConfirmDelete } from '../../hooks/useConfirmDelete'
 
 export default function LogoUpload({ orgId, logoPath, canManage, onLogoChange }) {
+  const { requestDelete, deleteModal } = useConfirmDelete()
   const inputRef = useRef(null)
   const [previewUrl, setPreviewUrl] = useState(null)
   const [uploading, setUploading] = useState(false)
@@ -58,7 +60,8 @@ export default function LogoUpload({ orgId, logoPath, canManage, onLogoChange })
   }
 
   const handleRemove = async () => {
-    if (!logoPath || !window.confirm('Remove company logo?')) return
+    if (!logoPath) return
+    if (!(await requestDelete({ title: 'Remove logo', message: 'Remove company logo?' }))) return
 
     setUploading(true)
     setError(null)
@@ -120,6 +123,7 @@ export default function LogoUpload({ orgId, logoPath, canManage, onLogoChange })
         )}
       </div>
       {error && <p className="company-alert" style={{ marginTop: 12 }}>{error}</p>}
+      {deleteModal}
     </div>
   )
 }
