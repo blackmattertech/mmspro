@@ -98,6 +98,8 @@ const canReadDepartments = requireAnyModulePermission([
   ['employees', 'create'],
   ['work_orders', 'read'],
   ['work_orders', 'create'],
+  ['work_request_create', 'read'],
+  ['work_request_create', 'create'],
 ])
 const canCreateDepartments = requireModulePermission('departments', 'create')
 const canUpdateDepartments = requireModulePermission('departments', 'update')
@@ -767,7 +769,8 @@ router.delete('/locations/:id', canDeleteLocations, assertOrgOwnership('org_loca
 
 const DEPARTMENT_SELECT = `
   id, org_id, name, code, description, location_id, parent_id, all_locations, is_active, created_at, updated_at,
-  org_locations!location_id ( id, name, code )
+  org_locations!location_id ( id, name, code ),
+  parent:departments!parent_id ( id, name, code )
 `
 
 async function attachDepartmentHeadcounts(orgId, departments) {
@@ -958,6 +961,7 @@ router.get('/departments', canReadDepartments, async (req, res) => {
       sendCsv(res, 'departments.csv', withHeadcounts, [
         { label: 'Code', value: (row) => row.code },
         { label: 'Name', value: (row) => row.name },
+        { label: 'Parent', value: (row) => row.parent?.name || '' },
         { label: 'Location', value: (row) => row.org_locations?.name || '' },
         { label: 'Headcount', value: (row) => row.headcount },
         { label: 'Description', value: (row) => row.description },
@@ -1260,6 +1264,10 @@ async function validateAdditionalEmails(orgId, employeeId, primaryEmail, additio
   const primary = primaryEmail?.trim().toLowerCase() || ''
   const normalized = normalizeEmailList(additionalEmails)
 
+  if (primary && !EMAIL_RE.test(primary)) {
+    throw new Error(`Invalid email: ${primary}`)
+  }
+
   for (const email of normalized) {
     if (!EMAIL_RE.test(email)) {
       throw new Error(`Invalid email: ${email}`)
@@ -1269,7 +1277,9 @@ async function validateAdditionalEmails(orgId, employeeId, primaryEmail, additio
     }
   }
 
-  if (!normalized.length) return normalized
+  const emailsToCheck = [...normalized]
+  if (primary) emailsToCheck.push(primary)
+  if (!emailsToCheck.length) return normalized
 
   const { data: employees, error: employeesError } = await supabaseAdmin
     .from('org_employees')
@@ -1281,7 +1291,11 @@ async function validateAdditionalEmails(orgId, employeeId, primaryEmail, additio
   for (const emp of employees || []) {
     if (emp.id === employeeId) continue
     const empEmail = emp.email?.trim().toLowerCase()
-    if (empEmail && normalized.includes(empEmail)) {
+    if (!empEmail) continue
+    if (primary && empEmail === primary) {
+      throw new Error(`${primary} is already the primary email for another employee`)
+    }
+    if (normalized.includes(empEmail)) {
       throw new Error(`${empEmail} is already the primary email for another employee`)
     }
   }
@@ -1290,17 +1304,55 @@ async function validateAdditionalEmails(orgId, employeeId, primaryEmail, additio
     .from('org_employee_emails')
     .select('email, employee_id')
     .eq('org_id', orgId)
-    .in('email', normalized)
+    .in('email', emailsToCheck)
 
   if (conflictsError) throw conflictsError
 
   for (const row of conflicts || []) {
-    if (row.employee_id !== employeeId) {
+    if (row.employee_id === employeeId) continue
+    const conflictEmail = String(row.email || '').trim().toLowerCase()
+    if (primary && conflictEmail === primary) {
+      throw new Error(`${primary} is already assigned to another employee`)
+    }
+    if (normalized.includes(conflictEmail)) {
       throw new Error(`${row.email} is already assigned to another employee`)
     }
   }
 
   return normalized
+}
+
+async function rollbackCreatedEmployee(orgId, employeeId) {
+  if (!employeeId) return
+  await supabaseAdmin
+    .from('org_employee_emails')
+    .delete()
+    .eq('org_id', orgId)
+    .eq('employee_id', employeeId)
+  const { error } = await supabaseAdmin
+    .from('org_employees')
+    .delete()
+    .eq('org_id', orgId)
+    .eq('id', employeeId)
+  if (error) throw error
+}
+
+async function findEmployeeByEmpId(orgId, empId) {
+  const code = String(empId || '').trim()
+  if (!code) return null
+  const { data, error } = await supabaseAdmin
+    .from('org_employees')
+    .select('id, emp_id, name, email, profile_id, login_required, is_active, created_at')
+    .eq('org_id', orgId)
+    .eq('emp_id', code)
+    .maybeSingle()
+  if (error) throw error
+  return data || null
+}
+
+/** Partial create left behind when login/email setup failed after insert. */
+function isIncompleteEmployeeCreate(row) {
+  return Boolean(row?.id) && !row.profile_id && row.login_required !== true
 }
 
 async function syncEmployeeEmails(orgId, employeeId, additionalEmails) {
@@ -1664,8 +1716,25 @@ router.post('/employees', canCreateEmployees, async (req, res) => {
     return res.status(400).json({ error: 'Invalid photo path' })
   }
 
+  let incompleteExisting = null
   try {
-    await validateAdditionalEmails(orgId, null, email, additional_emails)
+    const existingByCode = await findEmployeeByEmpId(orgId, emp_id)
+    if (isIncompleteEmployeeCreate(existingByCode)) {
+      incompleteExisting = existingByCode
+    } else if (existingByCode) {
+      return res.status(400).json({
+        error: existingByCode.name
+          ? `Employee ID already exists (${existingByCode.name})`
+          : 'Employee ID already exists',
+      })
+    }
+  } catch (lookupError) {
+    return res.status(500).json({ error: lookupError.message })
+  }
+
+  try {
+    // Ignore the incomplete same Emp ID row when checking email uniqueness on retry.
+    await validateAdditionalEmails(orgId, incompleteExisting?.id || null, email, additional_emails)
   } catch (err) {
     return res.status(400).json({ error: err.message })
   }
@@ -1675,7 +1744,9 @@ router.post('/employees', canCreateEmployees, async (req, res) => {
   const normalizedMobile = normalizePhoneE164(mobile)
 
   try {
-    await assertUnderLimit(orgId, 'employee')
+    if (!incompleteExisting) {
+      await assertUnderLimit(orgId, 'employee')
+    }
     if (login_required) {
       await assertLoginSlotAvailable(orgId, { email: email?.trim() })
     }
@@ -1683,28 +1754,52 @@ router.post('/employees', canCreateEmployees, async (req, res) => {
     return res.status(err.status || 403).json({ error: err.message })
   }
 
-  const { data, error } = await supabaseAdmin
-    .from('org_employees')
-    .insert({
-      org_id: orgId,
-      emp_id: emp_id.trim(),
-      name: name.trim(),
-      mobile: normalizedMobile,
-      email: email?.trim() || null,
-      department_id: department_id || null,
-      location_id: resolvedLocationId || null,
-      manager_id: manager_id || null,
-      access_role_id: resolvedAccessRoleId,
-      photo_url: photo_url || null,
-      // Set true only after password email succeeds (see handleEmployeeLoginAccess).
-      login_required: false,
-    })
-    .select(EMPLOYEE_SELECT)
-    .single()
+  const employeePayload = {
+    emp_id: emp_id.trim(),
+    name: name.trim(),
+    mobile: normalizedMobile,
+    email: email?.trim() || null,
+    department_id: department_id || null,
+    location_id: resolvedLocationId || null,
+    manager_id: manager_id || null,
+    access_role_id: resolvedAccessRoleId,
+    photo_url: photo_url || null,
+    // Set true only after password email succeeds (see handleEmployeeLoginAccess).
+    login_required: false,
+    is_active: true,
+    updated_at: new Date().toISOString(),
+  }
 
-  if (error) {
-    if (error.code === '23505') return res.status(400).json({ error: 'Employee ID already exists' })
-    return res.status(500).json({ error: error.message })
+  let data = null
+  let createdFresh = false
+  if (incompleteExisting) {
+    const { data: updated, error: updateError } = await supabaseAdmin
+      .from('org_employees')
+      .update(employeePayload)
+      .eq('id', incompleteExisting.id)
+      .eq('org_id', orgId)
+      .select(EMPLOYEE_SELECT)
+      .single()
+    if (updateError) return res.status(500).json({ error: updateError.message })
+    data = updated
+  } else {
+    const { data: inserted, error } = await supabaseAdmin
+      .from('org_employees')
+      .insert({
+        org_id: orgId,
+        ...employeePayload,
+      })
+      .select(EMPLOYEE_SELECT)
+      .single()
+
+    if (error) {
+      if (error.code === '23505') {
+        return res.status(400).json({ error: 'Employee ID already exists' })
+      }
+      return res.status(500).json({ error: error.message })
+    }
+    data = inserted
+    createdFresh = true
   }
 
   try {
@@ -1725,11 +1820,15 @@ router.post('/employees', canCreateEmployees, async (req, res) => {
     }
 
     const withPhoto = await getEmployeeById(orgId, data.id)
-    res.status(201).json({
+    res.status(createdFresh ? 201 : 200).json({
       ...withPhoto,
       ...(login_required ? { login_email_sent: loginEmailSent } : {}),
     })
   } catch (loginError) {
+    // Remove the incomplete row so the same Emp ID can be reused after fixing email.
+    await rollbackCreatedEmployee(orgId, data.id).catch((rollbackError) => {
+      console.warn('Employee create rollback failed:', rollbackError.message)
+    })
     res.status(400).json({ error: loginError.message })
   }
 })
@@ -1984,8 +2083,13 @@ router.get('/areas', canReadAreas, async (req, res) => {
     .eq('org_id', req.userProfile.org_id)
 
   const locationFilter = resolveLocationFilter(req.orgPermissions, req.query.location_id)
-  if (locationFilter) query = query.eq('location_id', locationFilter)
-  if (req.query.department_id) query = query.eq('department_id', req.query.department_id)
+  // Include unscoped areas (null location) so optional-placement rows stay selectable.
+  if (locationFilter) {
+    query = query.or(`location_id.eq.${locationFilter},location_id.is.null`)
+  }
+  if (req.query.department_id) {
+    query = query.or(`department_id.eq.${req.query.department_id},department_id.is.null`)
+  }
   query = applyIlikeSearch(query, req.query.search, ['name', 'code'])
   const areaFilters = await applyAreaListFilters(query, controls.filters, req.userProfile.org_id)
   query = applyMappedFilters(areaFilters.query, areaFilters.filters, { name: 'name', code: 'code' })

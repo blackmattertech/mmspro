@@ -43,6 +43,14 @@ export function markAdminFormDefault(orgId, formId) {
   })
 }
 
+export async function useAdminFormDefault(orgId, formId) {
+  const data = await adminFetch(`/organizations/${orgId}/form-layouts/${encodeURIComponent(formId)}/use-default`, {
+    method: 'POST',
+  })
+  invalidateFormLayoutCache(formId)
+  return data
+}
+
 export function getFormLayout(formId, { force = false } = {}) {
   if (!formId) return Promise.resolve(null)
   const cache = getLayoutCache(formId)

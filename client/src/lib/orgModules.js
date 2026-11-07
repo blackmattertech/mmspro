@@ -50,9 +50,10 @@ export const PRODUCT_MODULE_GROUPS = [
         'company',
         'locations',
         'departments',
-        'work_centers',
         'employees',
       ] },
+      // Hidden for now — work centers are form dropdown values only
+      // { id: 'work_centers', label: 'Work Center', permissionKeys: ['work_centers'] },
       { id: 'assets', label: 'Forms Master', permissionKeys: ['assets'] },
       { id: 'vendors', label: 'Vendors', permissionKeys: ['vendors'] },
       { id: 'others', label: 'Others', permissionKeys: ['others'] },

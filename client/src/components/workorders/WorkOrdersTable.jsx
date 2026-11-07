@@ -274,6 +274,8 @@ export default function WorkOrdersTable({
     reorderColumns,
     moveColumn,
     saveColumns,
+    makeDefaultColumns,
+    makingDefault,
   } = useTableColumnPrefs(tableId, columnDefs)
   const { statuses, labelByKey: statusLabels } = useOrgStatusOptions('work_order', { includeInactive: true })
 
@@ -393,6 +395,8 @@ export default function WorkOrdersTable({
         onReorder={reorderColumns}
         onMove={moveColumn}
         onSave={saveColumns}
+                  onMakeDefault={makeDefaultColumns}
+                  makingDefault={makingDefault}
       />
     </ColumnPickerPortal>
   )

@@ -24,12 +24,22 @@ export const MASTERS_HUB_ITEMS = [
     id: 'company',
     label: 'Company',
     title: 'Company',
-    description: 'Locations, departments, work centers, and employees.',
+    description: 'Locations, departments, and employees.',
     segment: 'masters/company',
     moduleKey: 'company',
     icon: 'buildings',
-    altModuleKeys: ['locations', 'departments', 'work_centers', 'employees'],
+    altModuleKeys: ['locations', 'departments', 'employees'],
   },
+  // Hidden for now — work centers are form dropdown values only; re-enable when Masters CRUD is needed.
+  // {
+  //   id: 'work_centers',
+  //   label: 'Work Center',
+  //   title: 'Work Center',
+  //   description: 'Workshops, plants, and crews for work orders and PM.',
+  //   segment: 'masters/work-centers',
+  //   moduleKey: 'work_centers',
+  //   icon: 'washer',
+  // },
   {
     id: 'vendors',
     label: 'Vendors',
@@ -61,6 +71,7 @@ export const MASTERS_HUB_ITEMS = [
 
 export const MASTER_HUB_MODULE_KEYS = [
   ...COMPANY_PAGE_MODULE_KEYS,
+  // 'work_centers', // hidden — form dropdown source only
   'assets',
   'vendors',
   'others',
@@ -182,6 +193,7 @@ export function moduleKeyForPath(pathname, orgSlug) {
   if (rest.startsWith('work-request/incoming')) return 'work_request_incoming'
   if (rest.startsWith('work-request/outgoing')) return 'work_request_outgoing'
   if (rest.startsWith('work-request/all')) return 'work_request_all'
+  if (rest.startsWith('work-request/drafts')) return 'work_request_my'
   if (rest.startsWith('work-request')) return 'work_request'
   if (rest.startsWith('work-orders/received')) return 'work_orders_received'
   if (rest.startsWith('work-orders/assigned')) return 'work_orders_assigned'
@@ -195,6 +207,7 @@ export function moduleKeyForPath(pathname, orgSlug) {
   if (rest.startsWith('reports')) return 'reports'
   if (rest.startsWith('masters/forms')) return 'assets'
   if (rest.startsWith('masters/company')) return 'company'
+  if (rest.startsWith('masters/work-centers')) return 'work_centers'
   if (rest.startsWith('masters/equipment')) return 'equipment'
   if (rest.startsWith('masters/vendors')) return 'vendors'
   if (rest.startsWith('masters/others')) return 'others'
@@ -363,7 +376,10 @@ export function getShortcutOptions(orgSlug, { canRead, disabledModules } = {}) {
     const tabGroup = item.segment ? SHORTCUT_TAB_GROUPS[item.segment] : null
     if (tabGroup) {
       const children = tabGroup
-        .filter((tab) => !tab.moduleKey || allow(tab.moduleKey))
+        .filter((tab) => {
+          const keys = tab.moduleKeys?.length ? tab.moduleKeys : (tab.moduleKey ? [tab.moduleKey] : [])
+          return !keys.length || keys.some((key) => allow(key))
+        })
         .map((tab) => shortcutLeaf({
           id: tab.segment,
           label: tab.label,

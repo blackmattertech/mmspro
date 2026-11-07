@@ -10,10 +10,12 @@ import {
   saveOrgFormLayout,
 } from '../../lib/orgFormLayouts.js'
 import {
+  applyPlatformFormDefaultToOrg,
   getPlatformFormDefaultMeta,
   listPlatformFormDefaultMeta,
   markFormAsDefault,
   publicDefaultMeta,
+  resolveOrgNamesById,
 } from '../../lib/platformFormDefaults.js'
 
 const router = Router({ mergeParams: true })
@@ -32,6 +34,15 @@ async function requireOrg(req, res, next) {
   next()
 }
 
+async function withSourceOrgNames(metaRows, orgId) {
+  const rows = (Array.isArray(metaRows) ? metaRows : [metaRows]).filter(Boolean)
+  const names = await resolveOrgNamesById(rows.map((row) => row.source_org_id))
+  if (Array.isArray(metaRows)) {
+    return metaRows.map((row) => publicDefaultMeta(row, orgId, names))
+  }
+  return publicDefaultMeta(metaRows, orgId, names)
+}
+
 router.use(requireOrg)
 
 router.get('/', async (req, res) => {
@@ -42,6 +53,7 @@ router.get('/', async (req, res) => {
     ])
     const savedById = new Map(saved.map((row) => [row.form_id, row]))
     const defaultById = new Map(defaults.map((row) => [row.form_id, row]))
+    const names = await resolveOrgNamesById(defaults.map((row) => row.source_org_id))
     res.json({
       modules: MODULE_FORM_GROUPS.map((group) => ({
         moduleId: group.moduleId,
@@ -52,7 +64,7 @@ router.get('/', async (req, res) => {
           hasLayout: savedById.has(item.formId),
           updated_at: savedById.get(item.formId)?.updated_at || null,
           hasPlatformDefault: defaultById.has(item.formId),
-          platformDefault: publicDefaultMeta(defaultById.get(item.formId), req.params.orgId),
+          platformDefault: publicDefaultMeta(defaultById.get(item.formId), req.params.orgId, names),
         })),
       })),
     })
@@ -67,7 +79,7 @@ router.get('/:formId', async (req, res) => {
     const platformDefault = await getPlatformFormDefaultMeta(req.params.formId)
     res.json({
       ...payload,
-      platformDefault: publicDefaultMeta(platformDefault, req.params.orgId),
+      platformDefault: await withSourceOrgNames(platformDefault, req.params.orgId),
     })
   } catch (err) {
     res.status(err.status || 500).json({ error: err.message })
@@ -81,7 +93,21 @@ router.post('/:formId/default', async (req, res) => {
     const platformDefault = await getPlatformFormDefaultMeta(req.params.formId)
     res.json({
       ...payload,
-      platformDefault: publicDefaultMeta(platformDefault, req.params.orgId),
+      platformDefault: await withSourceOrgNames(platformDefault, req.params.orgId),
+    })
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message })
+  }
+})
+
+router.post('/:formId/use-default', async (req, res) => {
+  try {
+    await applyPlatformFormDefaultToOrg(req.params.orgId, req.params.formId)
+    const payload = await buildFormLayoutPayload(req.params.orgId, req.params.formId)
+    const platformDefault = await getPlatformFormDefaultMeta(req.params.formId)
+    res.json({
+      ...payload,
+      platformDefault: await withSourceOrgNames(platformDefault, req.params.orgId),
     })
   } catch (err) {
     res.status(err.status || 500).json({ error: err.message })

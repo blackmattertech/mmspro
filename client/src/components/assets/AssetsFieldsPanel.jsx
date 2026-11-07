@@ -42,6 +42,7 @@ import {
 import '../company/CompanyShared.css'
 import './AssetsFields.css'
 import './AssetFormLayoutModal.css'
+import { useConfirmDelete } from '../../hooks/useConfirmDelete'
 
 const FormLayoutEditorModal = lazy(() => import('../admin/FormLayoutEditorModal'))
 
@@ -137,6 +138,7 @@ export default function AssetsFieldsPanel({
   hideLayoutButton = false,
   hideReorder = false,
 }) {
+  const { requestDelete, deleteModal } = useConfirmDelete()
   const { org } = useOrg()
   const orgId = orgIdProp || org?.id
   const internalState = useAssetFields({ enabled: !fieldsState })
@@ -489,7 +491,7 @@ export default function AssetsFieldsPanel({
   }
 
   const handleDelete = async (field) => {
-    if (!window.confirm(`Permanently delete "${field.name}"? This cannot be undone.`)) return
+    if (!(await requestDelete({ title: 'Delete field', message: `Permanently delete "${field.name}"?` }))) return
     if (field.kind === 'child') {
       const parent = scopedFields.find((item) => item.id === field.parent_id)
       if (!parent) throw new Error('Dropdown parent field not found')
@@ -1029,6 +1031,7 @@ export default function AssetsFieldsPanel({
           onSave={handleSectionCreateSave}
         />
       )}
+      {deleteModal}
     </div>
   )
 }

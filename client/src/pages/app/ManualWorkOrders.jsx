@@ -18,10 +18,13 @@ import ReceivedWorkOrderDetailModal from '../../components/workorders/ReceivedWo
 import WorkOrdersTable from '../../components/workorders/WorkOrdersTable'
 import '../../components/company/CompanyShared.css'
 import '../../components/workorders/WorkOrdersPage.css'
+import { useConfirmDelete } from '../../hooks/useConfirmDelete'
+import { notifyTabCountsChanged } from '../../lib/tabCountEvents'
 
 const MANUAL_COLUMNS = ['wo_number', 'summary', 'work_request', 'assignees', 'creator', 'created_at', 'status', 'priority', 'progress']
 
 export default function ManualWorkOrders() {
+  const { requestDelete, deleteModal } = useConfirmDelete()
   const location = useLocation()
   const navigate = useNavigate()
   const { org } = useOrg()
@@ -73,17 +76,18 @@ export default function ManualWorkOrders() {
   const handleDelete = useCallback(async (order) => {
     if (!order?.id) return
     const label = order.wo_number || 'this work order'
-    if (!window.confirm(`Permanently delete ${label}? This cannot be undone.`)) return
+    if (!(await requestDelete({ title: 'Delete work order', message: `Permanently delete ${label}?` }))) return
 
     setActionError(null)
     try {
       await deleteManualWorkOrder(order.id)
+      notifyTabCountsChanged('work_orders')
       if (selectedId === order.id) closeSelected()
       await reload({ silent: true })
     } catch (err) {
       setActionError(err.message)
     }
-  }, [reload, selectedId, closeSelected])
+  }, [reload, selectedId, closeSelected, requestDelete])
 
   if (loading) {
     return <div className="company-loading">Loading...</div>
@@ -128,6 +132,7 @@ export default function ManualWorkOrders() {
           onAssignmentUpdated={() => reload({ silent: true })}
         />
       )}
+      {deleteModal}
     </>
   )
 }

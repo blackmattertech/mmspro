@@ -1,0 +1,46 @@
+.delete-org-modal__form {
+  gap: 16px;
+}
+
+.delete-org-modal__irreversible {
+  padding: 14px 16px;
+  border-radius: var(--radius-sm);
+  background: #b42318;
+  color: #fff;
+  font-size: 15px;
+  line-height: 1.4;
+  text-align: center;
+}
+
+.delete-org-modal__irreversible strong {
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.delete-org-modal__warning {
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  background: #fef3f2;
+  border: 1px solid #fecdca;
+  color: #b42318;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.delete-org-modal__id code {
+  font-size: 12px;
+}
+
+.admin-modal__btn--danger {
+  color: var(--color-white);
+  background: #b42318;
+}
+
+.admin-modal__btn--danger:hover:not(:disabled) {
+  background: #912018;
+}
+
+.admin-modal__btn--danger:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}

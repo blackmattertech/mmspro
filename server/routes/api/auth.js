@@ -87,9 +87,6 @@ router.post('/invite/accept', verifyAuth, async (req, res) => {
   res.json({ success: true })
 })
 
-const PASSWORD_RESET_MESSAGE =
-  'If an account exists for that email, a password reset link has been sent.'
-
 /**
  * POST /api/auth/password-reset
  * Trigger Supabase password reset + send branded email
@@ -111,12 +108,25 @@ router.post('/password-reset', async (req, res) => {
 
   if (error) {
     console.warn('password-reset:', error.message)
-    return res.json({ success: true, message: PASSWORD_RESET_MESSAGE })
+    const notFound = /not found|no user|user.*email/i.test(error.message || '')
+    return res.status(notFound ? 404 : 400).json({
+      error: notFound
+        ? 'No account found for that email.'
+        : (error.message || 'Could not start password reset.'),
+    })
   }
 
-  await sendPasswordResetEmail(email, { resetUrl: data.properties.action_link })
+  const actionLink = data?.properties?.action_link
+  if (!actionLink) {
+    return res.status(500).json({ error: 'Could not create a password reset link.' })
+  }
 
-  res.json({ success: true, message: PASSWORD_RESET_MESSAGE })
+  const sent = await sendPasswordResetEmail(email, { resetUrl: actionLink })
+  if (!sent) {
+    return res.status(500).json({ error: 'Could not send the reset email. Try again later.' })
+  }
+
+  res.json({ success: true, message: 'A password reset link has been sent.' })
 })
 
 export default router

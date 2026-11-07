@@ -10,8 +10,10 @@ import TrashIcon from '../../components/ui/TrashIcon'
 import { WarrantyDetailContent } from '../../components/warranty/WarrantyDetailContent'
 import '../../components/company/CompanyShared.css'
 import '../../components/warranty/WarrantyManager.css'
+import { useConfirmDelete } from '../../hooks/useConfirmDelete'
 
 export default function WarrantyDetailPage() {
+  const { requestDelete, deleteModal } = useConfirmDelete()
   const { warrantyId } = useParams()
   const navigate = useNavigate()
   const { org } = useOrg()
@@ -33,7 +35,7 @@ export default function WarrantyDetailPage() {
   const handleDelete = useCallback(async () => {
     if (!record) return
     const label = record.serial_number != null ? record.serial_number : 'this warranty'
-    if (!window.confirm(`Delete warranty ${label}?`)) return
+    if (!(await requestDelete({ title: 'Delete warranty', message: `Delete warranty ${label}?` }))) return
 
     setDeleting(true)
     setError(null)
@@ -110,6 +112,7 @@ export default function WarrantyDetailPage() {
       )}
     >
       {record && <WarrantyDetailContent record={record} />}
+      {deleteModal}
     </RecordDetailLayout>
   )
 }

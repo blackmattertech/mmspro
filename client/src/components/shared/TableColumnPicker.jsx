@@ -54,10 +54,13 @@ export default function TableColumnPicker({
   onReorder,
   onMove,
   onSave,
+  onMakeDefault,
+  makingDefault = false,
   className = '',
 }) {
   const [open, setOpen] = useState(false)
   const [savedFlash, setSavedFlash] = useState(false)
+  const [defaultFlash, setDefaultFlash] = useState(false)
   const [menuStyle, setMenuStyle] = useState(null)
   const [dragId, setDragId] = useState(null)
   const [overId, setOverId] = useState(null)
@@ -198,6 +201,21 @@ export default function TableColumnPicker({
                   }}
                 >
                   {savedFlash ? 'Saved' : 'Save'}
+                </button>
+              ) : null}
+              {onMakeDefault ? (
+                <button
+                  type="button"
+                  className="table-column-picker__reset"
+                  disabled={makingDefault}
+                  onClick={async () => {
+                    const saved = await onMakeDefault()
+                    if (saved === false) return
+                    setDefaultFlash(true)
+                    window.setTimeout(() => setDefaultFlash(false), 1400)
+                  }}
+                >
+                  {makingDefault ? 'Saving…' : (defaultFlash ? 'Default set' : 'Make default')}
                 </button>
               ) : null}
               <button

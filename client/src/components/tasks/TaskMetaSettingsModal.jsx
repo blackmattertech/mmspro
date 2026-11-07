@@ -9,6 +9,7 @@ import TaskMetaEditModal from './TaskMetaEditModal'
 import TaskPriorityIcon from './TaskPriorityIcon'
 import '../company/CompanyShared.css'
 import './TaskMetaSettings.css'
+import { useConfirmDelete } from '../../hooks/useConfirmDelete'
 
 function DragHandle() {
   return (
@@ -243,6 +244,7 @@ function MetaDragTable({
 }
 
 export default function TaskMetaSettingsModal({ onClose }) {
+  const { requestDelete, deleteModal } = useConfirmDelete()
   const handleBackdropClick = useBackdropClose(onClose)
   const {
     statuses,
@@ -294,7 +296,7 @@ export default function TaskMetaSettingsModal({ onClose }) {
   }
 
   const handleDelete = async (kind, row) => {
-    if (!window.confirm(`Delete "${row.name}"? This cannot be undone.`)) return
+    if (!(await requestDelete({ title: 'Delete item', message: `Delete "${row.name}"?` }))) return
     if (kind === 'status') await deleteStatus(row.id)
     else if (kind === 'priority') await deletePriority(row.id)
     else if (kind === 'category') await deleteCategory(row.id)
@@ -484,6 +486,7 @@ export default function TaskMetaSettingsModal({ onClose }) {
           onSave={handleSave}
         />
       )}
+      {deleteModal}
     </div>
   )
 }

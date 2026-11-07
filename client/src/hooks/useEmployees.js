@@ -1,6 +1,13 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { getEmployees, createEmployee, updateEmployee, deleteEmployee } from '../lib/api-employees'
-import { fetchReferenceData, invalidateReferenceCache, peekCachedList, peekReferenceData, PICKER_LIMIT } from '../lib/referenceDataCache'
+import {
+  fetchReferenceData,
+  invalidateReferenceCache,
+  peekCachedList,
+  peekReferenceData,
+  subscribeReferenceInvalidation,
+  PICKER_LIMIT,
+} from '../lib/referenceDataCache'
 
 export function useEmployees(filters = {}) {
   const {
@@ -61,6 +68,14 @@ export function useEmployees(filters = {}) {
     load()
   }, [load])
 
+  const loadRef = useRef(load)
+  loadRef.current = load
+  useEffect(() => (
+    subscribeReferenceInvalidation('employees', () => {
+      loadRef.current({ silent: true, force: true })
+    })
+  ), [])
+
   const reload = useCallback(async (opts = {}) => {
     invalidateReferenceCache('employees')
     invalidateReferenceCache('departments')
@@ -80,6 +95,8 @@ export function useEmployees(filters = {}) {
       return data
     } catch (err) {
       setError(err.message)
+      // Refresh even on failure so a partial create (if any) appears in the list.
+      await refreshAfterMutation().catch(() => {})
       throw err
     } finally {
       setSaving(false)

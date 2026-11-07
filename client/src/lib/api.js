@@ -398,6 +398,13 @@ export function updateOrganization(id, data) {
   })
 }
 
+export function deleteOrganization(id, { password } = {}) {
+  return adminFetch(`/organizations/${id}`, {
+    method: 'DELETE',
+    body: JSON.stringify({ password }),
+  })
+}
+
 export function getAdminUsers({ limit = 50, offset = 0 } = {}) {
   return adminFetch(`/users?limit=${limit}&offset=${offset}`)
 }

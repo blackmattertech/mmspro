@@ -17,6 +17,7 @@ import { hierarchyChainLabel, previousLevelChoices } from '../../lib/assetHierar
 import TableEmptyRow from '../shared/TableEmptyRow'
 import '../company/CompanyShared.css'
 import '../assets/AssetsFields.css'
+import { useConfirmDelete } from '../../hooks/useConfirmDelete'
 
 const EMPTY = {
   name: '',
@@ -62,6 +63,7 @@ function withQrField(layout, field) {
 }
 
 export default function EquipmentMasterFields({ orgId, fieldsState }) {
+  const { requestDelete, deleteModal } = useConfirmDelete()
   const { fields, loading, saving, error, create, update, remove, toggleActive } = fieldsState
   const [search, setSearch] = useState('')
   const [modalField, setModalField] = useState(null)
@@ -160,7 +162,7 @@ export default function EquipmentMasterFields({ orgId, fieldsState }) {
   }
 
   const handleDelete = async (field) => {
-    if (!window.confirm(`Delete "${field.name}"? Companies will no longer see this field on assets.`)) return
+    if (!(await requestDelete({ title: 'Delete field', message: `Delete "${field.name}"? Companies will no longer see this field on assets.` }))) return
     setActionError(null)
     try {
       await remove(field.id)
@@ -280,6 +282,7 @@ export default function EquipmentMasterFields({ orgId, fieldsState }) {
           onSave={handleSave}
         />
       )}
+      {deleteModal}
     </div>
   )
 }

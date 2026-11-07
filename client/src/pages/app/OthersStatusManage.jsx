@@ -15,6 +15,7 @@ import OrgStatusEditModal from '../../components/others/OrgStatusEditModal'
 import '../../components/company/CompanyShared.css'
 import '../../components/tasks/TaskMetaSettings.css'
 import './Others.css'
+import { useConfirmDelete } from '../../hooks/useConfirmDelete'
 
 function DragHandle() {
   return (
@@ -34,6 +35,7 @@ export default function OthersStatusManage({
   backTo: backToProp = null,
   backLabel = 'Forms Master',
 } = {}) {
+  const { requestDelete, deleteModal } = useConfirmDelete()
   const params = useParams()
   const entityType = entityTypeProp || params.entityType
   const { org } = useOrg()
@@ -112,7 +114,7 @@ export default function OthersStatusManage({
       setActionError('System statuses cannot be deleted. Deactivate them instead.')
       return
     }
-    if (!window.confirm(`Delete status "${row.name}"?`)) return
+    if (!(await requestDelete({ title: 'Delete status', message: `Delete status "${row.name}"?` }))) return
     try {
       await remove(row.id)
     } catch (err) {
@@ -284,6 +286,7 @@ export default function OthersStatusManage({
           }}
         />
       )}
+      {deleteModal}
     </div>
   )
 }

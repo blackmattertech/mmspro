@@ -638,10 +638,12 @@ export default function FormBuilderCanvas({
   loading,
   saving,
   marking = false,
+  applyingDefault = false,
   error,
   onBack,
   onSave,
   onMarkDefault,
+  onUseDefault,
   onGoToSections,
   formChoices = [],
 }) {
@@ -1590,6 +1592,16 @@ export default function FormBuilderCanvas({
     setLocalError(null)
   }
 
+  const handleUseDefault = async () => {
+    if (!onUseDefault) return
+    setLocalError(null)
+    try {
+      await onUseDefault()
+    } catch (err) {
+      setLocalError(err.message)
+    }
+  }
+
   if (loading || !payload || !layout) {
     return <div className="form-builder__loading">Loading form…</div>
   }
@@ -1615,9 +1627,11 @@ export default function FormBuilderCanvas({
               read-only on this work order. Reuse a Work Request section if it must also be editable here.
             </p>
           )}
-          {payload?.platformDefault?.isSource && (
+          {payload?.platformDefault?.isSource ? (
             <span className="form-builder__card-badge">Default for new companies</span>
-          )}
+          ) : payload?.platformDefault?.sourceOrgName ? (
+            <span className="form-builder__card-badge">Default from {payload.platformDefault.sourceOrgName}</span>
+          ) : null}
         </div>
         <div className="form-builder-canvas__actions">
           {form?.formId === 'equipment.create' && qrFieldOptions.length > 0 && (
@@ -1633,17 +1647,32 @@ export default function FormBuilderCanvas({
               </select>
             </label>
           )}
-          <button type="button" className="company-btn company-btn--ghost" onClick={handleUseCurrent} disabled={saving}>
-            Use current form
+          <button
+            type="button"
+            className="company-btn company-btn--ghost"
+            onClick={handleUseDefault}
+            disabled={saving || marking || applyingDefault || !onUseDefault || !payload?.platformDefault}
+            title={
+              payload?.platformDefault?.sourceOrgName
+                ? `Replace with default from ${payload.platformDefault.sourceOrgName}`
+                : payload?.platformDefault
+                  ? 'Replace this company form with the platform default'
+                  : 'No platform default set yet'
+            }
+          >
+            {applyingDefault ? 'Applying…' : 'Use default form'}
           </button>
-          <button type="button" className="company-btn company-btn--ghost" onClick={handleReset} disabled={!dirty || saving}>
+          <button type="button" className="company-btn company-btn--ghost" onClick={handleUseCurrent} disabled={saving || applyingDefault}>
+            Use built-in form
+          </button>
+          <button type="button" className="company-btn company-btn--ghost" onClick={handleReset} disabled={!dirty || saving || applyingDefault}>
             Discard
           </button>
           <button
             type="button"
             className="company-btn company-btn--ghost"
             onClick={handleMarkDefault}
-            disabled={saving || marking || !layout?.sections?.length}
+            disabled={saving || marking || applyingDefault || !layout?.sections?.length}
           >
             {marking ? 'Marking…' : (payload?.platformDefault?.isSource ? 'Update default' : 'Mark as default')}
           </button>
@@ -1651,7 +1680,7 @@ export default function FormBuilderCanvas({
             type="button"
             className="company-btn company-btn--primary"
             onClick={handleSave}
-            disabled={!canSave || saving || marking}
+            disabled={!canSave || saving || marking || applyingDefault}
           >
             {saving ? 'Saving…' : 'Save form'}
           </button>

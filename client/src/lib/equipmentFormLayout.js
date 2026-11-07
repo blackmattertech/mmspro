@@ -6,7 +6,7 @@ function sectionTitle(field) {
 
 /**
  * Equipment create/edit shows only the parent fields a super admin created.
- * Built-in name, code, location, department, area, and image inputs are not part of this form.
+ * Built-in location and department inputs stay outside this form; Area is catalog-only.
  */
 export function buildEquipmentFormSections(fieldDefs, layout) {
   const parents = (fieldDefs || []).filter((field) => (

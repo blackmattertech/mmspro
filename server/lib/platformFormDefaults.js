@@ -259,12 +259,31 @@ export async function getPlatformFormDefaultMeta(formId) {
   return data || null
 }
 
-export function publicDefaultMeta(row, orgId) {
+export function publicDefaultMeta(row, orgId, orgNameById = null) {
   if (!row) return null
+  const sourceOrgId = row.source_org_id || null
+  const sourceOrgName = sourceOrgId
+    ? (orgNameById?.get?.(sourceOrgId) || row.source_org_name || null)
+    : null
   return {
     updated_at: row.updated_at,
-    isSource: Boolean(orgId) && row.source_org_id === orgId,
+    sourceOrgId,
+    sourceOrgName,
+    isSource: Boolean(orgId) && sourceOrgId === orgId,
   }
+}
+
+export async function resolveOrgNamesById(orgIds) {
+  const ids = [...new Set((orgIds || []).filter(Boolean))]
+  const map = new Map()
+  if (!ids.length) return map
+  const { data, error } = await supabaseAdmin
+    .from('organizations')
+    .select('id, name')
+    .in('id', ids)
+  if (error) throw error
+  for (const row of data || []) map.set(row.id, row.name)
+  return map
 }
 
 export async function markFormAsDefault(orgId, formId) {
@@ -309,6 +328,114 @@ export function dedupeCatalog(rows) {
     byId.set(String(row.id), row)
   }
   return [...byId.values()]
+}
+
+function catalogSource(row) {
+  return row?.source === 'equipment' || row?.field_source === 'equipment' ? 'equipment' : 'asset'
+}
+
+function normalizeCatalogName(value) {
+  return String(value || '').trim().toLowerCase()
+}
+
+/** Stable match keys so a platform snapshot can reuse this company's existing catalog rows. */
+function buildCatalogKeyMaps(rows) {
+  const byId = new Map((rows || []).map((row) => [String(row.id), row]))
+  const keyById = new Map()
+  const idByKey = new Map()
+
+  function keyFor(id) {
+    const keyId = String(id || '')
+    if (!keyId) return null
+    if (keyById.has(keyId)) return keyById.get(keyId)
+    const row = byId.get(keyId)
+    if (!row) return null
+
+    const source = catalogSource(row)
+    const name = normalizeCatalogName(row.name)
+    let key
+    if (row.kind === 'section') {
+      key = `${source}|section|${name}`
+    } else if (row.kind === 'parent') {
+      const sectionKey = row.section_id ? (keyFor(row.section_id) || `section:${row.section_id}`) : 'none'
+      key = `${source}|parent|${sectionKey}|${name}|${row.field_type || ''}`
+    } else if (row.kind === 'child') {
+      const parentKey = row.parent_id ? (keyFor(row.parent_id) || `parent:${row.parent_id}`) : 'none'
+      key = `${source}|child|${parentKey}|${name}`
+    } else {
+      key = `${source}|${row.kind || 'unknown'}|${name}`
+    }
+
+    keyById.set(keyId, key)
+    if (!idByKey.has(key)) idByKey.set(key, keyId)
+    return key
+  }
+
+  for (const row of rows || []) keyFor(row.id)
+  return { keyById, idByKey }
+}
+
+function buildReuseIdMap(snapshotRows, existingRows) {
+  const existing = buildCatalogKeyMaps(existingRows)
+  const snapshot = buildCatalogKeyMaps(snapshotRows)
+  const idMap = new Map()
+  const missing = []
+
+  for (const row of snapshotRows || []) {
+    const sourceId = String(row.id)
+    const key = snapshot.keyById.get(sourceId)
+    const reused = key ? existing.idByKey.get(key) : null
+    if (reused) {
+      idMap.set(sourceId, reused)
+    } else {
+      idMap.set(sourceId, randomUUID())
+      missing.push(row)
+    }
+  }
+
+  return { idMap, missing }
+}
+
+/**
+ * Overwrite one company form with the platform default for that form_id.
+ * Reuses matching catalog rows when possible; inserts only what is missing.
+ */
+export async function applyPlatformFormDefaultToOrg(orgId, formId) {
+  const formDef = getFormDef(formId)
+  if (!formDef) throw httpError('Unknown form', 404)
+
+  const platformDefault = await getPlatformFormDefault(formId)
+  if (!platformDefault?.layout) {
+    throw httpError('No default form is set for this module yet. Mark a form as default first.', 404)
+  }
+
+  let layout = cloneLayout(platformDefault.layout)
+
+  if (platformDefault.source_org_id === orgId) {
+    await upsertFormLayout(orgId, formId, layout)
+  } else {
+    const snapshot = dedupeCatalog(platformDefault.catalog || [])
+    const existingCatalog = await loadOrgCatalogFields(orgId)
+    const { idMap, missing } = buildReuseIdMap(snapshot, existingCatalog.map((row) => ({
+      ...row,
+      source: row.field_source === 'equipment' ? 'equipment' : 'asset',
+    })))
+
+    if (missing.length) {
+      await insertCatalogRows(missing, idMap, orgId)
+      await copySectionIcons(missing, idMap, orgId)
+    }
+
+    layout = remapLayoutIds(layout, idMap)
+    await upsertFormLayout(orgId, formId, layout)
+  }
+
+  invalidateOrgFormCaches(orgId, formId)
+  return {
+    formId,
+    sourceOrgId: platformDefault.source_org_id || null,
+    updated_at: platformDefault.updated_at || null,
+  }
 }
 
 export async function applyPlatformFormDefaults(orgId) {

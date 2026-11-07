@@ -14,6 +14,7 @@ import {
   getEquipmentLabelSizes,
   previewEquipmentQrLabels,
 } from '../../lib/api-equipment'
+import { useConfirmDelete } from '../../hooks/useConfirmDelete'
 import '../company/CompanyShared.css'
 import './EquipmentQrLabels.css'
 
@@ -31,7 +32,6 @@ const EMPTY_FILTERS = {
 const SYSTEM_SORT = [
   { value: 'location', label: 'Location' },
   { value: 'department', label: 'Department' },
-  { value: 'area', label: 'Area' },
   { value: 'name', label: 'Name' },
   { value: 'code', label: 'Code' },
   { value: 'reading_required', label: 'Reading required' },
@@ -43,7 +43,16 @@ function isFileField(field) {
   return type === 'image' || type === 'file'
 }
 
-const DEFAULT_PRINT_FIELDS = ['name', 'code', 'location', 'department', 'area']
+const DEFAULT_PRINT_FIELDS = ['name', 'code', 'location', 'department']
+
+function catalogAreaFieldId(fieldRows) {
+  const match = (fieldRows || []).find((field) => (
+    field?.kind === 'parent'
+    && field.is_active !== false
+    && String(field.name || '').trim().toLowerCase() === 'area'
+  ))
+  return match?.id || null
+}
 
 function fitCount(outer, inner) {
   if (!Number.isFinite(outer) || !Number.isFinite(inner) || inner <= 0) return 0
@@ -123,6 +132,7 @@ export default function EquipmentQrLabelsDialog({
   canSaveSizes = false,
   scopedLocationId = '',
 }) {
+  const { requestDelete, deleteModal } = useConfirmDelete()
   const onBackdrop = useBackdropClose(onClose)
   const [filters, setFilters] = useState(EMPTY_FILTERS)
   const [openFilter, setOpenFilter] = useState('')
@@ -171,11 +181,21 @@ export default function EquipmentQrLabelsDialog({
       getEquipmentIdentityValues('code'),
     ]).then(([sizePayload, fieldRows, nameValues, codeValues]) => {
       if (cancelled) return
+      const list = Array.isArray(fieldRows) ? fieldRows : []
       setPresets(sizePayload?.presets || [])
       setSizes(sizePayload?.sizes || [])
-      setFields(Array.isArray(fieldRows) ? fieldRows : [])
+      setFields(list)
       setNames(nameValues)
       setCodes(codeValues)
+      const areaFieldId = catalogAreaFieldId(list)
+      setPrintFields((current) => {
+        const next = current.filter((key) => key !== 'area')
+        if (areaFieldId) {
+          const token = `field:${areaFieldId}`
+          if (!next.includes(token)) next.push(token)
+        }
+        return next
+      })
     }).catch((err) => {
       if (!cancelled) setError(err.message)
     })
@@ -256,7 +276,6 @@ export default function EquipmentQrLabelsDialog({
     { value: 'code', label: 'Code' },
     { value: 'location', label: 'Location' },
     { value: 'department', label: 'Department' },
-    { value: 'area', label: 'Area' },
     { value: 'reading_required', label: 'Reading required' },
     { value: 'active', label: 'Active' },
     ...fields
@@ -309,6 +328,11 @@ export default function EquipmentQrLabelsDialog({
 
   const removeCustom = async (sizeId) => {
     if (!sizes.some((item) => item.id === sizeId)) return
+    const size = sizes.find((item) => item.id === sizeId)
+    if (!(await requestDelete({
+      title: 'Delete label size',
+      message: `Delete custom size "${size?.name || sizeId}"?`,
+    }))) return
     setError('')
     setBusy(true)
     try {
@@ -772,6 +796,7 @@ export default function EquipmentQrLabelsDialog({
           </div>
         </div>
       </div>
+      {deleteModal}
     </div>
   )
 }

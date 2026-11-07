@@ -49,9 +49,18 @@
   flex-shrink: 0;
 }
 
-.wr-page__toolbar-row--tabs .wr-page__create-tab {
+.wr-page__toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   flex: 0 0 auto;
   margin-left: 8px;
+}
+
+.wr-page__toolbar-row--tabs .wr-page__draft-tab,
+.wr-page__toolbar-row--tabs .wr-page__create-tab {
+  flex: 0 0 auto;
+  margin-left: 0;
   padding: 8px 16px;
   font-size: 13px;
   white-space: nowrap;
@@ -68,7 +77,32 @@
   background: #d42f3c;
 }
 
-.wr-page__toolbar-row--tabs .wr-page__create-tab svg {
+.wr-page__toolbar-row--tabs .wr-page__draft-tab {
+  color: var(--color-primary);
+  background: var(--color-white);
+  border-color: var(--color-primary);
+}
+
+.wr-page__toolbar-row--tabs .wr-page__draft-tab:hover,
+.wr-page__toolbar-row--tabs .wr-page__draft-tab.wo-page__tab--active,
+.wr-page__toolbar-row--tabs .wr-page__draft-tab.wo-page__tab--active:hover {
+  color: var(--color-white);
+  background: var(--color-primary);
+}
+
+.wr-page__toolbar-row--tabs .wr-page__draft-tab .wo-page__tab-count {
+  color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 12%, white);
+}
+
+.wr-page__toolbar-row--tabs .wr-page__draft-tab:hover .wo-page__tab-count,
+.wr-page__toolbar-row--tabs .wr-page__draft-tab.wo-page__tab--active .wo-page__tab-count {
+  color: var(--color-white);
+  background: color-mix(in srgb, white 22%, transparent);
+}
+
+.wr-page__toolbar-row--tabs .wr-page__create-tab svg,
+.wr-page__toolbar-row--tabs .wr-page__draft-tab svg {
   width: 18px;
   height: 18px;
 }
@@ -438,6 +472,8 @@
     flex-wrap: nowrap;
   }
 
+  .wr-page__toolbar-actions,
+  .wr-page__toolbar-row--tabs .wr-page__draft-tab,
   .wr-page__toolbar-row--tabs .wr-page__create-tab {
     align-self: center;
     width: auto;
@@ -1478,6 +1514,17 @@
   background: var(--color-primary);
 }
 
+.wr-timeline__item--pending::before {
+  background: var(--color-gray-blue);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 18%, white);
+}
+
+.wr-approvers {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
 .wr-timeline__actor {
   display: flex;
   align-items: center;
@@ -1700,6 +1747,24 @@
 
 .wr-table__cell--status .wo-status {
   white-space: nowrap;
+  max-width: 100%;
+}
+
+.wo-status--with-avatar::before {
+  display: none;
+}
+
+.wo-status__avatar.company-employee-avatar,
+.wo-status__avatar.company-employee-avatar--sm {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
+.wo-status__text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .wr-table__cell--person {

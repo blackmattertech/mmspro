@@ -82,16 +82,20 @@ export default function EmployeeModal({
 
   const activeLocations = locations.filter((l) => l.is_active !== false)
   const activeDepartments = departments.filter((d) => d.is_active !== false)
-  const activeEmployees = employees.filter((e) => e.is_active !== false)
   const managerDepartmentIds = useMemo(
     () => departmentManagerScopeIds(departments, form.department_id),
     [departments, form.department_id],
   )
-  const managerOptions = activeEmployees.filter((e) =>
-    e.id !== employee?.id
-    && (!form.location_id || e.location_id === form.location_id)
-    && (!form.department_id || managerDepartmentIds.has(e.department_id)),
-  )
+  const managerOptions = useMemo(() => (
+    (employees || []).filter((e) =>
+      e
+      && e.id
+      && e.is_active !== false
+      && e.id !== employee?.id
+      && (!form.location_id || e.location_id === form.location_id)
+      && (!form.department_id || managerDepartmentIds.has(e.department_id)),
+    )
+  ), [employees, employee?.id, form.location_id, form.department_id, managerDepartmentIds])
 
   const departmentsForLocation = useMemo(
     () => departmentsForEmployeeLocation(activeDepartments, form.location_id),

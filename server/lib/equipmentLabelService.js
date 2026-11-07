@@ -21,8 +21,7 @@ const SLIM_SELECT = `
   id, name, code, qr_code, is_active, reading_required,
   location_id, department_id, area_id,
   org_locations(id, name),
-  departments(id, name),
-  areas(id, name)
+  departments(id, name)
 `
 
 const SORT_COLUMNS = new Set([
@@ -226,7 +225,8 @@ function sortText(row, column) {
     case 'department':
       return row.departments?.name || ''
     case 'area':
-      return row.areas?.name || ''
+      // Legacy sort key — prefer Asset Master "Area" catalog value over areas table.
+      return catalogFieldValue(row, row._labelFields || [], 'area') || row.areas?.name || ''
     case 'name':
       return row.name || ''
     case 'code':
@@ -272,6 +272,25 @@ function displayField(row, field) {
   return valueTextOf(item) || '—'
 }
 
+function catalogFieldByName(fields, name) {
+  const key = String(name || '').trim().toLowerCase()
+  if (!key) return null
+  return (fields || []).find((field) => (
+    field
+    && field.kind !== 'section'
+    && field.kind !== 'child'
+    && field.is_active !== false
+    && String(field.name || '').trim().toLowerCase() === key
+  )) || null
+}
+
+function catalogFieldValue(row, fields, name) {
+  const field = catalogFieldByName(fields, name)
+  if (!field) return ''
+  const item = (row.field_values || []).find((value) => value.field_id === field.id)
+  return valueTextOf(item)
+}
+
 function labelLines(row, fields, printFields) {
   const selected = new Set(Array.isArray(printFields) ? printFields : [])
   const system = [
@@ -279,7 +298,6 @@ function labelLines(row, fields, printFields) {
     ['code', `Code: ${row.code || '—'}`],
     ['location', `Location: ${row.org_locations?.name || '—'}`],
     ['department', `Department: ${row.departments?.name || '—'}`],
-    ['area', `Area: ${row.areas?.name || '—'}`],
     ['reading_required', `Reading required: ${row.reading_required ? 'Yes' : 'No'}`],
     ['active', `Active: ${row.is_active === false ? 'No' : 'Yes'}`],
   ]
@@ -356,16 +374,23 @@ async function attachAllFieldValues(orgId, rows, fields) {
 }
 
 const PRINT_SYSTEM_FIELDS = new Set([
-  'name', 'code', 'location', 'department', 'area', 'reading_required', 'active',
+  'name', 'code', 'location', 'department', 'reading_required', 'active',
 ])
 
-export function normalizePrintFields(value) {
+export function normalizePrintFields(value, fields = []) {
   if (!Array.isArray(value)) return []
+  const areaField = catalogFieldByName(fields, 'area')
   const seen = new Set()
   const out = []
   for (const item of value) {
-    const key = String(item || '').trim()
+    let key = String(item || '').trim()
     if (!key || seen.has(key)) continue
+    // Old hardcoded Area print key → Asset Master Area field when present.
+    if (key === 'area') {
+      if (!areaField) continue
+      key = `field:${areaField.id}`
+      if (seen.has(key)) continue
+    }
     if (PRINT_SYSTEM_FIELDS.has(key) || /^field:[0-9a-f-]{36}$/i.test(key)) {
       seen.add(key)
       out.push(key)
@@ -435,7 +460,8 @@ export function normalizeCopies(value) {
 
 export async function buildEquipmentQrLabels(orgId, options) {
   const copies = normalizeCopies(options.copies)
-  const printFields = normalizePrintFields(options.print_fields)
+  const fields = await loadOrgFields(orgId)
+  const printFields = normalizePrintFields(options.print_fields, fields)
   if (!printFields.length) throw httpError('Select at least one field to print on the label.')
   const { count, rows, sort } = await queryEquipmentLabels(orgId, { ...options, forPdf: true })
   if (!count) throw httpError('No assets match these filters.')
@@ -443,8 +469,8 @@ export async function buildEquipmentQrLabels(orgId, options) {
   if (total > OUTPUT_CAP) {
     throw httpError(`Too many labels (${total}). Narrow the filters or reduce the number of copies. The limit is ${OUTPUT_CAP} labels.`)
   }
-  const fields = await loadOrgFields(orgId)
   await attachAllFieldValues(orgId, rows, fields)
+  for (const row of rows) row._labelFields = fields
   await ensureEquipmentQrCodes(orgId, rows)
   const ordered = sortRows(rows, sort || [])
   const items = buildSheetItems(ordered, sort || [], fields, printFields, copies)

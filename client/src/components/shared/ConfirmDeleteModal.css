@@ -1,0 +1,46 @@
+.confirm-delete-overlay {
+  z-index: 1300;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 24px !important;
+}
+
+.confirm-delete-modal {
+  width: min(420px, 100%);
+  max-height: 90vh;
+  height: auto;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.confirm-delete-modal__body {
+  padding: 0 24px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.confirm-delete-modal__irreversible {
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--color-primary) 10%, white);
+  border: 1px solid color-mix(in srgb, var(--color-primary) 28%, white);
+  color: var(--color-primary);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.confirm-delete-modal__message {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--color-dark);
+}
+
+.confirm-delete-modal__actions {
+  margin-top: 4px;
+  justify-content: flex-end;
+  gap: 10px;
+}

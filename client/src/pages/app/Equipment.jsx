@@ -18,6 +18,7 @@ import TableColumnPicker from '../../components/shared/TableColumnPicker'
 import TableFilterToolbar from '../../components/shared/TableFilterToolbar'
 import { useTablePagination } from '../../hooks/useTablePagination'
 import { useTableColumnPrefs } from '../../hooks/useTableColumnPrefs'
+import { useConfirmDelete } from '../../hooks/useConfirmDelete'
 import { equipmentImageSrc, formatPickerValue } from '../../lib/pickerFields'
 import { orderedHierarchyFields } from '../../lib/assetHierarchy'
 import { useDebouncedValue } from '../../hooks/useDebouncedValue'
@@ -57,6 +58,7 @@ export default function Equipment() {
     locationId: myLocationId,
     accessRole,
   } = usePermissions()
+  const { requestDelete, deleteModal } = useConfirmDelete()
   const { org } = useOrg()
   const canManage = canCreate('equipment') || canUpdate('equipment') || canDelete('equipment')
   const fieldsState = useOrgEquipmentFields()
@@ -140,6 +142,8 @@ export default function Equipment() {
     reorderColumns: reorderEquipmentColumns,
     moveColumn: moveEquipmentColumn,
     saveColumns: saveEquipmentColumns,
+    makeDefaultColumns,
+    makingDefault,
   } = useTableColumnPrefs(
     'assets-company-fields',
     fieldsState.loading ? [] : equipmentColumnDefs,
@@ -252,7 +256,10 @@ export default function Equipment() {
   }
 
   const handleDelete = async (row) => {
-    if (!window.confirm(`Delete asset "${row.name}"? This cannot be undone.`)) return
+    if (!(await requestDelete({
+      title: 'Delete asset',
+      message: `Delete asset "${row.name}"?`,
+    }))) return
     setDeleteError(null)
     try {
       await remove(row.id)
@@ -291,7 +298,10 @@ export default function Equipment() {
     const ids = [...selected]
     if (!ids.length) return
     const label = ids.length === 1 ? 'this asset' : `${ids.length} asset records`
-    if (!window.confirm(`Delete ${label}? This cannot be undone.`)) return
+    if (!(await requestDelete({
+      title: 'Delete assets',
+      message: `Delete ${label}?`,
+    }))) return
     setBulkDeleting(true)
     setDeleteError(null)
     try {
@@ -426,6 +436,8 @@ export default function Equipment() {
                       onReorder={reorderEquipmentColumns}
                       onMove={moveEquipmentColumn}
                       onSave={saveEquipmentColumns}
+                  onMakeDefault={makeDefaultColumns}
+                  makingDefault={makingDefault}
                     />
                   )}
                 />
@@ -598,6 +610,7 @@ export default function Equipment() {
                 onSave={handleSave}
               />
             )}
+            {deleteModal}
           </>
       </div>
     </div>

@@ -121,9 +121,9 @@ export default function Login() {
     if (isForgot) {
       try {
         const { message } = await requestPasswordReset(email)
-        setSuccess(message || 'If an account exists for that email, a password reset link has been sent.')
+        setSuccess(message || 'A password reset link has been sent.')
       } catch (err) {
-        setError(err.message)
+        setError(err.message || 'No account found for that email.')
       }
       setLoading(false)
       return

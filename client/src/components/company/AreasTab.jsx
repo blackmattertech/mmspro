@@ -29,6 +29,7 @@ import '../shared/TableColumnPicker.css'
 import '../shared/TableFilterToolbar.css'
 import '../workorders/WorkOrdersPage.css'
 import './CompanyShared.css'
+import { useConfirmDelete } from '../../hooks/useConfirmDelete'
 
 function canPickAnyLocation({ isOrgAdmin, accessRole }) {
   if (isOrgAdmin) return true
@@ -51,6 +52,7 @@ function areaSearchHaystack(area) {
 
 
 export default function AreasTab({ canManage }) {
+  const { requestDelete, deleteModal } = useConfirmDelete()
   const { isOrgAdmin, locationId: myLocationId, accessRole } = usePermissions()
   const canSelectAnyLocation = canPickAnyLocation({ isOrgAdmin, accessRole })
 
@@ -152,6 +154,8 @@ export default function AreasTab({ canManage }) {
     reorderColumns: reorderAreaColumns,
     moveColumn: moveAreaColumn,
     saveColumns: saveAreaColumns,
+    makeDefaultColumns,
+    makingDefault,
   } = useTableColumnPrefs('company-areas', areaColumnDefs)
 
   const openCreate = () => {
@@ -173,7 +177,7 @@ export default function AreasTab({ canManage }) {
   }
 
   const handleDelete = async (area) => {
-    if (!window.confirm(`Delete area "${area.name}"? This cannot be undone.`)) return
+    if (!(await requestDelete({ title: 'Delete area', message: `Delete area "${area.name}"?` }))) return
     setDeleteError(null)
     try {
       await remove(area.id)
@@ -212,7 +216,7 @@ export default function AreasTab({ canManage }) {
     const ids = [...selected]
     if (!ids.length) return
     const label = ids.length === 1 ? 'this area' : `${ids.length} areas`
-    if (!window.confirm(`Delete ${label}? This cannot be undone.`)) return
+    if (!(await requestDelete({ title: 'Delete areas', message: `Delete ${label}?` }))) return
     setBulkDeleting(true)
     setDeleteError(null)
     try {
@@ -294,6 +298,8 @@ export default function AreasTab({ canManage }) {
               onReorder={reorderAreaColumns}
               onMove={moveAreaColumn}
               onSave={saveAreaColumns}
+                  onMakeDefault={makeDefaultColumns}
+                  makingDefault={makingDefault}
             />
           )}
         />
@@ -453,6 +459,7 @@ export default function AreasTab({ canManage }) {
           onSave={handleSave}
         />
       )}
+      {deleteModal}
     </div>
   )
 }

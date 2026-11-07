@@ -62,6 +62,8 @@ export default function TasksTable({
     reorderColumns,
     moveColumn,
     saveColumns,
+    makeDefaultColumns,
+    makingDefault,
   } = useTableColumnPrefs('tasks-manager', TASK_COLUMNS)
 
   const localPagination = useTablePagination(totalCount ?? tasks.length, { resetKey: paginationResetKey })
@@ -140,6 +142,8 @@ export default function TasksTable({
           onReorder={reorderColumns}
           onMove={moveColumn}
           onSave={saveColumns}
+                  onMakeDefault={makeDefaultColumns}
+                  makingDefault={makingDefault}
         />
       </div>
       <div className="company-table-wrap">

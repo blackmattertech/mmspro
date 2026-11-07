@@ -1917,6 +1917,16 @@
   color: var(--color-dark-navy);
 }
 
+.wo-assignment-actions__readonly-value {
+  margin: 0;
+  font-size: 14px;
+  color: var(--color-dark-navy);
+}
+
+.wo-assignment-actions__employees--readonly {
+  pointer-events: none;
+}
+
 .wo-assignment-actions__employees {
   display: flex;
   flex-direction: column;

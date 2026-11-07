@@ -49,8 +49,14 @@ export function hydrateTimelineAttachments(events, requestAttachments) {
   return list
 }
 
-function TimelineActor({ actor }) {
+function actorDepartmentName(actor) {
+  return actor?.department?.name || actor?.department_name || ''
+}
+
+function TimelineActor({ actor, roleLabel = '' }) {
   if (!actor) return null
+  const department = actorDepartmentName(actor)
+  const meta = [department, roleLabel || actor.role].filter(Boolean).join(' · ')
   return (
     <div className="wr-timeline__actor">
       <EmployeeAvatar
@@ -59,8 +65,8 @@ function TimelineActor({ actor }) {
       />
       <div className="wr-timeline__actor-copy">
         <span className="wr-timeline__actor-name">{actor.name}</span>
-        {actor.department?.name && (
-          <span className="wr-timeline__actor-dept">{actor.department.name}</span>
+        {meta && (
+          <span className="wr-timeline__actor-dept">{meta}</span>
         )}
       </div>
     </div>
@@ -192,15 +198,27 @@ function TimelineAttachments({ files }) {
 
 export default function RecordTimeline({
   events,
+  pendingApprovers = [],
   emptyLabel = 'No timeline events yet.',
 }) {
-  if (!events?.length) {
+  const pending = Array.isArray(pendingApprovers) ? pendingApprovers : []
+  if (!events?.length && !pending.length) {
     return <p className="wo-received-detail__status">{emptyLabel}</p>
   }
 
   return (
     <ul className="wr-timeline wr-timeline--panel">
-      {events.map((ev) => (
+      {pending.map((person) => (
+        <li key={`pending-${person.id || person.name}`} className="wr-timeline__item--pending">
+          <TimelineActor actor={person} roleLabel="Department head" />
+          <span className="wr-timeline__event">awaiting approval</span>
+          <p className="wr-timeline__message">
+            Waiting for {person.name || 'the department head'} to approve this request
+            {actorDepartmentName(person) ? ` (${actorDepartmentName(person)})` : ''}.
+          </p>
+        </li>
+      ))}
+      {(events || []).map((ev) => (
         <li key={ev.id}>
           <TimelineActor actor={ev.actor} />
           <span className="wr-timeline__event">

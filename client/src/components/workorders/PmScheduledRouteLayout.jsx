@@ -108,6 +108,8 @@ function PmScheduledLayoutInner() {
     reorderColumns: reorderPmColumns,
     moveColumn: movePmColumn,
     saveColumns: savePmColumns,
+    makeDefaultColumns,
+    makingDefault,
     columnDefs: pmColumnDefs,
   } = useTableColumnPrefs('pm-plans', pmColumns)
   const sortOptions = isPlansView ? PM_PLAN_SORT_OPTIONS : WO_SORT_OPTIONS
@@ -348,6 +350,8 @@ function PmScheduledLayoutInner() {
                 onReorder={reorderPmColumns}
                 onMove={movePmColumn}
                 onSave={savePmColumns}
+                  onMakeDefault={makeDefaultColumns}
+                  makingDefault={makingDefault}
               />
             ) : <ColumnPickerMount />}
           />

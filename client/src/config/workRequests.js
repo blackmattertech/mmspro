@@ -34,6 +34,15 @@ export const WORK_REQUEST_TABS = [
     moduleKey: 'work_request_all',
     icon: 'arrowSwap',
   },
+  {
+    id: 'drafts',
+    label: 'Draft',
+    segment: 'work-request/drafts',
+    moduleKey: 'work_request_create',
+    moduleKeys: ['work_request_create', 'work_request_my', 'work_request_all'],
+    icon: 'document',
+    placement: 'action',
+  },
 ]
 
 export function isWorkRequestTabActive(tabId, pathname) {
@@ -46,15 +55,22 @@ export function getWorkRequestActiveTab(pathname) {
   return match?.id ?? null
 }
 
-export function visibleWorkRequestTabs(canRead) {
+export function workRequestTabAllowed(tab, canRead) {
   const allow = typeof canRead === 'function' ? canRead : () => true
-  return WORK_REQUEST_TABS.filter((tab) => allow(tab.moduleKey))
+  const keys = tab.moduleKeys?.length ? tab.moduleKeys : (tab.moduleKey ? [tab.moduleKey] : [])
+  if (!keys.length) return true
+  return keys.some((key) => allow(key))
+}
+
+export function visibleWorkRequestTabs(canRead) {
+  return WORK_REQUEST_TABS.filter((tab) => workRequestTabAllowed(tab, canRead))
 }
 
 export function defaultWorkRequestTab(canRead) {
   const tabs = visibleWorkRequestTabs(canRead)
   return tabs.find((tab) => tab.id === 'incoming')
-    || tabs.find((tab) => tab.id !== 'create')
+    || tabs.find((tab) => tab.id !== 'create' && tab.id !== 'drafts')
+    || tabs.find((tab) => tab.id === 'create')
     || tabs[0]
     || null
 }

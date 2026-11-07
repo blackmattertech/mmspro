@@ -24,6 +24,7 @@ import '../shared/TableColumnPicker.css'
 import '../shared/TableFilterToolbar.css'
 import '../workorders/WorkOrdersPage.css'
 import './CompanyShared.css'
+import { useConfirmDelete } from '../../hooks/useConfirmDelete'
 
 function canPickAnyLocation({ isOrgAdmin, accessRole }) {
   if (isOrgAdmin) return true
@@ -33,6 +34,7 @@ function canPickAnyLocation({ isOrgAdmin, accessRole }) {
 
 
 export default function WorkCentersTab({ canManage }) {
+  const { requestDelete, deleteModal } = useConfirmDelete()
   const { isOrgAdmin, locationId: myLocationId, accessRole } = usePermissions()
   const canSelectAnyLocation = canPickAnyLocation({ isOrgAdmin, accessRole })
   const [search, setSearch] = useState('')
@@ -123,6 +125,8 @@ export default function WorkCentersTab({ canManage }) {
     reorderColumns,
     moveColumn,
     saveColumns,
+    makeDefaultColumns,
+    makingDefault,
   } = useTableColumnPrefs('company-work-centers', columnDefs)
 
   const openCreate = () => {
@@ -144,7 +148,7 @@ export default function WorkCentersTab({ canManage }) {
   }
 
   const handleDelete = async (row) => {
-    if (!window.confirm(`Delete work center "${row.name}"? This cannot be undone.`)) return
+    if (!(await requestDelete({ title: 'Delete work center', message: `Delete work center "${row.name}"?` }))) return
     setDeleteError(null)
     try {
       await remove(row.id)
@@ -183,7 +187,7 @@ export default function WorkCentersTab({ canManage }) {
     const ids = [...selected]
     if (!ids.length) return
     const label = ids.length === 1 ? 'this work center' : `${ids.length} work centers`
-    if (!window.confirm(`Delete ${label}? This cannot be undone.`)) return
+    if (!(await requestDelete({ title: 'Delete work centers', message: `Delete ${label}?` }))) return
     setBulkDeleting(true)
     setDeleteError(null)
     try {
@@ -262,6 +266,8 @@ export default function WorkCentersTab({ canManage }) {
               onReorder={reorderColumns}
               onMove={moveColumn}
               onSave={saveColumns}
+                  onMakeDefault={makeDefaultColumns}
+                  makingDefault={makingDefault}
             />
           )}
         />
@@ -423,6 +429,7 @@ export default function WorkCentersTab({ canManage }) {
           onSave={handleSave}
         />
       )}
+      {deleteModal}
     </div>
   )
 }

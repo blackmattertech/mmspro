@@ -255,7 +255,6 @@ const EQUIPMENT_CREATE = form('equipment.create', 'Assets', [
   section('equipment_placement', 'Placement', [
     field('location_id', 'Location', { type: 'dropdown', required: true }),
     field('department_id', 'Department', { type: 'dropdown', required: true }),
-    field('area_id', 'Area', { type: 'dropdown', required: true }),
   ]),
   section('equipment_image', 'Image', [
     field('image', 'Image', { type: 'file', compound: true, colSpan: 100 }),

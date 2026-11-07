@@ -6,6 +6,7 @@ import TrashIcon from '../../components/ui/TrashIcon'
 import { useAuth } from '../../hooks/useAuth'
 import { useProfile } from '../../hooks/useProfile'
 import './Plans.css'
+import { useConfirmDelete } from '../../hooks/useConfirmDelete'
 
 const INTERVALS = [
   { value: 'monthly', label: 'Monthly', days: 30 },
@@ -237,6 +238,7 @@ function Delta({ value }) {
 }
 
 export default function Plans() {
+  const { requestDelete, deleteModal } = useConfirmDelete()
   const { signOut } = useAuth()
   const { displayName, avatarUrl } = useProfile()
   const [plans, setPlans] = useState([])
@@ -375,7 +377,7 @@ export default function Plans() {
 
   const remove = async (plan) => {
     setMenuId(null)
-    if (!window.confirm(`Delete “${plan.name}”?`)) return
+    if (!(await requestDelete({ title: 'Delete plan', message: `Delete “${plan.name}”?` }))) return
     setError('')
     setNotice('')
     try {
@@ -744,6 +746,7 @@ export default function Plans() {
           </form>
         </section>
       )}
+      {deleteModal}
     </div>
   )
 }

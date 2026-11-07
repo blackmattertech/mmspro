@@ -8,6 +8,7 @@ import {
 } from '../../lib/api-reports'
 import { asListArray } from '../../lib/listResponse'
 import { useBackdropClose } from '../../hooks/useBackdropClose'
+import { useConfirmDelete } from '../../hooks/useConfirmDelete'
 import SpellcheckInput from '../shared/SpellcheckInput'
 import EditIcon from '../ui/EditIcon'
 import TrashIcon from '../ui/TrashIcon'
@@ -129,6 +130,7 @@ export default function ReportScheduleModal({
   defaultCustomId = '',
   onClose,
 }) {
+  const { requestDelete, deleteModal } = useConfirmDelete()
   const [schedules, setSchedules] = useState([])
   const [form, setForm] = useState(() => emptyForm(defaultCustomId))
   const [editingId, setEditingId] = useState(null)
@@ -453,6 +455,10 @@ export default function ReportScheduleModal({
                       type="button"
                       className="company-btn company-btn--danger company-btn--compact company-btn--icon"
                       onClick={async () => {
+                        if (!(await requestDelete({
+                          title: 'Delete schedule',
+                          message: `Delete schedule "${row.name || row.title || 'this schedule'}"?`,
+                        }))) return
                         try {
                           await deleteReportSchedule(row.id)
                           if (editingId === row.id) resetForm()
@@ -473,6 +479,7 @@ export default function ReportScheduleModal({
           )}
         </form>
       </div>
+      {deleteModal}
     </div>
   )
 }

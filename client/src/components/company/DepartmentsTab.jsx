@@ -33,6 +33,7 @@ import '../shared/TableColumnPicker.css'
 import '../shared/TableFilterToolbar.css'
 import '../workorders/WorkOrdersPage.css'
 import './CompanyShared.css'
+import { useConfirmDelete } from '../../hooks/useConfirmDelete'
 
 function canPickAnyLocation({ isOrgAdmin, accessRole }) {
   if (isOrgAdmin) return true
@@ -42,6 +43,7 @@ function canPickAnyLocation({ isOrgAdmin, accessRole }) {
 
 
 export default function DepartmentsTab({ canManage }) {
+  const { requestDelete, deleteModal } = useConfirmDelete()
   const { isOrgAdmin, locationId: myLocationId, accessRole } = usePermissions()
   const canSelectAnyLocation = canPickAnyLocation({ isOrgAdmin, accessRole })
   const [search, setSearch] = useState('')
@@ -126,6 +128,7 @@ export default function DepartmentsTab({ canManage }) {
     const cols = [
       { id: 'code', label: 'Code' },
       { id: 'name', label: 'Name' },
+      { id: 'parent', label: 'Parent department' },
       { id: 'location', label: 'Location' },
       { id: 'headcount', label: 'Headcount' },
       { id: 'description', label: 'Description' },
@@ -149,6 +152,8 @@ export default function DepartmentsTab({ canManage }) {
     reorderColumns: reorderDepartmentColumns,
     moveColumn: moveDepartmentColumn,
     saveColumns: saveDepartmentColumns,
+    makeDefaultColumns,
+    makingDefault,
   } = useTableColumnPrefs('company-departments-v2', departmentColumnDefs)
 
   const openCreate = () => {
@@ -194,7 +199,7 @@ export default function DepartmentsTab({ canManage }) {
   }
 
   const handleDelete = async (dept) => {
-    if (!window.confirm(`Delete department "${dept.name}"? This cannot be undone.`)) return
+    if (!(await requestDelete({ title: 'Delete department', message: `Delete department "${dept.name}"?` }))) return
     setDeleteError(null)
     try {
       await remove(dept.id)
@@ -234,7 +239,7 @@ export default function DepartmentsTab({ canManage }) {
     const ids = [...selected]
     if (!ids.length) return
     const label = ids.length === 1 ? 'this department' : `${ids.length} departments`
-    if (!window.confirm(`Delete ${label}? This cannot be undone.`)) return
+    if (!(await requestDelete({ title: 'Delete departments', message: `Delete ${label}?` }))) return
     setBulkDeleting(true)
     setDeleteError(null)
     try {
@@ -327,6 +332,8 @@ export default function DepartmentsTab({ canManage }) {
               onReorder={reorderDepartmentColumns}
               onMove={moveDepartmentColumn}
               onSave={saveDepartmentColumns}
+                  onMakeDefault={makeDefaultColumns}
+                  makingDefault={makingDefault}
             />
           )}
         />
@@ -358,13 +365,14 @@ export default function DepartmentsTab({ canManage }) {
                 )}
                 {isDepartmentColumnVisible('code') && <th>Code</th>}
                 {isDepartmentColumnVisible('name') && <th>Name</th>}
+                {isDepartmentColumnVisible('parent') && <th>Parent department</th>}
                 {isDepartmentColumnVisible('location') && <th>Location</th>}
                 {isDepartmentColumnVisible('headcount') && <th className="company-table__cell--num">Headcount</th>}
                 {isDepartmentColumnVisible('description') && <th>Description</th>}
                 <DynamicPickerHeaders
                   visibleColumnIds={departmentVisibleColumnIds}
                   columnDefs={departmentPickerColumns}
-                  handledIds={['code', 'name', 'location', 'headcount', 'description', 'active', 'actions']}
+                  handledIds={['code', 'name', 'parent', 'location', 'headcount', 'description', 'active', 'actions']}
                 />
                 {canManage && isDepartmentColumnVisible('active') && <th>Active</th>}
                 {canManage && isDepartmentColumnVisible('actions') && <th>Actions</th>}
@@ -408,6 +416,9 @@ export default function DepartmentsTab({ canManage }) {
                     {isDepartmentColumnVisible('name') && (
                       <td><span className="company-table__name">{dept.name}</span></td>
                     )}
+                    {isDepartmentColumnVisible('parent') && (
+                      <td>{dept.parent?.name || '—'}</td>
+                    )}
                     {isDepartmentColumnVisible('location') && (
                       <td>{formatDepartmentLocation(dept)}</td>
                     )}
@@ -421,7 +432,7 @@ export default function DepartmentsTab({ canManage }) {
                       visibleColumnIds={departmentVisibleColumnIds}
                       columnDefs={departmentPickerColumns}
                       row={dept}
-                      handledIds={['code', 'name', 'location', 'headcount', 'description', 'active', 'actions']}
+                      handledIds={['code', 'name', 'parent', 'location', 'headcount', 'description', 'active', 'actions']}
                     />
                     {canManage && isDepartmentColumnVisible('active') && (
                       <td onClick={stopTableRowClick}>
@@ -502,6 +513,7 @@ export default function DepartmentsTab({ canManage }) {
       {limitVisible && (
         <LimitExceededCard resource={limitResource} overflow={limitOverflow} onClose={dismissLimit} />
       )}
+      {deleteModal}
     </div>
   )
 }

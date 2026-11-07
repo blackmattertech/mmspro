@@ -49,6 +49,11 @@ const canApproveWorkRequest = requireAnyModulePermission([
 ])
 const canReadOutgoing = requireModulePermission('work_request_outgoing', 'read')
 const canReadAll = requireModulePermission('work_request_all', 'read')
+const canReadDrafts = requireAnyModulePermission([
+  ['work_request_create', 'read'],
+  ['work_request_my', 'read'],
+  ['work_request_all', 'read'],
+])
 const canReadAny = requireAnyModulePermission([
   ['work_request_create', 'read'],
   ['work_request_my', 'read'],
@@ -185,6 +190,7 @@ const FILTER_PERMISSION = {
   incoming: canReadIncoming,
   outgoing: canReadOutgoing,
   all: canReadAll,
+  drafts: canReadDrafts,
 }
 
 const WR_CSV_COLUMNS = [

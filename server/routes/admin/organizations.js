@@ -1,10 +1,15 @@
 import { Router } from 'express'
 import { supabaseAdmin } from '../../services/supabase.js'
-import { generateOrgSlug, ensureUniqueSlug } from '../../lib/slug.js'
+import { generateOrgSlug, ensureUniqueSlug, RESERVED_SLUGS } from '../../lib/slug.js'
 import {
   findOrCreateOwnerByEmail,
   sendOwnerAccessEmail,
+  syncOrgOwnerLoginEmail,
 } from '../../lib/ensureOwnerUser.js'
+import {
+  deleteOrganizationById,
+  verifySuperAdminPassword,
+} from '../../lib/deleteOrganization.js'
 import {
   PLAN_DEFAULTS,
   limitsForPlan,
@@ -17,18 +22,97 @@ import { getSignedUrl } from '../../lib/signedUrlCache.js'
 import { parseDisabledModulesInput, isMissingDisabledModulesColumn } from '../../lib/orgModules.js'
 import { invalidatePermissionsCache } from '../../lib/requestCache.js'
 import { applyPlatformFormDefaults, applyPlatformHierarchyDefault } from '../../lib/platformFormDefaults.js'
+import { validatePostalCode, validatePhoneE164, normalizePhoneE164 } from '../../lib/contactValidation.js'
 
 const router = Router()
 const ORG_ASSETS_BUCKET = 'org-assets'
 const LIST_SIGNED_URL_LIMIT = 25
 
+const PROFILE_FIELDS = [
+  'email', 'phone', 'website',
+  'address_line1', 'address_line2', 'city', 'state', 'postal_code', 'country',
+  'tax_id', 'currency', 'logo_url',
+]
+
 const ORG_SELECT_BASE = `
   id, name, slug, plan, is_active, created_at, logo_url,
+  email, phone, website,
+  address_line1, address_line2, city, state, postal_code, country,
+  tax_id, currency,
   location_limit, department_limit, employee_limit, login_limit
 `
 const ORG_SELECT = `${ORG_SELECT_BASE},
   disabled_modules
 `
+
+function isValidLogoPath(path, orgId) {
+  if (!path) return true
+  return path.startsWith(`${orgId}/`) && !path.includes('..')
+}
+
+function parseProfileUpdates(body = {}) {
+  const updates = {}
+  for (const key of PROFILE_FIELDS) {
+    if (body[key] === undefined) continue
+    updates[key] = typeof body[key] === 'string' ? body[key].trim() : body[key]
+  }
+
+  if (updates.email !== undefined) {
+    const email = String(updates.email || '').toLowerCase()
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      const err = new Error('Enter a valid organization email')
+      err.status = 400
+      throw err
+    }
+    updates.email = email || null
+  }
+
+  if (updates.phone !== undefined) {
+    const phoneError = validatePhoneE164(updates.phone)
+    if (phoneError) {
+      const err = new Error(phoneError)
+      err.status = 400
+      throw err
+    }
+    updates.phone = normalizePhoneE164(updates.phone)
+  }
+
+  if (updates.logo_url !== undefined) {
+    if (updates.logo_url === '' || updates.logo_url === null) {
+      updates.logo_url = null
+    }
+  }
+
+  return updates
+}
+
+async function assertSlugAvailable(slug, orgId) {
+  const normalized = String(slug || '').trim().toLowerCase().replace(/[^a-z0-9-]/g, '')
+  if (!normalized) {
+    const err = new Error('URL slug is required')
+    err.status = 400
+    throw err
+  }
+  if (RESERVED_SLUGS.has(normalized)) {
+    const err = new Error('That URL slug is reserved')
+    err.status = 400
+    throw err
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from('organizations')
+    .select('id')
+    .eq('slug', normalized)
+    .neq('id', orgId)
+    .maybeSingle()
+  if (error) throw error
+  if (data) {
+    const err = new Error('That URL slug is already in use')
+    err.status = 400
+    throw err
+  }
+  return normalized
+}
 
 async function selectOrganizations(buildQuery) {
   const withModules = await buildQuery(ORG_SELECT)
@@ -291,11 +375,25 @@ router.get('/:id', async (req, res) => {
 
 router.patch('/:id', async (req, res) => {
   const { id } = req.params
-  const { is_active, name, plan, apply_plan_limits, disabled_modules } = req.body
+  const { is_active, name, plan, apply_plan_limits, disabled_modules, slug } = req.body
+
+  const { data: currentOrg, error: currentError } = await selectOrganizations((cols) => (
+    supabaseAdmin
+      .from('organizations')
+      .select(cols)
+      .eq('id', id)
+      .maybeSingle()
+  ))
+  if (currentError) return res.status(500).json({ error: currentError.message })
+  if (!currentOrg) return res.status(404).json({ error: 'Organization not found' })
 
   const updates = {}
   if (typeof is_active === 'boolean') updates.is_active = is_active
-  if (name?.trim()) updates.name = name.trim()
+  if (name !== undefined) {
+    const trimmedName = String(name || '').trim()
+    if (!trimmedName) return res.status(400).json({ error: 'Organization name is required' })
+    updates.name = trimmedName
+  }
   if (req.body.planId || plan) {
     try {
       updates.plan = await resolveOrganizationPlan(req.body)
@@ -312,6 +410,30 @@ router.patch('/:id', async (req, res) => {
   }
 
   try {
+    Object.assign(updates, parseProfileUpdates(req.body))
+  } catch (err) {
+    return res.status(err.status || 400).json({ error: err.message })
+  }
+
+  if (updates.logo_url !== undefined && updates.logo_url !== null && !isValidLogoPath(updates.logo_url, id)) {
+    return res.status(400).json({ error: 'Invalid logo path' })
+  }
+
+  if (updates.postal_code !== undefined) {
+    const countryForPostal = updates.country !== undefined ? updates.country : currentOrg.country
+    const postalError = validatePostalCode(updates.postal_code, countryForPostal)
+    if (postalError) return res.status(400).json({ error: postalError })
+  }
+
+  if (slug !== undefined) {
+    try {
+      updates.slug = await assertSlugAvailable(slug, id)
+    } catch (err) {
+      return res.status(err.status || 500).json({ error: err.message })
+    }
+  }
+
+  try {
     if (apply_plan_limits && updates.plan && PLAN_DEFAULTS[updates.plan]) {
       Object.assign(updates, limitsForPlan(updates.plan))
     } else {
@@ -324,6 +446,21 @@ router.patch('/:id', async (req, res) => {
   if (!Object.keys(updates).length) {
     return res.status(400).json({ error: 'No valid fields to update' })
   }
+
+  let ownerLoginSync = null
+  if (Object.prototype.hasOwnProperty.call(updates, 'email') && updates.email) {
+    try {
+      ownerLoginSync = await syncOrgOwnerLoginEmail(id, {
+        previousOrgEmail: currentOrg.email,
+        nextEmail: updates.email,
+        orgName: updates.name || currentOrg.name,
+      })
+    } catch (err) {
+      return res.status(err.status || 500).json({ error: err.message || 'Failed to update owner login email' })
+    }
+  }
+
+  updates.updated_at = new Date().toISOString()
 
   const { data, error } = updates.disabled_modules
     ? await supabaseAdmin
@@ -367,7 +504,25 @@ router.patch('/:id', async (req, res) => {
     ...(await attachOrgLogoUrl(data)),
     member_count: count || 0,
     usage: usage || { locations: 0, departments: 0, employees: 0, logins: 0 },
+    owner_login_changed: Boolean(ownerLoginSync?.changed),
+    owner_email: ownerLoginSync?.ownerEmail || null,
+    owner_email_sent: Boolean(ownerLoginSync?.emailSent),
   })
+})
+
+router.delete('/:id', async (req, res) => {
+  try {
+    await verifySuperAdminPassword(req.user, req.body?.password)
+    const result = await deleteOrganizationById(req.params.id)
+    invalidatePermissionsCache()
+    res.json({
+      success: true,
+      organization: result.organization,
+      counts: result.counts,
+    })
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message || 'Failed to delete organization' })
+  }
 })
 
 export default router

@@ -295,10 +295,102 @@ function pickDepartmentHead(employees) {
     score: departmentHeadRoleScore(employee) * 10 + (managedIds.has(employee.id) ? 1 : 0),
   }))
   ranked.sort((a, b) => b.score - a.score || String(a.employee.name || '').localeCompare(String(b.employee.name || '')))
-  const best = ranked[0]
-  if (!best || best.score <= 0) return null
-  const { id, name, photo_url } = best.employee
-  return { id, name, photo_url: photo_url || null }
+  // Prefer a scored head; otherwise fall back to anyone listed as someone else's manager,
+  // then the first active employee so the UI can still name who must approve.
+  const best = ranked.find((row) => row.score > 0)
+    || ranked.find((row) => managedIds.has(row.employee.id))
+    || ranked[0]
+  if (!best) return null
+  const { id, name, photo_url, department_id, access_role, departments } = best.employee
+  return {
+    id,
+    name,
+    photo_url: photo_url || null,
+    department_id: department_id || null,
+    role: access_role?.name || (best.score > 0 ? null : 'Department head'),
+    department: departments
+      ? { id: departments.id, name: departments.name }
+      : null,
+  }
+}
+
+const PENDING_APPROVER_STATUSES = ['pending_approval', 'need_info', 'info_provided']
+
+function pendingApproverDepartmentId(row) {
+  return row?.order_to_department_id || row?.order_to?.id || null
+}
+
+function shapePendingApprover(head, department, photoUrls = new Map()) {
+  if (head) {
+    return {
+      id: head.id,
+      name: head.name,
+      role: head.role || 'Department head',
+      department: head.department || { id: department.id, name: department.name },
+      department_name: head.department?.name || department.name,
+      photo_url: head.photo_url,
+      photo_signed_url: head.photo_url ? (photoUrls.get(head.photo_url) || null) : null,
+    }
+  }
+  // Always surface who must approve — even when no employee matches the head heuristic.
+  return {
+    id: `dept-head-${department.id}`,
+    name: `${department.name} department head`,
+    role: 'Department head',
+    department: { id: department.id, name: department.name },
+    department_name: department.name,
+    photo_url: null,
+    photo_signed_url: null,
+  }
+}
+
+async function loadPendingApproversByDepartment(orgId, rows) {
+  const pendingRows = (rows || []).filter((row) => PENDING_APPROVER_STATUSES.includes(row?.status))
+  const departmentIds = [...new Set(pendingRows.map(pendingApproverDepartmentId).filter(Boolean))]
+  if (!departmentIds.length) return new Map()
+
+  const { data: departments, error: deptError } = await supabaseAdmin
+    .from('departments')
+    .select('id, name, location_id, all_locations')
+    .eq('org_id', orgId)
+    .in('id', departmentIds)
+  if (deptError) throw deptError
+
+  const deptList = departments || []
+  const heads = await loadDepartmentHeads(orgId, deptList, null)
+  const photoPaths = [...heads.values()].map((head) => head.photo_url).filter(Boolean)
+  const photoUrls = photoPaths.length
+    ? await getSignedUrls('org-assets', photoPaths)
+    : new Map()
+
+  const byDepartment = new Map()
+  for (const department of deptList) {
+    byDepartment.set(
+      department.id,
+      [shapePendingApprover(heads.get(department.id) || null, department, photoUrls)],
+    )
+  }
+  return byDepartment
+}
+
+async function attachPendingApprovers(orgId, rows) {
+  if (!rows?.length) return rows || []
+  const byDepartment = await loadPendingApproversByDepartment(orgId, rows)
+  return rows.map((row) => {
+    if (!PENDING_APPROVER_STATUSES.includes(row?.status)) {
+      return { ...row, pending_approvers: [] }
+    }
+    const departmentId = pendingApproverDepartmentId(row)
+    return {
+      ...row,
+      pending_approvers: departmentId ? (byDepartment.get(departmentId) || []) : [],
+    }
+  })
+}
+
+async function loadPendingApproversForRequest(orgId, row) {
+  const [enriched] = await attachPendingApprovers(orgId, [row])
+  return enriched?.pending_approvers || []
 }
 
 async function loadDepartmentHeads(orgId, departments, locationId) {
@@ -307,7 +399,7 @@ async function loadDepartmentHeads(orgId, departments, locationId) {
 
   const { data: employees, error } = await supabaseAdmin
     .from('org_employees')
-    .select('id, name, photo_url, department_id, location_id, manager_id, access_role:access_role_id(id, name)')
+    .select('id, name, photo_url, department_id, location_id, manager_id, access_role:access_role_id(id, name), departments(id, name)')
     .eq('org_id', orgId)
     .eq('is_active', true)
     .in('department_id', ids)
@@ -1870,7 +1962,7 @@ async function enrichWorkRequests(rows, { lean = false } = {}) {
 
   const woById = new Map((woResult.data || []).map((wo) => [wo.id, wo]))
 
-  return rows.map((row) => {
+  const enriched = rows.map((row) => {
     const linkedWo = row.manual_work_order_id ? woById.get(row.manual_work_order_id) : null
     const requester = row.requested_by
       ? (peopleById.get(row.requested_by) || row.requester || null)
@@ -1905,6 +1997,8 @@ async function enrichWorkRequests(rows, { lean = false } = {}) {
         : null,
     }
   })
+
+  return attachPendingApprovers(orgId, enriched)
 }
 
 const WR_TEXT_FILTERS = {
@@ -2012,7 +2106,7 @@ export async function countWorkRequestTabs(orgId, {
   departmentId,
   locationId = null,
 } = {}) {
-  const tabs = ['my', 'incoming', 'outgoing', 'all']
+  const tabs = ['my', 'incoming', 'outgoing', 'all', 'drafts']
   const entries = await Promise.all(tabs.map(async (filter) => {
     if ((filter === 'incoming' || filter === 'outgoing') && !departmentId) {
       return [filter, 0]
@@ -2021,7 +2115,9 @@ export async function countWorkRequestTabs(orgId, {
       .from('work_requests')
       .select('id', { count: 'exact', head: true })
       .eq('org_id', orgId)
-      .neq('status', 'draft')
+    query = filter === 'drafts'
+      ? query.eq('status', 'draft')
+      : query.neq('status', 'draft')
     query = (await scopeWorkRequestQuery(query, orgId, filter, { profileId, departmentId, locationId })).query
     const { count, error } = await query
     if (error) throw error
@@ -2053,11 +2149,15 @@ export async function listWorkRequests(orgId, filter, {
   })).query
   query = applyMappedFilters(query, textOnlyFilters(filters), { ...WR_TEXT_FILTERS, ...WR_RANGE_FILTERS })
   query = (await applyWorkRequestRelationFilters(query, orgId, filters)).query
-  query = applyStatusSelection(query, {
-    statuses,
-    excludeStatuses,
-    defaultExclude: ['draft'],
-  })
+  if (filter === 'drafts') {
+    query = query.eq('status', 'draft')
+  } else {
+    query = applyStatusSelection(query, {
+      statuses,
+      excludeStatuses,
+      defaultExclude: ['draft'],
+    })
+  }
   query = applyMappedSort(query, sort, sortDir, WR_SORT_COLUMNS, (sorted) => (
     sorted.order('request_date', { ascending: false })
   ))
@@ -2093,7 +2193,8 @@ export async function listWorkRequests(orgId, filter, {
             .from('work_requests')
             .select('id', { count: 'exact', head: true })
             .eq('org_id', orgId)
-          if (filter === 'my' && profileId) q = q.eq('requested_by', profileId)
+          if (filter === 'drafts') q = q.eq('status', 'draft')
+          else if (filter === 'my' && profileId) q = q.eq('requested_by', profileId)
           else if (filter === 'outgoing' && departmentId) q = q.eq('order_from_department_id', departmentId)
           else if (filter === 'incoming' && departmentId) q = q.eq('order_to_department_id', departmentId)
           return (async () => {
@@ -2136,7 +2237,20 @@ export async function getWorkRequestById(orgId, id) {
   const enriched = await enrichWorkRequest(data)
   const detailed = await attachWorkRequestDetailFields(orgId, enriched)
   const [withShortDescription] = await fillWorkRequestShortDescriptions(orgId, [detailed])
-  return withShortDescription || detailed
+  const row = withShortDescription || detailed
+  if (!row) return null
+
+  let approver = row.approver || null
+  if (row.approved_by) {
+    const actors = await loadTimelineActors(orgId, [row.approved_by])
+    approver = actors.get(row.approved_by) || approver
+  }
+
+  return {
+    ...row,
+    pending_approvers: row.pending_approvers || await loadPendingApproversForRequest(orgId, row),
+    approver,
+  }
 }
 
 function formatStoredFieldValue(value) {
