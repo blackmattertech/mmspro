@@ -34,7 +34,10 @@ import {
   MasterBulkActions,
   MasterBulkResult,
 } from './MasterBulkUpload'
-import { getEmployeesTemplate, bulkUploadEmployees } from '../../lib/api'
+import { getEmployeesTemplate, bulkUploadEmployees, downloadBlobFile } from '../../lib/api'
+import { exportEmployees } from '../../lib/api-employees'
+import { ExportCsvButton } from '../shared/ListTableChrome'
+import '../shared/ListTableChrome.css'
 import '../shared/TableColumnPicker.css'
 import '../shared/TableFilterToolbar.css'
 import '../workorders/WorkOrdersPage.css'
@@ -204,6 +207,7 @@ export default function EmployeesTab({ canManage }) {
   const pagedEmployees = filteredEmployees
   const [selected, setSelected] = useState(() => new Set())
   const [bulkDeleting, setBulkDeleting] = useState(false)
+  const [exporting, setExporting] = useState(false)
   const selectAllRef = useRef(null)
   const visibleIds = useMemo(() => pagedEmployees.map((employee) => employee.id), [pagedEmployees])
   const selectedVisibleCount = visibleIds.filter((id) => selected.has(id)).length
@@ -436,9 +440,26 @@ export default function EmployeesTab({ canManage }) {
             onChange: setColumnFilters,
           }}
           sort={{ value: sortBy, onChange: setSortBy, options: EMPLOYEE_SORT_OPTIONS }}
-          actions={canManage && (
+          actions={(
             <>
-              {selected.size > 0 && (
+              <ExportCsvButton
+                busy={exporting}
+                onClick={async () => {
+                  setExporting(true)
+                  try {
+                    const file = await exportEmployees({
+                      locationId: scopedLocationId,
+                      search: debouncedSearch,
+                      filters: listFilters,
+                      sortBy,
+                    })
+                    downloadBlobFile(file)
+                  } finally {
+                    setExporting(false)
+                  }
+                }}
+              />
+              {canManage && selected.size > 0 && (
               <button
                 type="button"
                 className="company-btn company-btn--danger"
@@ -451,6 +472,7 @@ export default function EmployeesTab({ canManage }) {
                 {bulkDeleting ? 'Deleting...' : `Delete (${selected.size})`}
               </button>
               )}
+              {canManage && (
               <MasterBulkActions
               onDownload={handleDownloadTemplate}
               bulkBusy={bulkBusy}
@@ -464,6 +486,7 @@ export default function EmployeesTab({ canManage }) {
               noun="employee"
               closeSignal={limitVisible}
             />
+              )}
             </>
           )}
           columnPicker={(

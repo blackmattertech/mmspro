@@ -694,7 +694,15 @@
     flex-wrap: nowrap;
     align-items: center;
     gap: 8px;
-    overflow: visible;
+    overflow-x: auto;
+    overflow-y: visible;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+
+  #root .wr-page__toolbar-row--tabs::-webkit-scrollbar,
+  #root .wo-page__toolbar-row--tabs::-webkit-scrollbar {
+    display: none;
   }
 
   #root .wr-page__toolbar-row--tabs .wo-page__tabs,
@@ -706,7 +714,7 @@
     align-items: center;
     width: auto;
     min-width: 0;
-    max-width: 100%;
+    max-width: none;
     overflow: visible;
     gap: 8px;
   }
@@ -793,8 +801,7 @@
   }
 
   #root .wo-page__tab[data-tooltip]:hover::after,
-  #root .wo-page__tab[data-tooltip]:focus::after,
-  #root .wo-page__tab[data-tooltip]:active::after {
+  #root .wo-page__tab[data-tooltip]:focus-visible::after {
     opacity: 1;
     visibility: visible;
   }

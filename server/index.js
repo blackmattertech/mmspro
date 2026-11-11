@@ -31,9 +31,13 @@ async function main() {
     const publicAppUrl = getPublicAppUrl()
     console.log(`Email/auth redirect base URL: ${publicAppUrl}`)
     console.log(`Swagger UI: http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}/api/docs`)
-    if (!process.env.APP_PUBLIC_URL?.trim() && publicAppUrl.includes('localhost')) {
+    if (!isDev && /ngrok|trycloudflare|loca\.lt/i.test(publicAppUrl)) {
       console.warn(
-        'APP_PUBLIC_URL is not set — password/invite links use localhost and will not work from email on other devices. Set APP_PUBLIC_URL in server/.env to your public domain, ngrok URL, or LAN IP.'
+        'Production email links still resolve to a tunnel URL. Set APP_PUBLIC_URL on Vercel to https://mmspro.vercel.app (or your real client domain).'
+      )
+    } else if (!process.env.APP_PUBLIC_URL?.trim() && publicAppUrl.includes('localhost')) {
+      console.warn(
+        'APP_PUBLIC_URL is not set — password/invite links use localhost and will not work from email on other devices. Set APP_PUBLIC_URL in server/.env to your ngrok URL for local email testing.'
       )
     }
     startTaskScheduler()

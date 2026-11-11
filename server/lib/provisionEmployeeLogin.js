@@ -1,5 +1,5 @@
 import crypto from 'crypto'
-import { getPublicAppUrl } from './appUrl.js'
+import { buildAppRecoveryUrl, getPasswordResetRedirectUrl } from './appUrl.js'
 import { supabaseAdmin } from '../services/supabase.js'
 import { ensureUserProfile } from './profiles.js'
 import { sendEmployeePasswordSetupEmail, isEmailConfigured } from '../services/email.js'
@@ -59,7 +59,7 @@ async function createAuthUser(email) {
 }
 
 async function sendPasswordSetupEmail(email, { orgName, employeeName }) {
-  const redirectTo = `${getPublicAppUrl()}/reset-password`
+  const redirectTo = getPasswordResetRedirectUrl()
 
   const { data, error } = await supabaseAdmin.auth.admin.generateLink({
     type: 'recovery',
@@ -72,20 +72,20 @@ async function sendPasswordSetupEmail(email, { orgName, employeeName }) {
     throw new Error(`Could not create password setup link: ${error.message}`)
   }
 
-  const actionLink = data?.properties?.action_link
-  if (!actionLink) {
-    throw new Error('Could not create password setup link (missing action_link)')
+  const resetUrl = buildAppRecoveryUrl(data)
+  if (!resetUrl) {
+    throw new Error('Could not create password setup link (missing recovery URL)')
   }
 
   if (!(await isEmailConfigured())) {
-    console.log(`\n[Employee password setup link — Mailjet not configured]\n  ${email}\n  ${actionLink}\n`)
+    console.log(`\n[Employee password setup link — Mailjet not configured]\n  ${email}\n  ${resetUrl}\n`)
     throw new Error(
       'Login was enabled but email is not configured. Add Mailjet under Super Admin → Integrations, then save the employee again to resend.',
     )
   }
 
   const result = await sendEmployeePasswordSetupEmail(email, {
-    resetUrl: actionLink,
+    resetUrl,
     orgName,
     employeeName,
   })

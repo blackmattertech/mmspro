@@ -418,8 +418,14 @@ export function computeDurations(patch, existing = {}) {
 
 export function mapRequestTypeToSource(requestType) {
   if (requestType === 'user_self') return 'user_self_request'
-  if (requestType === 'manual') return 'manual'
   return 'approved_work_request'
+}
+
+/** User self work is the creator's own job, so they are the technician unless someone was chosen. */
+export function assigneeIdsForUserSelfRequest(requestType, assigneeIds, creatorEmployeeId) {
+  const explicit = [...new Set((Array.isArray(assigneeIds) ? assigneeIds : []).filter(Boolean))]
+  if (explicit.length || requestType !== 'user_self') return explicit
+  return creatorEmployeeId ? [creatorEmployeeId] : []
 }
 
 export async function loadWorkOrderTimeline(orgId, workOrderId) {
@@ -447,6 +453,8 @@ const UNRESTRICTED_LIFECYCLE_KEYS = new Set([
   'closed_by',
   'closed_at',
   'planned_duration_hours',
+  // Progress is gated separately (technician or supervisor).
+  'progress_percent',
 ])
 
 export async function updateWorkOrderLifecycle(orgId, profileId, workOrderId, body = {}, { actors } = {}) {
@@ -620,8 +628,13 @@ export async function updateWorkOrderLifecycle(orgId, profileId, workOrderId, bo
       err.status = 400
       throw err
     }
-    if (actors && !actors.isTechnician) {
-      const err = new Error('Only a technician assigned to this work request or work order can update progress.')
+    const canSetProgress = Boolean(
+      actors?.isTechnician
+      || actors?.isSupervisor
+      || actors?.isOrgAdmin
+    )
+    if (actors && !canSetProgress) {
+      const err = new Error('Only an assigned technician or supervisor can update progress.')
       err.status = 403
       throw err
     }

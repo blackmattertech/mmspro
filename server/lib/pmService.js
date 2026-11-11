@@ -32,6 +32,8 @@ import {
   initialDueDate,
   isCalendarSchedule,
   isOverdue,
+  isRecurringPlan,
+  nextDueAfterGenerate,
   resolveLivePlanStatus,
 } from './pmSchedule.js'
 
@@ -64,6 +66,7 @@ function packScheduleMeta({
   custom_interval,
   custom_unit,
   never_ends,
+  is_recurring,
 }) {
   return `${SCHEDULE_META_PREFIX}${JSON.stringify({
     calendar_unit: calendar_unit || 'month',
@@ -75,6 +78,7 @@ function packScheduleMeta({
     custom_interval: custom_interval ?? null,
     custom_unit: custom_unit || null,
     never_ends: Boolean(never_ends),
+    is_recurring: is_recurring !== false,
   })}`
 }
 
@@ -93,6 +97,8 @@ function unpackScheduleMeta(row = {}) {
         custom_interval: parsed.custom_interval ?? row.custom_interval ?? null,
         custom_unit: parsed.custom_unit || row.custom_unit || null,
         never_ends: parsed.never_ends === true || row.never_ends === true,
+        // Missing key => recurring (legacy plans).
+        is_recurring: parsed.is_recurring !== false,
       }
     } catch {
       // fall through
@@ -108,6 +114,7 @@ function unpackScheduleMeta(row = {}) {
     custom_interval: row.custom_interval ?? null,
     custom_unit: row.custom_unit || null,
     never_ends: row.never_ends === true,
+    is_recurring: row.is_recurring !== false,
   }
 }
 
@@ -455,12 +462,15 @@ function normalizePlanPayload(body, existing = null, layout = null) {
 
   const usesCalendar = scheduleType === 'calendar' || scheduleType === 'both'
   const usesReading = scheduleType === 'reading' || scheduleType === 'both'
+  const isRecurring = body.is_recurring !== undefined
+    ? body.is_recurring !== false
+    : (existing ? existing.is_recurring !== false : true)
 
   const calendarUnit = normalizeCalendarUnit(
     body.calendar_unit !== undefined ? body.calendar_unit : existing?.calendar_unit,
     scheduleType,
   )
-  if (usesCalendar && !PM_CALENDAR_UNITS.includes(calendarUnit)) {
+  if (usesCalendar && isRecurring && !PM_CALENDAR_UNITS.includes(calendarUnit)) {
     throw httpError('Invalid calendar interval.')
   }
 
@@ -502,7 +512,7 @@ function normalizePlanPayload(body, existing = null, layout = null) {
   const customUnit = calendarUnit === 'custom'
     ? (['day', 'week', 'month', 'year'].includes(body.custom_unit) ? body.custom_unit : (existing?.custom_unit || 'day'))
     : null
-  const neverEnds = usesCalendar && (body.never_ends !== undefined
+  const neverEnds = usesCalendar && isRecurring && (body.never_ends !== undefined
     ? Boolean(body.never_ends)
     : Boolean(existing?.never_ends))
 
@@ -518,10 +528,11 @@ function normalizePlanPayload(body, existing = null, layout = null) {
         ? Boolean(body.whichever_comes_first)
         : (existing?.whichever_comes_first !== false))
       : true,
-    weekdays,
-    custom_interval: customInterval,
-    custom_unit: customUnit,
+    weekdays: isRecurring ? weekdays : [],
+    custom_interval: isRecurring ? customInterval : null,
+    custom_unit: isRecurring ? customUnit : null,
     never_ends: neverEnds,
+    is_recurring: isRecurring,
   }
 
   return {
@@ -535,11 +546,11 @@ function normalizePlanPayload(body, existing = null, layout = null) {
     priority,
     status,
     schedule_type: scheduleType,
-    every_n: usesCalendar
+    every_n: usesCalendar && isRecurring
       ? Math.max(1, Number(body.every_n ?? existing?.every_n ?? 1) || 1)
-      : Math.max(1, Number(existing?.every_n ?? 1) || 1),
+      : 1,
     start_date: resolvedStartDate,
-    end_date: usesCalendar && !neverEnds
+    end_date: usesCalendar && isRecurring && !neverEnds
       ? formatDateOnly(body.end_date !== undefined ? body.end_date : existing?.end_date)
       : null,
     grace_days: body.grace_days === '' || body.grace_days == null
@@ -565,7 +576,8 @@ function normalizePlanPayload(body, existing = null, layout = null) {
     required_skills: body.required_skills !== undefined
       ? (String(body.required_skills || '').trim() || null)
       : (existing?.required_skills || null),
-    allow_multiple_open: false,
+    // Recurring plans generate on each interval even if a prior WO is still open.
+    allow_multiple_open: isRecurring,
   }
 }
 
@@ -991,8 +1003,8 @@ export async function generateScheduledWorkOrder(orgId, planId, {
       assigned_location_id: plan.location_id || null,
       equipment_id: plan.equipment_id || null,
       asset_hierarchy: hierarchy,
-      short_description: clipToLimit(fieldLimits, 'short_description', pmSummary),
-      problem_description: clipToLimit(fieldLimits, 'problem_description', pmSummary),
+      short_description: clipToLimit(fieldLimits, 'short_description', pmSummary, { soft: true }),
+      problem_description: clipToLimit(fieldLimits, 'problem_description', pmSummary, { soft: true }),
       priority: plan.priority,
       work_center: plan.work_center || 'General',
       planned_start_at: dueIso,
@@ -1054,13 +1066,13 @@ export async function generateScheduledWorkOrder(orgId, planId, {
     },
   )
 
+  const nextDue = nextDueAfterGenerate(plan)
   const planPatch = {
     last_generated_at: new Date().toISOString(),
     last_generated_due_at: plan.next_due_at,
+    next_due_at: nextDue,
+    status: resolveLivePlanStatus({ ...plan, next_due_at: nextDue }),
     updated_at: new Date().toISOString(),
-  }
-  if (plan.allow_multiple_open && isCalendarSchedule(plan.schedule_type)) {
-    planPatch.next_due_at = computeNextDueDate(plan, plan.next_due_at)
   }
 
   await supabaseAdmin
@@ -1110,9 +1122,13 @@ export async function advancePlanAfterWorkOrderClose(orgId, workOrder) {
 
   if (error) throw error
   if (!plan) return
+  // Interval-based recurring plans already advanced next_due_at on generate.
   if (plan.allow_multiple_open) return
 
   const planWithMeta = { ...plan, ...unpackScheduleMeta(plan) }
+  // One-time plans stop after generate; do not reopen a due date on close.
+  if (!isRecurringPlan(planWithMeta)) return
+
   const fromDate = plan.last_generated_due_at || plan.next_due_at || formatDateOnly(workOrder.scheduled_at)
   const nextDue = isCalendarSchedule(plan.schedule_type)
     ? computeNextDueDate(planWithMeta, fromDate)

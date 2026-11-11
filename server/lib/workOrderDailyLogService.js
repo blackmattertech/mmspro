@@ -3,6 +3,8 @@ import { addWorkOrderTimelineEvent } from './workOrderService.js'
 import { clipMaterialDescriptions, clipTrimmedToLimit, getTextFieldLimitsMap } from './textFieldLimits.js'
 
 export const DAILY_LOG_ACTIVE_STATUSES = new Set([
+  'assigned',
+  'accepted',
   'started',
   'in_progress',
   'waiting_material',
@@ -238,7 +240,7 @@ function assertCanEditLogs(workOrder) {
     throw httpError('Daily logs cannot be edited after the work order is completed.')
   }
   if (!DAILY_LOG_ACTIVE_STATUSES.has(workOrder.status)) {
-    throw httpError('Start the work order before recording daily field snapshots.')
+    throw httpError('Daily logs can only be recorded while the work order is open for work.')
   }
 }
 

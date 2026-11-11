@@ -9,6 +9,8 @@ import { notifyTabCountsChanged } from '../../lib/tabCountEvents'
 import WorkOrderFieldSettingsModal from '../../components/workorders/WorkOrderFieldSettingsModal'
 import ManualWorkOrderWizard from '../../components/workorders/ManualWorkOrderWizard'
 import PageBack from '../../components/shared/PageBack'
+import { findVisibleCharacterLimitError, firstCharacterLimitMessage } from '../../lib/textFieldLimits'
+import { useTextFieldLimits } from '../../hooks/useTextFieldLimits'
 import '../../components/company/CompanyShared.css'
 import '../../components/workorders/ManualWorkOrder.css'
 import '../../components/workorders/WorkOrdersPage.css'
@@ -38,6 +40,7 @@ function WorkOrderSettingsIcon() {
 }
 
 export default function ManualWorkOrderCreate() {
+  const { maxLength } = useTextFieldLimits()
   const navigate = useNavigate()
   const { workOrderId } = useParams()
   const [searchParams] = useSearchParams()
@@ -102,6 +105,19 @@ export default function ManualWorkOrderCreate() {
     const problem = draft.validate?.(status)
     if (problem) {
       setFormError(problem)
+      return
+    }
+    const limitError = firstCharacterLimitMessage([
+      { key: 'short_description', value: draft.shortDescription },
+      { key: 'problem_description', value: draft.problemDescription },
+      { key: 'job_description', value: draft.jobDescription },
+      { key: 'root_cause', value: draft.rootCause },
+      { key: 'action_taken', value: draft.actionTaken },
+      { key: 'lessons_learned', value: draft.lessonsLearned },
+      { key: 'remarks', value: draft.executionRemarks },
+    ], maxLength) || findVisibleCharacterLimitError(document)
+    if (limitError) {
+      setFormError(limitError)
       return
     }
     submittingRef.current = true
@@ -173,7 +189,7 @@ export default function ManualWorkOrderCreate() {
         setBusy(false)
       }
     }
-  }, [isEdit, navigate, org?.slug, submit])
+  }, [isEdit, maxLength, navigate, org?.slug, submit])
 
   const handleReset = useCallback(() => {
     if (submittingRef.current || busy) return

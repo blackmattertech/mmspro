@@ -7,7 +7,10 @@ import { useTasksPage, useTaskPoll } from '../../hooks/useTasksPage'
 import { orgPath } from '../../config/navigation'
 import { TASK_TABS } from '../../config/tasks'
 import { TABLE_SORT_OPTIONS, applyTableFilters, uniqueNameOptions, selectFilterField } from '../../lib/tableFilters'
-import { deleteTask, getTasksTemplate, bulkUploadTasks, getTaskTabCounts } from '../../lib/api-tasks'
+import { deleteTask, getTasksTemplate, bulkUploadTasks, getTaskTabCounts, exportTasks } from '../../lib/api-tasks'
+import { downloadBlobFile } from '../../lib/api'
+import { ExportCsvButton } from '../../components/shared/ListTableChrome'
+import '../../components/shared/ListTableChrome.css'
 import { notifyTabCountsChanged, TAB_COUNTS_EVENT } from '../../lib/tabCountEvents'
 import { invalidateTasksBootstrapCache } from '../../lib/tasksBootstrapCache'
 import { useTablePagination } from '../../hooks/useTablePagination'
@@ -69,6 +72,7 @@ export default function TasksManager() {
   const [dueTodayOnly, setDueTodayOnly] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [voiceOpen, setVoiceOpen] = useState(false)
+  const [exporting, setExporting] = useState(false)
   const [deleting, setDeleting] = useState(false)
 
   useEffect(() => {
@@ -336,6 +340,27 @@ export default function TasksManager() {
                 onValueChange: setFilterValue,
               }}
               sort={{ value: sortBy, onChange: setSortBy, options: TABLE_SORT_OPTIONS }}
+              actions={(
+                <ExportCsvButton
+                  busy={exporting}
+                  onClick={async () => {
+                    setExporting(true)
+                    try {
+                      const file = await exportTasks({
+                        tab,
+                        search: debouncedSearch || undefined,
+                        overdue: overdueOnly ? 'true' : undefined,
+                        due_today: dueTodayOnly ? 'true' : undefined,
+                        filter_field: filterField && debouncedFilterValue ? filterField : undefined,
+                        filter_value: filterField && debouncedFilterValue ? debouncedFilterValue : undefined,
+                      })
+                      downloadBlobFile(file)
+                    } finally {
+                      setExporting(false)
+                    }
+                  }}
+                />
+              )}
             />
           </div>
 

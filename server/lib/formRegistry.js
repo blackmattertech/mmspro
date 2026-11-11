@@ -252,7 +252,7 @@ const WORK_ORDERS_USER_SELF = form(
     catalogMode: 'all',
     inheritFromFormId: 'work_request.create',
     inheritFromLabel: 'Work request',
-    info: 'User self requests auto-convert. Assignment can be completed later from Received.',
+    info: 'User self requests auto-convert and are assigned to the person who created the request.',
   },
 )
 

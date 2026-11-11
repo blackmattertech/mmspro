@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import { verifyAuth } from '../../middleware/auth.js'
 import { requireOrgAccess } from '../../middleware/orgAccess.js'
-import { notifyUser, notifyOrg, isFirebaseAdminConfigured } from '../../services/notifications.js'
+import { notifyUser, notifyOrg, isFirebaseAdminConfigured, attachNotificationShortDescriptions } from '../../services/notifications.js'
 import { supabaseAdmin } from '../../services/supabase.js'
 import { enrichNotificationUrls } from '../../lib/notificationInboxUrl.js'
 
@@ -62,6 +62,11 @@ router.get('/', async (req, res) => {
       items = enriched.map(mapNotification)
     } catch (err) {
       console.warn('Failed to rewrite notification URLs:', err.message)
+    }
+    try {
+      items = await attachNotificationShortDescriptions(req.userProfile?.org_id, items)
+    } catch (err) {
+      console.warn('Failed to attach notification short descriptions:', err.message)
     }
     res.json({
       items,

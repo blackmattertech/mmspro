@@ -1,5 +1,5 @@
 import crypto from 'crypto'
-import { getPublicAppUrl } from '../lib/appUrl.js'
+import { buildAppRecoveryUrl, getPasswordResetRedirectUrl } from '../lib/appUrl.js'
 import { supabaseAdmin } from '../services/supabase.js'
 import { ACCOUNT_ROLES } from './accountRoles.js'
 import { ensureUserProfile } from './profiles.js'
@@ -39,7 +39,7 @@ async function getAuthUserByEmail(email) {
  * Returns true if an email was sent.
  */
 export async function sendOwnerAccessEmail(email, { orgName }) {
-  const redirectTo = `${getPublicAppUrl()}/reset-password`
+  const redirectTo = getPasswordResetRedirectUrl()
 
   const { data, error } = await supabaseAdmin.auth.admin.generateLink({
     type: 'recovery',
@@ -52,18 +52,18 @@ export async function sendOwnerAccessEmail(email, { orgName }) {
     return false
   }
 
-  const actionLink = data?.properties?.action_link
-  if (!actionLink) {
-    console.warn('Could not generate password link: missing action_link')
+  const resetUrl = buildAppRecoveryUrl(data)
+  if (!resetUrl) {
+    console.warn('Could not generate password link: missing recovery URL')
     return false
   }
 
   if (!(await isEmailConfigured())) {
-    console.log(`\n[Owner password setup link — Mailjet not configured]\n  ${email}\n  ${actionLink}\n`)
+    console.log(`\n[Owner password setup link — Mailjet not configured]\n  ${email}\n  ${resetUrl}\n`)
     return false
   }
 
-  const result = await sendOwnerPasswordSetupEmail(email, { resetUrl: actionLink, orgName })
+  const result = await sendOwnerPasswordSetupEmail(email, { resetUrl, orgName })
   if (!result) {
     console.warn(`Owner access email failed to send via Mailjet → ${email}`)
     return false

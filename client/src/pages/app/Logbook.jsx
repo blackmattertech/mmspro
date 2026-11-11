@@ -3,7 +3,15 @@ import { usePermissions } from '../../hooks/usePermissions'
 import { useDebouncedValue } from '../../hooks/useDebouncedValue'
 import { useDepartments } from '../../hooks/useDepartments'
 import { useLocations } from '../../hooks/useLocations'
-import { bulkUploadLogbook, deleteMeterReading, getLogbook, getLogbookTemplate, getMeterReadings } from '../../lib/api-logbook'
+import {
+  bulkUploadLogbook,
+  deleteMeterReading,
+  getLogbook,
+  getLogbookTemplate,
+  getMeterReadings,
+  exportLogbook,
+} from '../../lib/api-logbook'
+import { downloadBlobFile } from '../../lib/api'
 import { getEquipmentColumnValues } from '../../lib/api-equipment'
 import { unwrapList } from '../../lib/listResponse'
 import {
@@ -21,7 +29,7 @@ import TablePagination from '../../components/shared/TablePagination'
 import TableEmptyRow from '../../components/shared/TableEmptyRow'
 import TableFilterToolbar from '../../components/shared/TableFilterToolbar'
 import TableColumnPicker from '../../components/shared/TableColumnPicker'
-import { AdvancedFilterMenu, TableColumnHead } from '../../components/shared/ListTableChrome'
+import { AdvancedFilterMenu, ExportCsvButton, TableColumnHead } from '../../components/shared/ListTableChrome'
 import { useTablePagination } from '../../hooks/useTablePagination'
 import { useTableColumnPrefs } from '../../hooks/useTableColumnPrefs'
 import {
@@ -193,6 +201,7 @@ export default function Logbook() {
   const [columnFilters, setColumnFilters] = useState({})
   const [sortBy, setSortBy] = useState('name_asc')
   const [headerSort, setHeaderSort] = useState(null)
+  const [exporting, setExporting] = useState(false)
   const debouncedSearch = useDebouncedValue(search.trim())
   const debouncedFilterKey = useDebouncedValue(JSON.stringify(columnFilters))
   const debouncedFilters = useMemo(() => {
@@ -396,20 +405,42 @@ export default function Logbook() {
                   onChange={setColumnFilters}
                 />
               )}
-              actions={canCreate('logbook') ? (
-                <MasterBulkActions
-                  onDownload={handleDownloadTemplate}
-                  bulkBusy={bulkBusy}
-                  bulkInputRef={bulkInputRef}
-                  onFileChange={handleBulkFile}
-                  title="Import meter readings"
-                  description="Download the sample file. It lists assets that require a reading. Enter a number in Meter reading, then upload the .xlsx file. Date, time, and your name are saved automatically."
-                  actionLabel="Import"
-                  bulkError={bulkError}
-                  bulkResult={bulkResult}
-                  noun="reading"
-                />
-              ) : null}
+              actions={(
+                <>
+                  <ExportCsvButton
+                    busy={exporting}
+                    onClick={async () => {
+                      setExporting(true)
+                      try {
+                        const file = await exportLogbook({
+                          search: debouncedSearch,
+                          filters: debouncedFilters,
+                          sortBy: headerSort ? undefined : sortBy,
+                          sort: headerSort?.id || '',
+                          sortDir: headerSort?.dir || '',
+                        })
+                        downloadBlobFile(file)
+                      } finally {
+                        setExporting(false)
+                      }
+                    }}
+                  />
+                  {canCreate('logbook') ? (
+                    <MasterBulkActions
+                      onDownload={handleDownloadTemplate}
+                      bulkBusy={bulkBusy}
+                      bulkInputRef={bulkInputRef}
+                      onFileChange={handleBulkFile}
+                      title="Import meter readings"
+                      description="Download the sample file. It lists assets that require a reading. Enter a number in Meter reading, then upload the .xlsx file. Date, time, and your name are saved automatically."
+                      actionLabel="Import"
+                      bulkError={bulkError}
+                      bulkResult={bulkResult}
+                      noun="reading"
+                    />
+                  ) : null}
+                </>
+              )}
               columnPicker={(
                 <TableColumnPicker
                   columnDefs={pickerColumns}

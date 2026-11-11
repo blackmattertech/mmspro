@@ -40,7 +40,7 @@ import { getAllowedNextWorkOrderStatuses } from '../../lib/orgStatusService.js'
 import { assertChecklistSelected, loadOrgProcessSkips, maybePromoteAssignedToAccepted } from '../../lib/formSkips.js'
 import { workOrderFormIdForSource } from '../../lib/workOrderForms.js'
 import { actorsFromRequest, loadFillershipRecord } from '../../lib/formFillershipRecord.js'
-import { buildAssetHierarchy } from '../../lib/workRequestService.js'
+import { buildAssetHierarchy, ensureUserSelfCreatorAssigned } from '../../lib/workRequestService.js'
 import {
   listWorkOrderDailyLogs,
   startWorkOrderDay,
@@ -1212,6 +1212,25 @@ async function buildWorkOrderListResponse(orgId, rows, existingAssigneesByWo = n
   const withSummaries = await attachSummaries(orgId, withDepartments)
   const assigneesByWo = existingAssigneesByWo
     || await loadAssigneesForWorkOrders(orgId, withSummaries.map((r) => r.id))
+  const unassignedSelf = withSummaries.filter((row) => (
+    row.source_type === 'user_self_request' && !(assigneesByWo.get(row.id) || []).length
+  ))
+  if (unassignedSelf.length) {
+    try {
+      const healed = await ensureUserSelfCreatorAssigned(orgId, unassignedSelf, { skipAssigneeCheck: true })
+      const healedIds = [...healed.statusById.keys()]
+      if (healedIds.length) {
+        const refreshed = await loadAssigneesForWorkOrders(orgId, healedIds)
+        for (const [id, people] of refreshed) assigneesByWo.set(id, people)
+        for (const row of withSummaries) {
+          const status = healed.statusById.get(row.id)
+          if (status) row.status = status
+        }
+      }
+    } catch (err) {
+      console.error('User self creator assignment failed:', err.message)
+    }
+  }
   const creatorIds = [...new Set(withSummaries.map((r) => r.created_by).filter(Boolean))]
   const creatorActors = creatorIds.length ? await loadTimelineActors(orgId, creatorIds) : new Map()
   const creatorById = new Map(
@@ -1414,6 +1433,16 @@ async function loadWorkOrderDetail(orgId, workOrderId, { employee = null, profil
     .eq('work_order_id', workOrderId)
 
   if (valuesError) throw valuesError
+
+  if (workOrder.source_type === 'user_self_request') {
+    try {
+      const healed = await ensureUserSelfCreatorAssigned(orgId, [workOrder])
+      const status = healed.statusById.get(workOrder.id)
+      if (status) workOrder.status = status
+    } catch (err) {
+      console.error('User self creator assignment failed:', err.message)
+    }
+  }
 
   const timeline = await loadWorkOrderTimeline(orgId, workOrderId)
 

@@ -905,7 +905,6 @@ const REQUEST_TYPE_LABELS = {
   inter_department: 'Inter-department',
   intra_department: 'Intra-department',
   user_self: 'Self',
-  manual: 'Manual',
 }
 
 const FREQUENCY_LABELS = {

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import FilterableSelect from '../ui/FilterableSelect'
+import GooToggle from '../ui/GooToggle'
 import { getChecklistTemplates } from '../../lib/api-pm'
 import '../workrequests/WorkRequests.css'
 
@@ -42,40 +43,32 @@ export default function ChecklistOptIn({
   if (!loaded) return null
   if (!required && !visible.length && !templateId) return null
 
-  const openPicker = () => {
+  const setEnabled = (next) => {
     if (disabled || required) return
-    setOn(true)
-    onEnabledChange(true)
-  }
-
-  const clearChecklist = () => {
-    if (required) return
-    setOn(false)
-    onEnabledChange(false)
-    onTemplateChange('')
+    setOn(next)
+    onEnabledChange(next)
+    if (!next) onTemplateChange('')
   }
 
   const body = (
     <div className="checklist-opt-in__body">
       <div className="checklist-opt-in__row">
-        <span className="company-form__label">Checklist{required ? ' *' : ''}</span>
-        {!required && (
-          <button
-            type="button"
-            className="checklist-opt-in__add"
-            onClick={on ? clearChecklist : openPicker}
+        <span className="company-form__label">
+          {required ? 'Checklist *' : 'Enable checklist'}
+        </span>
+        {!required ? (
+          <GooToggle
+            checked={on}
+            onChange={setEnabled}
             disabled={disabled}
-            aria-label={on ? 'Remove checklist' : 'Add checklist'}
-            title={on ? 'Remove checklist' : 'Add checklist'}
-          >
-            {on ? '−' : '+'}
-          </button>
-        )}
+            aria-label={on ? 'Disable checklist' : 'Enable checklist'}
+          />
+        ) : null}
       </div>
       {required && !visible.length ? (
         <p className="company-form__hint">No checklists are available for this form yet.</p>
       ) : null}
-      {(on || required) && visible.length > 0 && (
+      {(on || required) && visible.length > 0 ? (
         <label className="company-form__field checklist-opt-in__picker">
           <span className="company-form__label">Checklist template{required ? ' *' : ''}</span>
           <FilterableSelect
@@ -89,7 +82,10 @@ export default function ChecklistOptIn({
             className="company-form__input--select"
           />
         </label>
-      )}
+      ) : null}
+      {(on || required) && visible.length > 0 && !templateId ? (
+        <p className="company-form__hint">Select the checklist required for this record.</p>
+      ) : null}
     </div>
   )
 

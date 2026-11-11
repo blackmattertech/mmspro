@@ -2,8 +2,12 @@ import OrderedFormLayout from '../forms/OrderedFormLayout'
 import { useFormLayout } from '../../hooks/useFormLayout'
 import { layoutForStages } from '../../lib/workOrderForms'
 import { isCloseoutSection } from '../../lib/formSkips'
-import { isAssetPickerControlField } from '../../lib/formLayoutIds'
+import { isPrimaryAssetPickerField } from '../../lib/formLayoutIds'
 
+/**
+ * Process-stage layouts hide the Asset picker (create already captured the asset).
+ * Visibility is decided here via omit of primary picker — not by fighting OFL.
+ */
 export default function WorkOrderProcessLayout({
   formId,
   stages,
@@ -14,6 +18,7 @@ export default function WorkOrderProcessLayout({
   disabled = false,
   renderField,
   omitField,
+  assetPicker = null,
 }) {
   const { layout, catalogFields, hasLayout, loading } = useFormLayout(formId, { fallbackToDefault: true })
   const includeUnstaged = Array.isArray(stages) && stages.includes('execution')
@@ -24,10 +29,17 @@ export default function WorkOrderProcessLayout({
   }
   if (!hasLayout || !staged?.sections?.length) return null
 
+  const hideAssetPicker = assetPicker == null
+
   return (
     <OrderedFormLayout
       formId={formId}
-      layout={staged}
+      layout={hideAssetPicker
+        ? {
+          ...staged,
+          fields: (staged.fields || []).filter((field) => !isPrimaryAssetPickerField(field)),
+        }
+        : staged}
       catalogLookup={catalogFields}
       catalogValues={extrasValues}
       onCatalogChange={onExtraChange}
@@ -37,9 +49,8 @@ export default function WorkOrderProcessLayout({
       actors={actors}
       currentEmployeeId={currentEmployeeId}
       renderField={renderField}
-      omitField={(item, section) => (
-        isAssetPickerControlField(item) || Boolean(omitField?.(item, section))
-      )}
+      assetPicker={assetPicker}
+      omitField={omitField}
       renderSection={(id, children, section) => {
         const rest = (children || []).filter(Boolean)
         if (!rest.length && !isCloseoutSection(id)) return null

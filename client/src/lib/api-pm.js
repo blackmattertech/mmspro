@@ -29,6 +29,17 @@ export function getChecklistTemplates({ includeInactive = false, moduleKey, form
   })}`)
 }
 
+export function getChecklistSettings() {
+  return pmFetch('/checklist-settings')
+}
+
+export function saveChecklistSettings(formIds) {
+  return pmFetch('/checklist-settings', {
+    method: 'PUT',
+    body: JSON.stringify({ form_ids: formIds }),
+  })
+}
+
 export function getChecklistTemplate(id) {
   return pmFetch(`/checklists/${id}`)
 }

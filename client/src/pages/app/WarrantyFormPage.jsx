@@ -10,6 +10,7 @@ import { useVendors } from '../../hooks/useVendors'
 import { useFormFieldValues } from '../../hooks/useFormFieldValues'
 import { useFormLayout } from '../../hooks/useFormLayout'
 import { splitBoundValues } from '../../lib/formFieldSources'
+import { findVisibleCharacterLimitError } from '../../lib/textFieldLimits'
 import PageBack from '../../components/shared/PageBack'
 import WarrantyForm, {
   EMPTY_WARRANTY_FORM,
@@ -110,6 +111,12 @@ export default function WarrantyFormPage() {
   const handleSubmit = async (event) => {
     event.preventDefault()
     if (!canSave) return
+
+    const limitError = findVisibleCharacterLimitError(event.currentTarget || document)
+    if (limitError) {
+      setError(limitError)
+      return
+    }
 
     const warrantyPayload = warrantySavePayload(values)
     const { documents, removedDocumentIds } = collectWarrantyDocuments(values)

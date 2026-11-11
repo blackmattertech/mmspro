@@ -26,7 +26,15 @@ import { useCatalogFields } from '../../hooks/useCatalogFields'
 import { mergePickerColumns, readCatalogText } from '../../lib/pickerFields'
 import { TABLE_SORT_OPTIONS, applyTableFilters, compactFilters, uniqueNameOptions, selectFilterField } from '../../lib/tableFilters'
 import { stopTableRowClick, tableRowClickProps } from '../../lib/clickableTableRow'
-import { getWarrantiesTemplate, bulkUploadWarranties, previewWarrantyImport } from '../../lib/api-warranties'
+import {
+  getWarrantiesTemplate,
+  bulkUploadWarranties,
+  previewWarrantyImport,
+  exportWarranties,
+} from '../../lib/api-warranties'
+import { downloadBlobFile } from '../../lib/api'
+import { ExportCsvButton } from '../../components/shared/ListTableChrome'
+import '../../components/shared/ListTableChrome.css'
 import {
   useMasterBulkUpload,
   MasterBulkActions,
@@ -198,6 +206,7 @@ export default function WarrantyManager() {
   const [expiringFilterApplied, setExpiringFilterApplied] = useState(null)
   const [expiringPanelOpen, setExpiringPanelOpen] = useState(false)
   const [sortBy, setSortBy] = useState('newest')
+  const [exporting, setExporting] = useState(false)
   const debouncedSearch = useDebouncedValue(search.trim())
   const applyExpiringRange = isSoonTab && Boolean(expiringFilterApplied) && !expiringPanelOpen
   const [listTotal, setListTotal] = useState(0)
@@ -416,8 +425,30 @@ export default function WarrantyManager() {
                 onChange: handleWarrantyFilters,
               }}
               sort={{ value: sortBy, onChange: setSortBy, options: TABLE_SORT_OPTIONS }}
-              actions={canCreate('warranty_manager') && (
+              actions={(
                 <div className="warranty-manager__actions">
+                  <ExportCsvButton
+                    busy={exporting}
+                    onClick={async () => {
+                      setExporting(true)
+                      try {
+                        const file = await exportWarranties({
+                          search: debouncedSearch || undefined,
+                          filters: compactFilters(columnFilters),
+                          warranty_status: warrantyStatusFilter,
+                          expiring_mode: applyExpiringRange ? expiringFilterApplied.mode : undefined,
+                          expiring_min_days: applyExpiringRange ? expiringFilterApplied.minDays : undefined,
+                          expiring_max_days: applyExpiringRange ? expiringFilterApplied.maxDays : undefined,
+                          expiring_date_from: applyExpiringRange ? expiringFilterApplied.dateFrom : undefined,
+                          expiring_date_to: applyExpiringRange ? expiringFilterApplied.dateTo : undefined,
+                        })
+                        downloadBlobFile(file)
+                      } finally {
+                        setExporting(false)
+                      }
+                    }}
+                  />
+                  {canCreate('warranty_manager') && (
                   <MasterBulkActions
                     onDownload={handleDownloadTemplate}
                     bulkBusy={bulkBusy}
@@ -432,6 +463,7 @@ export default function WarrantyManager() {
                     onConfirmImport={confirmBulkImport}
                     onCancelPreview={cancelBulkPreview}
                   />
+                  )}
                 </div>
               )}
               columnPicker={(

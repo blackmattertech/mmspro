@@ -50,13 +50,13 @@ export const MASTERS_HUB_ITEMS = [
     icon: 'userCheck',
   },
   {
-    id: 'others',
-    label: 'Others',
-    title: 'Others',
-    description: 'Reusable checklists shared across modules.',
-    segment: 'masters/others',
+    id: 'checklists',
+    label: 'Checklists',
+    title: 'Checklists',
+    description: 'Build reusable checklists with sections and typed inspection fields.',
+    segment: 'masters/checklists',
     moduleKey: 'others',
-    icon: 'dots',
+    icon: 'clipboard',
   },
   {
     id: 'forms',
@@ -65,7 +65,7 @@ export const MASTERS_HUB_ITEMS = [
     description: 'Per-module status, skip fields, dropdown values, and character limits.',
     segment: 'masters/forms',
     moduleKey: 'assets',
-    icon: 'clipboard',
+    icon: 'list',
   },
 ]
 
@@ -213,7 +213,7 @@ export function moduleKeyForPath(pathname, orgSlug) {
   if (rest.startsWith('masters/work-centers')) return 'work_centers'
   if (rest.startsWith('masters/equipment')) return 'equipment'
   if (rest.startsWith('masters/vendors')) return 'vendors'
-  if (rest.startsWith('masters/others')) return 'others'
+  if (rest.startsWith('masters/others') || rest.startsWith('masters/checklists')) return 'others'
   if (rest.startsWith('configuration/roles')) return 'roles_access'
   if (rest.startsWith('configuration/approvals')) return 'approvals'
   if (rest.startsWith('configuration/settings')) return 'settings'
@@ -323,11 +323,6 @@ const SHORTCUT_TAB_GROUPS = {
   'warranty-manager': WARRANTY_TABS,
 }
 
-/** Inner destinations under Masters → Others. */
-const OTHERS_SHORTCUTS = [
-  { id: 'checklists', label: 'Checklists', segment: 'masters/others/checklists', icon: 'clipboard' },
-]
-
 function shortcutLeaf({ id, label, path, icon, group = null }) {
   return { id, label, path, icon: icon || 'document', group }
 }
@@ -344,21 +339,6 @@ export function getShortcutOptions(orgSlug, { canRead, disabledModules } = {}) {
       const children = []
       for (const hub of MASTERS_HUB_ITEMS) {
         if (!allowItem(hub)) continue
-        if (hub.segment === 'masters/others') {
-          children.push({
-            id: hub.segment,
-            label: hub.label,
-            icon: hub.icon || item.icon || 'document',
-            children: OTHERS_SHORTCUTS.map((inner) => shortcutLeaf({
-              id: inner.segment,
-              label: inner.label,
-              path: orgPath(orgSlug, inner.segment),
-              icon: inner.icon || hub.icon || item.icon,
-              group: hub.label,
-            })),
-          })
-          continue
-        }
         children.push(shortcutLeaf({
           id: hub.segment,
           label: hub.label,

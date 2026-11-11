@@ -156,12 +156,21 @@ max_indexes = 5
 enabled = true
 # The base URL of your website. Used as an allow-list for redirects and for constructing URLs used
 # in emails.
-site_url = "https://buffoon-wrongly-ultimate.ngrok-free.dev"
+# Hosted Supabase Site URL should stay on production (https://mmspro.vercel.app).
+# Local tunnels belong in additional_redirect_urls only — password emails now deep-link
+# to APP_PUBLIC_URL via token_hash, so Site URL no longer overrides local redirects.
+site_url = "https://mmspro.vercel.app"
 # The public URL that Auth serves on. Defaults to the API external URL with `/auth/v1` appended.
 # external_url = ""
 # A list of *exact* URLs that auth providers are permitted to redirect to post authentication.
 additional_redirect_urls = [
+  "https://mmspro.vercel.app/**",
+  "https://mmspro.vercel.app/reset-password",
+  "https://mmspro.in/**",
+  "https://mmspro.in/reset-password",
+  "https://buffoon-wrongly-ultimate.ngrok-free.dev/**",
   "https://buffoon-wrongly-ultimate.ngrok-free.dev/reset-password",
+  "http://localhost:5173/**",
   "http://localhost:5173/reset-password",
   "http://127.0.0.1:5173/reset-password",
 ]

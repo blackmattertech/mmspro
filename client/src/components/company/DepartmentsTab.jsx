@@ -6,7 +6,15 @@ import { useLimitExceeded } from '../../hooks/useLimitExceeded'
 import { usePermissions } from '../../hooks/usePermissions'
 import { useDebouncedValue } from '../../hooks/useDebouncedValue'
 import { isLimitError } from '../../lib/limitErrors'
-import { getDepartmentsTemplate, bulkUploadDepartments, deleteDepartment } from '../../lib/api'
+import {
+  getDepartmentsTemplate,
+  bulkUploadDepartments,
+  deleteDepartment,
+  exportDepartments,
+  downloadBlobFile,
+} from '../../lib/api'
+import { ExportCsvButton } from '../shared/ListTableChrome'
+import '../shared/ListTableChrome.css'
 import { invalidateReferenceCache } from '../../lib/referenceDataCache'
 import GooToggle from '../ui/GooToggle'
 import TrashIcon from '../ui/TrashIcon'
@@ -112,6 +120,7 @@ export default function DepartmentsTab({ canManage }) {
   const pagedDepartments = filteredDepartments
   const [selected, setSelected] = useState(() => new Set())
   const [bulkDeleting, setBulkDeleting] = useState(false)
+  const [exporting, setExporting] = useState(false)
   const [deleteError, setDeleteError] = useState(null)
   const selectAllRef = useRef(null)
   const visibleIds = useMemo(() => pagedDepartments.map((dept) => dept.id), [pagedDepartments])
@@ -292,9 +301,25 @@ export default function DepartmentsTab({ canManage }) {
             onChange: setColumnFilters,
           }}
           sort={{ value: sortBy, onChange: setSortBy, options: TABLE_SORT_OPTIONS }}
-          actions={canManage && (
+          actions={(
             <>
-              {selected.size > 0 && (
+              <ExportCsvButton
+                busy={exporting}
+                onClick={async () => {
+                  setExporting(true)
+                  try {
+                    const file = await exportDepartments(locationFilter || undefined, {
+                      search: debouncedSearch,
+                      filters: listFilters,
+                      sort_by: sortBy,
+                    })
+                    downloadBlobFile(file)
+                  } finally {
+                    setExporting(false)
+                  }
+                }}
+              />
+              {canManage && selected.size > 0 && (
               <button
                 type="button"
                 className="company-btn company-btn--danger"
@@ -307,6 +332,7 @@ export default function DepartmentsTab({ canManage }) {
                 {bulkDeleting ? 'Deleting...' : `Delete (${selected.size})`}
               </button>
               )}
+              {canManage && (
               <MasterBulkActions
               onDownload={handleDownloadTemplate}
               bulkBusy={bulkBusy}
@@ -320,6 +346,7 @@ export default function DepartmentsTab({ canManage }) {
               noun="department"
               closeSignal={limitVisible}
             />
+              )}
             </>
           )}
           columnPicker={(

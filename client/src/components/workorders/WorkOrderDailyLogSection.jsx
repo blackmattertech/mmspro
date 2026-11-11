@@ -5,6 +5,7 @@ import {
   endWorkOrderDay,
 } from '../../lib/api-work-orders'
 import { useTextFieldLimits } from '../../hooks/useTextFieldLimits'
+import { findVisibleCharacterLimitError, firstCharacterLimitMessage } from '../../lib/textFieldLimits'
 import WorkOrderMaterialRowsTable, { normalizeMaterialRows } from './WorkOrderMaterialRowsTable'
 import SpellcheckInput from '../shared/SpellcheckInput'
 import FormLabel from '../shared/FormLabel'
@@ -107,12 +108,23 @@ export default function WorkOrderDailyLogSection({ detail, onUpdated, canEdit: c
         updated = await startWorkOrderDay(detail.id, {
           time_zone: Intl.DateTimeFormat().resolvedOptions().timeZone,
         })
-      } else if (action === 'save') {
+      } else if (action === 'save' || action === 'end') {
         if (!activeLog) throw new Error('No daily log selected.')
-        updated = await updateWorkOrderDailyLog(detail.id, activeLog.id, payloadFromDraft())
-      } else if (action === 'end') {
-        if (!activeLog) throw new Error('No daily log selected.')
-        updated = await endWorkOrderDay(detail.id, activeLog.id, payloadFromDraft())
+        const limitError = firstCharacterLimitMessage([
+          { key: 'remarks', label: 'Work done', value: draft.work_done },
+          { key: 'remarks', value: draft.remarks },
+          ...(Array.isArray(draft.materials)
+            ? draft.materials.map((row, index) => ({
+              key: 'material_consumed',
+              label: `Material description ${index + 1}`,
+              value: row?.description,
+            }))
+            : []),
+        ], maxLength) || findVisibleCharacterLimitError(document)
+        if (limitError) throw new Error(limitError)
+        updated = action === 'save'
+          ? await updateWorkOrderDailyLog(detail.id, activeLog.id, payloadFromDraft())
+          : await endWorkOrderDay(detail.id, activeLog.id, payloadFromDraft())
       }
       onUpdated?.(updated)
     } catch (err) {

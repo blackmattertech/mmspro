@@ -1,43 +1,23 @@
-import { sortLayoutItems, parseLayoutId, layoutWithoutAreasMaster } from './formLayoutIds.js'
-import { augmentLayoutWithEquipmentCatalog } from './equipmentLayoutFields.js'
+import {
+  sortLayoutItems,
+  parseLayoutId,
+  isPrimaryAssetPickerField,
+  isAssetPickerControlField,
+} from './formLayoutIds.js'
 
-const ASSET_PICKER_KEYS = new Set(['asset_picker', 'area_id', 'equipment_id'])
-
-export function isAssetPickerLayoutField(field) {
-  if (!field) return false
-  const parsed = parseLayoutId(field.id)
-  if (parsed.kind === 'system' && ASSET_PICKER_KEYS.has(parsed.value)) return true
-  if (field.masterSource === 'areas' || field.masterSource === 'equipment') return true
-  if (field.bindKey === 'area_id' || field.bindKey === 'equipment_id') return true
-  return false
-}
+export {
+  isPrimaryAssetPickerField as isAssetPickerLayoutField,
+} from './formLayoutIds.js'
 
 export function isAssetLayoutSection(sectionId, section, layout) {
-  if (/asset/i.test(String(section?.label || ''))) return true
   return (layout?.fields || []).some((field) => (
-    field.sectionId === sectionId && isAssetPickerLayoutField(field)
+    field.sectionId === sectionId && isPrimaryAssetPickerField(field)
   ))
 }
 
-/** Manual WO layout with equipment catalog folded into the asset picker. */
-export function prepareManualLayout(layout, catalogFields) {
-  const augmented = layoutWithoutAreasMaster(augmentLayoutWithEquipmentCatalog(layout, catalogFields))
-  if (!augmented?.fields?.length) return augmented
-  const hasAssetPicker = augmented.fields.some((field) => {
-    const parsed = parseLayoutId(field.id)
-    return parsed.kind === 'system' && ASSET_PICKER_KEYS.has(parsed.value)
-  })
-  if (!hasAssetPicker) return augmented
-  const catalogById = new Map((catalogFields || []).map((row) => [String(row.id), row]))
-  return {
-    ...augmented,
-    fields: augmented.fields.filter((field) => {
-      const parsed = parseLayoutId(field.id)
-      if (parsed.kind !== 'catalog') return true
-      const source = catalogById.get(String(parsed.value))
-      return source?.field_source !== 'equipment'
-    }),
-  }
+/** Manual WO layout — Asset picker already normalized via useFormLayout. */
+export function prepareManualLayout(layout) {
+  return layout
 }
 
 function sectionHasContent(layout, section) {
@@ -95,3 +75,5 @@ export function canonicalPriority(value) {
   const text = String(value || '').trim().toLowerCase()
   return text === 'high' || text === 'medium' || text === 'low' ? text : ''
 }
+
+export { isAssetPickerControlField }

@@ -33,6 +33,71 @@ export function checklistMatchesForm(row, formId) {
   return formIdsFromChecklist(row).includes(formId)
 }
 
+export const ALL_CHECKLIST_FORM_IDS = CHECKLIST_FORMS.map((item) => item.formId)
+
+function missingChecklistEnabledFormsColumn(error) {
+  return /checklist_enabled_form_ids/i.test(error?.message || '')
+}
+
+export function normalizeChecklistEnabledFormIds(value, { fallbackAll = true } = {}) {
+  const ids = [...new Set(
+    (Array.isArray(value) ? value : [])
+      .map((id) => String(id || '').trim())
+      .filter((id) => FORM_BY_ID.has(id)),
+  )]
+  if (ids.length) return ids
+  return fallbackAll ? [...ALL_CHECKLIST_FORM_IDS] : []
+}
+
+export async function loadOrgChecklistEnabledFormIds(orgId) {
+  if (!orgId) return [...ALL_CHECKLIST_FORM_IDS]
+  const { data, error } = await supabaseAdmin
+    .from('organizations')
+    .select('checklist_enabled_form_ids')
+    .eq('id', orgId)
+    .maybeSingle()
+  if (error) {
+    if (missingChecklistEnabledFormsColumn(error)) return [...ALL_CHECKLIST_FORM_IDS]
+    throw error
+  }
+  return normalizeChecklistEnabledFormIds(data?.checklist_enabled_form_ids)
+}
+
+export async function saveOrgChecklistEnabledFormIds(orgId, formIds) {
+  const ids = normalizeChecklistEnabledFormIds(formIds, { fallbackAll: false })
+  if (!ids.length) {
+    throw httpError('Select at least one module that can use checklists.')
+  }
+  const stored = ids.length === ALL_CHECKLIST_FORM_IDS.length ? [] : ids
+  const { data, error } = await supabaseAdmin
+    .from('organizations')
+    .update({
+      checklist_enabled_form_ids: stored,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', orgId)
+    .select('checklist_enabled_form_ids')
+    .single()
+  if (error) {
+    if (missingChecklistEnabledFormsColumn(error)) {
+      throw httpError(
+        'Checklist module settings are not available yet. Apply schema patch 116 and reload the PostgREST schema cache.',
+        503,
+      )
+    }
+    throw error
+  }
+  return normalizeChecklistEnabledFormIds(data?.checklist_enabled_form_ids)
+}
+
+export function isChecklistFormEnabled(formId, enabledFormIds) {
+  if (!FORM_BY_ID.has(formId)) return false
+  const enabled = Array.isArray(enabledFormIds) && enabledFormIds.length
+    ? enabledFormIds
+    : ALL_CHECKLIST_FORM_IDS
+  return enabled.includes(formId)
+}
+
 function normalizeFormIds(value, fallbackModule = 'pm_plan') {
   if (value == null) {
     const fallback = FORM_BY_MODULE.get(fallbackModule) || 'pm.plan'
@@ -210,6 +275,11 @@ function attachSectionsAndFields(template, sections, fields) {
 }
 
 export async function listChecklistTemplates(orgId, { includeInactive = false, moduleKey = null, formId = null } = {}) {
+  if (formId) {
+    const enabledFormIds = await loadOrgChecklistEnabledFormIds(orgId)
+    if (!isChecklistFormEnabled(formId, enabledFormIds)) return []
+  }
+
   let query = supabaseAdmin
     .from('checklist_templates')
     .select(TEMPLATE_SELECT)

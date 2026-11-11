@@ -3,7 +3,9 @@ import { usePermissions } from '../../hooks/usePermissions'
 import { useWorkCenters } from '../../hooks/useWorkCenters'
 import { useLocations } from '../../hooks/useLocations'
 import { useDebouncedValue } from '../../hooks/useDebouncedValue'
-import { deleteWorkCenter } from '../../lib/api'
+import { deleteWorkCenter, exportWorkCenters, downloadBlobFile } from '../../lib/api'
+import { ExportCsvButton } from '../shared/ListTableChrome'
+import '../shared/ListTableChrome.css'
 import { invalidateReferenceCache } from '../../lib/referenceDataCache'
 import GooToggle from '../ui/GooToggle'
 import TrashIcon from '../ui/TrashIcon'
@@ -79,6 +81,7 @@ export default function WorkCentersTab({ canManage }) {
   const [togglingId, setTogglingId] = useState(null)
   const [selected, setSelected] = useState(() => new Set())
   const [bulkDeleting, setBulkDeleting] = useState(false)
+  const [exporting, setExporting] = useState(false)
   const [deleteError, setDeleteError] = useState(null)
   const selectAllRef = useRef(null)
 
@@ -232,9 +235,26 @@ export default function WorkCentersTab({ canManage }) {
             onChange: setColumnFilters,
           }}
           sort={{ value: sortBy, onChange: setSortBy, options: TABLE_SORT_OPTIONS }}
-          actions={canManage && (
+          actions={(
             <>
-              {selected.size > 0 && (
+              <ExportCsvButton
+                busy={exporting}
+                onClick={async () => {
+                  setExporting(true)
+                  try {
+                    const file = await exportWorkCenters({
+                      location_id: scopedLocationId,
+                      search: debouncedSearch,
+                      filters: listFilters,
+                      sort_by: sortBy,
+                    })
+                    downloadBlobFile(file)
+                  } finally {
+                    setExporting(false)
+                  }
+                }}
+              />
+              {canManage && selected.size > 0 && (
                 <button
                   type="button"
                   className="company-btn company-btn--danger"
@@ -247,6 +267,7 @@ export default function WorkCentersTab({ canManage }) {
                   {bulkDeleting ? 'Deleting...' : `Delete (${selected.size})`}
                 </button>
               )}
+              {canManage && (
               <button
                 type="button"
                 className="company-btn company-btn--primary"
@@ -254,6 +275,7 @@ export default function WorkCentersTab({ canManage }) {
               >
                 + Add Work Center
               </button>
+              )}
             </>
           )}
           columnPicker={(

@@ -1146,6 +1146,21 @@ export async function upsertFormFieldValues(orgId, formId, recordId, values) {
         .update({ short_description: text })
         .eq('org_id', orgId)
         .eq('id', recordId)
+      const { data: linkedOrders } = await supabaseAdmin
+        .from('manual_work_orders')
+        .select('id, short_description')
+        .eq('org_id', orgId)
+        .eq('work_request_id', recordId)
+      const blankIds = (linkedOrders || [])
+        .filter((row) => !String(row.short_description || '').trim())
+        .map((row) => row.id)
+      if (blankIds.length) {
+        await supabaseAdmin
+          .from('manual_work_orders')
+          .update({ short_description: text })
+          .eq('org_id', orgId)
+          .in('id', blankIds)
+      }
     }
   }
 

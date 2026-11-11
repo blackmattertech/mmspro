@@ -239,6 +239,10 @@
   color: var(--color-gray-blue);
 }
 
+.pm-recurrence-toggle .pm-section__hint {
+  margin-top: 8px;
+}
+
 .pm-schedule-block {
   margin-top: 4px;
   padding: 14px;

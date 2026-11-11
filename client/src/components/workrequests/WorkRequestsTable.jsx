@@ -37,7 +37,6 @@ function typeLabel(value) {
     inter_department: 'Inter',
     intra_department: 'Intra',
     user_self: 'Self',
-    manual: 'Manual',
   }
   return map[value] || value || '—'
 }

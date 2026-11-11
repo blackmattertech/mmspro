@@ -19,6 +19,10 @@ import { stopTableRowClick, tableRowClickProps } from '../../lib/clickableTableR
 import { orgPath } from '../../config/navigation'
 import MastersBack from '../../components/company/MastersBack'
 import { formatCityDisplay } from '../../lib/indiaLocations'
+import { exportVendors } from '../../lib/api-vendors'
+import { downloadBlobFile } from '../../lib/api'
+import { ExportCsvButton } from '../../components/shared/ListTableChrome'
+import '../../components/shared/ListTableChrome.css'
 import '../../components/shared/TableColumnPicker.css'
 import '../../components/shared/TableFilterToolbar.css'
 import '../../components/workorders/WorkOrdersPage.css'
@@ -102,6 +106,7 @@ export default function Vendors() {
   const [search, setSearch] = useState('')
   const [columnFilters, setColumnFilters] = useState({})
   const [sortBy, setSortBy] = useState('name_asc')
+  const [exporting, setExporting] = useState(false)
   const debouncedSearch = useDebouncedValue(search.trim())
   const listFilters = useMemo(() => compactFilters(columnFilters), [columnFilters])
   const [modalOpen, setModalOpen] = useState(false)
@@ -217,6 +222,21 @@ export default function Vendors() {
               sort={{ value: sortBy, onChange: setSortBy, options: TABLE_SORT_OPTIONS }}
               actions={(
                 <>
+                  <ExportCsvButton
+                    busy={exporting}
+                    onClick={async () => {
+                      setExporting(true)
+                      try {
+                        const file = await exportVendors({
+                          search: debouncedSearch || undefined,
+                          filters: listFilters,
+                        })
+                        downloadBlobFile(file)
+                      } finally {
+                        setExporting(false)
+                      }
+                    }}
+                  />
                   {canAdd && (
                     <button
                       type="button"

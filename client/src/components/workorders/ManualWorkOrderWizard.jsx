@@ -13,14 +13,13 @@ import { parseLayoutId } from '../../lib/formLayoutIds'
 import {
   canonicalPriority,
   findLayoutFieldByHint,
-  isAssetLayoutSection,
   isAssetPickerLayoutField,
   prepareManualLayout,
   readFieldValue,
 } from '../../lib/manualWorkOrderWizard'
 import OrderedFormLayout from '../forms/OrderedFormLayout'
+import AssetPickerField from '../forms/AssetPickerField'
 import ChecklistOptIn from '../forms/ChecklistOptIn'
-import WorkOrderAssetPicker from './WorkOrderAssetPicker'
 import WorkOrderOrderToField from './WorkOrderOrderToField'
 import WorkOrderMaterialRowsTable, { normalizeMaterialRows } from './WorkOrderMaterialRowsTable'
 import TechnicianMultiSelect from '../workrequests/TechnicianMultiSelect'
@@ -132,7 +131,7 @@ export default function ManualWorkOrderWizard({
   const seededRef = useRef(false)
 
   const displayLayout = useMemo(() => {
-    const prepared = prepareManualLayout(form.layout, form.catalogFields)
+    const prepared = prepareManualLayout(form.layout)
     return withPriorityOptions(withJobNatureOptions(prepared, ctx?.job_natures || []))
   }, [form.layout, form.catalogFields, ctx?.job_natures])
 
@@ -346,52 +345,38 @@ export default function ManualWorkOrderWizard({
     )
   }
 
-  let orderToShown = false
-  let attendedByShown = false
+  const mountAssetPicker = ({ className = '', required = false, field } = {}) => (
+    <AssetPickerField
+      key={field?.id || 'asset_picker'}
+      className={className}
+      departmentId={departmentIdForAssets}
+      requireDepartment={false}
+      equipmentId={equipmentId}
+      onEquipmentIdChange={setEquipmentId}
+      fieldValues={assetFieldValues}
+      onFieldValuesChange={setAssetFieldValues}
+      disabled={saving}
+      required={required}
+    />
+  )
 
-  const mountAssetPicker = (key = 'asset_picker', className = '') => (
-    <div
-      key={key}
-      data-asset-picker-slot="1"
-      className={`wr-asset-picker company-form__field company-form__field--full ${className}`.trim()}
-    >
-      <WorkOrderAssetPicker
-        departmentId={departmentIdForAssets}
-        requireDepartment={false}
-        equipmentId={equipmentId}
-        onEquipmentIdChange={setEquipmentId}
-        fieldValues={assetFieldValues}
-        onFieldValuesChange={setAssetFieldValues}
+  const renderOrderTo = (key, className) => (
+    <div key={key} className={className}>
+      <WorkOrderOrderToField
+        embedded
+        value={assignedDepartmentId}
+        selected={assignedDepartment}
+        onChange={setDepartmentTarget}
         disabled={saving}
       />
     </div>
   )
 
-  const renderOrderTo = (key, className) => {
-    if (orderToShown) return null
-    orderToShown = true
-    return (
-      <div key={key} className={className}>
-        <WorkOrderOrderToField
-          embedded
-          value={assignedDepartmentId}
-          selected={assignedDepartment}
-          onChange={setDepartmentTarget}
-          disabled={saving}
-        />
-      </div>
-    )
-  }
-
   const renderAttendedBy = (key, className, { includeOrderTo = false } = {}) => {
-    if (attendedByShown && !includeOrderTo) return null
-    const showOrderTo = includeOrderTo && !orderToShown
-    if (showOrderTo) orderToShown = true
-    attendedByShown = true
     const techDisabled = saving || (employeesLoading && !(employees || []).length)
     return (
       <div key={key} className={className}>
-        {showOrderTo ? (
+        {includeOrderTo ? (
           <WorkOrderOrderToField
             embedded
             value={assignedDepartmentId}
@@ -402,7 +387,7 @@ export default function ManualWorkOrderWizard({
         ) : null}
         <div
           className="company-form__field company-form__field--full"
-          style={{ marginTop: showOrderTo ? 12 : 0 }}
+          style={{ marginTop: includeOrderTo ? 12 : 0 }}
         >
           <span className="company-form__label">Attended by</span>
           <p className="company-form__hint">People who already completed this work.</p>
@@ -440,7 +425,11 @@ export default function ManualWorkOrderWizard({
   const renderField = (key, props = {}) => {
     const className = props.className || 'company-form__field'
     if (key === 'asset_picker' || key === 'area_id' || key === 'equipment_id') {
-      return mountAssetPicker(key, className)
+      return mountAssetPicker({
+        className,
+        required: Boolean(props.required),
+        field: props.field,
+      })
     }
     if (key === 'order_to_department_id') {
       return renderOrderTo(key, className)
@@ -527,22 +516,24 @@ export default function ManualWorkOrderWizard({
                           />
                         </label>
                         <label className="wo-permit__cell wo-permit__cell--date">
-                          <span className="company-form__label">Date</span>
+                          <span className="company-form__label">Issue date &amp; time</span>
                           <DateField
                             value={row.issue_at}
                             onChange={(value) => setPermitRows((prev) => prev.map((item, i) => (
                               i === index ? { ...item, issue_at: value } : item
                             )))}
+                            withTime
                             disabled={saving}
                           />
                         </label>
                         <label className="wo-permit__cell wo-permit__cell--date">
-                          <span className="company-form__label">Expiry date</span>
+                          <span className="company-form__label">Expiry date &amp; time</span>
                           <DateField
                             value={row.expiry_at}
                             onChange={(value) => setPermitRows((prev) => prev.map((item, i) => (
                               i === index ? { ...item, expiry_at: value } : item
                             )))}
+                            withTime
                             disabled={saving}
                           />
                         </label>
@@ -602,26 +593,12 @@ export default function ManualWorkOrderWizard({
         omitFillershipBadge
         currentEmployeeId={!record?.id ? (session?.employee_id || null) : null}
         renderField={renderField}
-        renderAssetPicker={({ className, field }) => (
-          mountAssetPicker(field?.id || 'asset_picker', className || '')
+        assetPicker={({ className, field, required }) => (
+          mountAssetPicker({ className, required: Boolean(required), field })
         )}
         renderSection={(id, children, section) => {
           const rest = (children || []).filter(Boolean)
-          const hasPicker = rest.some((node) => {
-            const cls = node?.props?.className
-            const slot = node?.props?.['data-asset-picker-slot']
-            return Boolean(slot) || (typeof cls === 'string' && cls.includes('wr-asset-picker'))
-          })
-          const emptySlot = rest.some((node) => (
-            node?.props?.['data-asset-picker-slot']
-            && !(node?.props?.children)
-          ))
-          const injectAsset = isAssetLayoutSection(id, section, displayLayout)
-            && (!hasPicker || emptySlot)
-          const bodyChildren = emptySlot
-            ? rest.filter((node) => !node?.props?.['data-asset-picker-slot'])
-            : rest
-          if (!bodyChildren.length && !injectAsset) return null
+          if (!rest.length) return null
           return (
             <section key={id} className="wr-form-section" aria-labelledby={`${id}-title`}>
               {section.label ? (
@@ -630,10 +607,7 @@ export default function ManualWorkOrderWizard({
                 </header>
               ) : null}
               <div className="wr-form-section__body">
-                {injectAsset ? mountAssetPicker(`section-${id}`) : null}
-                {bodyChildren.length > 0 ? (
-                  <div className="company-form__grid company-form__grid--12">{bodyChildren}</div>
-                ) : null}
+                <div className="company-form__grid company-form__grid--12">{rest}</div>
               </div>
             </section>
           )

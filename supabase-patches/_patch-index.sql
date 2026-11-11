@@ -116,6 +116,8 @@
 --   112-work-order-daily-field-snapshots.sql        → 112-work-order-daily-field-snapshots — Per-day execution field snapshots
 --   113-meter-logger-profile.sql                   → 113-meter-logger-profile — Profile id on the latest meter reading
 --   114-exclude-pm-from-regular-wo-lists.sql       → 114-exclude-pm-from-regular-wo-lists — PM WOs only on Scheduled
+--   115-org-table-column-defaults.sql              → 115-org-table-column-defaults — Saved table column layouts
+--   116-org-checklist-enabled-forms.sql            → 116-org-checklist-enabled-forms — Org forms that may use checklists
 
 --
 -- OTHER:

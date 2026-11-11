@@ -17,7 +17,7 @@ import {
 } from '../../lib/vendorService.js'
 import { buildVendorsTemplate, bulkImportVendors } from '../../lib/vendorBulkService.js'
 import { attachFailedFileToResult } from '../../lib/importErrorWorkbook.js'
-import { parseListControls } from '../../lib/listQuery.js'
+import { parseListControls, sendCsv } from '../../lib/listQuery.js'
 
 const router = Router()
 const canReadVendors = requireModulePermission('vendors', 'read')
@@ -56,16 +56,36 @@ router.get('/next-code', canReadVendors, async (req, res) => {
 
 router.get('/', canPickVendors, async (req, res) => {
   try {
-    const { limit, offset } = parsePagination(req.query)
+    const page = parsePagination(req.query)
     const controls = parseListControls(req.query)
     const picker = !hasModulePermission(req.orgPermissions, 'vendors', 'read')
     const rows = await listVendors(req.userProfile.org_id, {
       search: req.query.search || null,
       filters: controls.filters,
-      limit,
-      offset,
+      limit: controls.exportCsv ? 5000 : page.limit,
+      offset: controls.exportCsv ? 0 : page.offset,
       picker,
     })
+    if (controls.exportCsv) {
+      sendCsv(res, 'vendors.csv', rows.items || rows || [], [
+        { label: 'Vendor ID', value: (row) => row.vendor_code },
+        { label: 'Name', value: (row) => row.name },
+        { label: 'Contact person', value: (row) => row.contact_person },
+        { label: 'Mobile', value: (row) => row.mobile },
+        { label: 'Email', value: (row) => row.email },
+        { label: 'City', value: (row) => row.city },
+        { label: 'State', value: (row) => row.state },
+        { label: 'GSTIN', value: (row) => row.gstin },
+        { label: 'PAN', value: (row) => row.pan },
+        { label: 'Bank name', value: (row) => row.bank_name },
+        { label: 'Account name', value: (row) => row.account_name },
+        { label: 'Account number', value: (row) => row.account_number },
+        { label: 'IFSC', value: (row) => row.ifsc },
+        { label: 'Created', value: (row) => row.created_at },
+        { label: 'Updated', value: (row) => row.updated_at },
+      ])
+      return
+    }
     res.json(rows)
   } catch (err) {
     res.status(500).json({ error: err.message })

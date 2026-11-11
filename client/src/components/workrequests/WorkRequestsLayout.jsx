@@ -24,6 +24,7 @@ import TableColumnPicker from '../shared/TableColumnPicker'
 import { AdvancedFilterMenu } from '../shared/ListTableChrome'
 import { ExportCsvButton } from '../shared/ListTableChrome'
 import PageBreadcrumbs from '../shared/PageBreadcrumbs'
+import PageBack from '../shared/PageBack'
 import NavIcon from '../layout/NavIcon'
 import { WORK_REQUEST_COLUMNS } from './workRequestColumns'
 import {
@@ -265,17 +266,49 @@ export default function WorkRequestsLayout() {
     return <Navigate to={`${orgPath(org.slug, fallbackTab.segment)}${location.search}`} replace />
   }
 
+  const listBackTo = org?.slug
+    ? orgPath(org.slug, fallbackTab?.segment || 'work-request/my')
+    : '#'
+
   return (
     <div className="company-page wo-page">
       <header className="wo-page__top">
         <div className="wo-page__intro">
           <PageBreadcrumbs />
-          <h1 className="wo-page__title">Work Requests</h1>
-          <p className="wo-page__subtitle">Create, track, and manage maintenance requests</p>
+          <h1 className="wo-page__title">
+            {isCreatePage ? 'Create Work Request' : 'Work Requests'}
+          </h1>
+          <p className="wo-page__subtitle">
+            {isCreatePage
+              ? 'Fill in request details and submit for maintenance'
+              : 'Create, track, and manage maintenance requests'}
+          </p>
         </div>
       </header>
 
-      <div className="wr-page__toolbar">
+      <div className={`wr-page__toolbar${isCreatePage ? ' wo-page__toolbar--command' : ''}`}>
+        {isCreatePage ? (
+          <div className="wo-command" role="toolbar" aria-label="Work request create actions">
+            <PageBack to={listBackTo} label="Work Requests" className="page-back--inline" />
+            <span className="wo-command__rule" aria-hidden="true" />
+            <div className="wo-command__actions">
+              {canCreateRequest ? (
+                <MasterBulkActions
+                  onDownload={handleDownloadTemplate}
+                  bulkBusy={bulkBusy}
+                  bulkInputRef={bulkInputRef}
+                  onFileChange={handleBulkFile}
+                  title="Import work requests"
+                  noun="work request"
+                  bulkError={bulkError}
+                  bulkResult={bulkResult}
+                  actionLabel="Import"
+                  showToolbarDownload={false}
+                />
+              ) : null}
+            </div>
+          </div>
+        ) : (
         <div className="wr-page__toolbar-row wr-page__toolbar-row--tabs">
           <nav className="wo-page__tabs" aria-label="Work request views">
             {listTabs.map((tab) => (
@@ -335,23 +368,8 @@ export default function WorkRequestsLayout() {
               )}
             </div>
           )}
-          {canCreateRequest && isCreatePage && (
-            <div className="wr-page__tab-actions">
-              <MasterBulkActions
-                onDownload={handleDownloadTemplate}
-                bulkBusy={bulkBusy}
-                bulkInputRef={bulkInputRef}
-                onFileChange={handleBulkFile}
-                title="Import work requests"
-                noun="work request"
-                bulkError={bulkError}
-                bulkResult={bulkResult}
-                actionLabel="Import"
-                showToolbarDownload={false}
-              />
-            </div>
-          )}
         </div>
+        )}
 
         {isListPage && (
           <div className="wr-page__toolbar-row wr-page__toolbar-row--filters">

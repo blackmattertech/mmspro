@@ -1,4 +1,4 @@
-import { apiFetch } from './api'
+import { apiFetch, apiFetchBlob } from './api'
 import { asListArray } from './listResponse'
 
 function qs(params = {}) {
@@ -19,6 +19,10 @@ export function getTaskTabCounts() {
 export async function getTasksList(params = {}) {
   const data = await apiFetch(`/api/tasks${qs(params)}`)
   return asListArray(data)
+}
+
+export function exportTasks(params = {}) {
+  return apiFetchBlob(`/api/tasks${qs({ ...params, export: 'csv', limit: 5000, offset: 0 })}`)
 }
 
 export function getTasksKanban(params = {}) {

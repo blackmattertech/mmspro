@@ -14,13 +14,11 @@ import WorkOrderAssignmentActions from './WorkOrderAssignmentActions'
 import WorkOrderLifecyclePanel, { formatStatus } from './WorkOrderLifecyclePanel'
 import WorkRequestFormSections from './WorkRequestFormSections'
 import { requestTypeLabel } from '../workrequests/WorkRequestDetailModal'
-import WorkOrderProgressControl from './WorkOrderProgressControl'
 import '../shared/RecordDetailLayout.css'
 import '../dashboard/CreateWorkOrderModal.css'
 import '../company/CompanyShared.css'
 import '../workrequests/WorkRequests.css'
 import './ManualWorkOrder.css'
-import '../shared/StatusCountBar.css'
 
 function formatDate(value) {
   if (!value) return '—'
@@ -240,9 +238,6 @@ export default function ReceivedWorkOrderDetailModal({
                   </MetaItem>
                   <MetaItem label="Request date">{formatDate(workRequest.request_date)}</MetaItem>
                   <MetaItem label="Work order">{view.wo_number || '—'}</MetaItem>
-                  <MetaItem label="Progress %" wide>
-                    <WorkOrderProgressControl detail={view} onUpdated={handleUpdated} />
-                  </MetaItem>
                 </div>
               ) : (
               <div className="wo-received-detail__meta">
@@ -281,10 +276,6 @@ export default function ReceivedWorkOrderDetailModal({
                   <span className={`wo-status wo-status--${view.status}`}>
                     {formatStatus(view.status, statusLabels, view)}
                   </span>
-                </div>
-                <div className="wo-received-detail__meta-progress">
-                  <span className="wo-received-detail__label">Progress %</span>
-                  <WorkOrderProgressControl detail={view} onUpdated={handleUpdated} />
                 </div>
               </div>
               )}
