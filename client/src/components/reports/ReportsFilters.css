@@ -106,8 +106,8 @@
   height: 44px;
   padding: 0;
   border: 1px solid var(--color-light-gray-1);
-  border-radius: var(--radius-sm);
-  background: var(--color-white);
+  border-radius: var(--radius-pill);
+  background: var(--color-light-gray-1);
   color: var(--color-dark-navy);
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
@@ -254,7 +254,46 @@
   .reports-filters__panel--rail {
     max-height: none;
     height: 100%;
-    padding: 16px 16px calc(16px + env(safe-area-inset-bottom, 0px));
+    padding: 28px 18px calc(16px + env(safe-area-inset-bottom, 0px));
+    background: var(--color-white);
+    border-radius: 24px 24px 0 0;
+  }
+
+  .reports-filters__header {
+    align-items: center;
+    margin-bottom: 16px;
+  }
+
+  .reports-filters__title {
+    font-size: 17px;
+    letter-spacing: -0.01em;
+  }
+
+  .reports-filters__subtitle {
+    font-size: 13px;
+  }
+
+  .reports-filters__group {
+    padding: 12px;
+    border: 1px solid var(--color-light-gray-1);
+    border-radius: 16px;
+    background: var(--color-off-white);
+  }
+
+  .reports-filters__group + .reports-filters__group {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--color-light-gray-1);
+  }
+
+  .reports-filters__scroll {
+    padding-right: 0;
+    gap: 0;
+  }
+
+  .reports-columns-grid__item {
+    padding: 10px 8px;
+    border-radius: 12px;
     background: var(--color-white);
   }
 
@@ -262,9 +301,19 @@
     position: sticky;
     bottom: 0;
     z-index: 2;
+    gap: 10px;
+    margin: 0 -18px;
     margin-top: 0;
-    padding: 12px 0 calc(4px + env(safe-area-inset-bottom, 0px));
-    box-shadow: 0 -8px 16px rgba(15, 23, 42, 0.04);
+    padding: 14px 18px calc(10px + env(safe-area-inset-bottom, 0px));
+    border-top: 1px solid var(--color-light-gray-1);
+    background: rgba(255, 255, 255, 0.96);
+    backdrop-filter: blur(8px);
+    box-shadow: 0 -10px 24px rgba(15, 23, 42, 0.06);
+  }
+
+  .reports-filters__actions .company-btn {
+    border-radius: 14px;
+    font-weight: 700;
   }
 }
 
@@ -275,10 +324,9 @@
   }
 
   .reports-filters__actions {
-    flex-direction: column-reverse;
-  }
-
-  .reports-filters__actions .company-btn {
-    width: 100%;
+    margin-left: -14px;
+    margin-right: -14px;
+    padding-left: 14px;
+    padding-right: 14px;
   }
 }

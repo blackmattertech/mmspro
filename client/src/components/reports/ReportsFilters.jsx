@@ -253,7 +253,7 @@ export default function ReportsFilters({
               Filters
               {activeCount > 0 ? <span className="reports-filters__badge">{activeCount}</span> : null}
             </strong>
-            <p className="reports-filters__subtitle">Adjust filters, then Search to apply.</p>
+            <p className="reports-filters__subtitle">Tune the report, then tap Search.</p>
           </div>
           <div className="reports-filters__header-actions">
             <button type="button" className="reports-filters__clear-link" onClick={handleClear}>

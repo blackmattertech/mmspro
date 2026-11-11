@@ -644,44 +644,55 @@ export default function ReportPage() {
             </div>
 
             <div className="company-panel reports-results">
-            <div className="reports-table-wrap company-table-wrap">
-              <div className="company-table-scroll">
-              <table className="company-table master-table reports-table">
-                <thead>
-                  <tr>
-                    {visibleCols.map((col) => (
-                      <th key={col.id}>{col.label}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.length === 0 ? (
-                    <TableEmptyRow colSpan={Math.max(visibleCols.length, 1)}>
-                      <p>No rows for this period.</p>
-                      <p className="wo-page__empty-hint">Try adjusting the filters and click Search.</p>
-                    </TableEmptyRow>
-                  ) : rows.map((row) => (
-                    <tr key={row.id}>
-                      {visibleCols.map((col) => (
-                        <td
-                          key={col.id}
-                          className={WRAP_COLUMNS.has(col.id) ? 'reports-table__cell--wrap' : undefined}
-                        >
-                          <ReportCell
-                            columnId={col.id}
-                            value={row[col.id]}
-                            row={row}
-                            statusLabels={statusLabels}
-                            reportKind={reportKind}
-                          />
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <div className="reports-results__head">
+                <div>
+                  <h2 className="reports-results__title">Results</h2>
+                  <p className="reports-results__meta">
+                    {report?.total != null
+                      ? `${report.total.toLocaleString()} row${report.total === 1 ? '' : 's'}`
+                      : 'Filtered report rows'}
+                  </p>
+                </div>
+                <span className="reports-results__hint">Swipe table sideways</span>
               </div>
-            </div>
+              <div className="reports-table-wrap company-table-wrap">
+                <div className="company-table-scroll">
+                  <table className="company-table master-table reports-table">
+                    <thead>
+                      <tr>
+                        {visibleCols.map((col) => (
+                          <th key={col.id}>{col.label}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.length === 0 ? (
+                        <TableEmptyRow colSpan={Math.max(visibleCols.length, 1)}>
+                          <p>No rows for this period.</p>
+                          <p className="wo-page__empty-hint">Try adjusting the filters and tap Search.</p>
+                        </TableEmptyRow>
+                      ) : rows.map((row) => (
+                        <tr key={row.id}>
+                          {visibleCols.map((col) => (
+                            <td
+                              key={col.id}
+                              className={WRAP_COLUMNS.has(col.id) ? 'reports-table__cell--wrap' : undefined}
+                            >
+                              <ReportCell
+                                columnId={col.id}
+                                value={row[col.id]}
+                                row={row}
+                                statusLabels={statusLabels}
+                                reportKind={reportKind}
+                              />
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
             </div>
           </>
         )}
