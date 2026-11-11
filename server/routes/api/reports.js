@@ -13,6 +13,7 @@ import {
   buildReportExport,
   deliverScheduleReport,
   emailReportExport,
+  previewReportEmail,
 } from '../../lib/reportDelivery.js'
 import {
   createCustomReport,
@@ -26,11 +27,13 @@ import {
   createReportSchedule,
   deleteReportSchedule,
   getReportSchedule,
+  listAllReportSchedules,
   listReportSchedules,
   markScheduleSentNow,
   parseEmails,
   updateReportSchedule,
 } from '../../lib/reportScheduleService.js'
+import { normalizeEmailBodyText } from '../../lib/reportEmail.js'
 
 const router = Router()
 
@@ -201,6 +204,17 @@ router.get('/customs', requireAnyModulePermission(
   }
 })
 
+router.get('/schedules', requireAnyModulePermission(
+  REPORT_MODULE_KEYS.map((key) => [key, 'read']),
+), async (req, res) => {
+  try {
+    const items = await listAllReportSchedules(req.userProfile.org_id)
+    res.json({ items })
+  } catch (err) {
+    sendError(res, err)
+  }
+})
+
 router.get('/:key', requireReportRead, async (req, res) => {
   try {
     const data = await getReportData(
@@ -264,8 +278,37 @@ router.post('/:key/send', requireReportRead, requireOrgAdmin, async (req, res) =
     const body = req.body || {}
     const emails = parseEmails(body.emails)
     const bundle = await exportFromRequest(req, body)
-    const result = await emailReportExport(bundle, emails)
+    const result = await emailReportExport(bundle, emails, {
+      customBodyText: normalizeEmailBodyText(body.email_body_text),
+    })
     res.json({ ok: true, ...result })
+  } catch (err) {
+    sendError(res, err)
+  }
+})
+
+router.post('/:key/email-preview', requireReportRead, async (req, res) => {
+  try {
+    const body = req.body || {}
+    const preview = await previewReportEmail({
+      orgId: req.userProfile.org_id,
+      session: req.orgPermissions,
+      reportKey: req.reportCatalog.key,
+      customReportId: body.custom_report_id || undefined,
+      dateFrom: body.date_from,
+      dateTo: body.date_to,
+      dateWindow: body.date_window,
+      locationId: body.location_id || body.facility_id,
+      search: body.search,
+      filters: reportQueryFrom(body),
+      columns: body.columns,
+      customBodyText: normalizeEmailBodyText(body.email_body_text),
+    })
+    res.json({
+      subject: preview.subject,
+      html: preview.htmlContent,
+      text: preview.textContent,
+    })
   } catch (err) {
     sendError(res, err)
   }

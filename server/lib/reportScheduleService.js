@@ -10,6 +10,9 @@ import {
   WEEKDAY_FREQUENCIES,
 } from './reportConstants.js'
 import { getCustomReport } from './reportCustomService.js'
+import { normalizeEmailBodyText } from './reportEmail.js'
+
+const ALL_SCHEDULES_LIMIT = 200
 
 function httpError(message, status = 400) {
   const err = new Error(message)
@@ -89,6 +92,7 @@ function normalizeScheduleInput(body, reportKey) {
     month_day: monthDay,
     date_window: dateWindow,
     is_active: body.is_active !== false,
+    email_body_text: normalizeEmailBodyText(body.email_body_text),
   }
 }
 
@@ -118,30 +122,43 @@ function shapeSchedule(row) {
   }
 }
 
-export async function listReportSchedules(orgId, reportKey) {
-  const catalog = getReportCatalog(reportKey)
-  if (!catalog) throw httpError('Unknown report', 404)
-  const { data, error } = await supabaseAdmin
+async function querySchedules(orgId, { reportKey = null, limit = ALL_SCHEDULES_LIMIT } = {}) {
+  let query = supabaseAdmin
     .from('report_schedules')
     .select(SCHEDULE_WITH_CUSTOM)
     .eq('org_id', orgId)
-    .eq('report_key', catalog.key)
-    .order('created_at', { ascending: false })
-  if (error) {
-    if (isMissingReportTable(error)) return []
-    const fallback = await supabaseAdmin
-      .from('report_schedules')
-      .select('*')
-      .eq('org_id', orgId)
-      .eq('report_key', catalog.key)
-      .order('created_at', { ascending: false })
-    if (fallback.error) {
-      if (isMissingReportTable(fallback.error)) return []
-      throw fallback.error
-    }
-    return fallback.data || []
+    .order('updated_at', { ascending: false })
+    .limit(limit)
+  if (reportKey) query = query.eq('report_key', reportKey)
+
+  const { data, error } = await query
+  if (!error) return (data || []).map(shapeSchedule)
+
+  if (isMissingReportTable(error)) return []
+
+  let fallback = supabaseAdmin
+    .from('report_schedules')
+    .select('*')
+    .eq('org_id', orgId)
+    .order('updated_at', { ascending: false })
+    .limit(limit)
+  if (reportKey) fallback = fallback.eq('report_key', reportKey)
+  const result = await fallback
+  if (result.error) {
+    if (isMissingReportTable(result.error)) return []
+    throw result.error
   }
-  return (data || []).map(shapeSchedule)
+  return result.data || []
+}
+
+export async function listReportSchedules(orgId, reportKey) {
+  const catalog = getReportCatalog(reportKey)
+  if (!catalog) throw httpError('Unknown report', 404)
+  return querySchedules(orgId, { reportKey: catalog.key })
+}
+
+export async function listAllReportSchedules(orgId) {
+  return querySchedules(orgId, { limit: ALL_SCHEDULES_LIMIT })
 }
 
 export async function createReportSchedule(orgId, reportKey, body, now = new Date()) {
@@ -181,6 +198,7 @@ export async function updateReportSchedule(orgId, id, body, now = new Date()) {
     && body.send_hour === undefined
     && body.date_window === undefined
     && body.custom_report_id === undefined
+    && body.email_body_text === undefined
   )
 
   if (pauseOnly) {
@@ -212,6 +230,9 @@ export async function updateReportSchedule(orgId, id, body, now = new Date()) {
     date_window: body.date_window ?? existing.date_window,
     is_active: body.is_active === undefined ? existing.is_active : body.is_active,
     custom_report_id: body.custom_report_id ?? existing.custom_report_id,
+    email_body_text: body.email_body_text === undefined
+      ? existing.email_body_text
+      : body.email_body_text,
   }
   const payload = normalizeScheduleInput(merged, existing.report_key)
   const customFields = await resolveCustomReportFields(

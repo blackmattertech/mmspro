@@ -104,10 +104,8 @@ export async function buildReportExport({
   }
 }
 
-export async function emailReportExport(exportBundle, recipients) {
-  const list = Array.isArray(recipients) ? recipients.filter(Boolean) : []
-  if (!list.length) throw new Error('Add at least one recipient email')
-  const { report, title, period, pdf, csv, pdfFilename, csvFilename } = exportBundle
+export function buildEmailFromExport(exportBundle, { customBodyText = null } = {}) {
+  const { report, title, period, pdfFilename, csvFilename } = exportBundle
   const subject = `${report.org_name}: ${title} (${period})`
   const { htmlContent, textContent } = buildReportEmailContent({
     report,
@@ -116,7 +114,16 @@ export async function emailReportExport(exportBundle, recipients) {
     columns: exportBundle.columns,
     pdfFilename,
     csvFilename,
+    customBodyText,
   })
+  return { subject, htmlContent, textContent }
+}
+
+export async function emailReportExport(exportBundle, recipients, { customBodyText = null } = {}) {
+  const list = Array.isArray(recipients) ? recipients.filter(Boolean) : []
+  if (!list.length) throw new Error('Add at least one recipient email')
+  const { report, pdf, csv, pdfFilename, csvFilename } = exportBundle
+  const { subject, htmlContent, textContent } = buildEmailFromExport(exportBundle, { customBodyText })
   const attachments = [
     {
       Filename: pdfFilename,
@@ -145,6 +152,112 @@ export async function emailReportExport(exportBundle, recipients) {
   return { delivered, total: report.total }
 }
 
+/**
+ * Build a branded email preview without sending.
+ * Uses a lightweight report fetch for real KPIs/period when dates are provided;
+ * otherwise uses catalog placeholders so the schedule modal stays fast.
+ */
+export async function previewReportEmail({
+  orgId,
+  session,
+  reportKey,
+  customReportId,
+  dateFrom,
+  dateTo,
+  dateWindow,
+  locationId,
+  search,
+  filters = {},
+  columns = [],
+  customBodyText = null,
+  now = new Date(),
+}) {
+  const catalog = getReportCatalog(reportKey)
+  if (!catalog) {
+    const err = new Error('Unknown report')
+    err.status = 404
+    throw err
+  }
+
+  let from = dateFrom
+  let to = dateTo
+  if ((!from || !to) && dateWindow) {
+    const window = resolveDateWindow(dateWindow, now)
+    from = window.date_from
+    to = window.date_to
+  }
+
+  let bundle
+  try {
+    if (from && to) {
+      bundle = await buildReportExport({
+        orgId,
+        session,
+        reportKey,
+        customReportId,
+        dateFrom: from,
+        dateTo: to,
+        search,
+        locationId,
+        filters,
+        columns,
+        now,
+      })
+    }
+  } catch {
+    bundle = null
+  }
+
+  if (!bundle) {
+    let title = catalog.title
+    let resolvedColumns = filterReportColumns(catalog.kind, columns)
+    let resolvedLocation = locationId || null
+    if (customReportId) {
+      try {
+        const custom = await getCustomReport(orgId, customReportId)
+        if (custom.report_key === catalog.key) {
+          title = custom.name || title
+          resolvedColumns = filterReportColumns(catalog.kind, custom.columns)
+          resolvedLocation = custom.location_id || resolvedLocation
+        }
+      } catch {
+        /* keep catalog defaults */
+      }
+    }
+    if (!resolvedColumns.length) {
+      resolvedColumns = columnsForReport(catalog.kind).map((col) => col.id)
+    }
+    const period = from && to ? periodLabel(from, to) : 'Selected period'
+    const pdfFilename = reportPdfFilename(title, from || 'preview', to || 'preview')
+    const csvFilename = reportCsvFilename(title, from || 'preview', to || 'preview')
+    const report = {
+      key: catalog.key,
+      kind: catalog.kind,
+      title,
+      org_name: 'Your organization',
+      total: 0,
+      generated_at: now.toISOString(),
+      kpis: [],
+      filters: {
+        date_from: from || null,
+        date_to: to || null,
+        location_name: resolvedLocation ? 'Selected plant' : 'All plants',
+        search: search || '',
+      },
+    }
+    return buildEmailFromExport({
+      report,
+      title,
+      period,
+      columns: resolvedColumns,
+      pdfFilename,
+      csvFilename,
+    }, { customBodyText })
+  }
+
+  return buildEmailFromExport(bundle, { customBodyText })
+}
+
 export async function deliverScheduleReport(schedule, now = new Date()) {
   const catalog = getReportCatalog(schedule.report_key)
   if (!catalog) throw new Error(`Unknown report ${schedule.report_key}`)
@@ -161,5 +274,7 @@ export async function deliverScheduleReport(schedule, now = new Date()) {
     now,
   })
   const recipients = Array.isArray(schedule.emails) ? schedule.emails : []
-  return emailReportExport(bundle, recipients)
+  return emailReportExport(bundle, recipients, {
+    customBodyText: schedule.email_body_text || null,
+  })
 }
