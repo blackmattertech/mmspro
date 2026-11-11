@@ -3,10 +3,12 @@ import { NavLink, useLocation } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
 import { useOrg } from '../../hooks/useOrg'
 import { usePermissions } from '../../hooks/usePermissions'
+import { useReportNavShortcuts } from '../../hooks/useReportNavShortcuts'
 import { getNavItems, getShortcutOptions } from '../../config/navigation'
 import { orgQuickAccessScope } from '../../hooks/useQuickAccess'
 import { formatAccountRole } from '../../lib/accountRoles'
 import { assetUrl } from '../../lib/assets'
+import { REPORT_MODULE_KEYS } from '../../lib/accessModules'
 import NavIcon from './NavIcon'
 import SidebarUserFooter from './SidebarUserFooter'
 import SidebarQuickAccess from './SidebarQuickAccess'
@@ -27,7 +29,17 @@ export default function Sidebar({ collapsed = false, onToggle, mobileOpen = fals
   const { org, orgRole } = useOrg()
   const { canRead, loading: permsLoading, accessRole, isOrgAdmin } = usePermissions()
   const location = useLocation()
-  const navItems = org && !permsLoading ? getNavItems(org.slug, { canRead, disabledModules: org.disabled_modules }) : []
+  const canReadReports = !permsLoading && (
+    canRead('reports') || REPORT_MODULE_KEYS.some((key) => canRead(key))
+  )
+  const reportShortcuts = useReportNavShortcuts({ enabled: Boolean(org) && canReadReports })
+  const navItems = org && !permsLoading
+    ? getNavItems(org.slug, {
+      canRead,
+      disabledModules: org.disabled_modules,
+      reportShortcuts,
+    })
+    : []
   const quickAccessScope = org ? orgQuickAccessScope(org.id) : null
   const shortcutCatalog = useMemo(
     () => (org ? getShortcutOptions(org.slug, { disabledModules: org.disabled_modules }) : []),
@@ -41,9 +53,13 @@ export default function Sidebar({ collapsed = false, onToggle, mobileOpen = fals
 
   useEffect(() => {
     if (!org || permsLoading) return
-    const items = getNavItems(org.slug, { canRead, disabledModules: org.disabled_modules })
+    const items = getNavItems(org.slug, {
+      canRead,
+      disabledModules: org.disabled_modules,
+      reportShortcuts,
+    })
     setOpenMenu(findActiveParentId(items, location.pathname))
-  }, [location.pathname, org, canRead, permsLoading])
+  }, [location.pathname, org, canRead, permsLoading, reportShortcuts])
 
   const toggleMenu = (id) => {
     if (visualCollapsed) return
@@ -100,25 +116,69 @@ export default function Sidebar({ collapsed = false, onToggle, mobileOpen = fals
         {navItems.map((item) => {
           if (item.children) {
             const isOpen = !visualCollapsed && openMenu === item.id
+            const parentActive = item.isPathActive
+              ? item.isPathActive(location.pathname)
+              : false
 
             return (
               <div key={item.id} className="sidebar__group">
-                <button
-                  type="button"
-                  className={`sidebar__link sidebar__link--parent`}
-                  onClick={() => toggleMenu(item.id)}
-                >
-                  <NavIcon name={item.icon} />
-                  <span className="sidebar__link-label">{item.label}</span>
-                  {visualCollapsed && (
-                    <span className="sidebar__tooltip" aria-hidden="true">{item.label}</span>
-                  )}
-                  {!visualCollapsed && (
-                    <span className={`sidebar__chevron ${isOpen ? 'sidebar__chevron--open' : ''}`}>
-                      <NavIcon name="chevron" />
-                    </span>
-                  )}
-                </button>
+                {item.id === 'reports' && item.path ? (
+                  <NavLink
+                    to={item.path}
+                    end
+                    className={() =>
+                      `sidebar__link sidebar__link--parent ${parentActive ? 'sidebar__link--active' : ''}`
+                    }
+                    onClick={() => {
+                      if (!visualCollapsed) setOpenMenu(item.id)
+                    }}
+                  >
+                    <NavIcon name={item.icon} />
+                    <span className="sidebar__link-label">{item.label}</span>
+                    {visualCollapsed && (
+                      <span className="sidebar__tooltip" aria-hidden="true">{item.label}</span>
+                    )}
+                    {!visualCollapsed && (
+                      <span
+                        className={`sidebar__chevron ${isOpen ? 'sidebar__chevron--open' : ''}`}
+                        onClick={(event) => {
+                          event.preventDefault()
+                          event.stopPropagation()
+                          toggleMenu(item.id)
+                        }}
+                        role="button"
+                        tabIndex={0}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault()
+                            event.stopPropagation()
+                            toggleMenu(item.id)
+                          }
+                        }}
+                        aria-label={isOpen ? 'Collapse reports' : 'Expand reports'}
+                      >
+                        <NavIcon name="chevron" />
+                      </span>
+                    )}
+                  </NavLink>
+                ) : (
+                  <button
+                    type="button"
+                    className={`sidebar__link sidebar__link--parent`}
+                    onClick={() => toggleMenu(item.id)}
+                  >
+                    <NavIcon name={item.icon} />
+                    <span className="sidebar__link-label">{item.label}</span>
+                    {visualCollapsed && (
+                      <span className="sidebar__tooltip" aria-hidden="true">{item.label}</span>
+                    )}
+                    {!visualCollapsed && (
+                      <span className={`sidebar__chevron ${isOpen ? 'sidebar__chevron--open' : ''}`}>
+                        <NavIcon name="chevron" />
+                      </span>
+                    )}
+                  </button>
+                )}
                 {visualCollapsed ? (
                   <div className="sidebar__flyout">
                     <span className="sidebar__flyout-title">{item.label}</span>

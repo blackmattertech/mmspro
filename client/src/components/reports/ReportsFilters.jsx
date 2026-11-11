@@ -1,8 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
+import { useMemo } from 'react'
 import DateField from '../ui/DateField'
 import FilterableSelect from '../ui/FilterableSelect'
-import { isEventInFixedPopover, useFixedPopover } from '../../hooks/useFixedPopover'
 import { EMPTY_REPORT_FILTERS } from '../../lib/reportColumns'
 import '../company/CompanyShared.css'
 import './ReportsFilters.css'
@@ -89,41 +87,31 @@ export default function ReportsFilters({
   activeCount = 0,
   onSearch,
   onClear,
+  reportKind = 'unified',
+  columnDefs = [],
+  selectedColumnIds = [],
+  onToggleColumn,
+  onSelectAllColumns,
+  onResetColumns,
 }) {
-  const [open, setOpen] = useState(false)
-  const triggerRef = useRef(null)
-  const { popoverRef, style, popoverProps } = useFixedPopover({
-    open,
-    anchorRef: triggerRef,
-    matchWidth: false,
-    minWidth: 720,
-    maxHeight: 640,
-    gap: 8,
-    align: 'start',
-  })
+  const selectedSet = useMemo(() => new Set(selectedColumnIds), [selectedColumnIds])
+  const allSelected = columnDefs.length > 0 && columnDefs.every((col) => selectedSet.has(col.id))
 
-  useEffect(() => {
-    if (!open) return undefined
-    const onPointerDown = (event) => {
-      if (
-        triggerRef.current?.contains(event.target)
-        || popoverRef.current?.contains(event.target)
-        || isEventInFixedPopover(event)
-      ) {
-        return
-      }
-      setOpen(false)
-    }
-    const onKeyDown = (event) => {
-      if (event.key === 'Escape') setOpen(false)
-    }
-    document.addEventListener('mousedown', onPointerDown)
-    document.addEventListener('keydown', onKeyDown)
-    return () => {
-      document.removeEventListener('mousedown', onPointerDown)
-      document.removeEventListener('keydown', onKeyDown)
-    }
-  }, [open, popoverRef])
+  const showOrderType = reportKind === 'unified'
+  const showOrderDepts = reportKind === 'unified' || reportKind === 'work_request'
+  const showJobNature = reportKind === 'unified' || reportKind === 'work_request'
+  const showAssets = reportKind !== 'warranty' && reportKind !== 'plant' && reportKind !== 'task'
+  const showJob = !['meter_reading', 'equipment', 'plant'].includes(reportKind)
+  const showCreatedBy = ['unified', 'pm_plan', 'meter_reading', 'task'].includes(reportKind)
+  const showReportedBy = reportKind === 'unified' || reportKind === 'work_request'
+  const showAssignedTo = ['unified', 'pm_plan', 'task'].includes(reportKind)
+  const dateLabel = reportKind === 'pm_plan'
+    ? 'Due date'
+    : reportKind === 'work_request'
+      ? 'Request date'
+      : reportKind === 'meter_reading'
+        ? 'Reading date'
+        : 'Date'
 
   const equipment = options?.equipment || []
   const areaOptions = options?.areas || []
@@ -247,98 +235,83 @@ export default function ReportsFilters({
         facility_id: canSelectLocation ? '' : filters.facility_id,
       })
     }
-    setOpen(false)
-  }
-
-  const handleSearch = () => {
-    onSearch?.()
-    setOpen(false)
   }
 
   return (
-    <div className="reports-filters">
-      <button
-        ref={triggerRef}
-        type="button"
-        className={`reports-filters__trigger${activeCount > 0 ? ' reports-filters__trigger--active' : ''}${open ? ' reports-filters__trigger--open' : ''}`}
-        onClick={() => setOpen((value) => !value)}
-        aria-expanded={open}
-        aria-haspopup="dialog"
-      >
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-          <path d="M2 4H14M4 8H12M6 12H10" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-        </svg>
-        Filters
-        {activeCount > 0 ? <span className="reports-filters__badge">{activeCount}</span> : null}
-      </button>
-
-      {open && style && createPortal(
-        <div
-          className="reports-filters__panel"
-          role="dialog"
-          aria-label="Report filters"
-          {...popoverProps}
-        >
-          <div className="reports-filters__header">
-            <div>
-              <strong className="reports-filters__title">Filters</strong>
-              <p className="reports-filters__subtitle">Choose dates and fields, then search</p>
-            </div>
-            <button type="button" className="reports-filters__clear-link" onClick={handleClear}>
-              Clear all
-            </button>
+    <div className="reports-filters reports-filters--rail">
+      <div className="reports-filters__panel reports-filters__panel--rail">
+        <div className="reports-filters__header">
+          <div>
+            <strong className="reports-filters__title">
+              Filters
+              {activeCount > 0 ? <span className="reports-filters__badge">{activeCount}</span> : null}
+            </strong>
+            <p className="reports-filters__subtitle">All filters stay visible. Click Search to apply.</p>
           </div>
+          <button type="button" className="reports-filters__clear-link" onClick={handleClear}>
+            Clear all
+          </button>
+        </div>
 
-          <div className="reports-filters__scroll">
-            <section className="reports-filters__group">
-              <h3 className="reports-filters__group-title">Log date</h3>
-              <div className="reports-filters__grid">
-                <label className="company-form__field reports-filters__field">
-                  <span className="company-form__label">From Date</span>
-                  <DateField
-                    value={filters.from_date}
-                    onChange={(value) => setFilter('from_date', value)}
-                    placeholder="From date"
-                  />
-                </label>
-                <label className="company-form__field reports-filters__field">
-                  <span className="company-form__label">To Date</span>
-                  <DateField
-                    value={filters.to_date}
-                    onChange={(value) => setFilter('to_date', value)}
-                    placeholder="To date"
-                  />
-                </label>
-              </div>
-            </section>
+        <div className="reports-filters__scroll">
+          <section className="reports-filters__group">
+            <h3 className="reports-filters__group-title">{dateLabel}</h3>
+            <div className="reports-filters__grid reports-filters__grid--rail">
+              <label className="company-form__field reports-filters__field">
+                <span className="company-form__label">From Date</span>
+                <DateField
+                  value={filters.from_date}
+                  onChange={(value) => setFilter('from_date', value)}
+                  placeholder="From date"
+                />
+              </label>
+              <label className="company-form__field reports-filters__field">
+                <span className="company-form__label">To Date</span>
+                <DateField
+                  value={filters.to_date}
+                  onChange={(value) => setFilter('to_date', value)}
+                  placeholder="To date"
+                />
+              </label>
+            </div>
+          </section>
 
+          {(showOrderType || showOrderDepts) && (
             <section className="reports-filters__group">
               <h3 className="reports-filters__group-title">Order</h3>
-              <div className="reports-filters__grid reports-filters__grid--3">
-                <SelectField
-                  label="Order Type"
-                  value={filters.order_type}
-                  onChange={(value) => setFilter('order_type', value)}
-                  options={options?.order_types || []}
-                />
-                <SelectField
-                  label="Order From"
-                  value={filters.order_from}
-                  onChange={(value) => setFilter('order_from', value)}
-                  options={options?.departments || []}
-                />
-                <SelectField
-                  label="Order To"
-                  value={filters.order_to}
-                  onChange={(value) => setFilter('order_to', value)}
-                  options={options?.departments || []}
-                />
+              <div className="reports-filters__grid reports-filters__grid--rail">
+                {showOrderType && (
+                  <SelectField
+                    label="Order Type"
+                    value={filters.order_type}
+                    onChange={(value) => setFilter('order_type', value)}
+                    options={options?.order_types || []}
+                  />
+                )}
+                {showOrderDepts && (
+                  <>
+                    <SelectField
+                      label="Order From"
+                      value={filters.order_from}
+                      onChange={(value) => setFilter('order_from', value)}
+                      options={options?.departments || []}
+                    />
+                    <SelectField
+                      label="Order To"
+                      value={filters.order_to}
+                      onChange={(value) => setFilter('order_to', value)}
+                      options={options?.departments || []}
+                    />
+                  </>
+                )}
               </div>
             </section>
+          )}
 
+          {showAssets && (
             <section className="reports-filters__group">
               <h3 className="reports-filters__group-title">Assets</h3>
-              <div className="reports-filters__grid">
+              <div className="reports-filters__grid reports-filters__grid--rail">
                 <SelectField
                   label="Area"
                   value={filters.area_id}
@@ -352,93 +325,166 @@ export default function ReportsFilters({
                   options={facilityOptions}
                   disabled={!canSelectLocation}
                 />
-                <SelectField
-                  label="Asset"
-                  value={filters.equipment_id}
-                  onChange={(value) => setFilter('equipment_id', value)}
-                  options={equipmentOptions}
-                />
-                <SelectField
-                  label="Asset Type"
-                  value={filters.equipment_type}
-                  onChange={(value) => setFilter('equipment_type', value)}
-                  options={typeOptions}
-                />
-                <SelectField
-                  label="Asset Capacity"
-                  value={filters.equipment_capacity}
-                  onChange={(value) => setFilter('equipment_capacity', value)}
-                  options={capacityOptions}
-                />
-                <SelectField
-                  label="Asset Tag"
-                  value={filters.equipment_tag}
-                  onChange={(value) => setFilter('equipment_tag', value)}
-                  options={tagOptions}
-                />
+                {reportKind !== 'plant' && (
+                  <>
+                    <SelectField
+                      label="Asset"
+                      value={filters.equipment_id}
+                      onChange={(value) => setFilter('equipment_id', value)}
+                      options={equipmentOptions}
+                    />
+                    <SelectField
+                      label="Asset Type"
+                      value={filters.equipment_type}
+                      onChange={(value) => setFilter('equipment_type', value)}
+                      options={typeOptions}
+                    />
+                    <SelectField
+                      label="Asset Capacity"
+                      value={filters.equipment_capacity}
+                      onChange={(value) => setFilter('equipment_capacity', value)}
+                      options={capacityOptions}
+                    />
+                    <SelectField
+                      label="Asset Tag"
+                      value={filters.equipment_tag}
+                      onChange={(value) => setFilter('equipment_tag', value)}
+                      options={tagOptions}
+                    />
+                  </>
+                )}
               </div>
             </section>
+          )}
 
+          {showJob && (
             <section className="reports-filters__group">
               <h3 className="reports-filters__group-title">Job</h3>
-              <div className="reports-filters__grid reports-filters__grid--3">
+              <div className="reports-filters__grid reports-filters__grid--rail">
                 <SelectField
-                  label="Job Priority"
+                  label="Priority"
                   value={filters.priority}
                   onChange={(value) => setFilter('priority', value)}
                   options={options?.priorities || []}
                 />
                 <SelectField
-                  label="Job Status"
+                  label="Status"
                   value={filters.status}
                   onChange={(value) => setFilter('status', value)}
-                  options={options?.statuses || []}
+                  options={
+                    reportKind === 'warranty'
+                      ? [
+                        { value: 'Active', label: 'Active' },
+                        { value: 'Expired', label: 'Expired' },
+                      ]
+                      : (options?.statuses || [])
+                  }
                 />
+                {showJobNature && (
+                  <SelectField
+                    label="Job Nature"
+                    value={filters.job_nature}
+                    onChange={(value) => setFilter('job_nature', value)}
+                    options={options?.job_natures || []}
+                  />
+                )}
+              </div>
+            </section>
+          )}
+
+          {(reportKind === 'task' || reportKind === 'warranty') && (
+            <section className="reports-filters__group">
+              <h3 className="reports-filters__group-title">Location</h3>
+              <div className="reports-filters__grid reports-filters__grid--rail">
                 <SelectField
-                  label="Job Nature"
-                  value={filters.job_nature}
-                  onChange={(value) => setFilter('job_nature', value)}
-                  options={options?.job_natures || []}
+                  label="Plant / Facility"
+                  value={filters.facility_id}
+                  onChange={(value) => setFilter('facility_id', value)}
+                  options={facilityOptions}
+                  disabled={!canSelectLocation}
                 />
               </div>
             </section>
+          )}
 
+          {(showCreatedBy || showReportedBy || showAssignedTo) && (
             <section className="reports-filters__group">
               <h3 className="reports-filters__group-title">User</h3>
-              <div className="reports-filters__grid reports-filters__grid--3">
-                <SelectField
-                  label="Created By"
-                  value={filters.created_by}
-                  onChange={(value) => setFilter('created_by', value)}
-                  options={options?.created_by || []}
-                />
-                <SelectField
-                  label="Reported By"
-                  value={filters.reported_by}
-                  onChange={(value) => setFilter('reported_by', value)}
-                  options={options?.reported_by || []}
-                />
-                <SelectField
-                  label="Assigned To"
-                  value={filters.assigned_to}
-                  onChange={(value) => setFilter('assigned_to', value)}
-                  options={options?.assigned_to || []}
-                />
+              <div className="reports-filters__grid reports-filters__grid--rail">
+                {showCreatedBy && (
+                  <SelectField
+                    label="Created By"
+                    value={filters.created_by}
+                    onChange={(value) => setFilter('created_by', value)}
+                    options={options?.created_by || []}
+                  />
+                )}
+                {showReportedBy && (
+                  <SelectField
+                    label="Reported By"
+                    value={filters.reported_by}
+                    onChange={(value) => setFilter('reported_by', value)}
+                    options={options?.reported_by || []}
+                  />
+                )}
+                {showAssignedTo && (
+                  <SelectField
+                    label="Assigned To"
+                    value={filters.assigned_to}
+                    onChange={(value) => setFilter('assigned_to', value)}
+                    options={options?.assigned_to || []}
+                  />
+                )}
               </div>
             </section>
-          </div>
+          )}
 
-          <div className="reports-filters__actions">
-            <button type="button" className="company-btn company-btn--secondary" onClick={handleClear}>
-              Clear
-            </button>
-            <button type="button" className="company-btn company-btn--primary" onClick={handleSearch}>
-              Search
-            </button>
-          </div>
-        </div>,
-        document.body,
-      )}
+          {columnDefs.length > 0 && (
+            <section className="reports-filters__group">
+              <div className="reports-filters__group-heading">
+                <h3 className="reports-filters__group-title">Columns</h3>
+                <div className="reports-filters__group-actions">
+                  <button
+                    type="button"
+                    className="reports-filters__clear-link"
+                    onClick={() => (allSelected ? onResetColumns?.() : onSelectAllColumns?.())}
+                  >
+                    {allSelected ? 'Reset' : 'Select all'}
+                  </button>
+                </div>
+              </div>
+              <p className="reports-filters__hint">
+                {selectedColumnIds.length} of {columnDefs.length} selected
+              </p>
+              <div className="reports-columns-grid" role="group" aria-label="Report columns">
+                {columnDefs.map((col) => {
+                  const checked = selectedSet.has(col.id)
+                  return (
+                    <label key={col.id} className="reports-columns-grid__item">
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        disabled={checked && selectedColumnIds.length <= 1}
+                        onChange={() => onToggleColumn?.(col.id)}
+                      />
+                      <span>{col.label}</span>
+                    </label>
+                  )
+                })}
+              </div>
+            </section>
+          )}
+        </div>
+
+        <div className="reports-filters__actions">
+          <button type="button" className="company-btn company-btn--secondary" onClick={handleClear}>
+            Clear
+          </button>
+          <button type="button" className="company-btn company-btn--primary" onClick={() => onSearch?.()}>
+            Search
+          </button>
+        </div>
+      </div>
     </div>
   )
 }

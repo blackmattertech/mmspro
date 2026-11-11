@@ -256,8 +256,12 @@ export default function App() {
                 element={withModule(REPORT_MODULE_KEYS, <ReportPage />)}
               />
               <Route
-                path="reports/:legacy"
-                element={<Navigate to=".." relative="path" replace />}
+                path="reports/saved/:customId"
+                element={withModule(REPORT_MODULE_KEYS, <ReportPage />)}
+              />
+              <Route
+                path="reports/:reportKey"
+                element={withModule(REPORT_MODULE_KEYS, <ReportPage />)}
               />
               {masterRoutes.map((r) => (
                 <Route

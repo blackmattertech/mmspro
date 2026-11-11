@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Navigate, useNavigate, useParams } from 'react-router-dom'
 import ReportsLayout from '../../../components/reports/ReportsLayout'
 import ReportsFilters, { countActiveReportFilters } from '../../../components/reports/ReportsFilters'
 import ReportScheduleModal from '../../../components/reports/ReportScheduleModal'
@@ -11,6 +12,7 @@ import {
   deleteCustomReport,
   downloadReportCsv,
   downloadReportPdf,
+  getCustomReport,
   getReport,
   getReportFilters,
   listCustomReports,
@@ -19,10 +21,10 @@ import {
 } from '../../../lib/api-reports'
 import { downloadBase64File } from '../../../lib/fileDownload'
 import { asListArray } from '../../../lib/listResponse'
+import { notifyCustomReportsChanged } from '../../../lib/reportNavEvents'
 import {
   buildTableColumnStorageKey,
   loadTableColumnPrefs,
-  saveTableColumnPrefs,
 } from '../../../lib/tableColumnPrefs'
 import {
   columnsForReportKey,
@@ -30,18 +32,20 @@ import {
   defaultReportFilters,
   formatKpiDelta,
   formatReportCell,
+  isKnownReportType,
+  kindForReportKey,
+  LEGACY_REPORT_KEYS,
+  REPORT_TITLES,
+  REPORT_TYPE_OPTIONS,
   UNIFIED_REPORT_KEY,
 } from '../../../lib/reportColumns'
-import TableColumnPicker from '../../../components/shared/TableColumnPicker'
 import TableEmptyRow from '../../../components/shared/TableEmptyRow'
 import { useOrgStatusOptions } from '../../../hooks/useOrgStatusOptions'
 import { formatWorkOrderStatusLabel } from '../../../lib/workOrderStatusLabel'
 import '../../../components/company/CompanyShared.css'
-import '../../../components/shared/TableColumnPicker.css'
 import '../../../components/reports/ReportsLayout.css'
 import { useConfirmDelete } from '../../../hooks/useConfirmDelete'
 
-const REPORT_KEY = UNIFIED_REPORT_KEY
 const WRAP_COLUMNS = new Set([
   'short_description',
   'equipment',
@@ -61,6 +65,7 @@ const WRAP_COLUMNS = new Set([
   'dos_and_donts',
   'lessons_learned',
   'execution_remarks',
+  'name',
 ])
 
 function sameIds(a = [], b = []) {
@@ -120,12 +125,14 @@ const KPI_META = {
   },
 }
 
-function ReportCell({ columnId, value, row, statusLabels }) {
-  if (columnId === 'wo_number') {
+function ReportCell({ columnId, value, row, statusLabels, reportKind }) {
+  if (columnId === 'wo_number' || columnId === 'request_number' || columnId === 'plan_number') {
     return <span className="company-table__name">{value || '—'}</span>
   }
   if (columnId === 'status') {
-    const label = formatWorkOrderStatusLabel(row, statusLabels)
+    const label = reportKind === 'unified'
+      ? formatWorkOrderStatusLabel(row, statusLabels)
+      : formatReportCell(columnId, value)
     return <span className={`wo-status wo-status--${row.status || 'draft'}`}>{label}</span>
   }
   if (columnId === 'priority' || columnId === 'order_type') {
@@ -186,12 +193,33 @@ function toQuery(filters, search) {
 
 export default function ReportPage() {
   const { requestDelete, deleteModal } = useConfirmDelete()
-  const title = 'Reports'
-  const columnDefs = useMemo(() => columnsForReportKey(REPORT_KEY), [])
-  const { user } = useAuth()
+  const navigate = useNavigate()
+  const { reportKey: routeReportKey, customId: routeCustomId } = useParams()
   const { org } = useOrg()
+  const { user } = useAuth()
   const { isOrgAdmin } = usePermissions()
-  const { labelByKey: statusLabels } = useOrgStatusOptions('work_order', { includeInactive: true })
+
+  const routeIsLegacy = Boolean(routeReportKey && LEGACY_REPORT_KEYS.has(routeReportKey))
+  const routeIsUnknown = Boolean(
+    routeReportKey && !routeCustomId && !isKnownReportType(routeReportKey) && !LEGACY_REPORT_KEYS.has(routeReportKey),
+  )
+  const initialReportKey = (
+    routeReportKey && isKnownReportType(routeReportKey)
+      ? routeReportKey
+      : UNIFIED_REPORT_KEY
+  )
+  const [reportKey, setReportKey] = useState(initialReportKey)
+  const reportKind = kindForReportKey(reportKey)
+  const title = REPORT_TITLES[reportKey] || 'Reports'
+  const columnDefs = useMemo(() => columnsForReportKey(reportKey), [reportKey])
+  const statusEntity = reportKind === 'work_request'
+    ? 'work_request'
+    : reportKind === 'pm_plan'
+      ? 'pm_plan'
+      : reportKind === 'task'
+        ? 'task'
+        : 'work_order'
+  const { labelByKey: statusLabels } = useOrgStatusOptions(statusEntity, { includeInactive: true })
   const defaults = useMemo(() => defaultReportDateRange(), [])
   const defaultColumnIds = useMemo(() => columnDefs.map((col) => col.id), [columnDefs])
   const initialFilters = useMemo(() => defaultReportFilters(defaults), [defaults])
@@ -249,11 +277,11 @@ export default function ReportPage() {
   }, [])
 
   const reloadCustomReports = useCallback(async (preferredId) => {
-    const data = await listCustomReports(REPORT_KEY)
+    const data = await listCustomReports(reportKey)
     const items = asListArray(data)
     setCustomReports(items)
     return items.find((item) => item.id === preferredId) || items[0] || null
-  }, [])
+  }, [reportKey])
 
   useEffect(() => {
     const handle = setTimeout(() => setDebouncedSearch(search.trim()), 300)
@@ -261,10 +289,43 @@ export default function ReportPage() {
   }, [search])
 
   useEffect(() => {
+    if (routeCustomId) return
+    const nextKey = routeReportKey && isKnownReportType(routeReportKey)
+      ? routeReportKey
+      : UNIFIED_REPORT_KEY
+    if (nextKey !== reportKey) setReportKey(nextKey)
+  }, [routeReportKey, routeCustomId, reportKey])
+
+  useEffect(() => {
+    if (!routeCustomId) return undefined
+    let cancelled = false
+    async function loadSaved() {
+      try {
+        const custom = await getCustomReport(routeCustomId)
+        if (cancelled || !custom?.report_key) return
+        setReportKey(custom.report_key)
+        setSelectedCustomId(custom.id)
+        setCustomName(custom.name || '')
+        const defs = columnsForReportKey(custom.report_key)
+        const cols = validColumnIds(defs, custom.columns)
+        setSelectedColumnIds(cols.length ? cols : defs.map((col) => col.id))
+        if (custom.location_id) {
+          setDraftFilters((prev) => ({ ...prev, facility_id: custom.location_id }))
+          setAppliedFilters((prev) => ({ ...prev, facility_id: custom.location_id }))
+        }
+      } catch (err) {
+        if (!cancelled) setError(err.message)
+      }
+    }
+    loadSaved()
+    return () => { cancelled = true }
+  }, [routeCustomId])
+
+  useEffect(() => {
     let cancelled = false
     async function loadOptions() {
       try {
-        const data = await getReportFilters()
+        const data = await getReportFilters(reportKey)
         if (cancelled) return
         setFilterOptions(data)
         if (!data?.can_select_location && data?.location_id) {
@@ -281,21 +342,22 @@ export default function ReportPage() {
     }
     loadOptions()
     return () => { cancelled = true }
-  }, [])
+  }, [reportKey])
 
   useEffect(() => {
     let cancelled = false
     setSelectedCustomId('')
     setCustomName('')
     setSelectedColumnIds(columnDefs.map((col) => col.id))
+    setReport(null)
     async function loadCustoms() {
       try {
-        const data = await listCustomReports(REPORT_KEY)
+        const data = await listCustomReports(reportKey)
         if (cancelled) return
         const items = asListArray(data)
         setCustomReports(items)
         applyCustom(items[0] || null, columnDefs)
-        const storageKey = buildTableColumnStorageKey(org?.id, user?.id, `report-${REPORT_KEY}`)
+        const storageKey = buildTableColumnStorageKey(org?.id, user?.id, `report-${reportKey}`)
         const savedIds = savedReportColumnIds(
           storageKey ? loadTableColumnPrefs(storageKey) : null,
           columnDefs,
@@ -310,7 +372,7 @@ export default function ReportPage() {
     }
     loadCustoms()
     return () => { cancelled = true }
-  }, [columnDefs, applyCustom, org?.id, user?.id])
+  }, [columnDefs, applyCustom, org?.id, user?.id, reportKey])
 
   useEffect(() => {
     let cancelled = false
@@ -318,7 +380,7 @@ export default function ReportPage() {
       setLoading(true)
       setError(null)
       try {
-        const data = await getReport(REPORT_KEY, toQuery(appliedFilters, debouncedSearch))
+        const data = await getReport(reportKey, toQuery(appliedFilters, debouncedSearch))
         if (cancelled) return
         setReport(data)
         if (!data?.filters?.can_select_location && data?.filters?.location_id) {
@@ -345,7 +407,7 @@ export default function ReportPage() {
       setLoading(false)
     }
     return () => { cancelled = true }
-  }, [appliedFilters, debouncedSearch])
+  }, [appliedFilters, debouncedSearch, reportKey])
 
   const visibleCols = selectedColumnIds
     .map((id) => columnDefs.find((col) => col.id === id))
@@ -359,15 +421,24 @@ export default function ReportPage() {
     location_id: storedLocation(appliedFilters.facility_id),
   })
 
+  const reportPath = useCallback((key, customId = '') => {
+    const slug = org?.slug || ''
+    if (customId) return `/${slug}/reports/saved/${customId}`
+    if (!key || key === UNIFIED_REPORT_KEY) return `/${slug}/reports`
+    return `/${slug}/reports/${key}`
+  }, [org?.slug])
+
   const saveCustom = async ({ asNew = false } = {}) => {
     setSavingCustom(true)
     setError(null)
     try {
       const saved = asNew || !selectedCustomId
-        ? await createCustomReport(REPORT_KEY, customPayload())
+        ? await createCustomReport(reportKey, customPayload())
         : await updateCustomReport(selectedCustomId, customPayload())
       const matched = await reloadCustomReports(saved.id)
       applyCustom(matched || saved, columnDefs, { keepLocation: true })
+      notifyCustomReportsChanged()
+      navigate(reportPath(reportKey, saved.id), { replace: true })
     } catch (err) {
       setError(err.message)
     } finally {
@@ -384,6 +455,8 @@ export default function ReportPage() {
       await deleteCustomReport(selectedCustomId)
       const next = await reloadCustomReports()
       applyCustom(next, columnDefs)
+      notifyCustomReportsChanged()
+      navigate(reportPath(reportKey), { replace: true })
     } catch (err) {
       setError(err.message)
     } finally {
@@ -424,8 +497,8 @@ export default function ReportPage() {
     setError(null)
     try {
       const file = kind === 'csv'
-        ? await downloadReportCsv(REPORT_KEY, downloadPayload())
-        : await downloadReportPdf(REPORT_KEY, downloadPayload())
+        ? await downloadReportCsv(reportKey, downloadPayload())
+        : await downloadReportPdf(reportKey, downloadPayload())
       downloadBase64File(file)
     } catch (err) {
       setError(err.message)
@@ -437,6 +510,7 @@ export default function ReportPage() {
   const onSelectCustom = (id) => {
     const custom = customReports.find((item) => item.id === id)
     applyCustom(custom || null, columnDefs)
+    navigate(reportPath(reportKey, id || ''))
   }
 
   const handleSearch = () => {
@@ -453,13 +527,33 @@ export default function ReportPage() {
     setSearch('')
   }
 
+  if (routeIsLegacy || routeIsUnknown) {
+    return <Navigate to={`/${org?.slug || ''}/reports`} replace />
+  }
+
   return (
     <>
       <ReportsLayout
         title={title}
-        subtitle={report ? `${report.total} row${report.total === 1 ? '' : 's'} · ${report.org_name}` : 'Work order report'}
+        subtitle={report ? `${report.total} row${report.total === 1 ? '' : 's'} · ${report.org_name}` : `${title} report`}
         search={search}
         onSearchChange={setSearch}
+        reportKey={reportKey}
+        reportTypeOptions={REPORT_TYPE_OPTIONS}
+        onReportKeyChange={(nextKey) => {
+          if (!nextKey || nextKey === reportKey) return
+          setSearch('')
+          setDebouncedSearch('')
+          setDraftFilters((prev) => ({
+            ...defaultReportFilters(defaults),
+            facility_id: canSelectLocation ? '' : prev.facility_id,
+          }))
+          setAppliedFilters((prev) => ({
+            ...defaultReportFilters(defaults),
+            facility_id: canSelectLocation ? '' : prev.facility_id,
+          }))
+          navigate(reportPath(nextKey))
+        }}
         customReports={customReports}
         selectedCustomId={selectedCustomId}
         onSelectCustom={onSelectCustom}
@@ -489,6 +583,19 @@ export default function ReportPage() {
             onChange={setDraftFilters}
             options={filterOptions || {}}
             canSelectLocation={canSelectLocation}
+            reportKind={reportKind}
+            columnDefs={columnDefs}
+            selectedColumnIds={selectedColumnIds}
+            onToggleColumn={(id) => {
+              if (selectedColumnIds.includes(id)) {
+                if (selectedColumnIds.length <= 1) return
+                setSelectedColumnIds(selectedColumnIds.filter((item) => item !== id))
+                return
+              }
+              setSelectedColumnIds([...selectedColumnIds, id])
+            }}
+            onSelectAllColumns={() => setSelectedColumnIds(columnDefs.map((col) => col.id))}
+            onResetColumns={() => setSelectedColumnIds(defaultColumnIds)}
             activeCount={countActiveReportFilters(
               appliedFilters,
               canSelectLocation ? '' : (filterOptions?.location_id || appliedFilters.facility_id),
@@ -531,42 +638,6 @@ export default function ReportPage() {
             </div>
 
             <div className="company-panel reports-results">
-            <div className="company-table-toolbar">
-                <TableColumnPicker
-                  columnDefs={columnDefs}
-                  visibleColumnIds={selectedColumnIds}
-                  onToggle={(id) => {
-                    if (selectedColumnIds.includes(id)) {
-                      if (selectedColumnIds.length <= 1) return
-                      setSelectedColumnIds(selectedColumnIds.filter((item) => item !== id))
-                      return
-                    }
-                    setSelectedColumnIds([...selectedColumnIds, id])
-                  }}
-                  onReorder={(orderedIds) => {
-                    const next = orderedIds.filter((id) => selectedColumnIds.includes(id))
-                    if (next.length) setSelectedColumnIds(next)
-                  }}
-                  onMove={(id, position) => {
-                    const rest = selectedColumnIds.filter((item) => item !== id)
-                    setSelectedColumnIds(position === 'top' ? [id, ...rest] : [...rest, id])
-                  }}
-                  onReset={() => setSelectedColumnIds(defaultColumnIds)}
-                  onSave={() => {
-                    const storageKey = buildTableColumnStorageKey(org?.id, user?.id, `report-${REPORT_KEY}`)
-                    if (!storageKey) return false
-                    const hidden = columnDefs
-                      .map((col) => col.id)
-                      .filter((id) => !selectedColumnIds.includes(id))
-                    saveTableColumnPrefs(storageKey, {
-                      order: [...selectedColumnIds, ...hidden],
-                      hidden,
-                      known: columnDefs.map((col) => col.id),
-                    })
-                    return true
-                  }}
-                />
-            </div>
             <div className="reports-table-wrap company-table-wrap">
               <div className="company-table-scroll">
               <table className="company-table master-table reports-table">
@@ -595,6 +666,7 @@ export default function ReportPage() {
                             value={row[col.id]}
                             row={row}
                             statusLabels={statusLabels}
+                            reportKind={reportKind}
                           />
                         </td>
                       ))}
@@ -617,7 +689,7 @@ export default function ReportPage() {
           onSend={async (emails) => {
             setSendingNow(true)
             try {
-              await sendReportNow(REPORT_KEY, {
+              await sendReportNow(reportKey, {
                 ...downloadPayload(),
                 emails,
               })
@@ -631,7 +703,7 @@ export default function ReportPage() {
 
       {scheduleOpen && (
         <ReportScheduleModal
-          reportKey={REPORT_KEY}
+          reportKey={reportKey}
           title={title}
           customReports={customReports}
           defaultCustomId={selectedCustomId}

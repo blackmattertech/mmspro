@@ -154,6 +154,9 @@ const APP_SEGMENTS = [
     icon: 'chart',
     moduleKey: 'reports',
     altModuleKeys: REPORT_MODULE_KEYS,
+    isPathActive: (pathname) => /\/reports(?:\/|$)/.test(pathname || ''),
+    // Built-in report types stay in-page; sidebar children are saved custom reports only.
+    children: [],
   },
   {
     id: 'masters',
@@ -253,7 +256,7 @@ function allowNavItem(item, allow, disabledModules) {
   return (item.altModuleKeys || []).some((key) => allow(key))
 }
 
-export function getNavItems(orgSlug, { canRead, disabledModules } = {}) {
+export function getNavItems(orgSlug, { canRead, disabledModules, reportShortcuts = [] } = {}) {
   const allow = typeof canRead === 'function' ? canRead : () => true
   const allowItem = (item) => allowNavItem(item, allow, disabledModules)
 
@@ -262,6 +265,27 @@ export function getNavItems(orgSlug, { canRead, disabledModules } = {}) {
       if (item.id === 'masters') {
         if (!MASTERS_HUB_ITEMS.some((hub) => allowItem(hub))) return null
         return { ...item, path: orgPath(orgSlug, item.segment) }
+      }
+      if (item.id === 'reports') {
+        if (!allowItem(item)) return null
+        const children = (Array.isArray(reportShortcuts) ? reportShortcuts : [])
+          .filter((row) => row?.id && row?.name)
+          .slice(0, 50)
+          .map((row) => ({
+            id: `report-custom-${row.id}`,
+            label: row.name,
+            segment: `reports/saved/${row.id}`,
+            path: orgPath(orgSlug, `reports/saved/${row.id}`),
+            moduleKey: 'reports',
+            altModuleKeys: REPORT_MODULE_KEYS,
+            icon: 'chart',
+            isCustomReport: true,
+          }))
+        return {
+          ...item,
+          path: orgPath(orgSlug, 'reports'),
+          ...(children.length ? { children } : {}),
+        }
       }
       if (item.children) {
         const children = item.children

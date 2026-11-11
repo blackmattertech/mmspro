@@ -5,8 +5,10 @@ export function reportsFetch(path, options = {}) {
   return apiFetch(`/api/reports${path}`, options)
 }
 
-export function getReportFilters() {
-  return reportsFetch('/filters')
+export function getReportFilters(reportKey) {
+  return reportsFetch(`/filters${listQueryParams({
+    report_key: reportKey || undefined,
+  })}`)
 }
 
 export function getReport(key, {
@@ -76,6 +78,14 @@ export function sendReportNow(key, body) {
 
 export function listCustomReports(key) {
   return reportsFetch(`/${encodeURIComponent(key)}/custom`)
+}
+
+export function listAllCustomReports() {
+  return reportsFetch('/customs')
+}
+
+export function getCustomReport(id) {
+  return reportsFetch(`/custom/${encodeURIComponent(id)}`)
 }
 
 export function createCustomReport(key, body) {

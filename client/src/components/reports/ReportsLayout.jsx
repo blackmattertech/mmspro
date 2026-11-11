@@ -2,38 +2,27 @@ import FilterableSelect from '../ui/FilterableSelect'
 import TableFilterToolbar from '../shared/TableFilterToolbar'
 import SpellcheckInput from '../shared/SpellcheckInput'
 import PageBreadcrumbs from '../shared/PageBreadcrumbs'
-import TrashIcon from '../ui/TrashIcon'
-import {
-  CalendarIcon,
-  CsvIcon,
-  PdfIcon,
-  SaveAsIcon,
-  SaveIcon,
-  SendIcon,
-} from './ReportActionIcons'
 import '../company/CompanyShared.css'
 import '../shared/TableFilterToolbar.css'
 import '../workorders/WorkOrdersPage.css'
 import './ReportsLayout.css'
 
-function IconButton({
+function TextButton({
   label,
   title,
   onClick,
   disabled,
   variant = 'secondary',
-  children,
 }) {
   return (
     <button
       type="button"
-      className={`company-btn company-btn--${variant} company-btn--compact company-btn--icon`}
+      className={`company-btn company-btn--${variant} company-btn--compact`}
       onClick={onClick}
       disabled={disabled}
-      aria-label={label}
       title={title || label}
     >
-      {children}
+      {label}
     </button>
   )
 }
@@ -43,6 +32,9 @@ export default function ReportsLayout({
   subtitle,
   search,
   onSearchChange,
+  reportKey = 'logs',
+  reportTypeOptions = [],
+  onReportKeyChange,
   customReports = [],
   selectedCustomId = '',
   onSelectCustom,
@@ -70,123 +62,129 @@ export default function ReportsLayout({
 }) {
   return (
     <div className="company-page wo-page reports-page">
-      <header className="wo-page__top">
-        <div className="wo-page__intro">
-          <PageBreadcrumbs />
-          <h1 className="wo-page__title">{title}</h1>
-          {subtitle ? <p className="wo-page__subtitle">{subtitle}</p> : null}
-        </div>
-      </header>
+      <div className="reports-page__shell">
+        {filters ? (
+          <aside className="reports-page__filters" aria-label="Report filters">
+            {filters}
+          </aside>
+        ) : null}
 
-      <div className="wo-page__toolbar">
-        <div className="wo-page__toolbar-row wo-page__toolbar-row--filters">
-          <TableFilterToolbar
-            search={{
-              value: search,
-              onChange: onSearchChange,
-              placeholder: 'Search report…',
-              ariaLabel: 'Search report',
-            }}
-            filterSlot={filters}
-            actions={(
-              <>
-                <div className="reports-toolbar__group">
-                  <div className="reports-toolbar__control reports-toolbar__control--select">
-                    <FilterableSelect
-                      value={selectedCustomId}
-                      onChange={onSelectCustom}
-                      options={[
-                        { value: '', label: 'New custom report' },
-                        ...customReports.map((item) => ({ value: item.id, label: item.name })),
-                      ]}
-                      getOptionValue={(opt) => opt.value}
-                      getOptionLabel={(opt) => opt.label}
-                      allowEmpty={false}
-                      aria-label="Custom report"
-                    />
-                  </div>
-                  {canManageCustom && (
-                    <SpellcheckInput
-                      wrapperClassName="reports-toolbar__name"
-                      className="company-form__input"
-                      type="text"
-                      value={customName}
-                      onChange={(event) => onCustomNameChange(event.target.value)}
-                      placeholder="Report name"
-                      maxLength={80}
-                      aria-label="Custom report name"
-                    />
-                  )}
-                  {customDirty ? <span className="reports-page__dirty">Unsaved</span> : null}
-                  {canManageCustom && (
-                    <>
-                      <IconButton
-                        label={savingCustom ? 'Saving' : 'Save'}
-                        onClick={onSaveCustom}
-                        disabled={savingCustom || !customName.trim() || !hasColumns}
-                      >
-                        <SaveIcon />
-                      </IconButton>
-                      <IconButton
-                        label="Save as"
-                        onClick={onSaveAsCustom}
-                        disabled={savingCustom || !customName.trim() || !hasColumns}
-                      >
-                        <SaveAsIcon />
-                      </IconButton>
-                      <IconButton
-                        label="Delete"
-                        variant="danger"
-                        onClick={onDeleteCustom}
-                        disabled={savingCustom || !selectedCustomId}
-                      >
-                        <TrashIcon />
-                      </IconButton>
-                    </>
-                  )}
-                </div>
-                <div className="reports-toolbar__group">
-                  {canSchedule && (
-                    <IconButton label="Schedule" onClick={onSchedule}>
-                      <CalendarIcon />
-                    </IconButton>
-                  )}
-                  {canSendNow && (
-                    <IconButton
-                      label="Send now"
-                      title={downloadHint || 'Send now'}
-                      onClick={onSendNow}
-                      disabled={downloadDisabled}
-                    >
-                      <SendIcon />
-                    </IconButton>
-                  )}
-                <IconButton
-                  label={downloading ? 'Preparing CSV' : 'Download CSV'}
-                  title={downloading ? 'Preparing CSV' : 'Download CSV'}
-                  onClick={onDownloadCsv}
-                  disabled={downloadDisabled || downloading || !canDownload}
-                >
-                    <CsvIcon />
-                  </IconButton>
-                <IconButton
-                  label={downloading ? 'Preparing PDF' : 'Download PDF'}
-                  title={downloading ? 'Preparing PDF' : 'Download activity report PDF'}
-                  onClick={onDownloadPdf}
-                  variant="primary"
-                  disabled={downloadDisabled || downloading || !canDownload}
-                >
-                    <PdfIcon />
-                  </IconButton>
-                </div>
-              </>
-            )}
-          />
-        </div>
-      </div>
+        <div className="reports-page__main">
+          <header className="wo-page__top">
+            <div className="wo-page__intro">
+              <PageBreadcrumbs />
+              <h1 className="wo-page__title">{title}</h1>
+              {subtitle ? <p className="wo-page__subtitle">{subtitle}</p> : null}
+            </div>
+          </header>
 
-      <div className="wo-page__content reports-page__body">
-        {children}
+          <div className="wo-page__toolbar">
+            <div className="wo-page__toolbar-row wo-page__toolbar-row--filters">
+              <TableFilterToolbar
+                search={{
+                  value: search,
+                  onChange: onSearchChange,
+                  placeholder: 'Search report…',
+                  ariaLabel: 'Search report',
+                }}
+                actions={(
+                  <>
+                    <div className="reports-toolbar__group">
+                      {reportTypeOptions.length > 0 && (
+                        <div className="reports-toolbar__control reports-toolbar__control--select">
+                          <FilterableSelect
+                            value={reportKey}
+                            onChange={onReportKeyChange}
+                            options={reportTypeOptions}
+                            getOptionValue={(opt) => opt.value}
+                            getOptionLabel={(opt) => opt.label}
+                            allowEmpty={false}
+                            aria-label="Report type"
+                          />
+                        </div>
+                      )}
+                      <div className="reports-toolbar__control reports-toolbar__control--select">
+                        <FilterableSelect
+                          value={selectedCustomId}
+                          onChange={onSelectCustom}
+                          options={[
+                            { value: '', label: 'New custom report' },
+                            ...customReports.map((item) => ({ value: item.id, label: item.name })),
+                          ]}
+                          getOptionValue={(opt) => opt.value}
+                          getOptionLabel={(opt) => opt.label}
+                          allowEmpty={false}
+                          aria-label="Custom report"
+                        />
+                      </div>
+                      {canManageCustom && (
+                        <SpellcheckInput
+                          wrapperClassName="reports-toolbar__name"
+                          className="company-form__input"
+                          type="text"
+                          value={customName}
+                          onChange={(event) => onCustomNameChange(event.target.value)}
+                          placeholder="Report name"
+                          maxLength={80}
+                          aria-label="Custom report name"
+                        />
+                      )}
+                      {customDirty ? <span className="reports-page__dirty">Unsaved</span> : null}
+                      {canManageCustom && (
+                        <>
+                          <TextButton
+                            label={savingCustom ? 'Saving…' : 'Save'}
+                            onClick={onSaveCustom}
+                            disabled={savingCustom || !customName.trim() || !hasColumns}
+                          />
+                          <TextButton
+                            label="Save as"
+                            onClick={onSaveAsCustom}
+                            disabled={savingCustom || !customName.trim() || !hasColumns}
+                          />
+                          <TextButton
+                            label="Delete"
+                            variant="danger"
+                            onClick={onDeleteCustom}
+                            disabled={savingCustom || !selectedCustomId}
+                          />
+                        </>
+                      )}
+                    </div>
+                    <div className="reports-toolbar__group">
+                      {canSchedule && (
+                        <TextButton label="Schedule" onClick={onSchedule} />
+                      )}
+                      {canSendNow && (
+                        <TextButton
+                          label="Send now"
+                          title={downloadHint || 'Send now'}
+                          onClick={onSendNow}
+                          disabled={downloadDisabled}
+                        />
+                      )}
+                      <TextButton
+                        label={downloading ? 'Preparing CSV…' : 'Download CSV'}
+                        onClick={onDownloadCsv}
+                        disabled={downloadDisabled || downloading || !canDownload}
+                      />
+                      <TextButton
+                        label={downloading ? 'Preparing PDF…' : 'Download PDF'}
+                        onClick={onDownloadPdf}
+                        variant="primary"
+                        disabled={downloadDisabled || downloading || !canDownload}
+                      />
+                    </div>
+                  </>
+                )}
+              />
+            </div>
+          </div>
+
+          <div className="wo-page__content reports-page__body">
+            {children}
+          </div>
+        </div>
       </div>
     </div>
   )
