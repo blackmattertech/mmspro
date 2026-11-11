@@ -1,4 +1,6 @@
 export const DAILY_SNAPSHOT_ACTIVE_STATUSES = new Set([
+  'assigned',
+  'accepted',
   'started',
   'in_progress',
   'waiting_material',

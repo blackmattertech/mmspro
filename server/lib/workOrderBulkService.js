@@ -139,8 +139,8 @@ export async function bulkImportWorkOrders(orgId, profileId, buffer) {
   ])
   const extraColumns = [...STATIC_EXTRA_COLUMNS, ...form.mapped.map((row) => row.column)]
   return runBulkImport(buffer, CORE_COLUMNS, async (row) => {
-    const shortDescription = clipTrimmedToLimit(fieldLimits, 'short_description', row['Short Description']) || ''
-    const problem = clipTrimmedToLimit(fieldLimits, 'problem_description', row['Problem Description']) || ''
+    const shortDescription = clipTrimmedToLimit(fieldLimits, 'short_description', row['Short Description'], { soft: true }) || ''
+    const problem = clipTrimmedToLimit(fieldLimits, 'problem_description', row['Problem Description'], { soft: true }) || ''
     if (!shortDescription && !problem) throw new Error('Short description is required')
 
     const location = optionalMatch(masters.locations, row.Location, 'Location', ['name'])
@@ -169,7 +169,7 @@ export async function bulkImportWorkOrders(orgId, profileId, buffer) {
         assigned_location_id: location?.id || department?.location_id || null,
         priority,
         problem_description: problem || null,
-        short_description: shortDescription || clipToLimit(fieldLimits, 'short_description', problem),
+        short_description: shortDescription || clipToLimit(fieldLimits, 'short_description', problem, { soft: true }),
         work_center: String(row['Work Center'] || '').trim() || null,
         equipment_id: equipment?.id || null,
         special_instructions: String(row['Special Instructions'] || '').trim() || null,

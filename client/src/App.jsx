@@ -44,9 +44,9 @@ const VendorDetailPage = lazyPage(() => import('./pages/app/VendorDetailPage'))
 // const WorkCenters = lazyPage(() => import('./pages/app/WorkCenters'))
 const Masters = lazyPage(() => import('./pages/app/Masters'))
 const FormMasters = lazyPage(() => import('./pages/app/FormMasters'))
-const Others = lazyPage(() => import('./pages/app/Others'))
 const OthersStatusManage = lazyPage(() => import('./pages/app/OthersStatusManage'))
 const FormMasterStatusRedirect = lazyPage(() => import('./pages/app/FormMasterStatusRedirect'))
+const ChecklistMastersRedirect = lazyPage(() => import('./pages/app/ChecklistMastersRedirect'))
 const OthersChecklists = lazyPage(() => import('./pages/app/OthersChecklists'))
 const OthersChecklistBuilder = lazyPage(() => import('./pages/app/OthersChecklistBuilder'))
 const ConfigurationImport = lazyPage(() => import('./pages/app/ConfigurationImport'))
@@ -222,7 +222,9 @@ export default function App() {
               <Route path="scan/equipment/:equipmentId" element={withSuspense(<EquipmentScan />)} />
               <Route path="masters/vendors" element={withModule('vendors', <Vendors />)} />
               <Route path="masters/vendors/:vendorId" element={withModule('vendors', <VendorDetailPage />)} />
-              <Route path="masters/others" element={withModule('others', <Others />)} />
+              <Route path="masters/checklists" element={withModule('others', <OthersChecklists />)} />
+              <Route path="masters/checklists/:checklistId" element={withModule('others', <OthersChecklistBuilder />)} />
+              <Route path="masters/others" element={withSuspense(<ChecklistMastersRedirect />)} />
               <Route
                 path="masters/others/status/:entityType"
                 element={withSuspense(<FormMasterStatusRedirect />)}
@@ -231,8 +233,14 @@ export default function App() {
                 path="masters/others/status"
                 element={withSuspense(<FormMasterStatusRedirect />)}
               />
-              <Route path="masters/others/checklists" element={withModule('others', <OthersChecklists />)} />
-              <Route path="masters/others/checklists/:checklistId" element={withModule('others', <OthersChecklistBuilder />)} />
+              <Route
+                path="masters/others/checklists"
+                element={withSuspense(<ChecklistMastersRedirect />)}
+              />
+              <Route
+                path="masters/others/checklists/:checklistId"
+                element={withSuspense(<ChecklistMastersRedirect />)}
+              />
               <Route
                 path="masters/others/character-limits"
                 element={<Navigate to="../../forms" relative="path" replace />}

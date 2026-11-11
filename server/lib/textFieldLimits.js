@@ -155,55 +155,71 @@ export function getLimit(limits, fieldKey) {
   return Number.isFinite(num) && num > 0 ? num : null
 }
 
-export function clipToLimit(limits, fieldKey, value) {
+export function limitFieldLabel(fieldKey) {
+  const key = resolveLimitKey(fieldKey)
+  return TEXT_FIELD_LIMIT_DEFS.find((row) => row.key === key)?.label || prettyLimitKey(key)
+}
+
+function prettyLimitKey(key) {
+  return String(key || '')
+    .replace(/[_-]+/g, ' ')
+    .replace(/\b\w/g, (ch) => ch.toUpperCase())
+}
+
+/**
+ * Enforce character limits. Pass `{ soft: true }` only for auto-generated or bulk-import text
+ * that should be truncated instead of rejected.
+ */
+export function clipToLimit(limits, fieldKey, value, { soft = false } = {}) {
   if (value == null) return value
   const text = String(value)
   const max = getLimit(limits, fieldKey)
   if (!max || text.length <= max) return text
-  return text.slice(0, max)
+  if (soft) return text.slice(0, max)
+  throw httpError(`${limitFieldLabel(fieldKey)}: character exceeds`)
 }
 
-export function clipTrimmedToLimit(limits, fieldKey, value) {
+export function clipTrimmedToLimit(limits, fieldKey, value, options = {}) {
   const text = String(value ?? '').trim()
   if (!text) return null
-  return clipToLimit(limits, fieldKey, text)
+  return clipToLimit(limits, fieldKey, text, options)
 }
 
-export function clipMaterialDescriptions(limits, rows) {
+export function clipMaterialDescriptions(limits, rows, options = {}) {
   const max = getLimit(limits, 'material_consumed')
   const list = Array.isArray(rows) ? rows : []
   if (!max) return list
   return list.map((row) => ({
     ...row,
-    description: clipToLimit(limits, 'material_consumed', row?.description ?? ''),
+    description: clipToLimit(limits, 'material_consumed', row?.description ?? '', options),
   }))
 }
 
-export function clipMaterialConsumedValue(limits, value) {
+export function clipMaterialConsumedValue(limits, value, options = {}) {
   if (value == null) return value
   const text = String(value).trim()
   if (!text) return null
   try {
     const parsed = JSON.parse(text)
     if (Array.isArray(parsed)) {
-      const clipped = clipMaterialDescriptions(limits, parsed)
+      const clipped = clipMaterialDescriptions(limits, parsed, options)
       return clipped.length ? JSON.stringify(clipped) : null
     }
   } catch {
     // plain text fallback
   }
-  return clipToLimit(limits, 'material_consumed', text)
+  return clipToLimit(limits, 'material_consumed', text, options)
 }
 
-export function clipDosDontsValue(limits, value) {
+export function clipDosDontsValue(limits, value, options = {}) {
   if (value == null) return value
   const text = String(value).trim()
   if (!text) return null
   try {
     const parsed = JSON.parse(text)
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-      const dos = clipToLimit(limits, 'dos_and_donts', parsed.dos ?? '')
-      const donts = clipToLimit(limits, 'dos_and_donts', parsed.donts ?? parsed.dont ?? '')
+      const dos = clipToLimit(limits, 'dos_and_donts', parsed.dos ?? '', options)
+      const donts = clipToLimit(limits, 'dos_and_donts', parsed.donts ?? parsed.dont ?? '', options)
       const nextDos = String(dos || '').trim()
       const nextDonts = String(donts || '').trim()
       if (!nextDos && !nextDonts) return null
@@ -212,7 +228,7 @@ export function clipDosDontsValue(limits, value) {
   } catch {
     // plain text fallback
   }
-  return clipToLimit(limits, 'dos_and_donts', text)
+  return clipToLimit(limits, 'dos_and_donts', text, options)
 }
 
 export async function ensureTextFieldLimits(orgId) {

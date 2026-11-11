@@ -1,4 +1,4 @@
-import { apiFetch } from './api'
+import { apiFetch, apiFetchBlob } from './api'
 import { listQueryParams } from './listResponse'
 
 export function getLogbook(params = {}) {
@@ -11,6 +11,18 @@ export function getLogbook(params = {}) {
     sort_by: params.sortBy,
     sort: params.sort,
     sortDir: params.sortDir,
+  })}`)
+}
+
+export function exportLogbook(params = {}) {
+  return apiFetchBlob(`/api/logbook${listQueryParams({
+    search: params.search,
+    location_id: params.locationId,
+    filters: params.filters,
+    sort_by: params.sortBy,
+    sort: params.sort,
+    sortDir: params.sortDir,
+    exportCsv: true,
   })}`)
 }
 

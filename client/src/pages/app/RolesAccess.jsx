@@ -16,6 +16,9 @@ import TableEmptyRow from '../../components/shared/TableEmptyRow'
 import TableColumnPicker from '../../components/shared/TableColumnPicker'
 import { DynamicPickerCells, DynamicPickerHeaders } from '../../components/shared/DynamicPickerCells'
 import TableFilterToolbar from '../../components/shared/TableFilterToolbar'
+import { ExportCsvButton } from '../../components/shared/ListTableChrome'
+import { downloadClientCsv } from '../../lib/clientCsv'
+import '../../components/shared/ListTableChrome.css'
 import { useTablePagination } from '../../hooks/useTablePagination'
 import { useTableColumnPrefs } from '../../hooks/useTableColumnPrefs'
 import { TABLE_SORT_OPTIONS, applyTableFilters, compactFilters, matchesFieldFilter, uniqueNameOptions, selectFilterField } from '../../lib/tableFilters'
@@ -331,15 +334,28 @@ export default function RolesAccess() {
                   onChange: setColumnFilters,
                 }}
                 sort={{ value: sortBy, onChange: setSortBy, options: TABLE_SORT_OPTIONS }}
-                actions={canCreate && (
-                  <button
-                    type="button"
-                    className="company-btn company-btn--primary"
-                    onClick={openCreate}
-                    disabled={!canOpenCreate}
-                  >
-                    + Create Role
-                  </button>
+                actions={(
+                  <>
+                    <ExportCsvButton
+                      onClick={() => downloadClientCsv('roles.csv', filteredRoles, [
+                        { label: 'Name', value: (row) => row.name },
+                        { label: 'Description', value: (row) => row.description },
+                        { label: 'Employees', value: (row) => row.employee_count || 0 },
+                        { label: 'Created', value: (row) => row.created_at },
+                        { label: 'Updated', value: (row) => row.updated_at },
+                      ])}
+                    />
+                    {canCreate && (
+                      <button
+                        type="button"
+                        className="company-btn company-btn--primary"
+                        onClick={openCreate}
+                        disabled={!canOpenCreate}
+                      >
+                        + Create Role
+                      </button>
+                    )}
+                  </>
                 )}
                 columnPicker={(
                   <TableColumnPicker

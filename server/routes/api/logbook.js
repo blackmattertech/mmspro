@@ -7,7 +7,7 @@ import {
   loadOrgPermissions,
 } from '../../middleware/modulePermission.js'
 import { assertLocationAccess, resolveLocationFilter } from '../../lib/orgPermissions.js'
-import { parseListControls } from '../../lib/listQuery.js'
+import { parseListControls, sendCsv } from '../../lib/listQuery.js'
 import { bufferFromBase64Upload, excelFilePayload } from '../../lib/excelTemplate.js'
 import { attachFailedFileToResult } from '../../lib/importErrorWorkbook.js'
 import { buildMeterReadingTemplate, bulkImportMeterReadings } from '../../lib/logbookBulkService.js'
@@ -41,7 +41,7 @@ function parsePagination(query) {
 
 router.get('/', canRead, async (req, res) => {
   try {
-    const { limit, offset } = parsePagination(req.query)
+    const pageSize = parsePagination(req.query)
     const locationId = resolveLocationFilter(req.orgPermissions, req.query.location_id)
     const controls = parseListControls(req.query)
     const page = await listLogbookEquipment(req.userProfile.org_id, {
@@ -51,9 +51,24 @@ router.get('/', canRead, async (req, res) => {
       sortBy: req.query.sort_by || 'name_asc',
       sort: controls.sort,
       sortDir: req.query.sort_dir === 'asc' || req.query.sort_dir === 'desc' ? req.query.sort_dir : 'asc',
-      limit,
-      offset,
+      limit: controls.exportCsv ? 5000 : pageSize.limit,
+      offset: controls.exportCsv ? 0 : pageSize.offset,
     })
+    if (controls.exportCsv) {
+      sendCsv(res, 'meter-readings.csv', page.items || [], [
+        { label: 'Asset', value: (row) => row.name },
+        { label: 'Code', value: (row) => row.code },
+        { label: 'Location', value: (row) => row.location_name },
+        { label: 'Department', value: (row) => row.department_name },
+        { label: 'Area', value: (row) => row.area_name },
+        { label: 'Last reading', value: (row) => row.last_reading ?? row.last_meter_reading },
+        { label: 'Reading at', value: (row) => row.last_reading_at || row.last_meter_reading_at },
+        { label: 'Logged by', value: (row) => row.logged_by_name || row.last_meter_logged_by_name },
+        { label: 'Logged by department', value: (row) => row.logged_by_department },
+        { label: 'Status', value: (row) => (row.is_active === false ? 'Inactive' : 'Active') },
+      ])
+      return
+    }
     res.json(page)
   } catch (err) {
     res.status(err.status || 500).json({ error: err.message })

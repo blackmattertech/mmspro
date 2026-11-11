@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { getFormLayout } from '../lib/api-form-layouts'
-import { formFieldClassName, parseLayoutId, normalizeColSpan } from '../lib/formLayoutIds'
+import {
+  formFieldClassName,
+  parseLayoutId,
+  normalizeColSpan,
+  normalizeAssetLayout,
+} from '../lib/formLayoutIds'
 import { buildDefaultLayout, getFormDef } from '../lib/formRegistry'
 
 export function useFormLayout(formId, { fallbackToDefault = false } = {}) {
@@ -34,38 +39,20 @@ export function useFormLayout(formId, { fallbackToDefault = false } = {}) {
     load()
   }, [load])
 
-  const visibleKeys = useMemo(() => {
-    if (!layout) return null
-    const keys = new Set()
-    for (const field of layout.fields || []) {
-      if (field.skipped) continue
-      const parsed = parseLayoutId(field.id)
-      if (parsed.kind === 'system') keys.add(parsed.value)
-    }
-    return keys
-  }, [layout])
-
-  const isVisible = useCallback((key) => {
-    if (!layout) return true
-    return Boolean(visibleKeys?.has(key))
-  }, [layout, visibleKeys])
-
-  const colSpan = useCallback((key, fallback = 25) => {
-    if (!layout) return fallback
-    const match = (layout.fields || []).find((field) => parseLayoutId(field.id).value === key)
-    return match ? normalizeColSpan(match.colSpan, fallback) : fallback
-  }, [layout])
-
-  const fieldClass = useCallback((key, extras = '', fallbackSpan = 25) => {
-    return formFieldClassName({ colSpan: layout ? colSpan(key, fallbackSpan) : undefined }, extras)
-  }, [colSpan, layout])
-
   const formDef = formId ? getFormDef(formId) : null
-  const resolvedLayout = layout || (formDef && fallbackToDefault
-    ? buildDefaultLayout(formDef, catalogFields)
-    : null)
 
-  const resolvedVisibleKeys = useMemo(() => {
+  const fallbackLayout = useMemo(() => {
+    if (!formDef || !fallbackToDefault) return null
+    return buildDefaultLayout(formDef, catalogFields)
+  }, [formDef, fallbackToDefault, catalogFields])
+
+  const resolvedLayout = useMemo(() => {
+    const base = layout || fallbackLayout
+    if (!base) return null
+    return normalizeAssetLayout(base, { catalogFields })
+  }, [layout, fallbackLayout, catalogFields])
+
+  const visibleKeys = useMemo(() => {
     if (!resolvedLayout) return null
     const keys = new Set()
     for (const field of resolvedLayout.fields || []) {
@@ -76,33 +63,34 @@ export function useFormLayout(formId, { fallbackToDefault = false } = {}) {
     return keys
   }, [resolvedLayout])
 
-  const resolvedIsVisible = useCallback((key) => {
+  const isVisible = useCallback((key) => {
     if (!resolvedLayout) return true
-    return Boolean(resolvedVisibleKeys?.has(key))
-  }, [resolvedLayout, resolvedVisibleKeys])
+    return Boolean(visibleKeys?.has(key))
+  }, [resolvedLayout, visibleKeys])
 
-  const resolvedColSpan = useCallback((key, fallback = 25) => {
+  const colSpan = useCallback((key, fallback = 25) => {
     if (!resolvedLayout) return fallback
     const match = (resolvedLayout.fields || []).find((field) => parseLayoutId(field.id).value === key)
     return match ? normalizeColSpan(match.colSpan, fallback) : fallback
   }, [resolvedLayout])
 
-  const resolvedFieldClass = useCallback((key, extras = '', fallbackSpan = 25) => {
-    return formFieldClassName({ colSpan: resolvedLayout ? resolvedColSpan(key, fallbackSpan) : undefined }, extras)
-  }, [resolvedColSpan, resolvedLayout])
+  const fieldClass = useCallback((key, extras = '', fallbackSpan = 25) => {
+    return formFieldClassName({ colSpan: resolvedLayout ? colSpan(key, fallbackSpan) : undefined }, extras)
+  }, [colSpan, resolvedLayout])
 
   return {
     formId,
     formDef,
     layout: resolvedLayout,
+    rawLayout: layout,
     catalogFields,
     loading,
     error,
     hasLayout: Boolean(resolvedLayout),
     isDefaultFallback: !layout && Boolean(resolvedLayout),
-    isVisible: fallbackToDefault ? resolvedIsVisible : isVisible,
-    colSpan: fallbackToDefault ? resolvedColSpan : colSpan,
-    fieldClass: fallbackToDefault ? resolvedFieldClass : fieldClass,
+    isVisible,
+    colSpan,
+    fieldClass,
     reload: load,
   }
 }

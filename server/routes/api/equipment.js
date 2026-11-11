@@ -34,7 +34,7 @@ import {
   bulkImportEquipment,
 } from '../../lib/equipmentBulkService.js'
 import { attachFailedFileToResult } from '../../lib/importErrorWorkbook.js'
-import { parseListControls } from '../../lib/listQuery.js'
+import { parseListControls, sendCsv } from '../../lib/listQuery.js'
 import { listEquipmentPickerCatalog } from '../../lib/workRequestService.js'
 
 const router = Router()
@@ -95,9 +95,11 @@ router.get('/catalog', canReadPicker, async (req, res) => {
 
 router.get('/', canReadPicker, async (req, res) => {
   try {
-    const { limit, offset } = parsePagination(req.query)
+    const page = parsePagination(req.query)
     const locationId = resolveLocationFilter(req.orgPermissions, req.query.location_id)
     const controls = parseListControls(req.query)
+    const limit = controls.exportCsv ? 5000 : page.limit
+    const offset = controls.exportCsv ? 0 : page.offset
     const rows = await listEquipment(req.userProfile.org_id, {
       locationId,
       departmentId: req.query.department_id || null,
@@ -108,6 +110,22 @@ router.get('/', canReadPicker, async (req, res) => {
       limit,
       offset,
     })
+    if (controls.exportCsv) {
+      sendCsv(res, 'assets.csv', rows.items || rows || [], [
+        { label: 'Name', value: (row) => row.name },
+        { label: 'Code', value: (row) => row.code },
+        { label: 'QR code', value: (row) => row.qr_code },
+        { label: 'Location', value: (row) => row.org_locations?.name || row.location_name || '' },
+        { label: 'Department', value: (row) => row.departments?.name || row.department_name || '' },
+        { label: 'Area', value: (row) => row.areas?.name || row.area_name || '' },
+        { label: 'Reading required', value: (row) => (row.reading_required ? 'Yes' : 'No') },
+        { label: 'Last reading', value: (row) => row.last_meter_reading },
+        { label: 'Created', value: (row) => row.created_at },
+        { label: 'Updated', value: (row) => row.updated_at },
+        { label: 'Status', value: (row) => (row.is_active === false ? 'Inactive' : 'Active') },
+      ])
+      return
+    }
     res.json(rows)
   } catch (err) {
     res.status(500).json({ error: err.message })

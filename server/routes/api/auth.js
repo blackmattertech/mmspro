@@ -6,7 +6,7 @@ import {
   sendInviteEmail,
   sendPasswordResetEmail,
 } from '../../services/email.js'
-import { getPublicAppUrl } from '../../lib/appUrl.js'
+import { buildAppRecoveryUrl, getPasswordResetRedirectUrl } from '../../lib/appUrl.js'
 import { assertLoginSlotAvailable } from '../../lib/orgLimits.js'
 import { ACCOUNT_ROLES, canManageOrg } from '../../lib/accountRoles.js'
 
@@ -98,7 +98,7 @@ router.post('/password-reset', async (req, res) => {
     return res.status(400).json({ error: 'Email is required' })
   }
 
-  const redirectTo = `${getPublicAppUrl()}/reset-password`
+  const redirectTo = getPasswordResetRedirectUrl()
 
   const { data, error } = await supabaseAdmin.auth.admin.generateLink({
     type: 'recovery',
@@ -116,12 +116,12 @@ router.post('/password-reset', async (req, res) => {
     })
   }
 
-  const actionLink = data?.properties?.action_link
-  if (!actionLink) {
+  const resetUrl = buildAppRecoveryUrl(data)
+  if (!resetUrl) {
     return res.status(500).json({ error: 'Could not create a password reset link.' })
   }
 
-  const sent = await sendPasswordResetEmail(email, { resetUrl: actionLink })
+  const sent = await sendPasswordResetEmail(email, { resetUrl })
   if (!sent) {
     return res.status(500).json({ error: 'Could not send the reset email. Try again later.' })
   }

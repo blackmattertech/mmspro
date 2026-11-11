@@ -577,10 +577,10 @@ function skipPayloadFromBoard(payload, overrides = {}) {
   }
 }
 
-function SkipToggle({ checked, disabled, title, onToggle, children }) {
+function SkipToggle({ checked, disabled, title, onToggle, children, variant = 'check' }) {
   return (
     <label
-      className={`form-masters-skip__toggle${checked ? ' is-on' : ''}${disabled ? ' is-disabled' : ''}`}
+      className={`form-masters-skip__toggle form-masters-skip__toggle--${variant}${checked ? ' is-on' : ''}${disabled ? ' is-disabled' : ''}`}
       title={title || undefined}
     >
       <input
@@ -589,12 +589,24 @@ function SkipToggle({ checked, disabled, title, onToggle, children }) {
         disabled={disabled}
         onChange={onToggle}
       />
+      {variant === 'switch' ? <span className="form-masters-skip__switch" aria-hidden="true" /> : null}
       {children}
     </label>
   )
 }
 
+function skipSectionIcon(label = '') {
+  const text = String(label).toLowerCase()
+  if (text.includes('checklist')) return 'clipboard'
+  if (text.includes('asset') || text.includes('equipment')) return 'asset'
+  if (text.includes('maintenance') || text.includes('execution') || text.includes('permit')) return 'washer'
+  if (text.includes('accept')) return 'userCheck'
+  if (text.includes('request') || text.includes('information')) return 'list'
+  return 'document'
+}
+
 function SkipFieldsView({ formId }) {
+  const navigate = useNavigate()
   const { role } = useAuth()
   const { org } = useOrg()
   const { canUpdate, isOrgAdmin } = usePermissions()
@@ -652,6 +664,17 @@ function SkipFieldsView({ formId }) {
     }
   }
 
+  const handleReset = () => {
+    if (!canManage || !savedPayload) return
+    setPayload(savedPayload)
+    setError(null)
+  }
+
+  const handleCancel = () => {
+    if (dirty) handleReset()
+    if (backTo) navigate(backTo)
+  }
+
   const toggleAcceptance = () => {
     updateDraft((current) => skipPayloadFromBoard(current, {
       skipTechnicianAcceptance: !current?.skipTechnicianAcceptance,
@@ -705,12 +728,19 @@ function SkipFieldsView({ formId }) {
 
   return (
     <div className="company-page others-page">
-      <header className="company-page__header">
+      <header className="company-page__header form-masters-skip__page-head">
         <PageBack to={backTo} label={payload?.label || 'Form'} />
-        <h1 className="company-page__title">Skip fields</h1>
-        <p className="company-page__subtitle">
-          Tick Skip on optional fields, then Save. Greyed boxes are Superadmin-required and cannot be skipped.
-        </p>
+        <div className="form-masters-skip__page-title-row">
+          <div>
+            <h1 className="company-page__title">Skip Fields</h1>
+            <p className="company-page__subtitle">
+              Tick fields to skip on this form. Skipped fields won&apos;t be shown to users while submitting.
+            </p>
+          </div>
+          <p className="form-masters-skip__info" role="status">
+            Skipped fields are hidden from the form.
+          </p>
+        </div>
       </header>
       {loading ? <div className="company-loading">Loading…</div> : null}
       {error ? <p className="company-error">{error}</p> : null}
@@ -724,7 +754,15 @@ function SkipFieldsView({ formId }) {
           {payload.supportsTechnicianAcceptance ? (
             <section className="form-masters-skip__section">
               <div className="form-masters-skip__head">
-                <h2>Technician acceptance</h2>
+                <span className="form-masters-skip__icon" aria-hidden="true">
+                  <NavIcon name="userCheck" />
+                </span>
+                <div className="form-masters-skip__head-copy">
+                  <h2>Technician acceptance</h2>
+                  <p className="form-masters-skip__hint">
+                    When skipped, assigning a technician marks the work order accepted. Supervisor verification stays.
+                  </p>
+                </div>
                 <SkipToggle
                   checked={Boolean(payload.skipTechnicianAcceptance)}
                   disabled={!canManage}
@@ -734,15 +772,20 @@ function SkipFieldsView({ formId }) {
                   Skip
                 </SkipToggle>
               </div>
-              <p className="form-masters-skip__hint">
-                When skipped, assigning a technician marks the work order accepted. Supervisor verification stays.
-              </p>
             </section>
           ) : null}
           {payload.supportsChecklist ? (
             <section className="form-masters-skip__section">
               <div className="form-masters-skip__head">
-                <h2>Checklist</h2>
+                <span className="form-masters-skip__icon" aria-hidden="true">
+                  <NavIcon name="clipboard" />
+                </span>
+                <div className="form-masters-skip__head-copy">
+                  <h2>Checklist</h2>
+                  <p className="form-masters-skip__hint">
+                    When on, people must choose a checklist on this form before they submit.
+                  </p>
+                </div>
                 <SkipToggle
                   checked={Boolean(payload.checklistRequired)}
                   disabled={!canManage}
@@ -752,17 +795,26 @@ function SkipFieldsView({ formId }) {
                   Checklist needed
                 </SkipToggle>
               </div>
-              <p className="form-masters-skip__hint">
-                When on, people must choose a checklist on this form before they submit.
-              </p>
             </section>
           ) : null}
 
           {(payload.sections || []).map((section) => (
             <section key={section.id} className="form-masters-skip__section">
               <div className="form-masters-skip__head">
-                <h2>{section.label}</h2>
+                <span className="form-masters-skip__icon" aria-hidden="true">
+                  <NavIcon name={skipSectionIcon(section.label)} />
+                </span>
+                <div className="form-masters-skip__head-copy">
+                  <h2>{section.label}</h2>
+                  <p className="form-masters-skip__hint">
+                    {section.skipBlockedReason
+                      || (section.skippable
+                        ? 'Optional fields in this section can be hidden from the live form.'
+                        : 'Required Superadmin fields in this section stay visible.')}
+                  </p>
+                </div>
                 <SkipToggle
+                  variant="switch"
                   checked={Boolean(section.skipped)}
                   title={section.skippable
                     ? (section.skipBlockedReason || 'Hide optional fields in this section')
@@ -773,9 +825,6 @@ function SkipFieldsView({ formId }) {
                   Skip section
                 </SkipToggle>
               </div>
-              {section.skipBlockedReason ? (
-                <p className="form-masters-skip__hint">{section.skipBlockedReason}</p>
-              ) : null}
               <div className="form-masters-skip__rows">
                 {(section.fields || []).map((field) => (
                   <div
@@ -785,31 +834,33 @@ function SkipFieldsView({ formId }) {
                     <div className="form-masters-skip__copy">
                       <div className="form-masters-skip__name">
                         <strong>{field.label}</strong>
-                        <SkipToggle
-                          checked={Boolean(field.skipped)}
-                          title={
-                            field.skippable
-                              ? 'Hide this field on the live form'
-                              : (field.skipBlockedReason || 'Required by Superadmin — cannot skip')
-                          }
-                          disabled={
-                            !canManage
-                            || (!field.skippable && !(field.skipped && !field.skippedBecause))
-                          }
-                          onToggle={() => toggleField(section, field)}
-                        >
-                          Skip
-                        </SkipToggle>
+                        {field.required || field.locked ? (
+                          <span className="form-masters-skip__required">Required</span>
+                        ) : null}
                       </div>
                       <span>
                         {field.kind === 'group' ? 'Repeatable group' : fieldTypeLabel(field.fieldType)}
-                        {field.required || field.locked ? ' · Required' : ''}
                         {field.skippedBecause ? ` · Skipped with ${field.skippedBecause}` : ''}
                         {field.skipBlockedReason && !field.skippable && !field.required && !field.locked
                           ? ` · ${field.skipBlockedReason}`
                           : ''}
                       </span>
                     </div>
+                    <SkipToggle
+                      checked={Boolean(field.skipped)}
+                      title={
+                        field.skippable
+                          ? 'Hide this field on the live form'
+                          : (field.skipBlockedReason || 'Required by Superadmin — cannot skip')
+                      }
+                      disabled={
+                        !canManage
+                        || (!field.skippable && !(field.skipped && !field.skippedBecause))
+                      }
+                      onToggle={() => toggleField(section, field)}
+                    >
+                      Skip
+                    </SkipToggle>
                   </div>
                 ))}
               </div>
@@ -825,12 +876,30 @@ function SkipFieldsView({ formId }) {
             <div className="form-masters-skip__actions">
               <button
                 type="button"
-                className="company-btn company-btn--primary"
-                onClick={handleSave}
+                className="company-btn company-btn--secondary form-masters-skip__reset"
+                onClick={handleReset}
                 disabled={saving || !dirty}
               >
-                {saving ? 'Saving…' : 'Save'}
+                Reset to Default
               </button>
+              <div className="form-masters-skip__actions-right">
+                <button
+                  type="button"
+                  className="company-btn company-btn--secondary"
+                  onClick={handleCancel}
+                  disabled={saving}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="company-btn company-btn--primary"
+                  onClick={handleSave}
+                  disabled={saving || !dirty}
+                >
+                  {saving ? 'Saving…' : 'Save Changes'}
+                </button>
+              </div>
             </div>
           ) : null}
         </div>

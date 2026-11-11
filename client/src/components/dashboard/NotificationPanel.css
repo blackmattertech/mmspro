@@ -141,10 +141,21 @@
   color: var(--color-dark-navy);
 }
 
-.notif-panel__item-body {
+.notif-panel__item-body,
+.notif-panel__item-desc {
+  max-width: 100%;
   font-size: 12px;
   line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.notif-panel__item-body {
   color: var(--color-gray-blue);
+}
+
+.notif-panel__item-desc {
+  font-weight: 500;
+  color: var(--color-dark-navy);
 }
 
 .notif-panel__item-time {

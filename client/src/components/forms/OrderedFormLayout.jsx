@@ -276,6 +276,9 @@ export default function OrderedFormLayout({
   fallback,
   renderField,
   renderSection,
+  /** Canonical Asset picker render fn: ({ field, className, required, disabled, section }) => node */
+  assetPicker,
+  /** @deprecated Use assetPicker */
   renderAssetPicker,
   omitField,
   omitFillershipBadge = false,
@@ -342,14 +345,17 @@ export default function OrderedFormLayout({
   useEffect(() => {
     if (!equipmentField) return undefined
     const equipmentId = String(equipmentValue || '')
+    if (!equipmentId) {
+      lastEquipmentIdRef.current = ''
+      return undefined
+    }
     if (equipmentId === lastEquipmentIdRef.current) return undefined
-    lastEquipmentIdRef.current = equipmentId
-    if (!equipmentId) return undefined
 
     let cancelled = false
     getEquipment(equipmentId)
       .then((detail) => {
         if (cancelled || !detail) return
+        lastEquipmentIdRef.current = equipmentId
         const patch = valuesFromEquipmentSelection(detail, layout, catalogLookup)
         const entries = Object.entries(patch).filter(([, value]) => value != null && value !== '')
         if (!entries.length) return
@@ -423,46 +429,40 @@ export default function OrderedFormLayout({
       const excludeIds = excludedValuesForField(item.id, activeRules, dependencyValues)
       const primaryAsset = isPrimaryAssetPickerField(item)
 
-      // Never blank the Asset picker via omitField — forms must render it or get a fallback.
+      // Asset picker visibility is owned here — omitField cannot hide it.
       if (omitField?.(item, section) && !primaryAsset) return null
 
       if (!layoutItemVisible(item, catalogSource, dependencyValues, activeRules)) return null
 
-      // Resolve Asset picker before catalog/master branches so odd ids still mount the control.
       if (primaryAsset) {
         if (assetPickerShownInSection) return null
         assetPickerShownInSection = true
-        const rawKey = parsed.kind === 'system'
-          ? parsed.value
-          : (item.bindKey || 'asset_picker')
-        const assetKey = (rawKey === 'area_id' || rawKey === 'equipment_id')
-          ? rawKey
-          : 'asset_picker'
-        const rendered = renderField?.(assetKey, {
-          className,
-          colSpan: item.colSpan,
-          field: item,
-          required,
-          disabled: locked,
-          section,
-        })
-        if (rendered) return rendered
-        const fromProp = renderAssetPicker?.({
+        const pickerProps = {
           field: item,
           className,
           required,
           disabled: locked,
           section,
-        })
-        if (fromProp) return fromProp
-        // Last resort: still reserve space so host section injectors can fill it.
-        return (
-          <div
-            key={item.id}
-            data-asset-picker-slot="1"
-            className={`wr-asset-picker company-form__field company-form__field--full ${className}`.trim()}
-          />
-        )
+        }
+        const fromCanonical = typeof assetPicker === 'function' ? assetPicker(pickerProps) : null
+        if (fromCanonical != null && fromCanonical !== false) return fromCanonical
+
+        if (typeof renderAssetPicker === 'function') {
+          if (import.meta.env.DEV) {
+            console.warn(
+              '[OrderedFormLayout] renderAssetPicker is deprecated — pass assetPicker instead.',
+            )
+          }
+          const legacy = renderAssetPicker(pickerProps)
+          if (legacy != null && legacy !== false) return legacy
+        }
+
+        if (import.meta.env.DEV) {
+          console.warn(
+            '[OrderedFormLayout] asset picker field present but assetPicker prop is missing.',
+          )
+        }
+        return null
       }
 
       if (parsed.kind === 'catalog') {
@@ -645,7 +645,7 @@ export default function OrderedFormLayout({
           : (selectOptionsForField(item).length
             ? selectOptionsForField(item)
             : staticOptions)
-        const fieldType = item.fieldType || systemField?.fieldType || 'text'
+        const fieldType = systemField?.fieldType || item.fieldType || 'text'
         const resolvedType = fieldType === 'dropdown' && !options.length ? 'text' : fieldType
         return (
           <FormCatalogField
@@ -685,16 +685,13 @@ export default function OrderedFormLayout({
     const omittedFields = sectionFields.some((item) => (
       omitField?.(item, section) && !isPrimaryAssetPickerField(item)
     ))
-    const isAssetSection = /asset/i.test(String(section.label || ''))
-      || sectionFields.some((field) => isPrimaryAssetPickerField(field))
-    // Keep asset sections alive so host forms can inject the picker if field render returned nothing.
-    if (!allChildren.length && !omittedFields && !isCloseoutSection(section) && !isAssetSection) {
+    if (!allChildren.length && !omittedFields && !isCloseoutSection(section)) {
       return null
     }
 
     const badge = (!omitFillershipBadge && filledBy !== 'any') ? (
       <span className="company-form__fillership-badge">
-        {sectionEditable
+        {sectionEditable && !sectionDisabled
           ? `Filled by you (${filledByLabel(filledBy)})`
           : actors?.isCreate && filledBy !== 'creator'
             ? `Filled later by ${filledByLabel(filledBy)}`

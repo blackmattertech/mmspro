@@ -206,7 +206,6 @@ export function applyWorkRequestFilters(rows, {
       inter_department: 'inter inter department',
       intra_department: 'intra intra department',
       user_self: 'self user self',
-      manual: 'manual',
     }
     const getters = {
       status: (row) => `${row.status || ''} ${(row.status || '').replace(/_/g, ' ')}`,

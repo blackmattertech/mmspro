@@ -6,7 +6,7 @@ import {
   requireModulePermission,
   loadOrgPermissions,
 } from '../../middleware/modulePermission.js'
-import { listEnvelope } from '../../lib/listQuery.js'
+import { listEnvelope, parseListControls, sendCsv } from '../../lib/listQuery.js'
 import {
   listTasks,
   countTaskTabs,
@@ -405,12 +405,38 @@ router.get('/tab-counts', canRead, async (req, res) => {
 // Task list
 router.get('/', canRead, async (req, res) => {
   try {
+    const controls = parseListControls(req.query)
+    const filters = listFilters(req.query)
+    if (controls.exportCsv) {
+      filters.limit = 5000
+      filters.offset = 0
+    }
     const page = await listTasks(
       req.userProfile.org_id,
       req.userProfile.id,
-      listFilters(req.query),
+      filters,
       { withCount: true },
     )
+    if (controls.exportCsv) {
+      sendCsv(res, 'tasks.csv', page.items || [], [
+        { label: 'Task #', value: (row) => row.task_number },
+        { label: 'Title', value: (row) => row.title },
+        { label: 'Short description', value: (row) => row.short_description },
+        { label: 'Status', value: (row) => row.status?.name || row.status_name || '' },
+        { label: 'Priority', value: (row) => row.priority?.name || row.priority_name || '' },
+        { label: 'Category', value: (row) => row.category?.name || row.category_name || '' },
+        { label: 'Visibility', value: (row) => row.visibility_type },
+        { label: 'Task type', value: (row) => row.task_type },
+        { label: 'Department', value: (row) => row.department?.name || row.department_name || '' },
+        { label: 'Location', value: (row) => row.location?.name || row.location_name || '' },
+        { label: 'Due date', value: (row) => row.due_date },
+        { label: 'Due time', value: (row) => row.due_time },
+        { label: 'Start date', value: (row) => row.start_date },
+        { label: 'Created', value: (row) => row.created_at },
+        { label: 'Updated', value: (row) => row.updated_at },
+      ])
+      return
+    }
     res.json(listEnvelope(page.items, {
       total: page.total,
       limit: page.limit,

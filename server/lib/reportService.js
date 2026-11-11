@@ -29,7 +29,7 @@ import {
 import { resolveProgressPercent } from './statusProgress.js'
 import { tallyStatusCounts } from './statusCounts.js'
 
-const LOG_SELECT = 'id, org_id, work_order_id, log_date, started_at, ended_at, day_status, work_done, remarks, labour_count, materials'
+const LOG_SELECT = 'id, org_id, work_order_id, log_date, started_at, ended_at, day_status, work_done, remarks, labour_count, materials, field_snapshot, updated_at'
 const WO_SELECT = [
   'id',
   'wo_number',
@@ -394,8 +394,34 @@ async function enrichWorkOrders(orgId, workOrders) {
   })
 }
 
+function formatDosDontsCell(value) {
+  if (value == null || value === '') return ''
+  if (typeof value === 'string') return value
+  if (typeof value !== 'object') return String(value)
+  const dos = Array.isArray(value.dos)
+    ? value.dos.filter(Boolean).join('; ')
+    : String(value.dos || '').trim()
+  const donts = Array.isArray(value.donts)
+    ? value.donts.filter(Boolean).join('; ')
+    : String(value.donts || '').trim()
+  return [dos && `Do's: ${dos}`, donts && `Don'ts: ${donts}`].filter(Boolean).join(' | ')
+}
+
 function logRowFrom(log, workOrder, now) {
   const hours = hoursWorked(log.started_at, log.ended_at, now)
+  const snap = log.field_snapshot && typeof log.field_snapshot === 'object'
+    ? log.field_snapshot
+    : {}
+  const materialRows = Array.isArray(snap.material_rows) && snap.material_rows.length
+    ? snap.material_rows
+    : log.materials
+  const labour = snap.labour_count != null && snap.labour_count !== ''
+    ? Number(snap.labour_count) || 0
+    : Number(log.labour_count) || 0
+  const workDone = String(snap.work_done || log.work_done || '').trim()
+  const remarks = String(
+    snap.execution_remarks || snap.remarks || log.remarks || '',
+  ).trim()
   return {
     id: log.id,
     log_date: log.log_date,
@@ -407,14 +433,23 @@ function logRowFrom(log, workOrder, now) {
     assignees: workOrder?.assignees || '',
     started_at: log.started_at,
     ended_at: log.ended_at,
+    updated_at: log.updated_at || null,
     hours,
-    labour: Number(log.labour_count) || 0,
-    materials: formatMaterialsCell(log.materials),
-    work_done: log.work_done || '',
-    remarks: log.remarks || '',
+    labour,
+    materials: formatMaterialsCell(materialRows),
+    work_done: workDone,
+    job_description: String(snap.job_description || '').trim(),
+    root_cause: String(snap.root_cause || '').trim(),
+    action_taken: String(snap.action_taken || '').trim(),
+    special_tools_used: String(snap.special_tools_used || '').trim(),
+    safety_precautions: String(snap.safety_precautions || '').trim(),
+    dos_and_donts: formatDosDontsCell(snap.dos_and_donts),
+    lessons_learned: String(snap.lessons_learned || '').trim(),
+    execution_remarks: String(snap.execution_remarks || '').trim(),
+    remarks,
     wo_status: workOrder?.status || '',
     priority: workOrder?.priority || '',
-    _material_qty: materialQtyTotal(log.materials),
+    _material_qty: materialQtyTotal(materialRows),
   }
 }
 
@@ -429,6 +464,14 @@ function logMatchesSearch(row, search) {
     row.equipment,
     row.assignees,
     row.work_done,
+    row.job_description,
+    row.root_cause,
+    row.action_taken,
+    row.special_tools_used,
+    row.safety_precautions,
+    row.dos_and_donts,
+    row.lessons_learned,
+    row.execution_remarks,
     row.remarks,
     row.wo_status,
     row.priority,

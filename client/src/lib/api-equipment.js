@@ -24,6 +24,18 @@ export async function getEquipmentList(params = {}) {
   return asListArray(data)
 }
 
+export function exportEquipment(params = {}) {
+  return apiFetchBlob(`/api/equipment${listQueryParams({
+    location_id: params.locationId,
+    department_id: params.departmentId,
+    area_id: params.areaId,
+    search: params.search,
+    filters: params.filters,
+    sort_by: params.sortBy,
+    exportCsv: true,
+  })}`)
+}
+
 export function getEquipment(id) {
   return apiFetch(`/api/equipment/${id}`)
 }

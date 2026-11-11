@@ -106,7 +106,7 @@ export default function WorkRequestFormSections({ workRequest, onHasSections }) 
         actors={formActors}
         valueLabels={routingValueLabels}
         renderField={(key, props) => renderIncomingRequestInfoField(workRequest, key, props)}
-        renderAssetPicker={({ className, field }) => {
+        assetPicker={({ className, field }) => {
           const steps = hierarchyDisplaySteps(hierarchy)
           if (!steps.length && !qrValue) {
             return (

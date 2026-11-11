@@ -23,7 +23,6 @@ export const REQUEST_TYPE_OPTIONS = [
   { value: 'inter_department', label: 'Inter Department' },
   { value: 'intra_department', label: 'Intra Department' },
   { value: 'user_self', label: 'User Self Request' },
-  { value: 'manual', label: 'Manual Work Request' },
 ]
 
 export const SYSTEM_FIELD_OPTIONS = {

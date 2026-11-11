@@ -38,6 +38,7 @@ import {
   normalizeSkipPayload,
   saveFormSkips,
 } from '../../lib/formSkips.js'
+import { loadOrgChecklistEnabledFormIds } from '../../lib/checklistService.js'
 
 const router = Router()
 const formMasterListCache = createTtlCache({ ttlMs: 15_000, maxEntries: 200 })
@@ -181,11 +182,15 @@ router.get('/:formId', canReadAssets, async (req, res) => {
   try {
     const formId = decodeURIComponent(req.params.formId)
     const pack = await loadFormPack(req.userProfile.org_id, formId)
-    const skips = await loadFormSkips(req.userProfile.org_id, formId, { required: true })
+    const [skips, enabledFormIds] = await Promise.all([
+      loadFormSkips(req.userProfile.org_id, formId, { required: true }),
+      loadOrgChecklistEnabledFormIds(req.userProfile.org_id),
+    ])
     const optionFieldIds = new Set((pack.fields || []).map((field) => field.id))
     const board = describeSkipBoard(formId, pack.layout, skips, {
       formDef: pack.formDef,
       optionFieldIds,
+      enabledFormIds,
     })
     res.json({
       formId,
@@ -210,7 +215,8 @@ router.put('/:formId/skips', canReadAssets, requireManage, async (req, res) => {
   try {
     const formId = decodeURIComponent(req.params.formId)
     const pack = await loadFormPack(req.userProfile.org_id, formId)
-    const rows = normalizeSkipPayload(formId, pack.layout, req.body || {}, pack.formDef)
+    const enabledFormIds = await loadOrgChecklistEnabledFormIds(req.userProfile.org_id)
+    const rows = normalizeSkipPayload(formId, pack.layout, req.body || {}, pack.formDef, enabledFormIds)
     await saveFormSkips(req.userProfile.org_id, formId, rows)
     formMasterListCache.delete(req.userProfile.org_id)
     const skips = await loadFormSkips(req.userProfile.org_id, formId)
@@ -218,6 +224,7 @@ router.put('/:formId/skips', canReadAssets, requireManage, async (req, res) => {
     const board = describeSkipBoard(formId, pack.layout, skips, {
       formDef: pack.formDef,
       optionFieldIds,
+      enabledFormIds,
     })
     res.json({
       formId,

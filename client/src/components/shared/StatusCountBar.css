@@ -94,10 +94,34 @@
   min-width: 0;
 }
 
+.wo-progress-editor--panel {
+  gap: 8px;
+  width: 100%;
+  max-width: 100%;
+  padding-top: 4px;
+}
+
+.wo-progress-editor__label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-gray-blue);
+}
+
 .wo-progress-editor__row {
   display: flex;
   align-items: center;
   gap: 10px;
+}
+
+.wo-progress-editor--panel .wo-progress-editor__row {
+  gap: 12px;
+}
+
+.wo-progress-editor--panel .wo-progress-editor__slider {
+  min-width: 0;
+  width: 100%;
 }
 
 .wo-progress-editor__slider {
@@ -182,16 +206,17 @@
   font-weight: 600;
   font-family: inherit;
   font-variant-numeric: tabular-nums;
-  color: var(--color-dark-navy);
-  background: var(--color-off-white);
-  border: 1px solid var(--color-light-gray-1);
+  color: var(--color-primary);
+  background: var(--color-white);
+  border: 1.5px solid var(--color-primary);
   border-radius: var(--radius-pill);
   cursor: pointer;
 }
 
 .wo-progress-editor__preset:hover:not(:disabled) {
-  border-color: var(--color-gray-blue);
-  color: var(--color-primary);
+  color: var(--color-white);
+  background: var(--color-primary);
+  border-color: var(--color-primary);
 }
 
 .wo-progress-editor__preset--active {

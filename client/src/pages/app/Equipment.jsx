@@ -6,7 +6,17 @@ import { useEquipment } from '../../hooks/useEquipment'
 import { useLocations } from '../../hooks/useLocations'
 import { useDepartments } from '../../hooks/useDepartments'
 import { useOrgEquipmentFields } from '../../hooks/useOrgEquipmentFields'
-import { getEquipment, getEquipmentColumnValues, getEquipmentTemplate, bulkUploadEquipment, deleteEquipment } from '../../lib/api-equipment'
+import {
+  getEquipment,
+  getEquipmentColumnValues,
+  getEquipmentTemplate,
+  bulkUploadEquipment,
+  deleteEquipment,
+  exportEquipment,
+} from '../../lib/api-equipment'
+import { downloadBlobFile } from '../../lib/api'
+import { ExportCsvButton } from '../../components/shared/ListTableChrome'
+import '../../components/shared/ListTableChrome.css'
 import { invalidateReferenceCache } from '../../lib/referenceDataCache'
 import EquipmentModal from '../../components/equipment/EquipmentModal'
 import GooToggle from '../../components/ui/GooToggle'
@@ -186,6 +196,7 @@ export default function Equipment() {
   const [viewing, setViewing] = useState(null)
   const [selected, setSelected] = useState(() => new Set())
   const [bulkDeleting, setBulkDeleting] = useState(false)
+  const [exporting, setExporting] = useState(false)
   const [deleteError, setDeleteError] = useState(null)
   const [labelsOpen, setLabelsOpen] = useState(false)
   const selectAllRef = useRef(null)
@@ -382,6 +393,23 @@ export default function Equipment() {
                   sort={{ value: sortBy, onChange: setSortBy, options: TABLE_SORT_OPTIONS }}
                   actions={(
                     <>
+                      <ExportCsvButton
+                        busy={exporting}
+                        onClick={async () => {
+                          setExporting(true)
+                          try {
+                            const file = await exportEquipment({
+                              locationId: scopedLocationId,
+                              search: debouncedSearch,
+                              filters: compactFilters(columnFilters),
+                              sortBy,
+                            })
+                            downloadBlobFile(file)
+                          } finally {
+                            setExporting(false)
+                          }
+                        }}
+                      />
                       <button
                         type="button"
                         className="company-btn company-btn--secondary"

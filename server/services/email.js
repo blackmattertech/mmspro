@@ -143,6 +143,28 @@ function messageBlockHtml(message) {
   `
 }
 
+function detailRows(lines) {
+  return (lines || [])
+    .filter((line) => line?.value)
+    .map((line) => `
+      <tr>
+        <td style="padding:6px 12px 6px 0;font-size:13px;line-height:18px;color:#6B7280;vertical-align:top;white-space:nowrap;">${escapeHtml(line.label)}</td>
+        <td style="padding:6px 0;font-size:14px;line-height:18px;color:#111111;font-weight:600;">${escapeHtml(line.value)}</td>
+      </tr>
+    `)
+    .join('')
+}
+
+function detailsBlockHtml(details) {
+  const rows = detailRows(details)
+  if (!rows) return ''
+  return `
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="width:100%;margin:0 0 22px;">
+      ${rows}
+    </table>
+  `
+}
+
 export const sendNotificationEmail = ({
   to,
   toName,
@@ -151,17 +173,37 @@ export const sendNotificationEmail = ({
   actionUrl,
   actor,
   message,
+  details = [],
+  subject,
 }) => {
   const summary = String(body || '').trim()
   const quote = String(message || '').trim()
+  const detailList = (Array.isArray(details) ? details : [])
+    .map((row) => ({
+      label: String(row?.label || '').trim(),
+      value: row?.value == null ? '' : String(row.value).trim(),
+    }))
+    .filter((row) => row.label && row.value)
+  const shortDescription = detailList.find((row) => /^short description$/i.test(row.label))?.value || ''
+  const emailSubject = String(subject || title || 'MMS PRO notification').trim() || 'MMS PRO notification'
   const safeTitle = escapeHtml(title || 'MMS PRO notification')
   const safeBody = summary && summary !== quote ? escapeHtml(summary) : ''
+  const safeShort = shortDescription && shortDescription !== summary && shortDescription !== quote
+    ? escapeHtml(shortDescription)
+    : ''
   const safeUrl = escapeHtml(actionUrl || getPublicAppUrl())
-  const preview = [actor?.name, title, quote || summary].filter(Boolean).join(' — ')
+  const preview = [
+    actor?.name,
+    title,
+    detailList.find((row) => /request|work order|task/i.test(row.label))?.value,
+    shortDescription || quote || summary,
+  ].filter(Boolean).join(' — ')
   const textLines = [
     title,
     actor?.name && [actor.name, actor.department].filter(Boolean).join(' · '),
     summary && summary !== quote ? summary : null,
+    shortDescription && shortDescription !== summary ? `Short description: ${shortDescription}` : null,
+    ...detailList.map((row) => `${row.label}: ${row.value}`),
     quote,
     actionUrl,
   ].filter(Boolean)
@@ -169,7 +211,7 @@ export const sendNotificationEmail = ({
   return sendEmail({
     to,
     toName,
-    subject: title || 'MMS PRO notification',
+    subject: emailSubject,
     htmlContent: `
       <div style="margin:0;padding:0;background:#f5f6f8;font-family:Inter,Arial,Helvetica,sans-serif;">
         <div style="display:none;max-height:0;overflow:hidden;">${escapeHtml(preview)}</div>
@@ -188,13 +230,15 @@ export const sendNotificationEmail = ({
                     <h1 style="margin:0 0 16px;font-size:20px;line-height:26px;color:#111111;">${safeTitle}</h1>
                     ${actorBlockHtml(actor)}
                     ${safeBody ? `<p style="margin:0 0 16px;font-size:15px;line-height:22px;color:#374151;">${safeBody}</p>` : ''}
+                    ${safeShort ? `<p style="margin:0 0 16px;font-size:15px;line-height:22px;color:#111111;font-weight:600;">${safeShort}</p>` : ''}
+                    ${detailsBlockHtml(detailList)}
                     ${messageBlockHtml(quote)}
                     <a href="${safeUrl}" style="display:inline-block;padding:10px 18px;background:#E63946;color:#ffffff;font-size:14px;font-weight:600;border-radius:8px;">Open in MMS PRO</a>
                   </td>
                 </tr>
                 <tr>
                   <td style="padding:16px 28px 22px;font-size:12px;line-height:18px;color:#9CA3AF;">
-                    You received this because you have a work order or work request update in MMS PRO.
+                    You received this because you have an update in MMS PRO.
                   </td>
                 </tr>
               </table>
@@ -259,18 +303,6 @@ export const sendEmployeePasswordSetupEmail = (to, { resetUrl, orgName, employee
       ? `Hello ${employeeName},\n\nCreate your MMS PRO password here: ${resetUrl}`
       : `Create your MMS PRO password here: ${resetUrl}`,
   })
-
-function detailRows(lines) {
-  return lines
-    .filter((line) => line.value)
-    .map((line) => `
-      <tr>
-        <td style="padding:6px 12px 6px 0;font-size:13px;line-height:18px;color:#6B7280;vertical-align:top;">${escapeHtml(line.label)}</td>
-        <td style="padding:6px 0;font-size:14px;line-height:18px;color:#111111;font-weight:600;">${escapeHtml(line.value)}</td>
-      </tr>
-    `)
-    .join('')
-}
 
 export const sendCheckoutDroppedEmail = (to, { company, planName, amount, currency, orderId, reason }) => {
   const companyName = company?.companyName || 'A company'

@@ -12,6 +12,8 @@ import { hydrateMasterValues } from '../../lib/formFieldSources'
 import WorkOrderProcessLayout, { useWorkOrderProcessLayout } from './WorkOrderProcessLayout'
 import DateField from '../ui/DateField'
 import SpellcheckInput from '../shared/SpellcheckInput'
+import { useTextFieldLimits } from '../../hooks/useTextFieldLimits'
+import { findVisibleCharacterLimitError, firstCharacterLimitMessage } from '../../lib/textFieldLimits'
 import FormLabel from '../shared/FormLabel'
 import EmployeeAvatar from '../company/EmployeeAvatar'
 import FilterableSelect from '../ui/FilterableSelect'
@@ -61,6 +63,15 @@ export default function WorkOrderAssignmentActions({ detail, onUpdated, readOnly
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
   const [success, setSuccess] = useState(null)
+  const { maxLength } = useTextFieldLimits()
+  const remarksLimit = maxLength('remarks')
+
+  const assertRemarksLimit = () => {
+    const limitError = firstCharacterLimitMessage([
+      { key: 'remarks', label: 'Assignment remarks', value: assignmentRemarks },
+    ], maxLength) || findVisibleCharacterLimitError(document)
+    if (limitError) throw new Error(limitError)
+  }
 
   const assignActors = useMemo(() => resolveFormActors({
     formId: assignFormId,
@@ -143,6 +154,7 @@ export default function WorkOrderAssignmentActions({ detail, onUpdated, readOnly
     setError(null)
     setSuccess(null)
     try {
+      assertRemarksLimit()
       const updated = await updateWorkOrderAssignment(detail.id, {
         claim_self: true,
         start: true,
@@ -184,6 +196,7 @@ export default function WorkOrderAssignmentActions({ detail, onUpdated, readOnly
     setError(null)
     setSuccess(null)
     try {
+      assertRemarksLimit()
       const payload = {
         assigned_employee_ids: employeeIds,
         work_center: workCenter || null,
@@ -348,7 +361,7 @@ export default function WorkOrderAssignmentActions({ detail, onUpdated, readOnly
         if (key === 'assignment_remarks') {
           return (
             <label key={key} className={className}>
-              <FormLabel>Assignment remarks{requiredMark}</FormLabel>
+              <FormLabel limit={remarksLimit}>Assignment remarks{requiredMark}</FormLabel>
               <SpellcheckInput
                 multiline
                 className="company-form__input company-form__textarea"
@@ -356,6 +369,7 @@ export default function WorkOrderAssignmentActions({ detail, onUpdated, readOnly
                 value={assignmentRemarks}
                 onChange={(e) => setAssignmentRemarks(e.target.value)}
                 disabled={locked}
+                maxLength={remarksLimit}
               />
             </label>
           )
@@ -443,7 +457,7 @@ export default function WorkOrderAssignmentActions({ detail, onUpdated, readOnly
                 <DateField value={plannedEndAt} onChange={setPlannedEndAt} withTime disabled={saving} />
               </label>
               <label className="company-form__field">
-                <FormLabel>Assignment remarks</FormLabel>
+                <FormLabel limit={remarksLimit}>Assignment remarks</FormLabel>
                 <SpellcheckInput
                   multiline
                   className="company-form__input company-form__textarea"
@@ -451,6 +465,7 @@ export default function WorkOrderAssignmentActions({ detail, onUpdated, readOnly
                   value={assignmentRemarks}
                   onChange={(e) => setAssignmentRemarks(e.target.value)}
                   disabled={saving}
+                  maxLength={remarksLimit}
                 />
               </label>
             </>

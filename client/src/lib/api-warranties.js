@@ -1,4 +1,4 @@
-import { apiFetch } from './api'
+import { apiFetch, apiFetchBlob } from './api'
 import { listQueryParams, asListArray } from './listResponse'
 
 export async function getWarrantiesList(params = {}) {
@@ -15,6 +15,20 @@ export async function getWarrantiesList(params = {}) {
     expiring_date_to: params.expiring_date_to,
   })}`)
   return asListArray(data)
+}
+
+export function exportWarranties(params = {}) {
+  return apiFetchBlob(`/api/warranties${listQueryParams({
+    search: params.search,
+    filters: params.filters,
+    warranty_status: params.warranty_status,
+    expiring_mode: params.expiring_mode,
+    expiring_min_days: params.expiring_min_days,
+    expiring_max_days: params.expiring_max_days,
+    expiring_date_from: params.expiring_date_from,
+    expiring_date_to: params.expiring_date_to,
+    exportCsv: true,
+  })}`)
 }
 
 export function getWarranty(id) {

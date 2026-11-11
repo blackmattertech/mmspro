@@ -1,10 +1,15 @@
 import { getFirebaseMessaging, isFirebaseAdminConfigured } from './firebase.js'
 import { supabaseAdmin } from './supabase.js'
 import { runInBackground } from '../lib/jobQueue.js'
+import { getPublicAppUrl } from '../lib/appUrl.js'
 import { fallbackInboxUrl, resolveInboxUrl } from '../lib/notificationInboxUrl.js'
 import { loadTimelineActors } from '../lib/timelineActors.js'
 import { getSignedUrlForEmail } from '../lib/signedUrlCache.js'
 import { isEmailConfigured, sendNotificationEmail } from './email.js'
+import {
+  buildNotificationEmailDetails,
+  notificationEmailSubject,
+} from '../lib/notificationEmailDetails.js'
 
 const USER_ASSETS_BUCKET = 'user-assets'
 const ORG_ASSETS_BUCKET = 'org-assets'
@@ -33,6 +38,159 @@ async function orgSlug(orgId) {
   return slug
 }
 
+const SHORT_DESCRIPTION_MAX = 200
+const shortDescCache = new Map()
+const shortDescInflight = new Map()
+
+function clipText(value, max = SHORT_DESCRIPTION_MAX) {
+  const text = String(value || '').replace(/\s+/g, ' ').trim()
+  if (!text) return ''
+  return text.length > max ? `${text.slice(0, max - 1)}…` : text
+}
+
+function alreadyIncludes(haystack, needle) {
+  const sample = String(needle || '').slice(0, Math.min(40, String(needle || '').length)).toLowerCase()
+  return Boolean(sample) && String(haystack || '').toLowerCase().includes(sample)
+}
+
+function shortDescKey(orgId, data = {}) {
+  return [
+    orgId || '',
+    data.work_order_id || '',
+    data.work_request_id || '',
+    data.task_id || '',
+  ].join(':')
+}
+
+async function readShortDescription(table, orgId, id, columns) {
+  const { data, error } = await supabaseAdmin
+    .from(table)
+    .select(columns)
+    .eq('org_id', orgId)
+    .eq('id', id)
+    .maybeSingle()
+  if (error) throw error
+  return data
+}
+
+async function loadShortDescription(orgId, data = {}) {
+  if (data.work_order_id) {
+    const order = await readShortDescription(
+      'manual_work_orders',
+      orgId,
+      data.work_order_id,
+      'short_description, work_request_id',
+    )
+    const fromOrder = String(order?.short_description || '').trim()
+    if (fromOrder) return fromOrder
+    const requestId = data.work_request_id || order?.work_request_id
+    if (requestId) {
+      const request = await readShortDescription('work_requests', orgId, requestId, 'short_description')
+      return String(request?.short_description || '').trim()
+    }
+    return ''
+  }
+  if (data.work_request_id) {
+    const request = await readShortDescription('work_requests', orgId, data.work_request_id, 'short_description')
+    return String(request?.short_description || '').trim()
+  }
+  if (data.task_id) {
+    const task = await readShortDescription('tasks', orgId, data.task_id, 'short_description')
+    return String(task?.short_description || '').trim()
+  }
+  return ''
+}
+
+async function resolveShortDescription(orgId, data = {}) {
+  const explicit = clipText(data.short_description)
+  if (explicit) return explicit
+  if (!orgId || !(data.work_order_id || data.work_request_id || data.task_id)) return ''
+
+  const key = shortDescKey(orgId, data)
+  const hit = shortDescCache.get(key)
+  if (hit && Date.now() - hit.at < 20_000) return hit.value
+
+  let pending = shortDescInflight.get(key)
+  if (!pending) {
+    pending = loadShortDescription(orgId, data)
+      .then((value) => {
+        const text = clipText(value)
+        shortDescCache.set(key, { at: Date.now(), value: text })
+        if (shortDescCache.size > 200) {
+          shortDescCache.delete(shortDescCache.keys().next().value)
+        }
+        return text
+      })
+      .finally(() => shortDescInflight.delete(key))
+    shortDescInflight.set(key, pending)
+  }
+  return pending
+}
+
+export async function attachNotificationShortDescriptions(orgId, items = []) {
+  if (!orgId || !items?.length) return items
+  const pending = items.filter((item) => !clipText(item?.data?.short_description))
+  if (!pending.length) return items
+
+  const idsOf = (key) => [...new Set(pending.map((item) => item.data?.[key]).filter(Boolean))]
+  const woIds = idsOf('work_order_id')
+  const wrIds = idsOf('work_request_id')
+  const taskIds = idsOf('task_id')
+
+  const [ordersRes, requestsRes, tasksRes] = await Promise.all([
+    woIds.length
+      ? supabaseAdmin.from('manual_work_orders').select('id, short_description, work_request_id').eq('org_id', orgId).in('id', woIds)
+      : Promise.resolve({ data: [] }),
+    wrIds.length
+      ? supabaseAdmin.from('work_requests').select('id, short_description').eq('org_id', orgId).in('id', wrIds)
+      : Promise.resolve({ data: [] }),
+    taskIds.length
+      ? supabaseAdmin.from('tasks').select('id, short_description').eq('org_id', orgId).in('id', taskIds)
+      : Promise.resolve({ data: [] }),
+  ])
+
+  const orders = new Map((ordersRes.data || []).map((row) => [row.id, row]))
+  const requests = new Map((requestsRes.data || []).map((row) => [row.id, clipText(row.short_description)]))
+  const tasks = new Map((tasksRes.data || []).map((row) => [row.id, clipText(row.short_description)]))
+
+  const extraRequestIds = [...new Set(
+    (ordersRes.data || [])
+      .filter((row) => !clipText(row.short_description) && row.work_request_id && !requests.has(row.work_request_id))
+      .map((row) => row.work_request_id),
+  )]
+  if (extraRequestIds.length) {
+    const { data } = await supabaseAdmin
+      .from('work_requests')
+      .select('id, short_description')
+      .eq('org_id', orgId)
+      .in('id', extraRequestIds)
+    for (const row of data || []) requests.set(row.id, clipText(row.short_description))
+  }
+
+  return items.map((item) => {
+    if (clipText(item?.data?.short_description)) return item
+    const data = item.data || {}
+    const order = orders.get(data.work_order_id)
+    const text = clipText(order?.short_description)
+      || requests.get(data.work_request_id)
+      || requests.get(order?.work_request_id)
+      || tasks.get(data.task_id)
+      || ''
+    if (!text || alreadyIncludes(item.body, text)) return item
+    return {
+      ...item,
+      data: { ...data, short_description: text },
+    }
+  })
+}
+
+function pushBodyWithShortDescription(body, short) {
+  const summary = String(body || '').trim()
+  const text = clipText(short)
+  if (!text || alreadyIncludes(summary, text)) return summary
+  return summary ? `${summary}\n${text}` : text
+}
+
 async function persistInAppNotification(userId, { title, body, data = {}, url = '/' }) {
   const { data: profile } = await supabaseAdmin
     .from('profiles')
@@ -48,6 +206,16 @@ async function persistInAppNotification(userId, { title, body, data = {}, url = 
     console.warn('Failed to resolve notification URL:', err.message)
   }
 
+  let shortDescription = ''
+  try {
+    shortDescription = await resolveShortDescription(profile?.org_id, data)
+  } catch (err) {
+    console.warn('Notification short description failed:', err.message)
+  }
+  const storedData = shortDescription
+    ? { ...data, short_description: shortDescription }
+    : data
+
   const { data: row, error } = await supabaseAdmin
     .from('user_notifications')
     .insert({
@@ -56,16 +224,26 @@ async function persistInAppNotification(userId, { title, body, data = {}, url = 
       title,
       body: body || '',
       url: resolvedUrl,
-      data,
+      data: storedData,
     })
     .select('id')
     .single()
 
+  const saved = {
+    id: row?.id || null,
+    url: resolvedUrl,
+    email: profile?.email,
+    name: profile?.full_name,
+    org_id: profile?.org_id,
+    data: storedData,
+    short_description: shortDescription,
+  }
+
   if (error) {
     console.warn('Failed to persist in-app notification:', error.message)
-    return { id: null, url: resolvedUrl, email: profile?.email, name: profile?.full_name, org_id: profile?.org_id }
+    return saved
   }
-  return { ...row, url: resolvedUrl, email: profile?.email, name: profile?.full_name, org_id: profile?.org_id }
+  return saved
 }
 
 const DEFAULT_NOTIFICATION_SOUND = 'https://ik.imagekit.io/w2lf8dznx/notification'
@@ -80,7 +258,7 @@ function soundForPayload({ title = '', data = {} } = {}) {
 }
 
 function publicAppUrl(path) {
-  const base = (process.env.APP_PUBLIC_URL || process.env.CLIENT_URL || '').replace(/\/$/, '')
+  const base = getPublicAppUrl()
   if (!path || path === '/') return base || '/'
   if (path.startsWith('http')) return path
   if (!base) return path
@@ -91,7 +269,39 @@ function shouldEmailNotification(data = {}) {
   const type = String(data.type || '').toLowerCase()
   return type.startsWith('work_order')
     || type.startsWith('work_request')
-    || Boolean(data.work_order_id || data.work_request_id)
+    || type.startsWith('task')
+    || type.startsWith('pm_')
+    || Boolean(data.work_order_id || data.work_request_id || data.task_id || data.pm_plan_id)
+}
+
+const emailDetailsCache = new Map()
+
+async function resolveEmailDetails(orgId, data = {}) {
+  if (Array.isArray(data.details) && data.details.length) {
+    return data.details
+  }
+  const key = [
+    orgId || '',
+    data.work_order_id || '',
+    data.work_request_id || '',
+    data.task_id || '',
+    data.pm_plan_id || '',
+    data.type || '',
+  ].join(':')
+  const hit = emailDetailsCache.get(key)
+  if (hit && Date.now() - hit.at < 20_000) return hit.details
+  try {
+    const details = await buildNotificationEmailDetails(orgId, data)
+    emailDetailsCache.set(key, { at: Date.now(), details })
+    if (emailDetailsCache.size > 200) {
+      const oldest = emailDetailsCache.keys().next().value
+      emailDetailsCache.delete(oldest)
+    }
+    return details
+  } catch (err) {
+    console.warn('Notification email details failed:', err.message)
+    return []
+  }
 }
 
 async function resolveNotificationRecipient(userId, hint = {}) {
@@ -150,14 +360,17 @@ async function sendWorkNotificationEmail(userId, { title, body, data = {}, url =
     console.warn('Notification actor lookup failed:', err.message)
   }
   const message = String(data.message || '').trim()
+  const details = await resolveEmailDetails(hint.org_id, data)
   return sendNotificationEmail({
     to: recipient.email,
     toName: recipient.name,
     title,
+    subject: notificationEmailSubject(title, details),
     body,
     actionUrl: publicAppUrl(url),
     actor,
     message,
+    details,
   })
 }
 
@@ -215,11 +428,12 @@ export const notifyUser = async (userId, { title, body, data = {}, url = '/' }) 
   if (!userId) return null
   const saved = await persistInAppNotification(userId, { title, body, data, url })
   const resolvedUrl = saved?.url || url
+  const storedData = saved?.data || data
   try {
     await sendPush(userId, {
       title,
-      body,
-      data,
+      body: pushBodyWithShortDescription(body, saved?.short_description),
+      data: storedData,
       url: resolvedUrl,
       notificationId: saved?.id,
     })

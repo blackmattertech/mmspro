@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { updateWorkOrderLifecycle } from '../../lib/api-work-orders'
 import { useProfile } from '../../hooks/useProfile'
+import { usePermissions } from '../../hooks/usePermissions'
 import { useOrgStatusOptions } from '../../hooks/useOrgStatusOptions'
 import { resolveProgressPercent } from '../../lib/statusProgress'
 import '../shared/StatusCountBar.css'
@@ -27,14 +28,34 @@ function ProgressReadout({ percent }) {
   )
 }
 
-export default function WorkOrderProgressControl({ detail, onUpdated }) {
-  const { employee } = useProfile()
+export default function WorkOrderProgressControl({
+  detail,
+  onUpdated,
+  layout = 'inline',
+  showLabel = false,
+  /** When set, overrides the default assignee/permission check. */
+  editable,
+}) {
+  const { employee, profile } = useProfile()
+  const { isOrgAdmin, canUpdate } = usePermissions()
   const { statuses } = useOrgStatusOptions('work_order', { includeInactive: true })
   const saved = resolveProgressPercent(detail, statuses)
-  const canAdjust = isAssignedTechnician(detail, employee?.id)
+  const canSupervise = Boolean(
+    isOrgAdmin
+    || canUpdate('work_orders_approve')
+    || canUpdate('work_orders')
+    || canUpdate('work_orders_manual')
+    || canUpdate('work_orders_scheduled')
+    || detail?.created_by === profile?.id
+    || detail?.supervisor_id === profile?.id
+  )
+  const canAdjust = editable !== undefined
+    ? Boolean(editable)
+    : (isAssignedTechnician(detail, employee?.id) || canSupervise)
   const [value, setValue] = useState(saved)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
+  const isPanel = layout === 'panel'
 
   useEffect(() => {
     setValue(saved)
@@ -43,7 +64,17 @@ export default function WorkOrderProgressControl({ detail, onUpdated }) {
 
   if (!detail) return null
 
-  if (!canAdjust) return <ProgressReadout percent={saved} />
+  if (!canAdjust) {
+    if (!isPanel && !showLabel) return <ProgressReadout percent={saved} />
+    return (
+      <div className={`wo-progress-editor${isPanel ? ' wo-progress-editor--panel' : ''}`}>
+        {(showLabel || isPanel) && (
+          <span className="wo-progress-editor__label">Progress %</span>
+        )}
+        <ProgressReadout percent={saved} />
+      </div>
+    )
+  }
 
   const dirty = value !== saved
 
@@ -61,7 +92,10 @@ export default function WorkOrderProgressControl({ detail, onUpdated }) {
   }
 
   return (
-    <div className="wo-progress-editor">
+    <div className={`wo-progress-editor${isPanel ? ' wo-progress-editor--panel' : ''}`}>
+      {(showLabel || isPanel) && (
+        <span className="wo-progress-editor__label">Progress %</span>
+      )}
       <div className="wo-progress-editor__row">
         <input
           className="wo-progress-editor__slider"
