@@ -87,6 +87,8 @@ export default function ReportsFilters({
   activeCount = 0,
   onSearch,
   onClear,
+  onApplied,
+  onClose,
   reportKind = 'unified',
   columnDefs = [],
   selectedColumnIds = [],
@@ -237,6 +239,11 @@ export default function ReportsFilters({
     }
   }
 
+  const handleSearch = () => {
+    onSearch?.()
+    onApplied?.()
+  }
+
   return (
     <div className="reports-filters reports-filters--rail">
       <div className="reports-filters__panel reports-filters__panel--rail">
@@ -246,11 +253,25 @@ export default function ReportsFilters({
               Filters
               {activeCount > 0 ? <span className="reports-filters__badge">{activeCount}</span> : null}
             </strong>
-            <p className="reports-filters__subtitle">All filters stay visible. Click Search to apply.</p>
+            <p className="reports-filters__subtitle">Adjust filters, then Search to apply.</p>
           </div>
-          <button type="button" className="reports-filters__clear-link" onClick={handleClear}>
-            Clear all
-          </button>
+          <div className="reports-filters__header-actions">
+            <button type="button" className="reports-filters__clear-link" onClick={handleClear}>
+              Clear all
+            </button>
+            {onClose ? (
+              <button
+                type="button"
+                className="reports-filters__close"
+                onClick={onClose}
+                aria-label="Close filters"
+              >
+                <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
+                  <path d="M4.5 4.5L13.5 13.5M13.5 4.5L4.5 13.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+                </svg>
+              </button>
+            ) : null}
+          </div>
         </div>
 
         <div className="reports-filters__scroll">
@@ -480,7 +501,7 @@ export default function ReportsFilters({
           <button type="button" className="company-btn company-btn--secondary" onClick={handleClear}>
             Clear
           </button>
-          <button type="button" className="company-btn company-btn--primary" onClick={() => onSearch?.()}>
+          <button type="button" className="company-btn company-btn--primary" onClick={handleSearch}>
             Search
           </button>
         </div>

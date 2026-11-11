@@ -577,7 +577,11 @@ export default function ReportPage() {
         onSendNow={() => {
           setSendNowOpen(true)
         }}
-        filters={(
+        filterActiveCount={countActiveReportFilters(
+          appliedFilters,
+          canSelectLocation ? '' : (filterOptions?.location_id || appliedFilters.facility_id),
+        )}
+        filters={({ onApplied, onClose } = {}) => (
           <ReportsFilters
             filters={draftFilters}
             onChange={setDraftFilters}
@@ -602,6 +606,8 @@ export default function ReportPage() {
             )}
             onSearch={handleSearch}
             onClear={handleClear}
+            onApplied={onApplied}
+            onClose={onClose}
           />
         )}
       >

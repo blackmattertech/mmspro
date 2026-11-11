@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import FilterableSelect from '../ui/FilterableSelect'
 import TableFilterToolbar from '../shared/TableFilterToolbar'
 import SpellcheckInput from '../shared/SpellcheckInput'
@@ -57,16 +58,68 @@ export default function ReportsLayout({
   onSendNow,
   onDownloadCsv,
   canDownload = true,
+  filterActiveCount = 0,
   filters = null,
   children,
 }) {
+  const [filtersOpen, setFiltersOpen] = useState(false)
+  const [isCompactLayout, setIsCompactLayout] = useState(() => (
+    typeof window !== 'undefined' ? window.matchMedia('(max-width: 1100px)').matches : false
+  ))
+
+  useEffect(() => {
+    const media = window.matchMedia('(max-width: 1100px)')
+    const sync = () => {
+      const compact = media.matches
+      setIsCompactLayout(compact)
+      if (!compact) setFiltersOpen(false)
+    }
+    sync()
+    media.addEventListener('change', sync)
+    return () => media.removeEventListener('change', sync)
+  }, [])
+
+  useEffect(() => {
+    if (!filtersOpen) return undefined
+    const previous = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape') setFiltersOpen(false)
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.body.style.overflow = previous
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [filtersOpen])
+
+  const closeFilters = () => setFiltersOpen(false)
+
   return (
-    <div className="company-page wo-page reports-page">
+    <div className={`company-page wo-page reports-page${filtersOpen ? ' reports-page--filters-open' : ''}`}>
       <div className="reports-page__shell">
         {filters ? (
-          <aside className="reports-page__filters" aria-label="Report filters">
-            {filters}
-          </aside>
+          <>
+            <button
+              type="button"
+              className="reports-page__filters-backdrop"
+              aria-label="Close filters"
+              tabIndex={filtersOpen ? 0 : -1}
+              onClick={closeFilters}
+            />
+            <aside
+              className={`reports-page__filters${filtersOpen ? ' reports-page__filters--open' : ''}`}
+              aria-label="Report filters"
+              id="reports-filters-panel"
+            >
+              {typeof filters === 'function'
+                ? filters({
+                  onApplied: isCompactLayout ? closeFilters : undefined,
+                  onClose: isCompactLayout ? closeFilters : undefined,
+                })
+                : filters}
+            </aside>
+          </>
         ) : null}
 
         <div className="reports-page__main">
@@ -87,6 +140,23 @@ export default function ReportsLayout({
                   placeholder: 'Search report…',
                   ariaLabel: 'Search report',
                 }}
+                filterSlot={filters ? (
+                  <button
+                    type="button"
+                    className={`reports-page__filters-toggle${filterActiveCount > 0 ? ' reports-page__filters-toggle--active' : ''}${filtersOpen ? ' reports-page__filters-toggle--open' : ''}`}
+                    onClick={() => setFiltersOpen((open) => !open)}
+                    aria-expanded={filtersOpen}
+                    aria-controls="reports-filters-panel"
+                  >
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                      <path d="M2 4H14M4 8H12M6 12H10" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+                    </svg>
+                    Filters
+                    {filterActiveCount > 0 ? (
+                      <span className="reports-page__filters-toggle-badge">{filterActiveCount}</span>
+                    ) : null}
+                  </button>
+                ) : null}
                 actions={(
                   <>
                     <div className="reports-toolbar__group">
@@ -151,7 +221,7 @@ export default function ReportsLayout({
                         </>
                       )}
                     </div>
-                    <div className="reports-toolbar__group">
+                    <div className="reports-toolbar__group reports-toolbar__group--actions">
                       {canSchedule && (
                         <TextButton label="Schedule" onClick={onSchedule} />
                       )}
