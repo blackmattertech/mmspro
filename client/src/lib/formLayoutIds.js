@@ -118,16 +118,26 @@ export function isGroupId(id) {
 
 const ASSET_PICKER_KEYS = new Set(['asset_picker', 'equipment_id', 'area_id'])
 
-export function isAssetPickerControlField(field) {
+/** System / bindKey Asset picker slot (not auto-from-equipment catalog mirrors). */
+export function isPrimaryAssetPickerField(field) {
   if (!field) return false
-  if (field.autoFromEquipment) return true
   const parsed = parseLayoutId(field.id)
   if (parsed.kind === 'system' && ASSET_PICKER_KEYS.has(parsed.value)) return true
-  if (parsed.kind === 'master' && (parsed.value === 'areas' || parsed.value === 'equipment')) return true
-  if (field.masterSource === 'areas' || field.masterSource === 'equipment') return true
   if (field.bindKey === 'area_id' || field.bindKey === 'equipment_id' || field.bindKey === 'asset_picker') {
     return true
   }
+  // Form Builder compound block label fallback when id/prefix is odd in saved layouts.
+  if (/^asset\s*picker$/i.test(String(field.label || '').trim())) return true
+  return false
+}
+
+export function isAssetPickerControlField(field) {
+  if (!field) return false
+  if (field.autoFromEquipment) return true
+  if (isPrimaryAssetPickerField(field)) return true
+  const parsed = parseLayoutId(field.id)
+  if (parsed.kind === 'master' && (parsed.value === 'areas' || parsed.value === 'equipment')) return true
+  if (field.masterSource === 'areas' || field.masterSource === 'equipment') return true
   return false
 }
 
@@ -140,7 +150,10 @@ export function collapseToAssetPickerBlock(layout) {
   const assetFields = layout.fields.filter(isAssetPickerControlField)
   if (!assetFields.length) return layout
 
-  const sectionId = assetFields[0].sectionId
+  const assetSection = (layout.sections || []).find((section) => (
+    /asset/i.test(String(section.label || ''))
+  ))
+  const sectionId = assetSection?.id || assetFields[0].sectionId
   const order = Math.min(...assetFields.map((field) => Number(field.order) || 0))
   const required = assetFields.some((field) => {
     const parsed = parseLayoutId(field.id)

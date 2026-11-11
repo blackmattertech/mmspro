@@ -26,6 +26,7 @@ import { missingRequiredLayoutValues, splitBoundValues } from '../../lib/formFie
 import { layoutRequiresChecklist } from '../../lib/formSkips'
 import {
   isAssetPickerControlField,
+  isPrimaryAssetPickerField,
   layoutWithoutAreasMaster,
   masterId,
   normalizePmPlanLayout,
@@ -913,7 +914,20 @@ export default function PmPlanModal({ plan, saving, onClose, onSave }) {
         </nav>
 
         <form className="company-modal__form" ref={formRef} onSubmit={handleSubmit} noValidate>
-          {hasLayout && stepLayout && (
+          {hasLayout && stepLayout && (() => {
+            let pmAssetPickerShown = false
+            const mountPmAssetPicker = (className, key = 'asset_picker') => {
+              if (pmAssetPickerShown) {
+                return <span key={`${key}-dup`} hidden aria-hidden="true" />
+              }
+              pmAssetPickerShown = true
+              return (
+                <div key={key}>
+                  {renderAssetPicker(`pm-asset-picker company-form__field company-form__field--full ${className || ''}`.trim())}
+                </div>
+              )
+            }
+            return (
             <OrderedFormLayout
               formId="pm.plan"
               layout={stepLayout}
@@ -934,6 +948,7 @@ export default function PmPlanModal({ plan, saving, onClose, onSave }) {
               actors={formActors}
               currentEmployeeId={!plan?.id ? (session?.employee_id || employee?.id || null) : null}
               omitField={(item) => {
+                if (isPrimaryAssetPickerField(item)) return false
                 if (isAssetPickerControlField(item) || isEquipmentMasterField(item)) return true
                 const parsed = parseLayoutId(item?.id)
                 if ((parsed.kind === 'master' && parsed.value === 'areas') || item?.masterSource === 'areas') return true
@@ -943,12 +958,12 @@ export default function PmPlanModal({ plan, saving, onClose, onSave }) {
                 }
                 return Boolean(item?.autoFromEquipment)
               }}
+              renderAssetPicker={({ className, field }) => (
+                mountPmAssetPicker(className, field?.id || 'asset_picker')
+              )}
               renderSection={(sectionId, children, section) => {
-                const sectionFields = (stepLayout?.fields || []).filter((field) => field.sectionId === sectionId)
-                const showPicker = /asset/i.test(String(section?.label || ''))
-                  || sectionFields.some((field) => isAssetPickerControlField(field))
                 const nodes = (children || []).filter(Boolean)
-                if (!showPicker && !nodes.length) return null
+                if (!nodes.length) return null
                 return (
                   <section
                     key={sectionId}
@@ -962,10 +977,7 @@ export default function PmPlanModal({ plan, saving, onClose, onSave }) {
                       </div>
                     ) : null}
                     <div className="wo-section__body company-form__layout-section-body">
-                      {showPicker ? renderAssetPicker('pm-asset-picker company-form__field company-form__field--full') : null}
-                      {nodes.length > 0 ? (
-                        <div className="company-form__grid company-form__grid--12">{nodes}</div>
-                      ) : null}
+                      <div className="company-form__grid company-form__grid--12">{nodes}</div>
                     </div>
                   </section>
                 )
@@ -1036,7 +1048,7 @@ export default function PmPlanModal({ plan, saving, onClose, onSave }) {
                   )
                 }
                 if (key === 'area_id' || key === 'equipment_id' || key === 'asset_picker') {
-                  return null
+                  return mountPmAssetPicker(className, key)
                 }
                 if (key === 'schedule') {
                   return renderScheduleFields(className.includes('company-form__field--full') ? className : `${className} company-form__field--full`)
@@ -1073,7 +1085,8 @@ export default function PmPlanModal({ plan, saving, onClose, onSave }) {
                 return null
               }}
             />
-          )}
+            )
+          })()}
           {hasLayout && /asset/i.test(String(wizardSteps.find((row) => row.id === step)?.label || '')) && !(stepLayout?.fields || []).length && (
             <section className="company-form__layout-section wo-section">
               <div className="wo-section__header company-form__layout-section-head">

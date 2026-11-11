@@ -30,6 +30,8 @@ export default function WorkOrderOrderToField({
   disabled = false,
   embedded = false,
   className = '',
+  hint = 'The department that attended or completed this work.',
+  label = 'Order to department *',
 }) {
   const { departments, loading } = useDepartments('', { limit: 200 })
 
@@ -53,7 +55,7 @@ export default function WorkOrderOrderToField({
   const field = (
     <>
       <label className={`company-form__field ${className}`.trim()}>
-        <span className="company-form__label">Order to department *</span>
+        <span className="company-form__label">{label}</span>
         <FilterableSelect
           className="company-form__input--select"
           value={value || ''}
@@ -68,9 +70,7 @@ export default function WorkOrderOrderToField({
           required
         />
       </label>
-      <p className="wo-manual__intro">
-        The department head, or people in that department who can approve, will assign a technician in their department.
-      </p>
+      {hint ? <p className="wo-manual__intro">{hint}</p> : null}
     </>
   )
 

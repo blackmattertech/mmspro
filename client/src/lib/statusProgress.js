@@ -35,8 +35,17 @@ export function progressPercentForStatus(status, statuses = []) {
   return Math.round((idx / Math.max(ordered.length - 1, 1)) * 90)
 }
 
+function isManualWorkOrder(record) {
+  return String(record?.source_type || '').toLowerCase() === 'manual'
+}
+
 /** Saved technician progress when present, otherwise the status fallback. */
 export function resolveProgressPercent(record, statuses = []) {
+  const status = String(record?.status || '').trim()
+  // Manual WOs have no assignment/execution stages — completed means fully done.
+  if (isManualWorkOrder(record) && (status === 'completed' || status === 'verified' || status === 'closed')) {
+    return 100
+  }
   if (record?.progress_percent != null && record.progress_percent !== '') {
     const stored = Number(record.progress_percent)
     if (Number.isFinite(stored)) return Math.max(0, Math.min(100, Math.round(stored)))

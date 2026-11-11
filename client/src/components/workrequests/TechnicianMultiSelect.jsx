@@ -51,7 +51,10 @@ export default function TechnicianMultiSelect({
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [highlightedIndex, setHighlightedIndex] = useState(0)
-  const selectedIds = Array.isArray(value) ? value : []
+  const selectedIds = useMemo(
+    () => (Array.isArray(value) ? value : []).map((id) => String(id)).filter(Boolean),
+    [value],
+  )
   const { popoverRef, style, popoverProps } = useFixedPopover({
     open,
     anchorRef: controlRef,
@@ -63,7 +66,7 @@ export default function TechnicianMultiSelect({
 
   const selectedEmployees = useMemo(
     () => selectedIds
-      .map((id) => employees.find((employee) => employee.id === id))
+      .map((id) => employees.find((employee) => String(employee.id) === id))
       .filter(Boolean),
     [employees, selectedIds],
   )
@@ -82,11 +85,12 @@ export default function TechnicianMultiSelect({
 
   const toggle = (employeeId) => {
     if (disabled || !employeeId) return
-    if (selectedIds.includes(employeeId)) {
-      onChange(selectedIds.filter((id) => id !== employeeId))
+    const nextId = String(employeeId)
+    if (selectedIds.includes(nextId)) {
+      onChange(selectedIds.filter((id) => id !== nextId))
       return
     }
-    onChange([...selectedIds, employeeId])
+    onChange([...selectedIds, nextId])
   }
 
   useEffect(() => {
@@ -169,7 +173,7 @@ export default function TechnicianMultiSelect({
           </li>
         ) : (
           filtered.map((employee, index) => {
-            const selected = selectedIds.includes(employee.id)
+            const selected = selectedIds.includes(String(employee.id))
             return (
               <li key={employee.id} role="presentation">
                 <button
@@ -183,7 +187,10 @@ export default function TechnicianMultiSelect({
                   ].filter(Boolean).join(' ')}
                   onMouseEnter={() => setHighlightedIndex(index)}
                   onMouseDown={(event) => event.preventDefault()}
-                  onClick={() => toggle(employee.id)}
+                  onClick={() => {
+                    toggle(employee.id)
+                    setOpen(true)
+                  }}
                 >
                   <span className={`wr-tech-select__check${selected ? ' wr-tech-select__check--on' : ''}`} aria-hidden="true">
                     {selected ? '✓' : ''}

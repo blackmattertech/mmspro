@@ -46,6 +46,10 @@ import {
   optionLabel,
   optionValue,
 } from '../../lib/formOptionRules'
+import {
+  isRequestTypeField,
+  lockedRequestTypeOptions,
+} from '../../lib/systemFieldFallback'
 
 const EMPTY_OPTION = { label: '', value: '', rules: [] }
 
@@ -229,8 +233,11 @@ function FieldEditor({
   const mapped = !groupMode && Boolean(draft.masterSource)
   const columnMapped = !groupMode && !mapped && Boolean(draft.equipmentColumnId)
   const fieldType = mapped || columnMapped ? 'dropdown' : (draft.fieldType || 'text')
+  const requestTypeLocked = isRequestTypeField(draft)
   const showOptions = !mapped && !columnMapped && fieldTypeSupportsOptions(fieldType)
-  const options = showOptions ? optionsForEditor(draft.options) : []
+  const options = showOptions
+    ? optionsForEditor(requestTypeLocked ? lockedRequestTypeOptions(draft.options) : draft.options)
+    : []
   const isDependent = Boolean(draft.dependsOnFieldId)
   const selectedParent = parentCandidates.find((item) => item.id === draft.dependsOnFieldId) || null
   const selectedDepends = new Set(
@@ -394,10 +401,9 @@ function FieldEditor({
           <div className="form-builder-editor__options">
             <span className="company-form__label">Options & rules</span>
             <p className="form-builder-editor__hint">
-              Label is shown to users. Value is stored (and used for Also save as).
-              Rules on an option control other fields when that option is selected.
-              Use Copy from for Intra (Order To = Order From). Use Exclude source for Inter
-              (Order From removed from Order To list).
+              {requestTypeLocked
+                ? 'Request type options are hardcoded (same as Work Request) on every module. You can still attach show/hide/copy rules to each option.'
+                : 'Label is shown to users. Value is stored (and used for Also save as). Rules on an option control other fields when that option is selected. Use Copy from for Intra (Order To = Order From). Use Exclude source for Inter (Order From removed from Order To list).'}
             </p>
             {options.map((opt, index) => (
               <div key={index} className="form-builder-editor__option-block">
@@ -406,6 +412,7 @@ function FieldEditor({
                     className="company-form__input"
                     value={opt.label}
                     onChange={(event) => {
+                      if (requestTypeLocked) return
                       const label = event.target.value
                       const nextValue = opt.value && opt.value !== slugFromLabel(opt.label)
                         ? opt.value
@@ -413,14 +420,21 @@ function FieldEditor({
                       updateOption(index, { label, value: nextValue || opt.value })
                     }}
                     placeholder="Label"
+                    readOnly={requestTypeLocked}
+                    disabled={requestTypeLocked}
                   />
                   <input
                     className="company-form__input"
                     value={opt.value}
-                    onChange={(event) => updateOption(index, { value: event.target.value })}
+                    onChange={(event) => {
+                      if (requestTypeLocked) return
+                      updateOption(index, { value: event.target.value })
+                    }}
                     placeholder="Value"
+                    readOnly={requestTypeLocked}
+                    disabled={requestTypeLocked}
                   />
-                  {options.length > 1 && (
+                  {!requestTypeLocked && options.length > 1 && (
                     <button
                       type="button"
                       className="company-btn company-btn--ghost"
@@ -508,13 +522,15 @@ function FieldEditor({
                 </div>
               </div>
             ))}
-            <button
-              type="button"
-              className="company-btn company-btn--secondary"
-              onClick={() => onChange({ ...draft, options: [...options, emptyOptionDraft()] })}
-            >
-              + Add option
-            </button>
+            {!requestTypeLocked && (
+              <button
+                type="button"
+                className="company-btn company-btn--secondary"
+                onClick={() => onChange({ ...draft, options: [...options, emptyOptionDraft()] })}
+              >
+                + Add option
+              </button>
+            )}
           </div>
         )}
 
@@ -965,6 +981,32 @@ export default function FormBuilderCanvas({
       return
     }
     setLocalError(null)
+    const parsed = parseLayoutId(item.id)
+    const assetPickerBlock = parsed.kind === 'system' && parsed.value === 'asset_picker'
+    if (assetPickerBlock && isWorkOrderProcessForm(form?.formId)) {
+      setLayout((prev) => {
+        const current = cloneLayout(prev || emptyLayout())
+        current.sections = current.sections.map((section) => {
+          if (section.id !== selectedSectionId) return section
+          const next = { ...section, stage: 'create' }
+          if (!section.filledBy || section.filledBy === 'technician') delete next.filledBy
+          return next
+        })
+        if (!current.fields.some((field) => field.id === item.id)) {
+          const siblings = current.fields.filter((field) => field.sectionId === selectedSectionId)
+          current.fields.push(fieldPayload({
+            id: item.id,
+            colSpan: item.colSpan || 100,
+            required: Boolean(item.required),
+            bindKey: 'asset_picker',
+            label: item.label || 'Asset picker',
+          }, selectedSectionId, siblings.length))
+        }
+        return collapseToAssetPickerBlock(current)
+      })
+      expandSection(selectedSectionId)
+      return
+    }
     addField(item.id, selectedSectionId, item.colSpan || 100, item.required)
   }
 
@@ -989,7 +1031,12 @@ export default function FormBuilderCanvas({
     setLayout((prev) => {
       const current = cloneLayout(prev || emptyLayout())
       if (!current.sections.some((section) => section.id === sectionId)) {
-        ensureSection(current, sectionId, 'Asset information')
+        ensureSection(
+          current,
+          sectionId,
+          'Asset information',
+          isWorkOrderProcessForm(form?.formId) ? { stage: 'create', filledBy: 'any' } : {},
+        )
       }
       if (formUsesCompoundAssetPicker(formDef)) {
         const hasPicker = current.fields.some((field) => {
@@ -1122,6 +1169,16 @@ export default function FormBuilderCanvas({
     if (!field.editable) return
     setSelectedFieldId(field.id)
     if (groupId) setSelectedGroupId(groupId)
+    const bindKey = groupId ? '' : (field.bindKey || suggestedBindKey(form?.formId, layout, field.masterSource, field.id))
+    const draftSeed = {
+      id: field.id,
+      label: field.label || '',
+      bindKey,
+      key: parseLayoutId(field.id).kind === 'system' ? parseLayoutId(field.id).value : '',
+    }
+    const nextOptions = isRequestTypeField(draftSeed)
+      ? lockedRequestTypeOptions(field.options)
+      : optionsForEditor(field.options)
     setEditor({
       isNew: false,
       id: field.id,
@@ -1130,8 +1187,8 @@ export default function FormBuilderCanvas({
       label: field.label || '',
       fieldType: field.fieldType || 'dropdown',
       masterSource: groupId ? '' : (field.masterSource || ''),
-      bindKey: groupId ? '' : (field.bindKey || suggestedBindKey(form?.formId, layout, field.masterSource, field.id)),
-      options: optionsForEditor(field.options),
+      bindKey,
+      options: nextOptions,
       dependsOnFieldId: field.dependsOnFieldId || '',
       dependsOnOptions: Array.isArray(field.dependsOnOptions) ? [...field.dependsOnOptions] : [],
       filterByFieldId: field.filterByFieldId || '',
@@ -1278,8 +1335,15 @@ export default function FormBuilderCanvas({
       : ''
     const fieldType = masterSource || equipmentColumnId ? 'dropdown' : (editor.fieldType || 'text')
     const bindKey = editor.groupId ? '' : (editor.bindKey || '')
+    const requestTypeLocked = isRequestTypeField({
+      ...editor,
+      bindKey,
+      key: parseLayoutId(editor.id).kind === 'system' ? parseLayoutId(editor.id).value : '',
+    })
     const options = !masterSource && !equipmentColumnId && fieldTypeSupportsOptions(fieldType)
-      ? normalizeOptions(editor.options)
+      ? (requestTypeLocked
+        ? lockedRequestTypeOptions(editor.options)
+        : normalizeOptions(editor.options))
       : []
     const dependsOnFieldId = editor.dependsOnFieldId || ''
     const dependsOnOptions = dependsOnFieldId
@@ -1384,9 +1448,17 @@ export default function FormBuilderCanvas({
   const renameSection = (sectionId, label) => {
     setLayout((prev) => {
       const current = cloneLayout(prev)
-      current.sections = current.sections.map((section) => (
-        section.id === sectionId ? { ...section, label } : section
-      ))
+      current.sections = current.sections.map((section) => {
+        if (section.id !== sectionId) return section
+        const next = { ...section, label }
+        const assetOnWorkOrder = isWorkOrderProcessForm(form?.formId) && /asset/i.test(String(label || ''))
+        const stage = normalizeStage(section.stage)
+        if (assetOnWorkOrder && (!stage || stage === 'execution')) {
+          next.stage = 'create'
+          if (!section.filledBy || section.filledBy === 'technician') delete next.filledBy
+        }
+        return next
+      })
       return current
     })
   }
@@ -1823,7 +1895,18 @@ export default function FormBuilderCanvas({
                       className={`form-builder-palette__item ${usedSectionIds.has(sectionLayoutId) ? 'is-used' : ''}`}
                       onClick={() => {
                         setPaletteSectionId(open ? null : section.id)
-                        addSection(sectionLayoutId, [], section.name)
+                        const assetOnWorkOrder = isWorkOrderProcessForm(form?.formId)
+                          && /asset/i.test(String(section.name || ''))
+                        addSection(
+                          sectionLayoutId,
+                          fields.map((parent) => ({
+                            id: catalogId(parent.id),
+                            colSpan: defaultColSpanForType(parent.field_type),
+                            required: Boolean(parent.is_required),
+                          })),
+                          section.name,
+                          assetOnWorkOrder ? { stage: 'create', filledBy: 'any' } : {},
+                        )
                         setSelectedSectionId(sectionLayoutId)
                       }}
                     >
