@@ -18,6 +18,9 @@ import {
   ORDER_TYPE_OPTIONS,
   previousEqualRange,
   REPORT_PRIORITY_OPTIONS,
+  UNIFIED_REPORT_KEY,
+  WORK_REQUEST_REPORT_KEY,
+  PM_PLAN_REPORT_KEY,
   WO_IN_PROGRESS_STATUSES,
   WO_OPEN_STATUSES,
   WO_TERMINAL_STATUSES,
@@ -810,8 +813,16 @@ async function loadEquipmentCatalog(orgId, locationId) {
   })
 }
 
-export async function getReportFilterOptions(orgId, session) {
+function statusEntityForReportKey(reportKey) {
+  if (reportKey === WORK_REQUEST_REPORT_KEY) return 'work_request'
+  if (reportKey === PM_PLAN_REPORT_KEY) return 'pm_plan'
+  if (reportKey === 'tasks') return 'task'
+  return 'work_order'
+}
+
+export async function getReportFilterOptions(orgId, session, { reportKey } = {}) {
   const locationId = resolveLocationFilter(session, null)
+  const statusEntity = statusEntityForReportKey(reportKey || UNIFIED_REPORT_KEY)
   const [locations, departmentsResult, areasResult, employeesResult, statuses, jobNatures, equipment] = await Promise.all([
     loadLocations(orgId, locationId),
     supabaseAdmin
@@ -832,7 +843,7 @@ export async function getReportFilterOptions(orgId, session) {
       .eq('org_id', orgId)
       .eq('is_active', true)
       .order('name'),
-    listOrgStatuses(orgId, 'work_order'),
+    listOrgStatuses(orgId, statusEntity, { includeInactive: true }),
     resolveJobNatureChoiceList(orgId),
     loadEquipmentCatalog(orgId, locationId),
   ])
@@ -859,6 +870,7 @@ export async function getReportFilterOptions(orgId, session) {
   }
 
   return {
+    report_key: reportKey || UNIFIED_REPORT_KEY,
     order_types: ORDER_TYPE_OPTIONS,
     priorities: REPORT_PRIORITY_OPTIONS,
     statuses: (statuses || []).map((row) => ({ value: row.key, label: row.name })),
@@ -876,6 +888,375 @@ export async function getReportFilterOptions(orgId, session) {
     equipment,
     can_select_location: !locationId,
     location_id: locationId,
+  }
+}
+
+const WR_REPORT_SELECT = [
+  'id',
+  'request_number',
+  'status',
+  'request_type',
+  'request_date',
+  'created_at',
+  'order_from_department_id',
+  'order_to_department_id',
+  'equipment_id',
+  'requested_by',
+  'priority',
+  'short_description',
+  'problem_description',
+  'job_nature',
+  'remarks',
+  'is_breakdown',
+  'execution_status',
+].join(', ')
+
+const PM_REPORT_SELECT = [
+  'id',
+  'plan_number',
+  'name',
+  'department_id',
+  'location_id',
+  'area_id',
+  'equipment_id',
+  'activity_type_id',
+  'work_center',
+  'priority',
+  'status',
+  'schedule_type',
+  'start_date',
+  'end_date',
+  'next_due_at',
+  'estimated_labour_hours',
+  'contractor_vendor_id',
+  'created_by',
+  'created_at',
+].join(', ')
+
+async function loadWorkRequestsForReport(orgId, { locationId, dateFrom, dateTo } = {}) {
+  return fetchAllPages(() => {
+    let query = supabaseAdmin
+      .from('work_requests')
+      .select(WR_REPORT_SELECT)
+      .eq('org_id', orgId)
+      .neq('status', 'draft')
+    if (dateFrom) query = query.gte('request_date', dateFrom)
+    if (dateTo) query = query.lte('request_date', dateTo)
+    return query.order('request_date', { ascending: false })
+  }).then(async (rows) => {
+    if (!locationId) return rows
+    const deptIds = rows.flatMap((row) => [row.order_to_department_id, row.order_from_department_id])
+    const eqIds = rows.map((row) => row.equipment_id)
+    const [deptMap, eqMap] = await Promise.all([
+      fetchByIds('departments', 'id, location_id, all_locations', deptIds),
+      fetchByIds('equipment', 'id, location_id', eqIds),
+    ])
+    return rows.filter((row) => {
+      const equipment = row.equipment_id ? eqMap.get(row.equipment_id) : null
+      if (equipment?.location_id === locationId) return true
+      const orderTo = row.order_to_department_id ? deptMap.get(row.order_to_department_id) : null
+      if (orderTo && (orderTo.all_locations || orderTo.location_id === locationId)) return true
+      const orderFrom = row.order_from_department_id ? deptMap.get(row.order_from_department_id) : null
+      if (orderFrom && (orderFrom.all_locations || orderFrom.location_id === locationId)) return true
+      return false
+    })
+  })
+}
+
+async function loadPmPlansForReport(orgId, { locationId, dateFrom, dateTo } = {}) {
+  return fetchAllPages(() => {
+    let query = supabaseAdmin
+      .from('pm_plans')
+      .select(PM_REPORT_SELECT)
+      .eq('org_id', orgId)
+    if (locationId) query = query.eq('location_id', locationId)
+    if (dateFrom) query = query.gte('next_due_at', `${dateFrom}T00:00:00.000Z`)
+    if (dateTo) query = query.lte('next_due_at', `${dateTo}T23:59:59.999Z`)
+    return query.order('next_due_at', { ascending: true })
+  })
+}
+
+async function loadPmTechniciansByPlan(orgId, planIds) {
+  const map = new Map()
+  const unique = [...new Set((planIds || []).filter(Boolean))]
+  for (let i = 0; i < unique.length; i += 200) {
+    const chunk = unique.slice(i, i + 200)
+    const { data, error } = await supabaseAdmin
+      .from('pm_plan_technicians')
+      .select('plan_id, employee_id, org_employees(id, name)')
+      .eq('org_id', orgId)
+      .in('plan_id', chunk)
+    if (error) throw error
+    for (const row of data || []) {
+      const name = row.org_employees?.name
+      const id = row.org_employees?.id || row.employee_id
+      if (!name && !id) continue
+      if (!map.has(row.plan_id)) map.set(row.plan_id, [])
+      map.get(row.plan_id).push({ id, name: name || '' })
+    }
+  }
+  return map
+}
+
+async function buildWorkRequestReport(orgId, filters) {
+  const requests = await loadWorkRequestsForReport(orgId, {
+    locationId: filters.locationId,
+    dateFrom: filters.dateFrom,
+    dateTo: filters.dateTo,
+  })
+  const eqIds = requests.map((row) => row.equipment_id)
+  const deptIds = requests.flatMap((row) => [row.order_from_department_id, row.order_to_department_id])
+  const reporterIds = requests.map((row) => row.requested_by)
+
+  const [eqMap, deptMap, peopleMap, fields] = await Promise.all([
+    fetchByIds('equipment', 'id, name, code, location_id, area_id', eqIds),
+    fetchByIds('departments', 'id, name, location_id, all_locations', deptIds),
+    loadTimelineActors(orgId, reporterIds),
+    loadOrgFields(orgId),
+  ])
+
+  const areaIds = [...eqMap.values()].map((row) => row.area_id)
+  const locIds = [
+    ...[...eqMap.values()].map((row) => row.location_id),
+    ...[...deptMap.values()].map((row) => row.location_id),
+  ]
+  const [areaMap, locMap, valuesByEquipment] = await Promise.all([
+    fetchByIds('areas', 'id, name, location_id', areaIds),
+    fetchByIds('org_locations', 'id, name', locIds),
+    loadEquipmentValuesByIds(orgId, [...eqMap.keys()]),
+  ])
+  const roleFields = pickEquipmentRoleFields(fields)
+
+  const rows = requests.map((row) => {
+    const equipment = row.equipment_id ? eqMap.get(row.equipment_id) : null
+    const values = equipment ? (valuesByEquipment.get(equipment.id) || {}) : {}
+    const area = equipment?.area_id ? areaMap.get(equipment.area_id) : null
+    const orderTo = row.order_to_department_id ? deptMap.get(row.order_to_department_id) : null
+    const orderFrom = row.order_from_department_id ? deptMap.get(row.order_from_department_id) : null
+    const plantId = equipment?.location_id || area?.location_id || orderTo?.location_id || orderFrom?.location_id || null
+    const plant = plantId ? locMap.get(plantId) : null
+    const reporter = row.requested_by ? peopleMap.get(row.requested_by) : null
+
+    return {
+      id: row.id,
+      request_number: row.request_number || '',
+      request_date: String(row.request_date || row.created_at || '').slice(0, 10),
+      request_type: row.request_type || '',
+      status: row.status || '',
+      priority: row.priority || '',
+      job_nature: row.job_nature || '',
+      order_from: orderFrom?.name || '',
+      order_to: orderTo?.name || '',
+      area: area?.name || '',
+      plant: plant?.name || '',
+      equipment: equipment
+        ? (equipment.code ? `${equipment.code} — ${equipment.name}` : equipment.name)
+        : '',
+      equipment_type: (roleFields.type && values[roleFields.type.id]) || '',
+      equipment_capacity: (roleFields.capacity && values[roleFields.capacity.id]) || '',
+      equipment_tag: (roleFields.tag && values[roleFields.tag.id]) || '',
+      reported_by: reporter?.name || reporter?.full_name || '',
+      short_description: row.short_description || '',
+      problem_description: row.problem_description || '',
+      remarks: row.remarks || '',
+      execution_status: row.execution_status || '',
+      is_breakdown: row.is_breakdown ? 'Yes' : 'No',
+      _order_from_id: row.order_from_department_id || null,
+      _order_to_id: row.order_to_department_id || null,
+      _area_id: equipment?.area_id || area?.id || null,
+      _plant_id: plantId,
+      _equipment_id: equipment?.id || null,
+      _reported_by: row.requested_by || null,
+    }
+  }).filter((row) => {
+    if (filters.orderFromId && row._order_from_id !== filters.orderFromId) return false
+    if (filters.orderToId && row._order_to_id !== filters.orderToId) return false
+    if (filters.areaId && row._area_id !== filters.areaId) return false
+    if (filters.locationId && row._plant_id !== filters.locationId) return false
+    if (filters.equipmentId && row._equipment_id !== filters.equipmentId) return false
+    if (filters.equipmentType && !sameText(row.equipment_type, filters.equipmentType)) return false
+    if (filters.equipmentCapacity && !sameText(row.equipment_capacity, filters.equipmentCapacity)) return false
+    if (filters.equipmentTag && !sameText(row.equipment_tag, filters.equipmentTag)) return false
+    if (filters.priority && !sameText(row.priority, filters.priority)) return false
+    if (filters.status && row.status !== filters.status) return false
+    if (filters.jobNature && !sameText(row.job_nature, filters.jobNature)) return false
+    if (filters.reportedBy && row._reported_by !== filters.reportedBy) return false
+    if (!filters.search) return true
+    return [
+      row.request_number,
+      row.request_date,
+      row.request_type,
+      row.status,
+      row.priority,
+      row.job_nature,
+      row.order_from,
+      row.order_to,
+      row.area,
+      row.plant,
+      row.equipment,
+      row.reported_by,
+      row.short_description,
+      row.problem_description,
+      row.remarks,
+    ].some((value) => matchesSearch(value, filters.search))
+  })
+
+  const openStatuses = new Set(['submitted', 'pending_approval', 'need_info', 'info_provided'])
+  const approved = rows.filter((row) => row.status === 'approved').length
+  const converted = rows.filter((row) => row.status === 'converted').length
+  const rejected = rows.filter((row) => row.status === 'rejected' || row.status === 'cancelled').length
+  const open = rows.filter((row) => openStatuses.has(row.status)).length
+
+  return {
+    rows: rows.map(({
+      _order_from_id,
+      _order_to_id,
+      _area_id,
+      _plant_id,
+      _equipment_id,
+      _reported_by,
+      ...row
+    }) => row),
+    kpis: [
+      { key: 'total', label: 'Work requests', value: rows.length },
+      { key: 'open', label: 'Open', value: open },
+      { key: 'in_progress', label: 'Approved', value: approved },
+      { key: 'completed', label: 'Converted', value: converted },
+      { key: 'overdue', label: 'Rejected / Cancelled', value: rejected },
+    ],
+    status_counts: tallyStatusCounts(rows),
+  }
+}
+
+async function buildPmPlanReport(orgId, filters, now) {
+  const plans = await loadPmPlansForReport(orgId, {
+    locationId: filters.locationId,
+    dateFrom: filters.dateFrom,
+    dateTo: filters.dateTo,
+  })
+  const eqIds = plans.map((row) => row.equipment_id)
+  const locIds = plans.map((row) => row.location_id)
+  const areaIds = plans.map((row) => row.area_id)
+  const deptIds = plans.map((row) => row.department_id)
+  const activityIds = plans.map((row) => row.activity_type_id)
+  const vendorIds = plans.map((row) => row.contractor_vendor_id)
+  const creatorIds = plans.map((row) => row.created_by)
+  const planIds = plans.map((row) => row.id)
+
+  const [eqMap, locMap, areaMap, deptMap, activityMap, vendorMap, peopleMap, techMap, fields] = await Promise.all([
+    fetchByIds('equipment', 'id, name, code, location_id, area_id', eqIds),
+    fetchByIds('org_locations', 'id, name', locIds),
+    fetchByIds('areas', 'id, name, location_id', areaIds),
+    fetchByIds('departments', 'id, name', deptIds),
+    fetchByIds('pm_activity_types', 'id, name', activityIds),
+    fetchByIds('vendors', 'id, name', vendorIds),
+    loadTimelineActors(orgId, creatorIds),
+    loadPmTechniciansByPlan(orgId, planIds),
+    loadOrgFields(orgId),
+  ])
+  const valuesByEquipment = await loadEquipmentValuesByIds(orgId, [...eqMap.keys()])
+  const roleFields = pickEquipmentRoleFields(fields)
+
+  const rows = plans.map((row) => {
+    const equipment = row.equipment_id ? eqMap.get(row.equipment_id) : null
+    const values = equipment ? (valuesByEquipment.get(equipment.id) || {}) : {}
+    const area = row.area_id ? areaMap.get(row.area_id) : (equipment?.area_id ? areaMap.get(equipment.area_id) : null)
+    const plantId = row.location_id || equipment?.location_id || area?.location_id || null
+    const plant = plantId ? locMap.get(plantId) : null
+    const department = row.department_id ? deptMap.get(row.department_id) : null
+    const activity = row.activity_type_id ? activityMap.get(row.activity_type_id) : null
+    const contractor = row.contractor_vendor_id ? vendorMap.get(row.contractor_vendor_id) : null
+    const creator = row.created_by ? peopleMap.get(row.created_by) : null
+    const assignees = techMap.get(row.id) || []
+    const dueAt = row.next_due_at || null
+    const overdue = Boolean(
+      dueAt
+      && !['inactive', 'completed'].includes(String(row.status || ''))
+      && new Date(dueAt) < now,
+    )
+
+    return {
+      id: row.id,
+      plan_number: row.plan_number || '',
+      name: row.name || '',
+      status: row.status || '',
+      priority: row.priority || '',
+      schedule_type: row.schedule_type || '',
+      activity_type: activity?.name || '',
+      area: area?.name || '',
+      plant: plant?.name || '',
+      department: department?.name || '',
+      equipment: equipment
+        ? (equipment.code ? `${equipment.code} — ${equipment.name}` : equipment.name)
+        : '',
+      equipment_type: (roleFields.type && values[roleFields.type.id]) || '',
+      equipment_capacity: (roleFields.capacity && values[roleFields.capacity.id]) || '',
+      equipment_tag: (roleFields.tag && values[roleFields.tag.id]) || '',
+      work_center: row.work_center || '',
+      next_due_at: dueAt || '',
+      start_date: row.start_date || '',
+      end_date: row.end_date || '',
+      assignees: assignees.map((item) => item.name).filter(Boolean).join(', '),
+      created_by: creator?.name || creator?.full_name || '',
+      estimated_labour_hours: row.estimated_labour_hours ?? '',
+      contractor: contractor?.name || '',
+      _area_id: row.area_id || equipment?.area_id || area?.id || null,
+      _plant_id: plantId,
+      _equipment_id: equipment?.id || null,
+      _created_by: row.created_by || null,
+      _assignee_ids: assignees.map((item) => item.id).filter(Boolean),
+      _overdue: overdue,
+    }
+  }).filter((row) => {
+    if (filters.areaId && row._area_id !== filters.areaId) return false
+    if (filters.locationId && row._plant_id !== filters.locationId) return false
+    if (filters.equipmentId && row._equipment_id !== filters.equipmentId) return false
+    if (filters.equipmentType && !sameText(row.equipment_type, filters.equipmentType)) return false
+    if (filters.equipmentCapacity && !sameText(row.equipment_capacity, filters.equipmentCapacity)) return false
+    if (filters.equipmentTag && !sameText(row.equipment_tag, filters.equipmentTag)) return false
+    if (filters.priority && !sameText(row.priority, filters.priority)) return false
+    if (filters.status && row.status !== filters.status) return false
+    if (filters.createdBy && row._created_by !== filters.createdBy) return false
+    if (filters.assignedTo && !row._assignee_ids.includes(filters.assignedTo)) return false
+    if (!filters.search) return true
+    return [
+      row.plan_number,
+      row.name,
+      row.status,
+      row.priority,
+      row.schedule_type,
+      row.activity_type,
+      row.area,
+      row.plant,
+      row.department,
+      row.equipment,
+      row.assignees,
+      row.created_by,
+      row.contractor,
+    ].some((value) => matchesSearch(value, filters.search))
+  })
+
+  const active = rows.filter((row) => row.status === 'active').length
+  const overdue = rows.filter((row) => row._overdue || row.status === 'overdue').length
+  const inactive = rows.filter((row) => row.status === 'inactive').length
+
+  return {
+    rows: rows.map(({
+      _area_id,
+      _plant_id,
+      _equipment_id,
+      _created_by,
+      _assignee_ids,
+      _overdue,
+      ...row
+    }) => row),
+    kpis: [
+      { key: 'total', label: 'PM plans', value: rows.length },
+      { key: 'open', label: 'Active', value: active },
+      { key: 'overdue', label: 'Overdue', value: overdue },
+      { key: 'completed', label: 'Inactive', value: inactive },
+    ],
+    status_counts: tallyStatusCounts(rows),
   }
 }
 
@@ -1112,6 +1493,287 @@ async function buildUnifiedReport(orgId, filters, now) {
   }
 }
 
+async function buildMeterReadingReport(orgId, filters) {
+  const readings = await fetchAllPages(() => {
+    let query = supabaseAdmin
+      .from('equipment_meter_readings')
+      .select('id, equipment_id, reading, reading_at, logged_by, logged_by_name, logged_by_department, logged_by_designation, created_at')
+      .eq('org_id', orgId)
+    if (filters.dateFrom) query = query.gte('reading_at', `${filters.dateFrom}T00:00:00.000Z`)
+    if (filters.dateTo) query = query.lte('reading_at', `${filters.dateTo}T23:59:59.999Z`)
+    return query.order('reading_at', { ascending: false })
+  })
+
+  const eqIds = readings.map((row) => row.equipment_id)
+  const eqMap = await fetchByIds('equipment', 'id, name, code, location_id, area_id, department_id', eqIds)
+  const areaIds = [...eqMap.values()].map((row) => row.area_id)
+  const locIds = [...eqMap.values()].map((row) => row.location_id)
+  const [areaMap, locMap] = await Promise.all([
+    fetchByIds('areas', 'id, name, location_id', areaIds),
+    fetchByIds('org_locations', 'id, name', locIds),
+  ])
+
+  const rows = readings.map((row) => {
+    const equipment = row.equipment_id ? eqMap.get(row.equipment_id) : null
+    const area = equipment?.area_id ? areaMap.get(equipment.area_id) : null
+    const plantId = equipment?.location_id || area?.location_id || null
+    const plant = plantId ? locMap.get(plantId) : null
+    return {
+      id: row.id,
+      reading_at: row.reading_at || '',
+      reading: row.reading ?? '',
+      equipment: equipment?.name || '',
+      equipment_code: equipment?.code || '',
+      area: area?.name || '',
+      plant: plant?.name || '',
+      logged_by: row.logged_by_name || '',
+      logged_by_department: row.logged_by_department || '',
+      logged_by_designation: row.logged_by_designation || '',
+      _plant_id: plantId,
+      _area_id: equipment?.area_id || area?.id || null,
+      _equipment_id: equipment?.id || null,
+      _created_by: row.logged_by || null,
+    }
+  }).filter((row) => {
+    if (filters.locationId && row._plant_id !== filters.locationId) return false
+    if (filters.areaId && row._area_id !== filters.areaId) return false
+    if (filters.equipmentId && row._equipment_id !== filters.equipmentId) return false
+    if (filters.createdBy && row._created_by !== filters.createdBy) return false
+    if (!filters.search) return true
+    return [
+      row.equipment,
+      row.equipment_code,
+      row.area,
+      row.plant,
+      row.logged_by,
+      row.reading,
+    ].some((value) => matchesSearch(value, filters.search))
+  })
+
+  const assetCount = new Set(rows.map((row) => row._equipment_id).filter(Boolean)).size
+  return {
+    rows: rows.map(({ _plant_id, _area_id, _equipment_id, _created_by, ...row }) => row),
+    kpis: [
+      { key: 'total', label: 'Readings', value: rows.length },
+      { key: 'open', label: 'Assets', value: assetCount },
+    ],
+  }
+}
+
+async function buildTaskReport(orgId, filters) {
+  const tasks = await fetchAllPages(() => {
+    let query = supabaseAdmin
+      .from('tasks')
+      .select(`
+        id, task_number, title, short_description, task_type, status_id, priority_id, category_id,
+        vendor_id, start_date, due_date, department_id, location_id, created_by_profile_id, created_at,
+        status:status_id (id, name),
+        priority:priority_id (id, name),
+        category:category_id (id, name),
+        vendor:vendor_id (id, name),
+        department:department_id (id, name),
+        location:location_id (id, name),
+        creator:created_by_profile_id (id, full_name),
+        task_assignees (employee_id, employee:employee_id (id, name))
+      `)
+      .eq('org_id', orgId)
+      .eq('is_recurrence_template', false)
+    if (filters.dateFrom) query = query.gte('created_at', `${filters.dateFrom}T00:00:00.000Z`)
+    if (filters.dateTo) query = query.lte('created_at', `${filters.dateTo}T23:59:59.999Z`)
+    if (filters.locationId) query = query.eq('location_id', filters.locationId)
+    return query.order('created_at', { ascending: false })
+  })
+
+  const rows = tasks.map((row) => {
+    const assignees = (row.task_assignees || [])
+      .map((item) => item.employee?.name || '')
+      .filter(Boolean)
+    const assigneeIds = (row.task_assignees || []).map((item) => item.employee_id).filter(Boolean)
+    return {
+      id: row.id,
+      task_number: row.task_number || '',
+      title: row.title || '',
+      status: row.status?.name || '',
+      priority: row.priority?.name || '',
+      category: row.category?.name || '',
+      task_type: row.task_type || '',
+      plant: row.location?.name || '',
+      department: row.department?.name || '',
+      assignees: assignees.join(', '),
+      due_date: row.due_date || '',
+      start_date: row.start_date || '',
+      created_by: row.creator?.full_name || '',
+      short_description: row.short_description || '',
+      vendor: row.vendor?.name || '',
+      _plant_id: row.location_id || null,
+      _created_by: row.created_by_profile_id || null,
+      _assignee_ids: assigneeIds,
+      _status_id: row.status_id || null,
+      _priority_name: row.priority?.name || '',
+    }
+  }).filter((row) => {
+    if (filters.locationId && row._plant_id !== filters.locationId) return false
+    if (filters.createdBy && row._created_by !== filters.createdBy) return false
+    if (filters.assignedTo && !row._assignee_ids.includes(filters.assignedTo)) return false
+    if (filters.priority && !sameText(row._priority_name, filters.priority) && !sameText(row.priority, filters.priority)) return false
+    if (filters.status && row._status_id !== filters.status && !sameText(row.status, filters.status)) return false
+    if (!filters.search) return true
+    return [
+      row.task_number,
+      row.title,
+      row.status,
+      row.priority,
+      row.category,
+      row.plant,
+      row.department,
+      row.assignees,
+      row.short_description,
+      row.vendor,
+    ].some((value) => matchesSearch(value, filters.search))
+  })
+
+  return {
+    rows: rows.map(({ _plant_id, _created_by, _assignee_ids, _status_id, _priority_name, ...row }) => row),
+    kpis: [
+      { key: 'total', label: 'Tasks', value: rows.length },
+      { key: 'open', label: 'With due date', value: rows.filter((row) => row.due_date).length },
+      { key: 'completed', label: 'Assigned', value: rows.filter((row) => row.assignees).length },
+    ],
+  }
+}
+
+async function buildWarrantyReport(orgId, filters, now) {
+  const warranties = await fetchAllPages(() => {
+    let query = supabaseAdmin
+      .from('warranties')
+      .select('id, serial_number, make, vendor, purchase_date, warranty_start, warranty_end, warranty_period_months, po_number, invoice_number, contact_name, contact_phone, contact_email, created_at')
+      .eq('org_id', orgId)
+    if (filters.dateFrom) query = query.gte('created_at', `${filters.dateFrom}T00:00:00.000Z`)
+    if (filters.dateTo) query = query.lte('created_at', `${filters.dateTo}T23:59:59.999Z`)
+    return query.order('created_at', { ascending: false })
+  })
+
+  const rows = warranties.map((row) => {
+    const end = row.warranty_end ? new Date(row.warranty_end) : null
+    let status = 'Active'
+    if (end && !Number.isNaN(end.getTime())) {
+      status = end < now ? 'Expired' : 'Active'
+    }
+    return {
+      id: row.id,
+      serial_number: row.serial_number || '',
+      make: row.make || '',
+      vendor: row.vendor || '',
+      purchase_date: row.purchase_date || '',
+      warranty_start: row.warranty_start || '',
+      warranty_end: row.warranty_end || '',
+      warranty_period_months: row.warranty_period_months ?? '',
+      po_number: row.po_number || '',
+      invoice_number: row.invoice_number || '',
+      contact_name: row.contact_name || '',
+      contact_phone: row.contact_phone || '',
+      contact_email: row.contact_email || '',
+      status,
+    }
+  }).filter((row) => {
+    if (filters.status && !sameText(row.status, filters.status)) return false
+    if (!filters.search) return true
+    return [
+      row.serial_number,
+      row.make,
+      row.vendor,
+      row.po_number,
+      row.invoice_number,
+      row.contact_name,
+      row.status,
+    ].some((value) => matchesSearch(value, filters.search))
+  })
+
+  return {
+    rows,
+    kpis: [
+      { key: 'total', label: 'Warranties', value: rows.length },
+      { key: 'open', label: 'Active', value: rows.filter((row) => row.status === 'Active').length },
+      { key: 'overdue', label: 'Expired', value: rows.filter((row) => row.status === 'Expired').length },
+    ],
+  }
+}
+
+async function buildEquipmentReport(orgId, filters) {
+  const assets = await fetchAllPages(() => {
+    let query = supabaseAdmin
+      .from('equipment')
+      .select('id, name, code, location_id, area_id, department_id, reading_required, last_meter_reading, last_meter_reading_at, is_active, created_at')
+      .eq('org_id', orgId)
+    if (filters.locationId) query = query.eq('location_id', filters.locationId)
+    if (filters.areaId) query = query.eq('area_id', filters.areaId)
+    if (filters.dateFrom) query = query.gte('created_at', `${filters.dateFrom}T00:00:00.000Z`)
+    if (filters.dateTo) query = query.lte('created_at', `${filters.dateTo}T23:59:59.999Z`)
+    return query.order('name', { ascending: true })
+  })
+
+  const locIds = assets.map((row) => row.location_id)
+  const areaIds = assets.map((row) => row.area_id)
+  const deptIds = assets.map((row) => row.department_id)
+  const [locMap, areaMap, deptMap, fields, valuesByEquipment] = await Promise.all([
+    fetchByIds('org_locations', 'id, name', locIds),
+    fetchByIds('areas', 'id, name', areaIds),
+    fetchByIds('departments', 'id, name', deptIds),
+    loadOrgFields(orgId),
+    loadEquipmentValuesByIds(orgId, assets.map((row) => row.id)),
+  ])
+  const roleFields = pickEquipmentRoleFields(fields)
+
+  const rows = assets.map((row) => {
+    const values = valuesByEquipment.get(row.id) || {}
+    return {
+      id: row.id,
+      code: row.code || '',
+      name: row.name || '',
+      area: row.area_id ? (areaMap.get(row.area_id)?.name || '') : '',
+      plant: row.location_id ? (locMap.get(row.location_id)?.name || '') : '',
+      department: row.department_id ? (deptMap.get(row.department_id)?.name || '') : '',
+      equipment_type: (roleFields.type && values[roleFields.type.id]) || '',
+      equipment_capacity: (roleFields.capacity && values[roleFields.capacity.id]) || '',
+      equipment_tag: (roleFields.tag && values[roleFields.tag.id]) || '',
+      reading_required: row.reading_required ? 'Yes' : 'No',
+      last_meter_reading: row.last_meter_reading ?? '',
+      last_meter_reading_at: row.last_meter_reading_at || '',
+      is_active: row.is_active === false ? 'No' : 'Yes',
+      created_at: row.created_at || '',
+      _plant_id: row.location_id || null,
+      _area_id: row.area_id || null,
+      _equipment_id: row.id,
+    }
+  }).filter((row) => {
+    if (filters.locationId && row._plant_id !== filters.locationId) return false
+    if (filters.areaId && row._area_id !== filters.areaId) return false
+    if (filters.equipmentId && row._equipment_id !== filters.equipmentId) return false
+    if (filters.equipmentType && !sameText(row.equipment_type, filters.equipmentType)) return false
+    if (filters.equipmentCapacity && !sameText(row.equipment_capacity, filters.equipmentCapacity)) return false
+    if (filters.equipmentTag && !sameText(row.equipment_tag, filters.equipmentTag)) return false
+    if (!filters.search) return true
+    return [
+      row.code,
+      row.name,
+      row.area,
+      row.plant,
+      row.department,
+      row.equipment_type,
+      row.equipment_tag,
+    ].some((value) => matchesSearch(value, filters.search))
+  })
+
+  return {
+    rows: rows.map(({ _plant_id, _area_id, _equipment_id, ...row }) => row),
+    kpis: [
+      { key: 'total', label: 'Assets', value: rows.length },
+      { key: 'open', label: 'Meter required', value: rows.filter((row) => row.reading_required === 'Yes').length },
+      { key: 'completed', label: 'Active', value: rows.filter((row) => row.is_active === 'Yes').length },
+    ],
+  }
+}
+
 export async function getReportData(orgId, session, reportKey, query = {}, now = new Date()) {
   const catalog = getReportCatalog(reportKey)
   if (!catalog) throw httpError('Unknown report', 404)
@@ -1127,6 +1789,18 @@ export async function getReportData(orgId, session, reportKey, query = {}, now =
     payload = await buildOverdueReport(orgId, filters, now)
   } else if (catalog.kind === 'unified') {
     payload = await buildUnifiedReport(orgId, filters, now)
+  } else if (catalog.kind === 'work_request') {
+    payload = await buildWorkRequestReport(orgId, filters)
+  } else if (catalog.kind === 'pm_plan') {
+    payload = await buildPmPlanReport(orgId, filters, now)
+  } else if (catalog.kind === 'meter_reading') {
+    payload = await buildMeterReadingReport(orgId, filters)
+  } else if (catalog.kind === 'task') {
+    payload = await buildTaskReport(orgId, filters)
+  } else if (catalog.kind === 'warranty') {
+    payload = await buildWarrantyReport(orgId, filters, now)
+  } else if (catalog.kind === 'equipment') {
+    payload = await buildEquipmentReport(orgId, filters)
   } else {
     payload = await buildLogReport(orgId, catalog, filters, now)
   }

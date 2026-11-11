@@ -6,7 +6,7 @@ import {
   requireModulePermission,
   requireAnyModulePermission,
 } from '../../middleware/modulePermission.js'
-import { getReportCatalog, UNIFIED_REPORT_KEY } from '../../lib/reportConstants.js'
+import { getReportCatalog, isInteractiveReportKey } from '../../lib/reportConstants.js'
 import { getReportData, getReportFilterOptions } from '../../lib/reportService.js'
 import { REPORT_MODULE_KEYS } from '../../lib/accessModules.js'
 import {
@@ -18,6 +18,7 @@ import {
   createCustomReport,
   deleteCustomReport,
   getCustomReport,
+  listAllCustomReports,
   listCustomReports,
   updateCustomReport,
 } from '../../lib/reportCustomService.js'
@@ -46,7 +47,7 @@ function requireReportRead(req, res, next) {
     return res.status(404).json({ error: 'Unknown report' })
   }
   req.reportCatalog = catalog
-  if (catalog.key === UNIFIED_REPORT_KEY) {
+  if (isInteractiveReportKey(catalog.key)) {
     return requireAnyModulePermission(REPORT_MODULE_KEYS.map((key) => [key, 'read']))(req, res, next)
   }
   return requireModulePermission(catalog.moduleKey, 'read')(req, res, next)
@@ -116,6 +117,17 @@ async function exportFromRequest(req, body = {}) {
   })
 }
 
+router.get('/custom/:id', requireAnyModulePermission(
+  REPORT_MODULE_KEYS.map((key) => [key, 'read']),
+), async (req, res) => {
+  try {
+    const row = await getCustomReport(req.userProfile.org_id, req.params.id)
+    res.json(row)
+  } catch (err) {
+    sendError(res, err)
+  }
+})
+
 router.patch('/custom/:id', requireCustomReportAdmin, async (req, res) => {
   try {
     const row = await updateCustomReport(req.userProfile.org_id, req.params.id, req.body || {})
@@ -167,8 +179,23 @@ router.get('/filters', requireAnyModulePermission(
   REPORT_MODULE_KEYS.map((key) => [key, 'read']),
 ), async (req, res) => {
   try {
-    const data = await getReportFilterOptions(req.userProfile.org_id, req.orgPermissions)
+    const data = await getReportFilterOptions(
+      req.userProfile.org_id,
+      req.orgPermissions,
+      { reportKey: req.query.report_key || req.query.key },
+    )
     res.json(data)
+  } catch (err) {
+    sendError(res, err)
+  }
+})
+
+router.get('/customs', requireAnyModulePermission(
+  REPORT_MODULE_KEYS.map((key) => [key, 'read']),
+), async (req, res) => {
+  try {
+    const items = await listAllCustomReports(req.userProfile.org_id)
+    res.json({ items })
   } catch (err) {
     sendError(res, err)
   }

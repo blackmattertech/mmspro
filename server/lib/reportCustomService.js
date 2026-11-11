@@ -55,6 +55,20 @@ export async function listCustomReports(orgId, reportKey) {
   return data || []
 }
 
+export async function listAllCustomReports(orgId) {
+  const { data, error } = await supabaseAdmin
+    .from('report_custom_reports')
+    .select('id, name, report_key, location_id, updated_at')
+    .eq('org_id', orgId)
+    .order('name', { ascending: true })
+    .limit(200)
+  if (error) {
+    if (isMissingReportTable(error)) return []
+    throw error
+  }
+  return data || []
+}
+
 export async function getCustomReport(orgId, id) {
   const { data, error } = await supabaseAdmin
     .from('report_custom_reports')

@@ -1,4 +1,22 @@
 export const UNIFIED_REPORT_KEY = 'logs'
+export const WORK_REQUEST_REPORT_KEY = 'work-requests'
+export const PM_PLAN_REPORT_KEY = 'pm-plans'
+export const METER_READING_REPORT_KEY = 'meter-readings'
+export const TASK_REPORT_KEY = 'tasks'
+export const WARRANTY_REPORT_KEY = 'warranties'
+export const EQUIPMENT_REPORT_KEY = 'equipment'
+
+export const INTERACTIVE_REPORT_KEYS = [
+  UNIFIED_REPORT_KEY,
+  WORK_REQUEST_REPORT_KEY,
+  PM_PLAN_REPORT_KEY,
+  METER_READING_REPORT_KEY,
+  TASK_REPORT_KEY,
+  WARRANTY_REPORT_KEY,
+  EQUIPMENT_REPORT_KEY,
+  'plant-wise',
+  'overdue',
+]
 
 export const ORDER_TYPE_OPTIONS = [
   { value: 'external', label: 'External' },
@@ -16,11 +34,65 @@ export const REPORT_CATALOG = {
   logs: {
     key: UNIFIED_REPORT_KEY,
     moduleKey: 'reports',
-    title: 'Reports',
+    title: 'Work Orders',
     kind: 'unified',
     dayStatus: null,
     about: 'Work orders in the selected period, filtered by order, asset, job, and user fields.',
     rowMeaning: 'Each row is one work order.',
+  },
+  'work-requests': {
+    key: WORK_REQUEST_REPORT_KEY,
+    moduleKey: 'reports',
+    title: 'Work Requests',
+    kind: 'work_request',
+    dayStatus: null,
+    about: 'Work requests in the selected period, filtered by order, asset, job, and requester.',
+    rowMeaning: 'Each row is one work request.',
+  },
+  'pm-plans': {
+    key: PM_PLAN_REPORT_KEY,
+    moduleKey: 'reports',
+    title: 'Preventive Maintenance',
+    kind: 'pm_plan',
+    dayStatus: null,
+    about: 'PM plans in the selected period, filtered by asset, priority, status, and assignee.',
+    rowMeaning: 'Each row is one PM plan.',
+  },
+  'meter-readings': {
+    key: METER_READING_REPORT_KEY,
+    moduleKey: 'reports',
+    title: 'Meter Reading',
+    kind: 'meter_reading',
+    dayStatus: null,
+    about: 'Meter readings logged against assets in the selected period.',
+    rowMeaning: 'Each row is one meter reading.',
+  },
+  tasks: {
+    key: TASK_REPORT_KEY,
+    moduleKey: 'reports',
+    title: 'Tasks & Follow-ups',
+    kind: 'task',
+    dayStatus: null,
+    about: 'Tasks and follow-ups created or due in the selected period.',
+    rowMeaning: 'Each row is one task.',
+  },
+  warranties: {
+    key: WARRANTY_REPORT_KEY,
+    moduleKey: 'reports',
+    title: 'Warranties',
+    kind: 'warranty',
+    dayStatus: null,
+    about: 'Warranty records with purchase and expiry dates in the selected period.',
+    rowMeaning: 'Each row is one warranty.',
+  },
+  equipment: {
+    key: EQUIPMENT_REPORT_KEY,
+    moduleKey: 'reports',
+    title: 'Assets',
+    kind: 'equipment',
+    dayStatus: null,
+    about: 'Assets created or updated in the selected period.',
+    rowMeaning: 'Each row is one asset.',
   },
   'daily-logs': {
     key: 'daily-logs',
@@ -194,6 +266,114 @@ export const OVERDUE_COLUMNS = [
   { id: 'pm_plan_number', label: 'PM plan #' },
 ]
 
+export const WORK_REQUEST_COLUMNS = [
+  { id: 'request_number', label: 'Request #' },
+  { id: 'request_date', label: 'Request date' },
+  { id: 'request_type', label: 'Request type' },
+  { id: 'status', label: 'Status' },
+  { id: 'priority', label: 'Priority' },
+  { id: 'job_nature', label: 'Job Nature' },
+  { id: 'order_from', label: 'Order From' },
+  { id: 'order_to', label: 'Order To' },
+  { id: 'area', label: 'Area' },
+  { id: 'plant', label: 'Plant / Facility' },
+  { id: 'equipment', label: 'Asset' },
+  { id: 'equipment_type', label: 'Asset Type' },
+  { id: 'equipment_capacity', label: 'Asset Capacity' },
+  { id: 'equipment_tag', label: 'Asset Tag' },
+  { id: 'reported_by', label: 'Reported By' },
+  { id: 'short_description', label: 'Short description' },
+  { id: 'problem_description', label: 'Problem description' },
+  { id: 'remarks', label: 'Remarks' },
+  { id: 'execution_status', label: 'Execution status' },
+  { id: 'is_breakdown', label: 'Breakdown' },
+]
+
+export const PM_PLAN_COLUMNS = [
+  { id: 'plan_number', label: 'PM plan #' },
+  { id: 'name', label: 'Plan name' },
+  { id: 'status', label: 'Status' },
+  { id: 'priority', label: 'Priority' },
+  { id: 'schedule_type', label: 'Schedule type' },
+  { id: 'activity_type', label: 'Activity type' },
+  { id: 'area', label: 'Area' },
+  { id: 'plant', label: 'Plant / Facility' },
+  { id: 'department', label: 'Department' },
+  { id: 'equipment', label: 'Asset' },
+  { id: 'equipment_type', label: 'Asset Type' },
+  { id: 'equipment_capacity', label: 'Asset Capacity' },
+  { id: 'equipment_tag', label: 'Asset Tag' },
+  { id: 'work_center', label: 'Work Center' },
+  { id: 'next_due_at', label: 'Next due' },
+  { id: 'start_date', label: 'Start date' },
+  { id: 'end_date', label: 'End date' },
+  { id: 'assignees', label: 'Assigned To' },
+  { id: 'created_by', label: 'Created By' },
+  { id: 'estimated_labour_hours', label: 'Est. labour hours' },
+  { id: 'contractor', label: 'Contractor' },
+]
+
+export const METER_READING_COLUMNS = [
+  { id: 'reading_at', label: 'Reading time' },
+  { id: 'reading', label: 'Reading' },
+  { id: 'equipment', label: 'Asset' },
+  { id: 'equipment_code', label: 'Asset code' },
+  { id: 'area', label: 'Area' },
+  { id: 'plant', label: 'Plant / Facility' },
+  { id: 'logged_by', label: 'Logged by' },
+  { id: 'logged_by_department', label: 'Department' },
+  { id: 'logged_by_designation', label: 'Designation' },
+]
+
+export const TASK_COLUMNS = [
+  { id: 'task_number', label: 'Task #' },
+  { id: 'title', label: 'Title' },
+  { id: 'status', label: 'Status' },
+  { id: 'priority', label: 'Priority' },
+  { id: 'category', label: 'Category' },
+  { id: 'task_type', label: 'Type' },
+  { id: 'plant', label: 'Plant / Facility' },
+  { id: 'department', label: 'Department' },
+  { id: 'assignees', label: 'Assigned To' },
+  { id: 'due_date', label: 'Due date' },
+  { id: 'start_date', label: 'Start date' },
+  { id: 'created_by', label: 'Created By' },
+  { id: 'short_description', label: 'Short description' },
+  { id: 'vendor', label: 'Vendor' },
+]
+
+export const WARRANTY_COLUMNS = [
+  { id: 'serial_number', label: 'Serial #' },
+  { id: 'make', label: 'Make' },
+  { id: 'vendor', label: 'Vendor' },
+  { id: 'purchase_date', label: 'Purchase date' },
+  { id: 'warranty_start', label: 'Warranty start' },
+  { id: 'warranty_end', label: 'Warranty end' },
+  { id: 'warranty_period_months', label: 'Period (months)' },
+  { id: 'po_number', label: 'PO #' },
+  { id: 'invoice_number', label: 'Invoice #' },
+  { id: 'contact_name', label: 'Contact' },
+  { id: 'contact_phone', label: 'Phone' },
+  { id: 'contact_email', label: 'Email' },
+  { id: 'status', label: 'Status' },
+]
+
+export const EQUIPMENT_COLUMNS = [
+  { id: 'code', label: 'Asset code' },
+  { id: 'name', label: 'Asset name' },
+  { id: 'area', label: 'Area' },
+  { id: 'plant', label: 'Plant / Facility' },
+  { id: 'department', label: 'Department' },
+  { id: 'equipment_type', label: 'Asset Type' },
+  { id: 'equipment_capacity', label: 'Asset Capacity' },
+  { id: 'equipment_tag', label: 'Asset Tag' },
+  { id: 'reading_required', label: 'Meter required' },
+  { id: 'last_meter_reading', label: 'Last reading' },
+  { id: 'last_meter_reading_at', label: 'Last reading at' },
+  { id: 'is_active', label: 'Active' },
+  { id: 'created_at', label: 'Created' },
+]
+
 export const DATE_WINDOWS = ['previous_day', 'last_7_days', 'last_30_days', 'month_to_date']
 export const SCHEDULE_FREQUENCIES = [
   'daily',
@@ -231,7 +411,17 @@ export function columnsForReport(kind) {
   if (kind === 'plant') return PLANT_COLUMNS
   if (kind === 'overdue') return OVERDUE_COLUMNS
   if (kind === 'unified') return UNIFIED_COLUMNS
+  if (kind === 'work_request') return WORK_REQUEST_COLUMNS
+  if (kind === 'pm_plan') return PM_PLAN_COLUMNS
+  if (kind === 'meter_reading') return METER_READING_COLUMNS
+  if (kind === 'task') return TASK_COLUMNS
+  if (kind === 'warranty') return WARRANTY_COLUMNS
+  if (kind === 'equipment') return EQUIPMENT_COLUMNS
   return LOG_COLUMNS
+}
+
+export function isInteractiveReportKey(key) {
+  return INTERACTIVE_REPORT_KEYS.includes(key)
 }
 
 export function filterReportColumns(kind, requested) {
@@ -372,13 +562,32 @@ export function formatReportValue(columnId, value) {
     if (Number.isNaN(date.getTime())) return String(value)
     return date.toISOString().replace('T', ' ').slice(0, 16)
   }
-  if (['day_status', 'wo_status', 'status', 'priority', 'source', 'order_type', 'source_type'].includes(columnId)) {
+  if ([
+    'day_status',
+    'wo_status',
+    'status',
+    'priority',
+    'source',
+    'order_type',
+    'source_type',
+    'request_type',
+    'execution_status',
+    'schedule_type',
+  ].includes(columnId)) {
     return formatStatusLabel(value)
   }
-  if (columnId === 'permit_required') {
+  if (columnId === 'permit_required' || columnId === 'is_breakdown') {
     if (value === true || value === 'yes' || value === 'true') return 'Yes'
     if (value === false || value === 'no' || value === 'false') return 'No'
     return String(value)
+  }
+  if ([
+    'request_date',
+    'next_due_at',
+    'start_date',
+    'end_date',
+  ].includes(columnId)) {
+    return String(value).slice(0, 10)
   }
   if (columnId === 'breakdown_duration_hours' || columnId === 'vendor_expense' || columnId === 'labour_count') {
     const n = Number(value)
