@@ -2,6 +2,7 @@ import OrderedFormLayout from '../forms/OrderedFormLayout'
 import { useFormLayout } from '../../hooks/useFormLayout'
 import { layoutForStages } from '../../lib/workOrderForms'
 import { isCloseoutSection } from '../../lib/formSkips'
+import { isAssetPickerControlField } from '../../lib/formLayoutIds'
 
 export default function WorkOrderProcessLayout({
   formId,
@@ -36,7 +37,9 @@ export default function WorkOrderProcessLayout({
       actors={actors}
       currentEmployeeId={currentEmployeeId}
       renderField={renderField}
-      omitField={omitField}
+      omitField={(item, section) => (
+        isAssetPickerControlField(item) || Boolean(omitField?.(item, section))
+      )}
       renderSection={(id, children, section) => {
         const rest = (children || []).filter(Boolean)
         if (!rest.length && !isCloseoutSection(id)) return null
