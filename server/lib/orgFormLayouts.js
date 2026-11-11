@@ -30,6 +30,7 @@ import {
 } from './formFieldSources.js'
 import { normalizeOptions, sanitizeOptionRule } from './formOptionRules.js'
 import { createTtlCache } from './ttlCache.js'
+import { isRequestTypeField, lockedRequestTypeOptions } from './systemFieldFallback.js'
 
 const OPTION_FIELD_TYPES = new Set(['dropdown', 'radio', 'checkbox'])
 
@@ -235,16 +236,26 @@ function sanitizeLayoutField(field, index, { allowBindKey = true, requireSection
   const fieldType = typeof field.fieldType === 'string' ? field.fieldType.trim() : ''
   const masterSource = typeof field.masterSource === 'string' ? field.masterSource.trim() : ''
   const bindKey = allowBindKey && typeof field.bindKey === 'string' ? field.bindKey.trim() : ''
-  const options = !masterSource
-    ? normalizeOptions(field.options).map((entry) => {
-      const rules = (entry.rules || []).map(sanitizeOptionRule).filter(Boolean)
-      return {
-        label: entry.label,
-        value: entry.value,
-        ...(rules.length ? { rules } : {}),
-      }
-    })
+  const parsedId = parseLayoutId(field.id)
+  const requestTypeLocked = isRequestTypeField({
+    id: field.id,
+    label,
+    bindKey,
+    key: parsedId.kind === 'system' ? parsedId.value : '',
+  })
+  const rawOptions = !masterSource
+    ? (requestTypeLocked
+      ? lockedRequestTypeOptions(field.options)
+      : normalizeOptions(field.options))
     : []
+  const options = rawOptions.map((entry) => {
+    const rules = (entry.rules || []).map(sanitizeOptionRule).filter(Boolean)
+    return {
+      label: entry.label,
+      value: entry.value,
+      ...(rules.length ? { rules } : {}),
+    }
+  })
   const dependsOnFieldId = typeof field.dependsOnFieldId === 'string'
     ? field.dependsOnFieldId.trim()
     : ''
