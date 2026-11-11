@@ -27,6 +27,9 @@ import EmployeeAvatar from '../company/EmployeeAvatar'
 import FilterableSelect from '../ui/FilterableSelect'
 import WorkRequestAttachmentsField from './WorkRequestAttachmentsField'
 import SpellcheckInput from '../shared/SpellcheckInput'
+import FormLabel from '../shared/FormLabel'
+import { useTextFieldLimits } from '../../hooks/useTextFieldLimits'
+import { firstCharacterLimitMessage, findVisibleCharacterLimitError } from '../../lib/textFieldLimits'
 import OrderedFormLayout from '../forms/OrderedFormLayout'
 import EquipmentQrCode from '../equipment/EquipmentQrCode'
 import { AssetHierarchySummary } from './WorkRequestAssetFields'
@@ -87,8 +90,15 @@ function WorkRequestChecklistPanel({ detail, readOnly = false }) {
 import { useFormLayout } from '../../hooks/useFormLayout'
 import { useFormFieldValues } from '../../hooks/useFormFieldValues'
 import { resolveFormActors } from '../../lib/formFillership'
-import { catalogId, parseLayoutId } from '../../lib/formLayoutIds'
+import {
+  catalogId,
+  parseLayoutId,
+  isPrimaryAssetPickerField,
+  isAssetPickerLayoutField,
+} from '../../lib/formLayoutIds'
 import { SYSTEM_FIELD_OPTIONS } from '../../lib/systemFieldFallback'
+
+export { isPrimaryAssetPickerField, isAssetPickerLayoutField }
 import '../company/CompanyShared.css'
 import '../workorders/WorkOrdersPage.css'
 import '../workorders/ManualWorkOrder.css'
@@ -169,21 +179,9 @@ export function renderIncomingRequestInfoField(detail, key, props = {}) {
   )
 }
 
-const ASSET_PICKER_KEYS = new Set(['asset_picker', 'area_id', 'equipment_id'])
-
-export function isAssetPickerLayoutField(field) {
-  if (!field) return false
-  const parsed = parseLayoutId(field.id)
-  if (parsed.kind === 'system' && ASSET_PICKER_KEYS.has(parsed.value)) return true
-  if (field.masterSource === 'areas' || field.masterSource === 'equipment') return true
-  if (field.bindKey === 'area_id' || field.bindKey === 'equipment_id' || field.bindKey === 'asset_picker') return true
-  return false
-}
-
-export function isAssetLayoutSection(sectionId, section, layout) {
-  if (/asset/i.test(String(section?.label || ''))) return true
+export function isAssetLayoutSection(sectionId, _section, layout) {
   return (layout?.fields || []).some((field) => (
-    field.sectionId === sectionId && isAssetPickerLayoutField(field)
+    field.sectionId === sectionId && isPrimaryAssetPickerField(field)
   ))
 }
 
@@ -542,6 +540,8 @@ export default function WorkRequestDetailModal({
   const { labelByKey: workOrderStatusLabels } = useOrgStatusOptions('work_order', { includeInactive: true })
   const { layout, catalogFields, hasLayout } = useFormLayout('work_request.create')
   const extras = useFormFieldValues('work_request.create', requestId || null)
+  const { maxLength } = useTextFieldLimits()
+  const remarksLimit = maxLength('remarks')
   const handleBackdropClick = useBackdropClose(onClose)
   const [rejectReason, setRejectReason] = useState('')
   const [infoMessage, setInfoMessage] = useState('')
@@ -610,7 +610,15 @@ export default function WorkRequestDetailModal({
     }
   }
 
+  const assertMessageLimit = (label, value) => {
+    const limitError = firstCharacterLimitMessage([
+      { key: 'remarks', label, value },
+    ], maxLength) || findVisibleCharacterLimitError(document)
+    if (limitError) throw new Error(limitError)
+  }
+
   const sendReply = () => runAction(async () => {
+    assertMessageLimit('Your reply', replyMessage)
     if (!org?.id) throw new Error('Organization is not available.')
     const uploaded = []
     for (const item of replyFiles) {
@@ -672,6 +680,24 @@ export default function WorkRequestDetailModal({
     onUpdated?.()
     reload()
   }
+
+  const linkedAssignmentActions = linkedOrder?.assignment_actions || {}
+  const canEditLinkedAssignment = Boolean(
+    showPostApproveAssign
+    || linkedAssignmentActions.can_assign_department_technicians
+    || linkedAssignmentActions.can_reassign_as_location_head
+    || linkedAssignmentActions.can_claim_self
+  )
+  const myEmployeeId = session?.employee_id || null
+  const canEditLinkedLifecycle = Boolean(
+    linkedOrder
+    && (
+      isOrgAdmin
+      || canUpdate('work_orders_received')
+      || canUpdate('work_orders')
+      || (myEmployeeId && (linkedOrder.assignees || []).some((row) => row.id === myEmployeeId))
+    )
+  )
   const layoutFields = detail?.layout_fields || []
   const breakdownFields = detail?.breakdown_fields || []
   const equipment = detail?.equipment
@@ -909,13 +935,32 @@ export default function WorkRequestDetailModal({
                         disabled
                         actors={formActors}
                         valueLabels={routingValueLabels}
-                        omitField={(item) => isAssetPickerLayoutField(item)}
                         renderField={(key, props) => renderIncomingRequestInfoField(detail, key, props)}
+                        assetPicker={({ className, field }) => {
+                          const steps = hierarchyDisplaySteps(hierarchy)
+                          if (!steps.length && !qrValue) {
+                            return (
+                              <div key={field?.id || 'asset_picker'} className={className}>
+                                <p className="company-form__hint">No asset selected.</p>
+                              </div>
+                            )
+                          }
+                          return (
+                            <div key={field?.id || 'asset_picker'} className={`wr-detail-equip ${className || ''}`.trim()}>
+                              <AssetHierarchySummary steps={hierarchy} />
+                              {qrValue ? (
+                                <EquipmentQrCode
+                                  value={qrValue}
+                                  caption={{ label: 'QR code', value: equipment?.code || equipment?.name || qrValue }}
+                                  fileName={equipment?.code || equipment?.name || 'asset-qr'}
+                                />
+                              ) : null}
+                            </div>
+                          )
+                        }}
                         renderSection={(id, children, section) => {
-                          const showAsset = isAssetLayoutSection(id, section, layout)
-                            && (hierarchyDisplaySteps(hierarchy).length > 0 || Boolean(qrValue))
                           const nodes = (Array.isArray(children) ? children : [children]).filter(Boolean)
-                          if (!showAsset && !nodes.length) return null
+                          if (!nodes.length) return null
                           const filledBy = section.filledBy || 'any'
                           return (
                             <section
@@ -930,21 +975,7 @@ export default function WorkRequestDetailModal({
                                 </div>
                               ) : null}
                               <div className={`wo-section__body company-form__layout-section-body ${section.label || section.badge ? '' : 'company-form__layout-section-body--flush'}`.trim()}>
-                                {showAsset ? (
-                                  <div className="wr-detail-equip">
-                                    <AssetHierarchySummary steps={hierarchy} />
-                                    {qrValue ? (
-                                      <EquipmentQrCode
-                                        value={qrValue}
-                                        caption={{ label: 'QR code', value: equipment?.code || equipment?.name || qrValue }}
-                                        fileName={equipment?.code || equipment?.name || 'asset-qr'}
-                                      />
-                                    ) : null}
-                                  </div>
-                                ) : null}
-                                {nodes.length > 0 ? (
-                                  <div className="company-form__grid company-form__grid--12">{children}</div>
-                                ) : null}
+                                <div className="company-form__grid company-form__grid--12">{nodes}</div>
                               </div>
                             </section>
                           )
@@ -1002,7 +1033,7 @@ export default function WorkRequestDetailModal({
                     )}
                     <div className="wr-assign-block">
                       <label className="company-form__field company-form__field--full">
-                        <span className="company-form__label">Your reply</span>
+                        <FormLabel limit={remarksLimit}>Your reply</FormLabel>
                         <SpellcheckInput
                           multiline
                           className="company-form__input company-form__textarea"
@@ -1011,6 +1042,7 @@ export default function WorkRequestDetailModal({
                           onChange={(e) => setReplyMessage(e.target.value)}
                           placeholder="Add the requested details"
                           disabled={acting}
+                          maxLength={remarksLimit}
                         />
                       </label>
                       <WorkRequestAttachmentsField
@@ -1094,13 +1126,14 @@ export default function WorkRequestDetailModal({
                     {mode === 'info' && (
                       <div className="wr-assign-block">
                         <label className="company-form__field company-form__field--full">
-                          <span className="company-form__label">Message to requester</span>
+                          <FormLabel limit={remarksLimit}>Message to requester</FormLabel>
                           <SpellcheckInput
                             multiline
                             className="company-form__input company-form__textarea"
                             rows={3}
                             value={infoMessage}
                             onChange={(e) => setInfoMessage(e.target.value)}
+                            maxLength={remarksLimit}
                           />
                         </label>
                         <div className="wr-actions">
@@ -1108,7 +1141,10 @@ export default function WorkRequestDetailModal({
                             type="button"
                             className="company-btn company-btn--primary"
                             disabled={acting || !infoMessage.trim()}
-                            onClick={() => runAction(() => requestWorkRequestInfo(requestId, infoMessage))}
+                            onClick={() => runAction(() => {
+                              assertMessageLimit('Message to requester', infoMessage)
+                              return requestWorkRequestInfo(requestId, infoMessage)
+                            })}
                           >
                             Send request
                           </button>
@@ -1130,13 +1166,13 @@ export default function WorkRequestDetailModal({
                     <WorkOrderAssignmentActions
                       detail={linkedOrder}
                       onUpdated={handleLinkedOrderUpdated}
-                      readOnly={!showPostApproveAssign}
+                      readOnly={!canEditLinkedAssignment}
                     />
                     <WorkOrderLifecyclePanel
                       key={linkedOrder.id}
                       detail={linkedOrder}
                       onUpdated={handleLinkedOrderUpdated}
-                      canUpdate={false}
+                      canUpdate={canEditLinkedLifecycle}
                       hideHeader
                       hideWorkRequestForm
                     />
@@ -1184,7 +1220,10 @@ export default function WorkRequestDetailModal({
               onSubmit={(e) => {
                 e.preventDefault()
                 if (!rejectReason.trim() || acting) return
-                runAction(() => rejectWorkRequest(requestId, rejectReason))
+                runAction(() => {
+                  assertMessageLimit('Rejection reason', rejectReason)
+                  return rejectWorkRequest(requestId, rejectReason)
+                })
               }}
             >
               <p className="company-modal__hint">
@@ -1192,7 +1231,7 @@ export default function WorkRequestDetailModal({
                 {detail?.request_number ? ` ${detail.request_number}` : ''}. This cannot be undone.
               </p>
               <label className="company-form__field">
-                <span className="company-form__label">Rejection reason *</span>
+                <FormLabel limit={remarksLimit}>Rejection reason *</FormLabel>
                 <SpellcheckInput
                   multiline
                   className="company-form__input company-form__textarea"
@@ -1203,6 +1242,7 @@ export default function WorkRequestDetailModal({
                   required
                   autoFocus
                   disabled={acting}
+                  maxLength={remarksLimit}
                 />
               </label>
               {actionError && (

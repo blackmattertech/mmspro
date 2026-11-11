@@ -229,10 +229,10 @@ export default function WorkRequestAssetFields({
   onEquipmentIdChange,
   loading,
   disabled,
+  required = false,
 }) {
   const allFields = useMemo(() => flattenAssetSections(sections), [sections])
   const seededEquipmentRef = useRef('')
-  const qrLoadRef = useRef('')
   const [fetchedQr, setFetchedQr] = useState('')
   const hierarchyFields = useMemo(() => orderedHierarchyFields(allFields), [allFields])
   const selected = useMemo(
@@ -291,15 +291,12 @@ export default function WorkRequestAssetFields({
     onFieldValuesChange(fieldValuesFromEquipment(row, allFields))
   }, [equipmentId, equipment, allFields, fieldValues, onFieldValuesChange])
 
-  useEffect(() => {
-    if (!equipmentId || loading) return
-    const row = (equipment || []).find((item) => item.id === equipmentId)
-    if (!row) onEquipmentIdChange('')
-  }, [equipment, equipmentId, onEquipmentIdChange, loading])
+  // Do not clear equipmentId when the row is briefly missing from the catalog
+  // list (e.g. edit open while pinned equipment is still fetching). Parents own
+  // clearing on department/location change.
 
   useEffect(() => {
     if (!equipmentId || !selected) {
-      qrLoadRef.current = ''
       setFetchedQr('')
       return undefined
     }
@@ -307,8 +304,6 @@ export default function WorkRequestAssetFields({
       setFetchedQr(selected.qr_code)
       return undefined
     }
-    if (qrLoadRef.current === equipmentId) return undefined
-    qrLoadRef.current = equipmentId
     let cancelled = false
     getEquipment(equipmentId)
       .then((detail) => {
@@ -328,20 +323,61 @@ export default function WorkRequestAssetFields({
     return true
   })
 
+  const assetLabel = required ? 'Asset *' : 'Asset'
+
   if (!hierarchyFields.length) {
     return (
-      <p className="wo-manual__intro" style={{ margin: 0 }}>
-        No asset hierarchy fields yet. Add them under Configure → Assets.
-      </p>
+      <div className="company-form__field company-form__field--full">
+        <span className="company-form__label">{assetLabel}</span>
+        <FilterableSelect
+          value={equipmentId || ''}
+          onChange={onEquipmentIdChange}
+          options={equipment || []}
+          getOptionValue={(row) => row.id}
+          getOptionLabel={(row) => [row.name, row.code].filter(Boolean).join(' · ') || row.id}
+          placeholder={loading ? 'Loading assets…' : 'Select asset'}
+          disabled={disabled || loading}
+          required={required}
+          className="company-form__input--select"
+        />
+        {!loading && !(equipment || []).length ? (
+          <p className="company-form__hint" style={{ marginTop: 8 }}>
+            No assets available. Add hierarchy fields under Configure → Assets, or add equipment for this department.
+          </p>
+        ) : null}
+      </div>
     )
   }
 
   const qrValue = fetchedQr || selected?.qr_code || selected?.code || ''
+  const visibleFields = revealedFields.length
+    ? revealedFields
+    : hierarchyFields.filter((field) => !isMediaField(field)).slice(0, 1)
+
+  // Never leave the Asset section blank — fall back to a plain asset select.
+  if (!visibleFields.length) {
+    return (
+      <div className="company-form__field company-form__field--full">
+        <span className="company-form__label">{assetLabel}</span>
+        <FilterableSelect
+          value={equipmentId || ''}
+          onChange={onEquipmentIdChange}
+          options={equipment || []}
+          getOptionValue={(row) => row.id}
+          getOptionLabel={(row) => [row.name, row.code].filter(Boolean).join(' · ') || row.id}
+          placeholder={loading ? 'Loading assets…' : 'Select asset'}
+          disabled={disabled || loading}
+          required={required}
+          className="company-form__input--select"
+        />
+      </div>
+    )
+  }
 
   return (
     <div className={`wr-asset-sections${qrValue ? ' wr-asset-with-qr' : ''}`}>
       <div className="company-form__grid wr-asset-grid">
-        {revealedFields.map((field) => {
+        {visibleFields.map((field) => {
           const rawValue = fieldValues[field.id]
           const value = Array.isArray(rawValue) ? rawValue : (rawValue ?? '')
           const media = isMediaField(field)

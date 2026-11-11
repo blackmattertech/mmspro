@@ -39,7 +39,6 @@ const REQUEST_TYPES = [
   { value: 'inter_department', label: 'Inter-department' },
   { value: 'intra_department', label: 'Intra-department' },
   { value: 'user_self', label: 'Self' },
-  { value: 'manual', label: 'Manual' },
 ]
 
 const PRIORITIES = [

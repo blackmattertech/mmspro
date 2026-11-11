@@ -21,7 +21,7 @@ import {
 } from '../../lib/warrantyBulkService.js'
 import { attachFailedFileToResult } from '../../lib/importErrorWorkbook.js'
 import { bufferFromBase64Upload, excelFilePayload } from '../../lib/excelTemplate.js'
-import { parseListControls } from '../../lib/listQuery.js'
+import { parseListControls, sendCsv } from '../../lib/listQuery.js'
 
 const router = Router()
 
@@ -42,7 +42,7 @@ function parsePagination(query) {
 
 router.get('/', canRead, async (req, res) => {
   try {
-    const { limit, offset } = parsePagination(req.query)
+    const page = parsePagination(req.query)
     const controls = parseListControls(req.query)
     const rows = await listWarranties(req.userProfile.org_id, {
       search: req.query.search || null,
@@ -55,9 +55,31 @@ router.get('/', canRead, async (req, res) => {
         dateFrom: req.query.expiring_date_from || null,
         dateTo: req.query.expiring_date_to || null,
       },
-      limit,
-      offset,
+      limit: controls.exportCsv ? 5000 : page.limit,
+      offset: controls.exportCsv ? 0 : page.offset,
     })
+    if (controls.exportCsv) {
+      sendCsv(res, 'warranties.csv', rows.items || rows || [], [
+        { label: 'S.No', value: (row) => row.serial_number },
+        { label: 'Make', value: (row) => row.make },
+        { label: 'Vendor', value: (row) => row.vendor },
+        { label: 'Purchase date', value: (row) => row.purchase_date },
+        { label: 'PO number', value: (row) => row.po_number },
+        { label: 'PO date', value: (row) => row.po_date },
+        { label: 'Invoice number', value: (row) => row.invoice_number },
+        { label: 'Invoice date', value: (row) => row.invoice_date },
+        { label: 'Warranty start', value: (row) => row.warranty_start },
+        { label: 'Warranty end', value: (row) => row.warranty_end },
+        { label: 'Period (months)', value: (row) => row.warranty_period_months },
+        { label: 'Contact', value: (row) => row.contact_name },
+        { label: 'Contact phone', value: (row) => row.contact_phone },
+        { label: 'Contact email', value: (row) => row.contact_email },
+        { label: 'Total value', value: (row) => row.total_value },
+        { label: 'Created', value: (row) => row.created_at },
+        { label: 'Updated', value: (row) => row.updated_at },
+      ])
+      return
+    }
     res.json(rows)
   } catch (err) {
     res.status(500).json({ error: err.message })

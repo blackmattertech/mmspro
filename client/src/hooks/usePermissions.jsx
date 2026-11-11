@@ -148,7 +148,7 @@ export function PermissionsProvider({ children }) {
         ['assets', 'masters/forms'],
         ['equipment', 'masters/equipment'],
         ['vendors', 'masters/vendors'],
-        ['others', 'masters/others'],
+        ['others', 'masters/others', 'masters/checklists'],
         ['roles_access', 'configuration/roles'],
         ['approvals', 'configuration/approvals'],
         ['settings', 'configuration/settings'],

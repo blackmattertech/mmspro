@@ -40,7 +40,7 @@ import { getAllowedNextWorkOrderStatuses } from '../../lib/orgStatusService.js'
 import { assertChecklistSelected, loadOrgProcessSkips, maybePromoteAssignedToAccepted } from '../../lib/formSkips.js'
 import { workOrderFormIdForSource } from '../../lib/workOrderForms.js'
 import { actorsFromRequest, loadFillershipRecord } from '../../lib/formFillershipRecord.js'
-import { buildAssetHierarchy } from '../../lib/workRequestService.js'
+import { buildAssetHierarchy, ensureUserSelfCreatorAssigned } from '../../lib/workRequestService.js'
 import {
   listWorkOrderDailyLogs,
   startWorkOrderDay,
@@ -1212,6 +1212,25 @@ async function buildWorkOrderListResponse(orgId, rows, existingAssigneesByWo = n
   const withSummaries = await attachSummaries(orgId, withDepartments)
   const assigneesByWo = existingAssigneesByWo
     || await loadAssigneesForWorkOrders(orgId, withSummaries.map((r) => r.id))
+  const unassignedSelf = withSummaries.filter((row) => (
+    row.source_type === 'user_self_request' && !(assigneesByWo.get(row.id) || []).length
+  ))
+  if (unassignedSelf.length) {
+    try {
+      const healed = await ensureUserSelfCreatorAssigned(orgId, unassignedSelf, { skipAssigneeCheck: true })
+      const healedIds = [...healed.statusById.keys()]
+      if (healedIds.length) {
+        const refreshed = await loadAssigneesForWorkOrders(orgId, healedIds)
+        for (const [id, people] of refreshed) assigneesByWo.set(id, people)
+        for (const row of withSummaries) {
+          const status = healed.statusById.get(row.id)
+          if (status) row.status = status
+        }
+      }
+    } catch (err) {
+      console.error('User self creator assignment failed:', err.message)
+    }
+  }
   const creatorIds = [...new Set(withSummaries.map((r) => r.created_by).filter(Boolean))]
   const creatorActors = creatorIds.length ? await loadTimelineActors(orgId, creatorIds) : new Map()
   const creatorById = new Map(
@@ -1414,6 +1433,16 @@ async function loadWorkOrderDetail(orgId, workOrderId, { employee = null, profil
     .eq('work_order_id', workOrderId)
 
   if (valuesError) throw valuesError
+
+  if (workOrder.source_type === 'user_self_request') {
+    try {
+      const healed = await ensureUserSelfCreatorAssigned(orgId, [workOrder])
+      const status = healed.statusById.get(workOrder.id)
+      if (status) workOrder.status = status
+    } catch (err) {
+      console.error('User self creator assignment failed:', err.message)
+    }
+  }
 
   const timeline = await loadWorkOrderTimeline(orgId, workOrderId)
 
@@ -1783,12 +1812,145 @@ router.put('/manual/form-settings', canManageFormSettings, async (req, res) => {
   }
 })
 
+function optionalTimestamp(value) {
+  if (!value) return null
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? null : date.toISOString()
+}
+
+function sanitizeWorkOrderAttachments(value) {
+  if (!Array.isArray(value)) return []
+  return value.slice(0, 20).map((item) => ({
+    path: String(item?.path || '').slice(0, 500),
+    name: String(item?.name || '').slice(0, 200),
+    mime_type: String(item?.mime_type || item?.type || '').slice(0, 120),
+    size: Number(item?.size) || 0,
+    bucket: String(item?.bucket || '').slice(0, 80),
+  })).filter((item) => item.path)
+}
+
+function clipOptional(fieldLimits, key, value) {
+  if (value == null || value === '') return null
+  return clipTrimmedToLimit(fieldLimits, key, value)
+}
+
+function optionalNumber(value) {
+  if (value == null || value === '') return null
+  const number = Number(value)
+  return Number.isFinite(number) ? number : null
+}
+
+function nativeManualWorkOrderFields(body, fieldLimits) {
+  const problemDescription = clipTrimmedToLimit(fieldLimits, 'problem_description', body?.problem_description)
+  const shortDescription = clipTrimmedToLimit(fieldLimits, 'short_description', body?.short_description)
+    || clipTrimmedToLimit(fieldLimits, 'short_description', problemDescription)
+  const rawPriority = String(body?.priority || '').trim().toLowerCase()
+  const permitTypes = Array.isArray(body?.permit_types)
+    ? body.permit_types.map((item) => String(item || '').trim()).filter(Boolean)
+    : []
+  return {
+    problem_description: problemDescription,
+    short_description: shortDescription,
+    priority: ['high', 'medium', 'low'].includes(rawPriority) ? rawPriority : 'medium',
+    work_center: body?.work_center != null && String(body.work_center).trim()
+      ? String(body.work_center).trim()
+      : null,
+    special_instructions: body?.special_instructions != null && String(body.special_instructions).trim()
+      ? String(body.special_instructions).trim()
+      : null,
+    planned_start_at: optionalTimestamp(body?.planned_start_at),
+    planned_end_at: optionalTimestamp(body?.planned_end_at),
+    is_breakdown: Boolean(body?.is_breakdown),
+    equipment_id: body?.equipment_id || null,
+    attachments: sanitizeWorkOrderAttachments(body?.attachments),
+    form_field_values: body?.form_field_values && typeof body.form_field_values === 'object'
+      ? body.form_field_values
+      : {},
+    vendor_id: body?.vendor_id || null,
+    vendor_expense: optionalNumber(body?.vendor_expense),
+    labour_count: optionalNumber(body?.labour_count),
+    work_start_at: optionalTimestamp(body?.work_start_at),
+    work_end_at: optionalTimestamp(body?.work_end_at),
+    job_description: clipOptional(fieldLimits, 'job_description', body?.job_description),
+    root_cause: clipOptional(fieldLimits, 'root_cause', body?.root_cause),
+    action_taken: clipOptional(fieldLimits, 'action_taken', body?.action_taken),
+    special_tools_used: clipOptional(fieldLimits, 'special_tools_used', body?.special_tools_used),
+    safety_precautions: clipOptional(fieldLimits, 'safety_precautions', body?.safety_precautions),
+    lessons_learned: clipOptional(fieldLimits, 'lessons_learned', body?.lessons_learned),
+    execution_remarks: clipOptional(fieldLimits, 'execution_remarks', body?.execution_remarks),
+    material_consumed: body?.material_consumed != null && String(body.material_consumed).trim()
+      ? String(body.material_consumed)
+      : null,
+    permit_required: Boolean(body?.permit_required),
+    permit_types: permitTypes,
+    permit_number: body?.permit_number != null && String(body.permit_number).trim()
+      ? String(body.permit_number).trim()
+      : null,
+    permit_issue_at: optionalTimestamp(body?.permit_issue_at),
+    permit_expiry_at: optionalTimestamp(body?.permit_expiry_at),
+  }
+}
+
+/** In-memory create idempotency (same browser/tab double-submit within a few minutes). */
+const MANUAL_CREATE_IDEMPOTENCY = new Map()
+const MANUAL_CREATE_INFLIGHT = new Map()
+const MANUAL_CREATE_IDEMPOTENCY_TTL_MS = 5 * 60 * 1000
+
+function manualCreateIdempotencyKey(orgId, userId, clientRequestId) {
+  const token = String(clientRequestId || '').trim()
+  if (!token || token.length > 120) return null
+  return `${orgId}:${userId}:${token}`
+}
+
+function rememberManualCreate(key, workOrder) {
+  if (!key || !workOrder?.id) return
+  MANUAL_CREATE_IDEMPOTENCY.set(key, {
+    workOrder,
+    expires: Date.now() + MANUAL_CREATE_IDEMPOTENCY_TTL_MS,
+  })
+}
+
+function takeManualCreate(key) {
+  if (!key) return null
+  const hit = MANUAL_CREATE_IDEMPOTENCY.get(key)
+  if (!hit) return null
+  if (hit.expires <= Date.now()) {
+    MANUAL_CREATE_IDEMPOTENCY.delete(key)
+    return null
+  }
+  return hit.workOrder
+}
+
 router.post('/manual', canCreateWorkOrders, async (req, res) => {
   const orgId = req.userProfile.org_id
   const userId = req.userProfile.id
+  const idempotencyKey = manualCreateIdempotencyKey(
+    orgId,
+    userId,
+    req.body?.client_request_id || req.get('idempotency-key'),
+  )
+  let resolveInflight = null
+  let rejectInflight = null
   try {
-    const wantsSubmit = req.body?.status === 'created' || req.body?.status === 'assigned'
-    const status = wantsSubmit ? 'assigned' : 'draft'
+    if (idempotencyKey) {
+      const replay = takeManualCreate(idempotencyKey)
+      if (replay) return res.status(200).json(replay)
+      const pending = MANUAL_CREATE_INFLIGHT.get(idempotencyKey)
+      if (pending) {
+        const workOrder = await pending
+        return res.status(200).json(workOrder)
+      }
+      const gate = new Promise((resolve, reject) => {
+        resolveInflight = resolve
+        rejectInflight = reject
+      })
+      MANUAL_CREATE_INFLIGHT.set(idempotencyKey, gate)
+    }
+
+    const requested = String(req.body?.status || 'draft')
+    const status = requested === 'completed'
+      ? 'completed'
+      : (requested === 'created' || requested === 'assigned' ? 'assigned' : 'draft')
     const values = req.body?.values && typeof req.body.values === 'object' ? req.body.values : {}
 
     const [fields, settingsMap] = await Promise.all([
@@ -1806,21 +1968,25 @@ router.post('/manual', canCreateWorkOrders, async (req, res) => {
     )
 
     const departmentId = departmentAssignment?.assigned_department_id || null
-    if (status === 'assigned' && !departmentId) {
+    if ((status === 'assigned' || status === 'completed') && !departmentId) {
       return res.status(400).json({ error: 'Select an Order to department.' })
     }
-    if (status === 'assigned') {
+    if (status === 'assigned' || status === 'completed') {
       await assertChecklistSelected(orgId, 'work_orders.manual', req.body?.checklist_template_id)
     }
     let woNumber = null
-    if (status === 'assigned' && departmentId) {
+    if ((status === 'assigned' || status === 'completed') && departmentId) {
       woNumber = await generateWorkOrderNumber(orgId, departmentId)
     }
 
     const fieldLimits = await getTextFieldLimitsMap(orgId)
-    const problemDescription = clipTrimmedToLimit(fieldLimits, 'problem_description', req.body?.problem_description)
-    const shortDescription = clipTrimmedToLimit(fieldLimits, 'short_description', req.body?.short_description)
-      || clipTrimmedToLimit(fieldLimits, 'short_description', problemDescription)
+    const nativeFields = nativeManualWorkOrderFields(req.body, fieldLimits)
+    const assignedEmployeeIds = Array.isArray(req.body?.assigned_employee_ids)
+      ? await validateAssignedEmployees(orgId, req.body.assigned_employee_ids, {
+        locationId: departmentAssignment?.assigned_location_id || null,
+        departmentId,
+      })
+      : []
 
     let checklistTemplateId = null
     let checklistSnapshot = {}
@@ -1837,18 +2003,41 @@ router.post('/manual', canCreateWorkOrders, async (req, res) => {
         status,
         wo_number: woNumber,
         source_type: 'manual',
+        // No stage workflow — a completed manual WO is fully done.
+        progress_percent: status === 'completed' ? 100 : (status === 'draft' ? 0 : null),
         created_by: userId,
         supervisor_id: userId,
         assigned_department_id: departmentAssignment?.assigned_department_id || null,
         assigned_location_id: departmentAssignment?.assigned_location_id || null,
-        priority: ['high', 'medium', 'low'].includes(req.body?.priority) ? req.body.priority : 'medium',
-        problem_description: problemDescription,
-        short_description: shortDescription,
-        work_center: req.body?.work_center?.trim() || null,
-        equipment_id: req.body?.equipment_id || null,
-        special_instructions: req.body?.special_instructions?.trim() || null,
-        planned_start_at: req.body?.planned_start_at || null,
-        planned_end_at: req.body?.planned_end_at || null,
+        priority: nativeFields.priority,
+        problem_description: nativeFields.problem_description,
+        short_description: nativeFields.short_description,
+        work_center: nativeFields.work_center,
+        equipment_id: nativeFields.equipment_id,
+        special_instructions: nativeFields.special_instructions,
+        planned_start_at: nativeFields.planned_start_at,
+        planned_end_at: nativeFields.planned_end_at,
+        is_breakdown: nativeFields.is_breakdown,
+        attachments: nativeFields.attachments,
+        form_field_values: nativeFields.form_field_values,
+        vendor_id: nativeFields.vendor_id,
+        vendor_expense: nativeFields.vendor_expense,
+        labour_count: nativeFields.labour_count,
+        work_start_at: nativeFields.work_start_at,
+        work_end_at: nativeFields.work_end_at,
+        job_description: nativeFields.job_description,
+        root_cause: nativeFields.root_cause,
+        action_taken: nativeFields.action_taken,
+        special_tools_used: nativeFields.special_tools_used,
+        safety_precautions: nativeFields.safety_precautions,
+        lessons_learned: nativeFields.lessons_learned,
+        execution_remarks: nativeFields.execution_remarks,
+        material_consumed: nativeFields.material_consumed,
+        permit_required: nativeFields.permit_required,
+        permit_types: nativeFields.permit_types,
+        permit_number: nativeFields.permit_number,
+        permit_issue_at: nativeFields.permit_issue_at,
+        permit_expiry_at: nativeFields.permit_expiry_at,
         checklist_template_id: checklistTemplateId,
         checklist_snapshot: checklistSnapshot,
         checklist_values: {},
@@ -1858,33 +2047,46 @@ router.post('/manual', canCreateWorkOrders, async (req, res) => {
 
     if (woError) return res.status(500).json({ error: woError.message })
 
-    await syncWorkOrderAssignees(orgId, workOrder.id, [])
+    await syncWorkOrderAssignees(orgId, workOrder.id, assignedEmployeeIds)
+    const promoted = status === 'completed'
+      ? workOrder
+      : (assignedEmployeeIds.length
+        ? await promoteIfAcceptanceSkipped(orgId, workOrder, assignedEmployeeIds.length)
+        : workOrder)
 
     const valueCount = await upsertWorkOrderValues(orgId, workOrder.id, values, allowedFields)
 
-    if (status === 'assigned') {
+    if (status === 'assigned' || status === 'completed') {
       await addWorkOrderTimelineEvent(
         orgId,
         workOrder.id,
         'work_order_generated',
-        woNumber ? `Manual work order ${woNumber} created.` : 'Manual work order created.',
+        woNumber
+          ? `Manual work order ${woNumber} ${status === 'completed' ? 'recorded' : 'created'}.`
+          : `Manual work order ${status === 'completed' ? 'recorded' : 'created'}.`,
         userId,
-        { newStatus: 'assigned' },
+        { newStatus: status },
       )
       await addWorkOrderAuditEntry(
         orgId,
         workOrder.id,
         userId,
         'manual_created',
-        { newStatus: 'assigned', departmentId },
+        { newStatus: status, departmentId },
       )
     }
 
-    const enriched = await enrichWorkOrderRow(orgId, workOrder)
+    const enriched = await enrichWorkOrderRow(orgId, promoted)
+    const payload = { ...enriched, wo_number: resolveDisplayWoNumber(promoted), value_count: valueCount }
+    rememberManualCreate(idempotencyKey, payload)
+    resolveInflight?.(payload)
 
-    res.status(201).json({ ...enriched, wo_number: resolveDisplayWoNumber(workOrder), value_count: valueCount })
+    res.status(201).json(payload)
   } catch (err) {
-    res.status(400).json({ error: err.message })
+    rejectInflight?.(err)
+    res.status(err.status || 400).json({ error: err.message })
+  } finally {
+    if (idempotencyKey) MANUAL_CREATE_INFLIGHT.delete(idempotencyKey)
   }
 })
 
@@ -2196,6 +2398,7 @@ router.patch('/manual/:id', canUpdateWorkOrders, assertOrgOwnership('manual_work
     const requestedStatus = req.body?.status
     let nextStatus = existing.status
     if (requestedStatus === 'draft') nextStatus = 'draft'
+    else if (requestedStatus === 'completed') nextStatus = 'completed'
     else if (requestedStatus === 'created' || requestedStatus === 'assigned') nextStatus = 'assigned'
     else if (typeof requestedStatus === 'string' && requestedStatus !== existing.status) {
       const processSkips = await loadOrgProcessSkips(orgId)
@@ -2232,7 +2435,7 @@ router.patch('/manual/:id', canUpdateWorkOrders, assertOrgOwnership('manual_work
       : null
 
     const nextDepartmentId = departmentAssignment?.assigned_department_id || null
-    if (nextStatus === 'assigned' && !nextDepartmentId) {
+    if ((nextStatus === 'assigned' || nextStatus === 'completed') && !nextDepartmentId) {
       return res.status(400).json({ error: 'Select an Order to department.' })
     }
     const departmentChanged = nextDepartmentId !== (existing.assigned_department_id || null)
@@ -2243,8 +2446,67 @@ router.patch('/manual/:id', canUpdateWorkOrders, assertOrgOwnership('manual_work
       assigned_location_id: departmentAssignment?.assigned_location_id || assignedLocationId || null,
       updated_at: new Date().toISOString(),
     }
+    if (nextStatus === 'completed') updates.progress_percent = 100
+    else if (nextStatus === 'draft' && existing.status !== 'draft') updates.progress_percent = 0
 
-    if (nextStatus === 'assigned' && existing.status === 'draft' && !existing.wo_number) {
+    const nativeKeys = [
+      'short_description',
+      'problem_description',
+      'priority',
+      'work_center',
+      'special_instructions',
+      'planned_start_at',
+      'planned_end_at',
+      'is_breakdown',
+      'equipment_id',
+      'attachments',
+      'form_field_values',
+      'vendor_id',
+      'vendor_expense',
+      'labour_count',
+      'work_start_at',
+      'work_end_at',
+      'job_description',
+      'root_cause',
+      'action_taken',
+      'special_tools_used',
+      'safety_precautions',
+      'lessons_learned',
+      'execution_remarks',
+      'material_consumed',
+      'permit_required',
+      'permit_types',
+      'permit_number',
+      'permit_issue_at',
+      'permit_expiry_at',
+    ]
+    const touchesNative = nativeKeys.some((key) => Object.prototype.hasOwnProperty.call(req.body || {}, key))
+    if (touchesNative) {
+      const fieldLimits = await getTextFieldLimitsMap(orgId)
+      const nativeFields = nativeManualWorkOrderFields(req.body, fieldLimits)
+      for (const key of nativeKeys) {
+        if (key in (req.body || {})) updates[key] = nativeFields[key]
+      }
+      if ('short_description' in req.body || 'problem_description' in req.body) {
+        updates.short_description = nativeFields.short_description
+        updates.problem_description = nativeFields.problem_description
+      }
+    }
+    if ('checklist_template_id' in (req.body || {})) {
+      if (req.body.checklist_template_id) {
+        const template = await assertChecklistForForm(orgId, req.body.checklist_template_id, 'work_orders.manual')
+        updates.checklist_template_id = template.id
+        updates.checklist_snapshot = await snapshotChecklistTemplate(orgId, template.id) || {}
+      } else {
+        updates.checklist_template_id = null
+      }
+    }
+
+    if (
+      (nextStatus === 'assigned' || nextStatus === 'completed')
+      && existing.status === 'draft'
+      && !existing.wo_number
+    ) {
       const deptId = updates.assigned_department_id
       if (deptId) {
         updates.wo_number = await generateWorkOrderNumber(orgId, deptId)

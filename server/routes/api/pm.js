@@ -41,6 +41,9 @@ import {
   updateChecklistSection,
   deleteChecklistSection,
   reorderChecklistSections,
+  CHECKLIST_FORMS,
+  loadOrgChecklistEnabledFormIds,
+  saveOrgChecklistEnabledFormIds,
 } from '../../lib/checklistService.js'
 
 const router = Router()
@@ -163,6 +166,43 @@ router.get('/checklists', canReadChecklist, async (req, res) => {
       formId: req.query.form_id || null,
     })
     res.json(rows)
+  } catch (err) {
+    sendError(res, err)
+  }
+})
+
+router.get('/checklist-settings', canReadChecklist, async (req, res) => {
+  try {
+    const formIds = await loadOrgChecklistEnabledFormIds(req.userProfile.org_id)
+    res.json({
+      form_ids: formIds,
+      forms: CHECKLIST_FORMS.map((item) => ({
+        formId: item.formId,
+        label: item.label,
+        moduleKey: item.moduleKey,
+        enabled: formIds.includes(item.formId),
+      })),
+    })
+  } catch (err) {
+    sendError(res, err)
+  }
+})
+
+router.put('/checklist-settings', canUpdateChecklist, async (req, res) => {
+  try {
+    const formIds = await saveOrgChecklistEnabledFormIds(
+      req.userProfile.org_id,
+      req.body?.form_ids,
+    )
+    res.json({
+      form_ids: formIds,
+      forms: CHECKLIST_FORMS.map((item) => ({
+        formId: item.formId,
+        label: item.label,
+        moduleKey: item.moduleKey,
+        enabled: formIds.includes(item.formId),
+      })),
+    })
   } catch (err) {
     sendError(res, err)
   }

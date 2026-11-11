@@ -17,6 +17,10 @@ import { useProfile } from '../../hooks/useProfile'
 import { usePermissions } from '../../hooks/usePermissions'
 import { useOrgStatusOptions } from '../../hooks/useOrgStatusOptions'
 import { useTextFieldLimits } from '../../hooks/useTextFieldLimits'
+import {
+  findVisibleCharacterLimitError,
+  firstCharacterLimitMessage,
+} from '../../lib/textFieldLimits'
 import { useBackdropClose } from '../../hooks/useBackdropClose'
 import { orgPath } from '../../config/navigation'
 import DateField from '../ui/DateField'
@@ -29,8 +33,11 @@ import WorkOrderMaterialDetailsModal from './WorkOrderMaterialDetailsModal'
 import WorkOrderMaterialRowsTable, { normalizeMaterialRows } from './WorkOrderMaterialRowsTable'
 import WorkRequestFormSections from './WorkRequestFormSections'
 import ChecklistExecution, { isChecklistComplete } from '../pm/ChecklistExecution'
+import WorkOrderProgressControl from './WorkOrderProgressControl'
+import WorkOrderStatusPicker, { orderStatusOptions } from './WorkOrderStatusPicker'
 import SpellcheckInput from '../shared/SpellcheckInput'
 import FormLabel from '../shared/FormLabel'
+import NavIcon from '../layout/NavIcon'
 import { AssetHierarchySummary } from '../workrequests/WorkRequestAssetFields'
 import { hierarchyDisplaySteps } from '../../lib/assetHierarchy'
 import { formatWorkOrderStatusLabel } from '../../lib/workOrderStatusLabel'
@@ -40,6 +47,7 @@ import {
   formPatchFromSnapshot,
   todayDateString,
 } from '../../lib/workOrderDaySnapshot'
+import { formatDurationHours, hoursBetween } from '../../lib/durationHours'
 import './ManualWorkOrder.css'
 
 const PERMIT_LABELS = {
@@ -74,6 +82,18 @@ const SOURCE_LABELS = {
   manual: 'Manual',
   breakdown: 'Work request',
   user_self_request: 'User self request',
+}
+
+function formatDayStamp(value) {
+  if (!value) return null
+  try {
+    return new Date(value).toLocaleString(undefined, {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+    })
+  } catch {
+    return null
+  }
 }
 
 function formatStatus(status, labelByKey = null, order = null) {
@@ -368,6 +388,7 @@ export default function WorkOrderLifecyclePanel({
   })
   const [showRequestForm, setShowRequestForm] = useState(() => Boolean(detail?.work_request))
   const [confirmClose, setConfirmClose] = useState(false)
+  const [pendingStatus, setPendingStatus] = useState(detail?.status || '')
   const [activeDayId, setActiveDayId] = useState(null)
   const [todayDraft, setTodayDraft] = useState(null)
 
@@ -438,6 +459,7 @@ export default function WorkOrderLifecyclePanel({
     setError(null)
     setShowFollowUp(false)
     setConfirmClose(false)
+    setPendingStatus(detail?.status || '')
   }, [detail?.id, detail?.updated_at, detail?.status, dayLogs.length, todayKey])
 
   const nextStatuses = useMemo(
@@ -480,11 +502,18 @@ export default function WorkOrderLifecyclePanel({
       assignees: detail?.assignees,
     },
   })
-  const visibleStatuses = nextStatuses.filter((status) => {
-    if (status === 'accepted') return false
-    if (SUPERVISOR_STATUSES.has(status)) return canSupervise
-    return isTechnician || canSupervise
-  })
+  const visibleStatuses = useMemo(
+    () => nextStatuses.filter((status) => {
+      if (status === 'accepted') return false
+      if (SUPERVISOR_STATUSES.has(status)) return canSupervise
+      return isTechnician || canSupervise
+    }),
+    [nextStatuses, canSupervise, isTechnician],
+  )
+  const statusPickerOptions = useMemo(
+    () => orderStatusOptions([detail?.status, ...visibleStatuses]),
+    [detail?.status, visibleStatuses],
+  )
   const keptExecutionFiles = executionFiles.filter((file) => !removedPaths.includes(file.path))
 
   const setField = (key, value) => {
@@ -574,6 +603,7 @@ export default function WorkOrderLifecyclePanel({
       labour_count: form.labour_count === '' ? null : Number(form.labour_count),
       breakdown_start_at: form.breakdown_start_at || null,
       breakdown_end_at: form.breakdown_end_at || null,
+      breakdown_duration_hours: hoursBetween(form.breakdown_start_at, form.breakdown_end_at),
       job_description: form.job_description.trim() || null,
       root_cause: form.root_cause.trim() || null,
       action_taken: form.action_taken.trim() || null,
@@ -595,6 +625,25 @@ export default function WorkOrderLifecyclePanel({
     setError(null)
     try {
       if (!org?.id) throw new Error('Organization is not available.')
+      const limitError = firstCharacterLimitMessage([
+        { key: 'job_description', value: form.job_description },
+        { key: 'root_cause', value: form.root_cause },
+        { key: 'action_taken', value: form.action_taken },
+        { key: 'dos_and_donts', label: "Do's", value: form.dos },
+        { key: 'dos_and_donts', label: "Don'ts", value: form.donts },
+        { key: 'lessons_learned', value: form.lessons_learned },
+        { key: 'remarks', label: 'Execution remarks', value: form.execution_remarks },
+        { key: 'remarks', label: 'Verification remarks', value: form.verification_remarks },
+        { key: 'remarks', value: form.remarks },
+        ...(Array.isArray(form.material_rows)
+          ? form.material_rows.map((row, index) => ({
+            key: 'material_consumed',
+            label: `Material description ${index + 1}`,
+            value: row?.description,
+          }))
+          : []),
+      ], maxLength) || findVisibleCharacterLimitError(document)
+      if (limitError) throw new Error(limitError)
       if (
         ['completed', 'verified', 'closed'].includes(status)
         && detail.checklist_snapshot
@@ -638,6 +687,27 @@ export default function WorkOrderLifecyclePanel({
   }
 
   const canCreateManual = canCreate('work_orders_manual') || canCreate('work_orders')
+  const canCreateTaskFollowUp = canCreate('tasks_followups')
+
+  const openTaskFollowUp = () => {
+    if (!org?.slug || !detail?.id) return
+    const params = new URLSearchParams()
+    params.set('work_order_id', detail.id)
+    if (detail.wo_number) params.set('wo_number', detail.wo_number)
+    if (detail.created_at) {
+      try {
+        params.set('wo_date', new Date(detail.created_at).toISOString().slice(0, 10))
+      } catch {
+        // ignore invalid date
+      }
+    }
+    const short = String(detail.short_description || detail.summary || '').trim()
+    if (short) params.set('short_description', short)
+    if (detail.equipment_id) params.set('equipment_id', detail.equipment_id)
+    if (detail.assigned_location_id) params.set('location_id', detail.assigned_location_id)
+    if (detail.assigned_department_id) params.set('department_id', detail.assigned_department_id)
+    navigate(`${orgPath(org.slug, 'tasks-and-followups/create')}?${params.toString()}`)
+  }
 
   const openFollowUpForm = () => {
     const woLabel = detail.wo_number || 'PM work order'
@@ -869,18 +939,20 @@ export default function WorkOrderLifecyclePanel({
                             />
                           </label>
                           <label className="wo-permit__cell wo-permit__cell--date">
-                            <span className="company-form__label">Date</span>
+                            <span className="company-form__label">Issue date &amp; time</span>
                             <DateField
                               value={permitRow.issue_at}
                               onChange={(v) => updatePermitDetail(index, 'issue_at', v)}
+                              withTime
                               disabled={locked}
                             />
                           </label>
                           <label className="wo-permit__cell wo-permit__cell--date">
-                            <span className="company-form__label">Expiry date</span>
+                            <span className="company-form__label">Expiry date &amp; time</span>
                             <DateField
                               value={permitRow.expiry_at}
                               onChange={(v) => updatePermitDetail(index, 'expiry_at', v)}
+                              withTime
                               disabled={locked}
                             />
                           </label>
@@ -990,6 +1062,8 @@ export default function WorkOrderLifecyclePanel({
     }
 
     if (key === 'breakdown_times') {
+      const breakdownHours = hoursBetween(form.breakdown_start_at, form.breakdown_end_at)
+      const breakdownLabel = formatDurationHours(breakdownHours)
       return (
         <div key={key} className={className} style={{ gridColumn: '1 / -1' }}>
           <div className="company-form__grid">
@@ -1007,6 +1081,16 @@ export default function WorkOrderLifecyclePanel({
                 onChange={(v) => setField('breakdown_end_at', v)}
                 withTime
                 disabled={locked}
+              />
+            </Field>
+            <Field label="Breakdown duration">
+              <input
+                className="company-form__input"
+                type="text"
+                value={breakdownLabel || (form.breakdown_start_at && form.breakdown_end_at ? 'Invalid range' : '—')}
+                readOnly
+                disabled
+                aria-live="polite"
               />
             </Field>
           </div>
@@ -1087,15 +1171,48 @@ export default function WorkOrderLifecyclePanel({
     && Boolean(detail?.work_request_id)
     && ['assigned', 'accepted'].includes(detail?.status)
 
+  const showDayChrome = !openForPickup && (canUpdate || hasDailyLogs)
+  const stampDay = viewingPastDay
+    ? activeDay
+    : (todayLog || (activeDay?.log_date === todayKey ? activeDay : null))
+  const dayStampParts = [
+    formatDayStamp(stampDay?.started_at) ? `Started ${formatDayStamp(stampDay.started_at)}` : null,
+    formatDayStamp(stampDay?.updated_at) && stampDay?.updated_at !== stampDay?.started_at
+      ? `Updated ${formatDayStamp(stampDay.updated_at)}`
+      : null,
+    formatDayStamp(stampDay?.ended_at) && stampDay?.day_status === 'closed'
+      ? `Ended ${formatDayStamp(stampDay.ended_at)}`
+      : null,
+  ].filter(Boolean)
+
   const canEditExecution = canEditFilledBy('technician', processActors)
   const canEditCloseout = canEditFilledBy('supervisor', processActors)
   const canSaveLifecycle = canUpdate && !viewingPastDay && (canEditExecution || canEditCloseout)
+  const statusBlockedReasons = useMemo(() => {
+    const blocked = {}
+    for (const status of statusPickerOptions) {
+      const needsChecklist = ['completed', 'verified', 'closed'].includes(status)
+      if (needsChecklist && hasChecklist && isTechnician && !checklistComplete) {
+        blocked[status] = 'Complete the checklist before marking completed'
+      }
+    }
+    return blocked
+  }, [statusPickerOptions, hasChecklist, isTechnician, checklistComplete])
+
+  const statusDirty = Boolean(pendingStatus) && pendingStatus !== detail?.status
+
+  const applyPendingStatus = () => {
+    if (!pendingStatus || pendingStatus === detail?.status) return
+    if (pendingStatus === 'closed') {
+      setConfirmClose(true)
+      return
+    }
+    run(pendingStatus)
+  }
+
   const statusActionsBlock = canSaveLifecycle && !openForPickup ? (
     <section className={`wo-received-detail__section wo-assignment-actions${isPmScheduled ? ' wo-assignment-actions--pm' : ''}`}>
-      {!isPmScheduled && (
-        <h3>{canSupervise && !isTechnician ? 'Supervisor actions' : 'Status actions'}</h3>
-      )}
-      {isPmScheduled && (
+      {isPmScheduled ? (
         <div className="pm-wo-actions__intro">
           <h3>Complete scheduled work</h3>
           <p className="wo-permit__hint">
@@ -1103,6 +1220,18 @@ export default function WorkOrderLifecyclePanel({
             then save or update status. Create a regular work order if you find something unusual
             that needs repair or service.
           </p>
+        </div>
+      ) : (
+        <div className="wo-status-picker-block__head">
+          <span className="wo-status-picker-block__glyph" aria-hidden="true">
+            <NavIcon name="clipboard" />
+          </span>
+          <div>
+            <h3 className="wo-status-picker-block__title">
+              {canSupervise && !isTechnician ? 'Supervisor actions' : 'Update Task Status'}
+            </h3>
+            <p className="wo-status-picker-block__hint">Select the current status of this work.</p>
+          </div>
         </div>
       )}
       <Field label={isPmScheduled ? 'Remarks' : 'Action remarks'} full maxLength={maxLength('remarks')}>
@@ -1122,46 +1251,49 @@ export default function WorkOrderLifecyclePanel({
       {followUpSuccess && (
         <div className="wo-alert wo-alert--success" role="status">{followUpSuccess}</div>
       )}
-      <div className="wr-actions wr-actions--bar wo-status-actions">
+      {statusPickerOptions.length > 0 ? (
+        <WorkOrderStatusPicker
+          options={statusPickerOptions}
+          value={pendingStatus || detail?.status || ''}
+          onChange={setPendingStatus}
+          disabled={saving || creatingFollowUp}
+          getLabel={(status) => formatStatus(status, statusLabels, detail)}
+          blockedStatuses={statusBlockedReasons}
+        />
+      ) : null}
+      <div className="wr-actions wr-actions--bar wo-status-actions wo-status-picker-actions">
         <button
           type="button"
-          className="company-btn company-btn--primary wo-status-actions__save"
+          className="company-btn company-btn--secondary wo-status-actions__save"
           disabled={saving || creatingFollowUp}
           onClick={() => run(undefined)}
         >
-          {saving
+          {saving && !statusDirty
             ? 'Saving…'
             : hasChecklist && canEditChecklist
               ? (isPmScheduled ? 'Save checklist' : 'Save progress')
               : 'Save details'}
         </button>
-        <div className="wo-status-actions__group" role="group" aria-label="Update status">
-          {visibleStatuses.map((status) => {
-            const needsChecklist = ['completed', 'verified', 'closed'].includes(status)
-            const blockedByChecklist = needsChecklist && hasChecklist && isTechnician && !checklistComplete
-            const isDoneStatus = status === 'closed' || status === 'verified' || status === 'completed'
-            const isCurrent = detail?.status === status
-            const isRework = status === 'returned' || status === 'rework' || status === 'returned_rework'
-            return (
-              <button
-                key={status}
-                type="button"
-                className={[
-                  'company-btn',
-                  'wo-status-actions__chip',
-                  isDoneStatus ? 'company-btn--primary' : 'company-btn--outline',
-                  isRework ? 'wo-status-actions__chip--rework' : '',
-                  isCurrent ? 'is-current' : '',
-                ].filter(Boolean).join(' ')}
-                disabled={saving || creatingFollowUp || blockedByChecklist}
-                title={blockedByChecklist ? 'Complete the checklist before marking completed' : undefined}
-                onClick={() => (status === 'closed' ? setConfirmClose(true) : run(status))}
-              >
-                {formatStatus(status, statusLabels)}
-              </button>
-            )
-          })}
-        </div>
+        <button
+          type="button"
+          className="company-btn company-btn--secondary wo-status-picker-actions__cancel"
+          disabled={saving || creatingFollowUp || !statusDirty}
+          onClick={() => setPendingStatus(detail?.status || '')}
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          className="company-btn company-btn--primary wo-status-picker-actions__update"
+          disabled={saving || creatingFollowUp || !statusDirty || Boolean(statusBlockedReasons[pendingStatus])}
+          title={statusBlockedReasons[pendingStatus] || undefined}
+          onClick={applyPendingStatus}
+        >
+          <svg viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M3.5 8.2 6.4 11 12.5 4.8" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+          {saving && statusDirty ? 'Updating…' : 'Update Status'}
+        </button>
         {isPmScheduled && canCreateManual && (
           <button
             type="button"
@@ -1172,6 +1304,25 @@ export default function WorkOrderLifecyclePanel({
             Create regular work order
           </button>
         )}
+        {canCreateTaskFollowUp && (
+          <button
+            type="button"
+            className="company-btn company-btn--outline"
+            disabled={saving || creatingFollowUp}
+            onClick={openTaskFollowUp}
+          >
+            Add followup
+          </button>
+        )}
+      </div>
+
+      <div className="wo-status-actions__progress">
+        <WorkOrderProgressControl
+          detail={detail}
+          onUpdated={onUpdated}
+          layout="panel"
+          editable={canSaveLifecycle}
+        />
       </div>
 
       {isPmScheduled && showFollowUp && (
@@ -1302,19 +1453,19 @@ export default function WorkOrderLifecyclePanel({
         </section>
       )}
 
-      {!openForPickup && hasDailyLogs && (
+      {showDayChrome && (
         <div className="wo-received-detail__section wo-day-tabs-wrap">
           <WorkOrderDayTabs
             logs={dayLogs}
             activeLogId={activeDayId}
             todayLogId={todayLog?.id}
             showNewToday={!todayLog}
-            newTodayActive={activeDayId == null && todayDraft === 'blank'}
+            newTodayActive={!todayLog && (activeDayId == null || todayDraft === 'blank')}
             onSelect={(logId) => {
               if (logId == null) {
                 const resolved = resolveFormForDetail(detail, null)
                 setActiveDayId(null)
-                setTodayDraft('blank')
+                setTodayDraft(hasDailyLogs ? 'blank' : null)
                 setForm(resolved.form)
                 return
               }
@@ -1329,16 +1480,21 @@ export default function WorkOrderLifecyclePanel({
               }
               setActiveDayId(log.id)
               setTodayDraft(null)
-              setForm((prev) => {
+              setForm(() => {
                 const base = formFromDetail(detail)
-                const isPast = log.log_date !== todayKey
                 return {
                   ...base,
-                  ...formPatchFromSnapshot(log.field_snapshot || {}, { blankMissing: isPast }),
+                  ...formPatchFromSnapshot(log.field_snapshot || {}, { blankMissing: true }),
                 }
               })
             }}
           />
+          {dayStampParts.length ? (
+            <p className="wo-day-tabs__stamps" aria-live="polite">{dayStampParts.join(' · ')}</p>
+          ) : null}
+          {!hasDailyLogs && canUpdate && !viewingPastDay ? (
+            <p className="wo-day-tabs__hint">Fill in today’s work below, then Save details. Tomorrow you can open this date pill to review what was filled.</p>
+          ) : null}
           {needsBlankToday ? (
             <p className="wo-day-tabs__hint">New calendar day — enter today’s work below, then save.</p>
           ) : null}

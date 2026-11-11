@@ -15,6 +15,8 @@ import { notifyTabCountsChanged } from '../../lib/tabCountEvents'
 import { getEquipment } from '../../lib/api-equipment'
 import { syncTaskAttachments, attachmentsFromTask } from '../../lib/taskAttachmentSync'
 import { validateTaskForm, buildTaskPayload } from '../../lib/taskFormSchema'
+import { firstCharacterLimitMessage, findVisibleCharacterLimitError } from '../../lib/textFieldLimits'
+import { useTextFieldLimits } from '../../hooks/useTextFieldLimits'
 import PageBack from '../../components/shared/PageBack'
 import TaskForm, { EMPTY_TASK_FORM } from '../../components/tasks/TaskForm'
 import {
@@ -70,12 +72,19 @@ export default function TaskFormPage() {
   const { taskId } = useParams()
   const [searchParams] = useSearchParams()
   const prefillEquipmentId = searchParams.get('equipment_id') || ''
+  const prefillWorkOrderId = searchParams.get('work_order_id') || ''
+  const prefillWoNumber = searchParams.get('wo_number') || ''
+  const prefillWoDate = searchParams.get('wo_date') || ''
+  const prefillShortDescription = searchParams.get('short_description') || ''
+  const prefillLocationId = searchParams.get('location_id') || ''
+  const prefillDepartmentId = searchParams.get('department_id') || ''
   const isEdit = Boolean(taskId)
   const navigate = useNavigate()
   const { org } = useOrg()
   const { user } = useAuth()
   const { employee: profileEmployee, avatarUrl, displayName } = useProfile()
   const { canCreate, canUpdate } = usePermissions()
+  const { maxLength } = useTextFieldLimits()
   const canSave = isEdit ? canUpdate('tasks_followups') : canCreate('tasks_followups')
   const {
     activeStatuses,
@@ -126,6 +135,43 @@ export default function TaskFormPage() {
   }, [isEdit, taskId])
 
   useEffect(() => {
+    if (isEdit || !prefillWorkOrderId) return undefined
+    const short = String(prefillShortDescription || '').trim()
+    const woNumber = String(prefillWoNumber || '').trim()
+    const woDate = String(prefillWoDate || '').trim()
+    const detailLines = [
+      woNumber ? `Work order: ${woNumber}` : null,
+      woDate ? `Work order date: ${woDate}` : null,
+      short ? `Short description: ${short}` : null,
+    ].filter(Boolean).join('\n')
+    setValues((prev) => ({
+      ...prev,
+      title: prev.title || short || (woNumber ? `Follow-up · ${woNumber}` : ''),
+      short_description: prev.short_description || short,
+      detailed_description: prev.detailed_description || detailLines,
+      start_date: prev.start_date || woDate || prev.start_date,
+      location_id: prev.location_id || prefillLocationId || '',
+      department_id: prev.department_id || prefillDepartmentId || '',
+      references: [{
+        reference_type: 'work_order',
+        reference_number: woNumber,
+        reference_label: short || woNumber,
+        reference_entity_id: prefillWorkOrderId,
+        reference_entity_type: 'work_order',
+      }],
+    }))
+    return undefined
+  }, [
+    isEdit,
+    prefillWorkOrderId,
+    prefillWoNumber,
+    prefillWoDate,
+    prefillShortDescription,
+    prefillLocationId,
+    prefillDepartmentId,
+  ])
+
+  useEffect(() => {
     if (isEdit || !prefillEquipmentId) return undefined
     let cancelled = false
     getEquipment(prefillEquipmentId)
@@ -136,18 +182,20 @@ export default function TaskFormPage() {
           title: prev.title || row.name || '',
           location_id: prev.location_id || row.location_id || '',
           department_id: prev.department_id || row.department_id || '',
-          references: [{
-            reference_type: 'equipment',
-            reference_number: row.code || '',
-            reference_label: row.name || '',
-            reference_entity_id: row.id,
-            reference_entity_type: 'equipment',
-          }],
+          references: prefillWorkOrderId
+            ? prev.references
+            : [{
+              reference_type: 'equipment',
+              reference_number: row.code || '',
+              reference_label: row.name || '',
+              reference_entity_id: row.id,
+              reference_entity_type: 'equipment',
+            }],
         }))
       })
       .catch(() => {})
     return () => { cancelled = true }
-  }, [isEdit, prefillEquipmentId])
+  }, [isEdit, prefillEquipmentId, prefillWorkOrderId])
 
   const currentEmployee = useMemo(() => {
     const fromList = employees.find((e) => e.profile_id === user?.id)
@@ -188,6 +236,16 @@ export default function TaskFormPage() {
     const validation = validateTaskForm(values, { isEdit })
     if (!validation.valid) {
       setError(Object.values(validation.errors)[0])
+      return
+    }
+    const limitError = firstCharacterLimitMessage([
+      { key: 'short_description', value: values.short_description },
+      { key: 'problem_description', label: 'Detailed description', value: values.detailed_description },
+      { key: 'remarks', label: 'Follow-up remarks', value: values.follow_up_remarks },
+      { key: 'remarks', label: 'Completion remarks', value: values.completion_remarks },
+    ], maxLength) || findVisibleCharacterLimitError(document)
+    if (limitError) {
+      setError(limitError)
       return
     }
 

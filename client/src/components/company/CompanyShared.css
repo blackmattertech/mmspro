@@ -526,10 +526,16 @@
   min-width: 220px;
 }
 
-.company-form__textarea {
-  height: auto;
+.company-form__textarea,
+textarea.company-form__input {
+  height: auto !important;
+  min-height: 88px;
   padding: 10px 12px;
-  resize: vertical;
+  resize: none;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  line-height: 1.45;
 }
 
 .company-form__actions {

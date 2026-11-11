@@ -1,0 +1,286 @@
+.wo-status-picker-block__head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.wo-status-picker-block__glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  color: var(--color-primary, #e63946);
+  background: var(--color-light-pink-1, #fff1f2);
+  border-radius: 10px;
+}
+
+.wo-status-picker-block__glyph svg {
+  width: 20px;
+  height: 20px;
+}
+
+.wo-status-picker-block__title {
+  margin: 0;
+  padding: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: #1f2430;
+  line-height: 1.3;
+  background: transparent;
+  border-bottom: none;
+}
+
+/* Section cards style every h3 as a full-width grey bar — reset for this header. */
+.wo-received-detail__section .wo-status-picker-block__title {
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  border-bottom: none;
+}
+
+.wo-status-picker-block__hint {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: #6b7280;
+  line-height: 1.4;
+}
+
+.wo-status-picker {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
+  gap: 12px;
+}
+
+.wo-status-picker__option {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 104px;
+  padding: 16px 12px 14px;
+  border: 1.5px solid #e5e7eb;
+  border-radius: 14px;
+  background: #fff;
+  color: #1f2430;
+  cursor: pointer;
+  font: inherit;
+  text-align: center;
+  transition: border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+}
+
+.wo-status-picker__option:hover:not(:disabled) {
+  border-color: #d1d5db;
+  background: #fafafa;
+}
+
+.wo-status-picker__option:focus-visible {
+  outline: 2px solid var(--color-primary, #e63946);
+  outline-offset: 2px;
+}
+
+.wo-status-picker__option.is-selected {
+  border-color: var(--color-primary, #e63946);
+  background: var(--color-light-pink-1, #fff1f2);
+  box-shadow: 0 0 0 1px rgba(230, 57, 70, 0.08);
+}
+
+.wo-status-picker__option:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.wo-status-picker__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  color: #6b7280;
+}
+
+.wo-status-picker__icon svg {
+  width: 28px;
+  height: 28px;
+}
+
+.wo-status-picker__icon--active {
+  color: var(--color-primary, #e63946);
+}
+
+.wo-status-picker__icon--done {
+  color: var(--color-primary, #e63946);
+}
+
+.wo-status-picker__icon--rework {
+  color: #ea580c;
+}
+
+.wo-status-picker__icon--hold {
+  color: #9ca3af;
+}
+
+.wo-status-picker__icon--idle {
+  color: #9ca3af;
+}
+
+.wo-status-picker__option.is-selected .wo-status-picker__icon--idle,
+.wo-status-picker__option.is-selected .wo-status-picker__icon--hold {
+  color: var(--color-primary, #e63946);
+}
+
+.wo-status-picker__label {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.25;
+  color: #374151;
+}
+
+.wo-status-picker__option.is-selected .wo-status-picker__label {
+  color: #1f2430;
+}
+
+.wo-status-picker__check {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: var(--color-primary, #e63946);
+}
+
+.wo-status-picker__radio {
+  display: none;
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  margin-left: auto;
+  border: 2px solid #d1d5db;
+  border-radius: 999px;
+  background: #fff;
+  box-sizing: border-box;
+}
+
+.wo-status-picker__radio.is-selected {
+  border-color: var(--color-primary, #e63946);
+  background:
+    radial-gradient(circle at center, var(--color-primary, #e63946) 0 5px, #fff 5.5px 7px, transparent 7.5px),
+    #fff;
+}
+
+.wo-status-picker-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.wo-status-picker-actions__update {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.wo-status-picker-actions__update svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+@media (max-width: 1024px) {
+  .wo-status-picker {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    overflow: hidden;
+    border: 1px solid #e5e7eb;
+    border-radius: 14px;
+    background: #fff;
+  }
+
+  .wo-status-picker__option {
+    flex-direction: row;
+    justify-content: flex-start;
+    gap: 12px;
+    min-height: 56px;
+    padding: 14px 16px;
+    border: 0;
+    border-radius: 0;
+    border-bottom: 1px solid #f1f2f4;
+    background: #fff;
+    text-align: left;
+    box-shadow: none;
+  }
+
+  .wo-status-picker__option:last-child {
+    border-bottom: 0;
+  }
+
+  .wo-status-picker__option:hover:not(:disabled) {
+    background: #fafafa;
+  }
+
+  .wo-status-picker__option.is-selected {
+    background: var(--color-light-pink-1, #fff1f2);
+    border-color: transparent;
+    box-shadow: none;
+  }
+
+  .wo-status-picker__icon {
+    width: 28px;
+    height: 28px;
+  }
+
+  .wo-status-picker__icon svg {
+    width: 24px;
+    height: 24px;
+  }
+
+  .wo-status-picker__label {
+    font-size: 14px;
+  }
+
+  .wo-status-picker__check {
+    display: none;
+  }
+
+  .wo-status-picker__radio {
+    display: inline-block;
+  }
+
+  .wo-status-picker-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .wo-status-picker-actions .wo-status-picker-actions__cancel {
+    display: none;
+  }
+
+  .wo-status-picker-actions .wo-status-actions__save,
+  .wo-status-picker-actions .pm-wo-followup-btn {
+    margin-right: 0;
+    order: 1;
+  }
+
+  .wo-status-picker-actions .wo-status-picker-actions__update {
+    order: 2;
+  }
+
+  .wo-status-picker-actions .company-btn {
+    width: 100%;
+    justify-content: center;
+    min-height: 46px;
+  }
+}

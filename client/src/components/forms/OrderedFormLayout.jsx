@@ -12,10 +12,16 @@ import {
   catalogId,
   normalizeFilledBy,
   layoutGroupsForSection,
+  isPrimaryAssetPickerField,
 } from '../../lib/formLayoutIds'
 import WorkOrderFieldInput from '../workorders/WorkOrderFieldInput'
 import { findSystemField, getFormDef } from '../../lib/formRegistry'
-import { SYSTEM_FIELD_MASTERS, SYSTEM_FIELD_OPTIONS } from '../../lib/systemFieldFallback'
+import {
+  SYSTEM_FIELD_MASTERS,
+  SYSTEM_FIELD_OPTIONS,
+  isRequestTypeField,
+  REQUEST_TYPE_OPTIONS,
+} from '../../lib/systemFieldFallback'
 import { currentUserDefaultPatches, getMasterSource, resolveMasterFilters } from '../../lib/formFieldSources'
 import { isFieldDependencyMet } from '../../lib/assetFieldDependencies'
 import {
@@ -151,6 +157,12 @@ function layoutItemVisible(item, catalogSource, values, activeRules) {
 }
 
 function selectOptionsForField(item) {
+  if (isRequestTypeField(item)) {
+    return REQUEST_TYPE_OPTIONS.map((opt) => ({
+      value: opt.value,
+      label: opt.label,
+    }))
+  }
   return normalizeOptions(item.options).map((opt) => ({
     value: opt.value,
     label: opt.label,
@@ -264,7 +276,12 @@ export default function OrderedFormLayout({
   fallback,
   renderField,
   renderSection,
+  /** Canonical Asset picker render fn: ({ field, className, required, disabled, section }) => node */
+  assetPicker,
+  /** @deprecated Use assetPicker */
+  renderAssetPicker,
   omitField,
+  omitFillershipBadge = false,
   catalogLookup = [],
   catalogValues = {},
   onCatalogChange,
@@ -328,14 +345,17 @@ export default function OrderedFormLayout({
   useEffect(() => {
     if (!equipmentField) return undefined
     const equipmentId = String(equipmentValue || '')
+    if (!equipmentId) {
+      lastEquipmentIdRef.current = ''
+      return undefined
+    }
     if (equipmentId === lastEquipmentIdRef.current) return undefined
-    lastEquipmentIdRef.current = equipmentId
-    if (!equipmentId) return undefined
 
     let cancelled = false
     getEquipment(equipmentId)
       .then((detail) => {
         if (cancelled || !detail) return
+        lastEquipmentIdRef.current = equipmentId
         const patch = valuesFromEquipmentSelection(detail, layout, catalogLookup)
         const entries = Object.entries(patch).filter(([, value]) => value != null && value !== '')
         if (!entries.length) return
@@ -398,6 +418,7 @@ export default function OrderedFormLayout({
     const sectionDisabled = disabled || !sectionEditable
     const sectionFields = fields.filter((field) => field.sectionId === section.id)
     const sectionGroups = layoutGroupsForSection(layout, section.id)
+    let assetPickerShownInSection = false
 
     const children = sectionFields.map((item) => {
       const parsed = parseLayoutId(item.id)
@@ -406,19 +427,61 @@ export default function OrderedFormLayout({
       const catalogSource = parsed.kind === 'catalog' ? catalogById.get(parsed.value) : null
       const locked = isFieldLockedByRules(item.id, activeRules) || sectionDisabled
       const excludeIds = excludedValuesForField(item.id, activeRules, dependencyValues)
+      const primaryAsset = isPrimaryAssetPickerField(item)
 
-      if (omitField?.(item, section)) return null
+      // Asset picker visibility is owned here — omitField cannot hide it.
+      if (omitField?.(item, section) && !primaryAsset) return null
 
       if (!layoutItemVisible(item, catalogSource, dependencyValues, activeRules)) return null
 
+      if (primaryAsset) {
+        if (assetPickerShownInSection) return null
+        assetPickerShownInSection = true
+        const pickerProps = {
+          field: item,
+          className,
+          required,
+          disabled: locked,
+          section,
+        }
+        const fromCanonical = typeof assetPicker === 'function' ? assetPicker(pickerProps) : null
+        if (fromCanonical != null && fromCanonical !== false) return fromCanonical
+
+        if (typeof renderAssetPicker === 'function') {
+          if (import.meta.env.DEV) {
+            console.warn(
+              '[OrderedFormLayout] renderAssetPicker is deprecated — pass assetPicker instead.',
+            )
+          }
+          const legacy = renderAssetPicker(pickerProps)
+          if (legacy != null && legacy !== false) return legacy
+        }
+
+        if (import.meta.env.DEV) {
+          console.warn(
+            '[OrderedFormLayout] asset picker field present but assetPicker prop is missing.',
+          )
+        }
+        return null
+      }
+
       if (parsed.kind === 'catalog') {
         if (!catalogSource) return null
-        const dropdownOptions = Array.isArray(catalogSource.dropdown_options)
-          ? catalogSource.dropdown_options.filter((opt) => {
+        const catalogRequestType = isRequestTypeField({
+          ...item,
+          label: item.label || catalogSource.name || catalogSource.label,
+          name: catalogSource.name || catalogSource.label,
+          bindKey: item.bindKey || catalogSource.bind_key,
+        })
+        const sourceOptions = catalogRequestType
+          ? REQUEST_TYPE_OPTIONS
+          : catalogSource.dropdown_options
+        const dropdownOptions = Array.isArray(sourceOptions)
+          ? sourceOptions.filter((opt) => {
             const val = String(opt?.value ?? opt?.label ?? opt ?? '')
             return !excludeIds.includes(val)
           })
-          : catalogSource.dropdown_options
+          : sourceOptions
         const fromEquipment = Boolean(item.autoFromEquipment)
           || (equipmentMasterOnLayout && catalogSource.field_source === 'equipment')
         const catalogValue = catalogValues[catalogSource.id] ?? catalogValues[item.id]
@@ -544,6 +607,7 @@ export default function OrderedFormLayout({
           field: systemField,
           required,
           disabled: locked,
+          section,
         })
         if (rendered) return rendered
         if (systemField?.compound) return null
@@ -576,10 +640,12 @@ export default function OrderedFormLayout({
           )
         }
         const staticOptions = SYSTEM_FIELD_OPTIONS[parsed.value] || []
-        const options = selectOptionsForField(item).length
-          ? selectOptionsForField(item)
-          : staticOptions
-        const fieldType = item.fieldType || systemField?.fieldType || 'text'
+        const options = isRequestTypeField({ ...item, key: parsed.value })
+          ? REQUEST_TYPE_OPTIONS
+          : (selectOptionsForField(item).length
+            ? selectOptionsForField(item)
+            : staticOptions)
+        const fieldType = systemField?.fieldType || item.fieldType || 'text'
         const resolvedType = fieldType === 'dropdown' && !options.length ? 'text' : fieldType
         return (
           <FormCatalogField
@@ -616,12 +682,16 @@ export default function OrderedFormLayout({
     ))
 
     const allChildren = [...children, ...groupNodes]
-    const omittedFields = sectionFields.some((item) => omitField?.(item, section))
-    if (!allChildren.length && !omittedFields && !isCloseoutSection(section)) return null
+    const omittedFields = sectionFields.some((item) => (
+      omitField?.(item, section) && !isPrimaryAssetPickerField(item)
+    ))
+    if (!allChildren.length && !omittedFields && !isCloseoutSection(section)) {
+      return null
+    }
 
-    const badge = filledBy !== 'any' ? (
+    const badge = (!omitFillershipBadge && filledBy !== 'any') ? (
       <span className="company-form__fillership-badge">
-        {sectionEditable
+        {sectionEditable && !sectionDisabled
           ? `Filled by you (${filledByLabel(filledBy)})`
           : actors?.isCreate && filledBy !== 'creator'
             ? `Filled later by ${filledByLabel(filledBy)}`

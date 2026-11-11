@@ -116,30 +116,43 @@ export function isGroupId(id) {
   return String(id || '').startsWith(GROUP_PREFIX)
 }
 
-const ASSET_PICKER_KEYS = new Set(['asset_picker', 'equipment_id', 'area_id'])
+/** Shared keys that map to the compound Asset picker block. */
+export const ASSET_PICKER_KEYS = new Set(['asset_picker', 'equipment_id', 'area_id'])
 
-export function isAssetPickerControlField(field) {
+/** True when this layout field is the compound Asset picker (or a legacy alias of it). */
+export function isPrimaryAssetPickerField(field) {
   if (!field) return false
-  if (field.autoFromEquipment) return true
   const parsed = parseLayoutId(field.id)
   if (parsed.kind === 'system' && ASSET_PICKER_KEYS.has(parsed.value)) return true
-  if (parsed.kind === 'master' && (parsed.value === 'areas' || parsed.value === 'equipment')) return true
-  if (field.masterSource === 'areas' || field.masterSource === 'equipment') return true
   if (field.bindKey === 'area_id' || field.bindKey === 'equipment_id' || field.bindKey === 'asset_picker') {
     return true
   }
+  if (/^asset\s*picker$/i.test(String(field.label || '').trim())) return true
   return false
 }
 
-/**
- * Collapse Area / Asset / hierarchy catalog fields into one compound Asset picker block
- * (same component work requests and work orders use at runtime).
- */
-export function collapseToAssetPickerBlock(layout) {
+/** Legacy area/equipment masters and auto-from-equipment mirrors that collapse into the picker. */
+export function isAssetPickerControlField(field) {
+  if (!field) return false
+  if (field.autoFromEquipment) return true
+  if (isPrimaryAssetPickerField(field)) return true
+  const parsed = parseLayoutId(field.id)
+  if (parsed.kind === 'master' && (parsed.value === 'areas' || parsed.value === 'equipment')) return true
+  if (field.masterSource === 'areas' || field.masterSource === 'equipment') return true
+  return false
+}
+
+/** Alias used by hosts — the compound Asset picker block. */
+export function isAssetPickerLayoutField(field) {
+  return isPrimaryAssetPickerField(field)
+}
+
+function collapseAssetControls(layout) {
   if (!layout?.fields?.length) return layout
   const assetFields = layout.fields.filter(isAssetPickerControlField)
   if (!assetFields.length) return layout
 
+  // Keep the first asset control's section (admin placement). Do not relocate by label.
   const sectionId = assetFields[0].sectionId
   const order = Math.min(...assetFields.map((field) => Number(field.order) || 0))
   const required = assetFields.some((field) => {
@@ -180,12 +193,42 @@ export function collapseToAssetPickerBlock(layout) {
   return { ...layout, fields }
 }
 
+function stripEquipmentCatalogMirrors(layout, catalogFields) {
+  if (!layout?.fields?.length || !catalogFields?.length) return layout
+  const hasPicker = (layout.fields || []).some(isPrimaryAssetPickerField)
+  if (!hasPicker) return layout
+  const catalogById = new Map((catalogFields || []).map((row) => [String(row.id), row]))
+  return {
+    ...layout,
+    fields: layout.fields.filter((field) => {
+      const parsed = parseLayoutId(field.id)
+      if (parsed.kind !== 'catalog') return true
+      const source = catalogById.get(String(parsed.value))
+      return source?.field_source !== 'equipment'
+    }),
+  }
+}
+
 /**
- * Drop the Areas master. If that was the only asset control, keep one picker in its place.
- * A system area_id stays so the form can render the hierarchy picker, but it is not required.
+ * Idempotent layout normalizer for Asset picker.
+ * Collapses legacy area/equipment controls into one system:asset_picker and strips
+ * equipment catalog mirrors. Preserves the admin's section (no label-based relocate).
  */
+export function normalizeAssetLayout(layout, { catalogFields = null } = {}) {
+  if (!layout?.fields?.length) return layout
+  let next = collapseAssetControls(layout)
+  if (catalogFields) next = stripEquipmentCatalogMirrors(next, catalogFields)
+  return next
+}
+
+/** @deprecated Prefer normalizeAssetLayout — kept for Form Builder / callers. */
+export function collapseToAssetPickerBlock(layout) {
+  return normalizeAssetLayout(layout)
+}
+
+/** @deprecated Prefer normalizeAssetLayout. */
 export function layoutWithoutAreasMaster(layout) {
-  return collapseToAssetPickerBlock(layout)
+  return normalizeAssetLayout(layout)
 }
 
 function isPmAssetControlField(field) {
@@ -258,7 +301,7 @@ export function normalizePmPlanLayout(layout) {
     ]
   }
 
-  return collapseToAssetPickerBlock({ ...layout, fields })
+  return normalizeAssetLayout({ ...layout, fields })
 }
 
 export function normalizeFilledBy(value) {

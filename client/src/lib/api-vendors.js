@@ -1,4 +1,4 @@
-import { apiFetch } from './api'
+import { apiFetch, apiFetchBlob } from './api'
 import { listQueryParams, asListArray } from './listResponse'
 
 export async function getVendorsList(params = {}) {
@@ -9,6 +9,14 @@ export async function getVendorsList(params = {}) {
     filters: params.filters,
   })}`)
   return asListArray(data)
+}
+
+export function exportVendors(params = {}) {
+  return apiFetchBlob(`/api/vendors${listQueryParams({
+    search: params.search,
+    filters: params.filters,
+    exportCsv: true,
+  })}`)
 }
 
 export function getVendor(id) {

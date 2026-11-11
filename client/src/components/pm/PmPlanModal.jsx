@@ -5,7 +5,7 @@ import { useLocations } from '../../hooks/useLocations'
 import { useEmployees } from '../../hooks/useEmployees'
 import { usePermissions } from '../../hooks/usePermissions'
 import { useProfile } from '../../hooks/useProfile'
-import { getEquipment, getEquipmentCatalog } from '../../lib/api-equipment'
+import { getEquipment } from '../../lib/api-equipment'
 import { getLatestMeterReading } from '../../lib/api-logbook'
 import { formatMeterStamp, formatMeterValue } from '../../lib/meterReading'
 import PersonChip from '../shared/PersonChip'
@@ -25,8 +25,6 @@ import ChecklistOptIn from '../forms/ChecklistOptIn'
 import { missingRequiredLayoutValues, splitBoundValues } from '../../lib/formFieldSources'
 import { layoutRequiresChecklist } from '../../lib/formSkips'
 import {
-  isAssetPickerControlField,
-  layoutWithoutAreasMaster,
   masterId,
   normalizePmPlanLayout,
   parseLayoutId,
@@ -34,13 +32,10 @@ import {
   systemId,
 } from '../../lib/formLayoutIds'
 import {
-  augmentLayoutWithEquipmentCatalog,
-  catalogRowFromEquipmentDetail,
   equipmentCatalogParents,
-  isEquipmentMasterField,
   prefillValuesForFields,
 } from '../../lib/equipmentLayoutFields'
-import WorkRequestAssetFields from '../workrequests/WorkRequestAssetFields'
+import AssetPickerField from '../forms/AssetPickerField'
 import { resolveFormActors, validateRepeatableGroups } from '../../lib/formFillership'
 import { useAuth } from '../../hooks/useAuth'
 import '../company/CompanyShared.css'
@@ -63,6 +58,7 @@ const EMPTY = {
   priority: 'medium',
   status: 'inactive',
   schedule_type: 'calendar',
+  is_recurring: true,
   calendar_unit: 'month',
   every_n: 1,
   weekdays: [],
@@ -81,21 +77,6 @@ const EMPTY = {
   technician_ids: [],
 }
 
-function pickerSections(sections) {
-  if ((sections || []).some((section) => (section.fields || []).length)) return sections
-  return [{
-    id: 'pm-asset',
-    name: 'Asset',
-    fields: [{
-      id: 'equipment-name',
-      name: 'Asset name',
-      field_type: 'dropdown',
-      is_required: true,
-      sort_order: 0,
-    }],
-  }]
-}
-
 function formFromPlan(plan) {
   if (!plan) return { ...EMPTY }
   const scheduleType = normalizeScheduleType(plan.schedule_type)
@@ -110,6 +91,7 @@ function formFromPlan(plan) {
     priority: plan.priority || 'medium',
     status: plan.status === 'inactive' ? 'inactive' : 'active',
     schedule_type: scheduleType,
+    is_recurring: plan.is_recurring !== false,
     calendar_unit: normalizeCalendarUnit(plan.calendar_unit, plan.schedule_type),
     every_n: plan.every_n || 1,
     weekdays: Array.isArray(plan.weekdays) ? plan.weekdays : [],
@@ -135,54 +117,15 @@ export default function PmPlanModal({ plan, saving, onClose, onSave }) {
   const [error, setError] = useState(null)
   const [activityTypes, setActivityTypes] = useState([])
   const [checklists, setChecklists] = useState([])
-  const [catalogEquipment, setCatalogEquipment] = useState([])
-  const [assetSections, setAssetSections] = useState([])
   const [assetFieldValues, setAssetFieldValues] = useState({})
-  const [catalogLoading, setCatalogLoading] = useState(false)
   const formRef = useRef(null)
   const handleBackdropClick = useBackdropClose(onClose)
-  const { layout, catalogFields, isVisible, fieldClass, hasLayout } = useFormLayout('pm.plan')
+  const { layout, catalogFields, isVisible, fieldClass, hasLayout } = useFormLayout('pm.plan', {
+    fallbackToDefault: true,
+  })
   const checklistRequired = layoutRequiresChecklist(layout)
-  const displayLayout = useMemo(() => {
-    const augmented = normalizePmPlanLayout(
-      layoutWithoutAreasMaster(augmentLayoutWithEquipmentCatalog(layout, catalogFields)),
-    )
-    if (!augmented?.fields?.length) return augmented
-    const hasAssetPicker = augmented.fields.some((field) => {
-      const parsed = parseLayoutId(field.id)
-      return parsed.kind === 'system' && (
-        parsed.value === 'asset_picker' || parsed.value === 'equipment_id' || parsed.value === 'area_id'
-      )
-    })
-    if (!hasAssetPicker) return augmented
-    const catalogById = new Map((catalogFields || []).map((row) => [String(row.id), row]))
-    const fields = augmented.fields.filter((field) => {
-      if (isEquipmentMasterField(field)) return false
-      const parsed = parseLayoutId(field.id)
-      if (parsed.kind !== 'catalog') return true
-      const source = catalogById.get(String(parsed.value))
-      return source?.field_source !== 'equipment'
-    })
-    for (const section of augmented.sections || []) {
-      if (!/asset/i.test(String(section.label || ''))) continue
-      const stillThere = fields.some((field) => field.sectionId === section.id)
-      const hadAssetFields = augmented.fields.some((field) => (
-        field.sectionId === section.id && isAssetPickerControlField(field)
-      ))
-      if (!stillThere && hadAssetFields) {
-        fields.push({
-          id: systemId('asset_picker'),
-          sectionId: section.id,
-          order: 0,
-          colSpan: 100,
-          required: true,
-          bindKey: 'asset_picker',
-          label: 'Asset picker',
-        })
-      }
-    }
-    return { ...augmented, fields }
-  }, [layout, catalogFields])
+  // useFormLayout already normalizes Asset picker; this only rescues Schedule from Checklist.
+  const displayLayout = useMemo(() => normalizePmPlanLayout(layout), [layout])
   const wizardSteps = useMemo(() => {
     if (!hasLayout || !displayLayout?.sections?.length) return STEPS
     return sortLayoutItems(displayLayout.sections).map((section, index) => ({
@@ -263,8 +206,8 @@ export default function PmPlanModal({ plan, saving, onClose, onSave }) {
 
   const equipmentSeedKey = useRef('')
   useEffect(() => {
-    if (plan?.id || !form.equipment_id) return undefined
-    const key = `${form.equipment_id}:${(catalogFields || []).length}`
+    if (!form.equipment_id) return undefined
+    const key = `${plan?.id || 'new'}:${form.equipment_id}:${(catalogFields || []).length}`
     if (equipmentSeedKey.current === key) return undefined
     equipmentSeedKey.current = key
     let cancelled = false
@@ -309,90 +252,11 @@ export default function PmPlanModal({ plan, saving, onClose, onSave }) {
     return () => { cancelled = true }
   }, [])
 
-  const selectedEquipmentRef = useRef(form.equipment_id)
-  selectedEquipmentRef.current = form.equipment_id
-  const catalogRef = useRef(catalogEquipment)
-  catalogRef.current = catalogEquipment
-  const qrLoadRef = useRef('')
-
-  const catalogLocationId = selectedLocationId
-  const catalogDepartmentId = selectedDepartmentId
-
-  useEffect(() => {
-    if (!catalogDepartmentId) {
-      setCatalogEquipment([])
-      setAssetSections([])
-      setCatalogLoading(false)
-      return undefined
-    }
-    let cancelled = false
-    qrLoadRef.current = ''
-    setCatalogLoading(true)
-    getEquipmentCatalog({
-      departmentId: catalogDepartmentId,
-      locationId: catalogLocationId || undefined,
-      limit: 200,
-    }).then(async (catalog) => {
-      if (cancelled) return
-      const inDepartment = (row) => String(row?.department_id || '') === String(catalogDepartmentId)
-      let list = (catalog?.equipment || []).filter(inDepartment)
-      const selectedId = selectedEquipmentRef.current
-      if (selectedId && !list.some((row) => row.id === selectedId)) {
-        try {
-          const detail = await getEquipment(selectedId)
-          const shaped = catalogRowFromEquipmentDetail(detail)
-          if (shaped && inDepartment(shaped)) {
-            if (!shaped.area_name) shaped.area_name = detail?.areas?.name || detail?.area_name || null
-            if (!shaped.qr_code && detail?.qr_code) shaped.qr_code = detail.qr_code
-            list = [shaped, ...list]
-          }
-        } catch {
-          // The saved id still submits even if the picker row is missing.
-        }
-      }
-      if (cancelled) return
-      setCatalogEquipment(list)
-      setAssetSections(pickerSections(catalog?.sections))
-    }).catch(() => {
-      if (!cancelled) {
-        setCatalogEquipment([])
-        setAssetSections(pickerSections([]))
-      }
-    }).finally(() => {
-      if (!cancelled) setCatalogLoading(false)
-    })
-    return () => { cancelled = true }
-  }, [catalogDepartmentId, catalogLocationId])
-
-  useEffect(() => {
-    const id = form.equipment_id
-    if (!id || catalogLoading) return undefined
-    const row = catalogEquipment.find((item) => item.id === id)
-    if (!row || row.qr_code || qrLoadRef.current === id) return undefined
-    qrLoadRef.current = id
-    let cancelled = false
-    getEquipment(id)
-      .then((detail) => {
-        if (cancelled || !detail?.qr_code) return
-        setCatalogEquipment((prev) => prev.map((item) => (
-          item.id === id ? { ...item, qr_code: detail.qr_code } : item
-        )))
-      })
-      .catch(() => {})
-    return () => { cancelled = true }
-  }, [form.equipment_id, catalogEquipment, catalogLoading])
-
-  const handleAssetValuesChange = useCallback((next) => {
-    setAssetFieldValues(next || {})
-  }, [])
-
   const handleAssetEquipmentChange = useCallback((id) => {
-    const row = catalogRef.current.find((item) => item.id === id)
     setForm((prev) => {
       const nextId = id || ''
-      const nextArea = row?.area_id || (nextId ? prev.area_id : '')
-      if (prev.equipment_id === nextId && prev.area_id === nextArea) return prev
-      return { ...prev, equipment_id: nextId, area_id: nextArea }
+      if (prev.equipment_id === nextId) return prev
+      return { ...prev, equipment_id: nextId, area_id: nextId ? prev.area_id : '' }
     })
   }, [])
 
@@ -448,6 +312,8 @@ export default function PmPlanModal({ plan, saving, onClose, onSave }) {
 
   const usesCalendar = CALENDAR_SCHEDULE_TYPES.has(form.schedule_type)
   const usesReading = form.schedule_type === 'reading' || form.schedule_type === 'both'
+  const isRecurring = form.is_recurring !== false
+  const showCalendarInterval = usesCalendar && isRecurring
   const [latestReading, setLatestReading] = useState(null)
   const [latestLoading, setLatestLoading] = useState(false)
   const filledReadingFor = useRef(null)
@@ -563,8 +429,8 @@ export default function PmPlanModal({ plan, saving, onClose, onSave }) {
       { ok: Boolean(form.work_center.trim()), id: 'pm-field-work-center', label: 'Work center' },
       { ok: Boolean(form.equipment_id), id: 'pm-field-equipment', label: 'Asset' },
       { ok: !usesCalendar || Boolean(form.start_date), id: 'pm-field-start-date', label: 'Start date' },
-      { ok: !usesCalendar || Boolean(form.calendar_unit), id: 'pm-field-calendar-unit', label: 'Interval type' },
-      { ok: !usesCalendar || Boolean(form.every_n), id: 'pm-field-every', label: 'Interval value' },
+      { ok: !showCalendarInterval || Boolean(form.calendar_unit), id: 'pm-field-calendar-unit', label: 'Interval type' },
+      { ok: !showCalendarInterval || Boolean(form.every_n), id: 'pm-field-every', label: 'Interval value' },
       { ok: !usesReading || Boolean(form.reading_interval), id: 'pm-field-reading-interval', label: 'Reading value' },
       { ok: form.generate_before_days !== '' && form.generate_before_days != null, id: 'pm-field-generate-before', label: 'Generate before due' },
     ]
@@ -617,14 +483,15 @@ export default function PmPlanModal({ plan, saving, onClose, onSave }) {
         priority: form.priority,
         status: form.status,
         schedule_type: form.schedule_type,
+        is_recurring: Boolean(form.is_recurring !== false),
         calendar_unit: form.calendar_unit,
-        every_n: Number(form.every_n) || 1,
-        weekdays: form.weekdays,
-        custom_interval: Number(form.custom_interval) || 1,
+        every_n: form.is_recurring === false ? 1 : (Number(form.every_n) || 1),
+        weekdays: form.is_recurring === false ? [] : form.weekdays,
+        custom_interval: form.is_recurring === false ? 1 : (Number(form.custom_interval) || 1),
         custom_unit: form.custom_unit,
-        never_ends: Boolean(form.never_ends),
+        never_ends: form.is_recurring === false ? false : Boolean(form.never_ends),
         start_date: form.start_date || null,
-        end_date: form.never_ends ? null : (form.end_date || null),
+        end_date: form.is_recurring === false || form.never_ends ? null : (form.end_date || null),
         grace_days: form.grace_days === '' ? null : Number(form.grace_days),
         generate_before_days: Number(form.generate_before_days) || 0,
         last_reading: form.last_reading === '' ? null : Number(form.last_reading),
@@ -637,7 +504,7 @@ export default function PmPlanModal({ plan, saving, onClose, onSave }) {
         estimated_duration_hours: null,
         required_tools: null,
         required_skills: null,
-        allow_multiple_open: false,
+        allow_multiple_open: form.is_recurring !== false,
         technician_ids: form.technician_ids?.length
           ? form.technician_ids
           : (Array.isArray(native.technician_ids) ? native.technician_ids : []),
@@ -649,35 +516,40 @@ export default function PmPlanModal({ plan, saving, onClose, onSave }) {
     }
   }
 
-  const renderAssetPicker = (className = 'company-form__field company-form__field--full') => (
-    <div className={className} id="pm-field-equipment">
-      {!catalogDepartmentId ? (
-        <p className="pm-section__hint">Select a department on Plan details to see assets for that department.</p>
-      ) : catalogLoading ? (
-        <p className="pm-section__hint">Loading assets…</p>
-      ) : (
-        <>
-          {!catalogEquipment.length && (
-            <p className="pm-section__hint">No assets are available for the selected plant or department.</p>
-          )}
-          <WorkRequestAssetFields
-            key={`${plan?.id || 'new'}:${catalogLocationId}:${catalogDepartmentId}`}
-            sections={pickerSections(assetSections)}
-            equipment={catalogEquipment}
-            fieldValues={assetFieldValues}
-            onFieldValuesChange={handleAssetValuesChange}
-            equipmentId={form.equipment_id}
-            onEquipmentIdChange={handleAssetEquipmentChange}
-            loading={catalogLoading}
-            disabled={saving}
-          />
-        </>
-      )}
-    </div>
+  const mountAssetPicker = ({ className = '', required = false, field } = {}) => (
+    <AssetPickerField
+      key={field?.id || `${plan?.id || 'new'}:${selectedDepartmentId}:${selectedLocationId}`}
+      className={`pm-asset-picker ${className}`.trim()}
+      domId="pm-field-equipment"
+      departmentId={selectedDepartmentId}
+      locationId={selectedLocationId}
+      requireDepartment
+      equipmentId={form.equipment_id}
+      onEquipmentIdChange={handleAssetEquipmentChange}
+      fieldValues={assetFieldValues}
+      onFieldValuesChange={setAssetFieldValues}
+      disabled={saving}
+      required={required}
+      emptyDepartmentMessage="Select a department on Plan details to see assets for that department."
+    />
   )
 
   const renderScheduleFields = (className = 'company-form__field company-form__field--full') => (
     <div key="schedule" className={className}>
+      <div className="company-form__field pm-recurrence-toggle">
+        <span className="company-form__label">Recurring activity</span>
+        <GooToggle
+          checked={isRecurring}
+          onChange={(checked) => setField('is_recurring', checked)}
+          ariaLabel="Recurring activity"
+        />
+        <p className="pm-section__hint">
+          {isRecurring
+            ? 'Creates a new scheduled work order on each interval (daily, weekly, monthly, and so on).'
+            : 'Creates one scheduled work order when due, then stops. No repeat interval.'}
+        </p>
+      </div>
+
       <label className="company-form__field">
         <span className="company-form__label">Schedule type *</span>
         <FilterableSelect
@@ -690,7 +562,7 @@ export default function PmPlanModal({ plan, saving, onClose, onSave }) {
         />
       </label>
 
-      {usesCalendar && (
+      {showCalendarInterval && (
         <div className="pm-schedule-block">
           <h4 className="pm-schedule-block__title">Calendar interval</h4>
           <div className="company-form__grid company-form__grid--2">
@@ -832,22 +704,26 @@ export default function PmPlanModal({ plan, saving, onClose, onSave }) {
               <span className="company-form__label">Start date *</span>
               <DateField value={form.start_date} onChange={(value) => setField('start_date', value)} />
             </label>
-            <label className="company-form__field">
-              <span className="company-form__label">End date</span>
-              <DateField
-                value={form.never_ends ? '' : form.end_date}
-                onChange={(value) => setField('end_date', value)}
-                disabled={form.never_ends}
-              />
-            </label>
-            <div className="company-form__field">
-              <span className="company-form__label">Never ends</span>
-              <GooToggle
-                checked={form.never_ends}
-                onChange={(checked) => setField('never_ends', checked)}
-                ariaLabel="Never ends"
-              />
-            </div>
+            {isRecurring ? (
+              <>
+                <label className="company-form__field">
+                  <span className="company-form__label">End date</span>
+                  <DateField
+                    value={form.never_ends ? '' : form.end_date}
+                    onChange={(value) => setField('end_date', value)}
+                    disabled={form.never_ends}
+                  />
+                </label>
+                <div className="company-form__field">
+                  <span className="company-form__label">Never ends</span>
+                  <GooToggle
+                    checked={form.never_ends}
+                    onChange={(checked) => setField('never_ends', checked)}
+                    ariaLabel="Never ends"
+                  />
+                </div>
+              </>
+            ) : null}
           </>
         )}
         <label className="company-form__field">
@@ -923,32 +799,23 @@ export default function PmPlanModal({ plan, saving, onClose, onSave }) {
               masterValues={extras.values}
               onMasterChange={(id, value) => {
                 extras.setFieldValue(id, value)
-                if (String(id).includes('locations')) setField('location_id', value || '')
-                if (String(id).includes('departments') && !String(id).includes('employees')) setField('department_id', value || '')
-                if (String(id).includes('equipment')) setField('equipment_id', value || '')
-                if (String(id).includes('activity_types')) setField('activity_type_id', value || '')
-                if (String(id).includes('checklists')) setField('checklist_template_id', value || '')
-                if (String(id).includes('employees_multi')) setField('technician_ids', value || [])
+                const parsed = parseLayoutId(id)
+                if (parsed.kind === 'master' && parsed.value === 'locations') setField('location_id', value || '')
+                if (parsed.kind === 'master' && parsed.value === 'departments') setField('department_id', value || '')
+                if (parsed.kind === 'master' && parsed.value === 'equipment') setField('equipment_id', value || '')
+                if (parsed.kind === 'master' && parsed.value === 'activity_types') setField('activity_type_id', value || '')
+                if (parsed.kind === 'master' && parsed.value === 'checklists') setField('checklist_template_id', value || '')
+                if (parsed.kind === 'master' && parsed.value === 'employees_multi') setField('technician_ids', value || [])
               }}
               disabled={saving}
               actors={formActors}
               currentEmployeeId={!plan?.id ? (session?.employee_id || employee?.id || null) : null}
-              omitField={(item) => {
-                if (isAssetPickerControlField(item) || isEquipmentMasterField(item)) return true
-                const parsed = parseLayoutId(item?.id)
-                if ((parsed.kind === 'master' && parsed.value === 'areas') || item?.masterSource === 'areas') return true
-                if (parsed.kind === 'catalog') {
-                  const source = (catalogFields || []).find((row) => String(row.id) === String(parsed.value))
-                  return source?.field_source === 'equipment'
-                }
-                return Boolean(item?.autoFromEquipment)
-              }}
+              assetPicker={({ className, field, required }) => (
+                mountAssetPicker({ className, required: Boolean(required), field })
+              )}
               renderSection={(sectionId, children, section) => {
-                const sectionFields = (stepLayout?.fields || []).filter((field) => field.sectionId === sectionId)
-                const showPicker = /asset/i.test(String(section?.label || ''))
-                  || sectionFields.some((field) => isAssetPickerControlField(field))
                 const nodes = (children || []).filter(Boolean)
-                if (!showPicker && !nodes.length) return null
+                if (!nodes.length) return null
                 return (
                   <section
                     key={sectionId}
@@ -962,10 +829,7 @@ export default function PmPlanModal({ plan, saving, onClose, onSave }) {
                       </div>
                     ) : null}
                     <div className="wo-section__body company-form__layout-section-body">
-                      {showPicker ? renderAssetPicker('pm-asset-picker company-form__field company-form__field--full') : null}
-                      {nodes.length > 0 ? (
-                        <div className="company-form__grid company-form__grid--12">{nodes}</div>
-                      ) : null}
+                      <div className="company-form__grid company-form__grid--12">{nodes}</div>
                     </div>
                   </section>
                 )
@@ -1036,7 +900,7 @@ export default function PmPlanModal({ plan, saving, onClose, onSave }) {
                   )
                 }
                 if (key === 'area_id' || key === 'equipment_id' || key === 'asset_picker') {
-                  return null
+                  return mountPmAssetPicker(className, key)
                 }
                 if (key === 'schedule') {
                   return renderScheduleFields(className.includes('company-form__field--full') ? className : `${className} company-form__field--full`)
@@ -1073,16 +937,6 @@ export default function PmPlanModal({ plan, saving, onClose, onSave }) {
                 return null
               }}
             />
-          )}
-          {hasLayout && /asset/i.test(String(wizardSteps.find((row) => row.id === step)?.label || '')) && !(stepLayout?.fields || []).length && (
-            <section className="company-form__layout-section wo-section">
-              <div className="wo-section__header company-form__layout-section-head">
-                <h3 className="wo-section__title">{wizardSteps.find((row) => row.id === step)?.label}</h3>
-              </div>
-              <div className="wo-section__body company-form__layout-section-body">
-                {renderAssetPicker('pm-asset-picker company-form__field company-form__field--full')}
-              </div>
-            </section>
           )}
           {!hasLayout && step === 1 && (
           <>
@@ -1187,208 +1041,17 @@ export default function PmPlanModal({ plan, saving, onClose, onSave }) {
                 />
               </label>
               )}
-              {(isVisible('area_id') || isVisible('equipment_id')) && renderAssetPicker(fieldClass('equipment_id', 'company-form__field--full'))}
+              {(isVisible('area_id') || isVisible('equipment_id')) && mountAssetPicker({
+                className: fieldClass('equipment_id', 'company-form__field--full'),
+                required: true,
+              })}
             </div>
           </section>
 
           {isVisible('schedule') && (
           <section className="pm-section">
             <h3 className="pm-section__title">Section C — Schedule</h3>
-            <div className="company-form__grid company-form__grid--2">
-              <label className="company-form__field">
-                <span className="company-form__label">Schedule type *</span>
-                <FilterableSelect
-                  value={form.schedule_type}
-                  onChange={(id) => setField('schedule_type', id)}
-                  options={PM_SCHEDULE_TYPES}
-                  getOptionValue={(row) => row.value}
-                  getOptionLabel={(row) => row.label}
-                  allowEmpty={false}
-                />
-              </label>
-            </div>
-
-            {usesCalendar && (
-              <div className="pm-schedule-block">
-                <h4 className="pm-schedule-block__title">Calendar interval</h4>
-                <div className="company-form__grid company-form__grid--2">
-                  <label className="company-form__field" id="pm-field-calendar-unit">
-                    <span className="company-form__label">Interval type *</span>
-                    <FilterableSelect
-                      value={form.calendar_unit}
-                      onChange={(id) => setField('calendar_unit', id)}
-                      options={PM_CALENDAR_UNITS}
-                      getOptionValue={(row) => row.value}
-                      getOptionLabel={(row) => row.label}
-                      allowEmpty={false}
-                    />
-                  </label>
-                  <label className="company-form__field" id="pm-field-every">
-                    <span className="company-form__label">Interval value *</span>
-                    <input
-                      className="company-form__input"
-                      type="number"
-                      min="1"
-                      value={form.every_n}
-                      onChange={(e) => setField('every_n', e.target.value)}
-                    />
-                  </label>
-                </div>
-                {form.calendar_unit === 'week' && (
-                  <div className="company-form__field">
-                    <span className="company-form__label">Weekdays</span>
-                    <div className="company-form__checks pm-weekdays">
-                      {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((label, day) => (
-                        <label key={label} className="company-form__check">
-                          <input
-                            type="checkbox"
-                            checked={form.weekdays.includes(day)}
-                            onChange={(event) => {
-                              const next = event.target.checked
-                                ? [...form.weekdays, day]
-                                : form.weekdays.filter((value) => value !== day)
-                              setField('weekdays', next.sort((a, b) => a - b))
-                            }}
-                          />
-                          {label}
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                {form.calendar_unit === 'custom' && (
-                  <div className="company-form__grid company-form__grid--2">
-                    <label className="company-form__field">
-                      <span className="company-form__label">Custom interval</span>
-                      <input
-                        className="company-form__input"
-                        type="number"
-                        min="1"
-                        value={form.custom_interval}
-                        onChange={(e) => setField('custom_interval', e.target.value)}
-                      />
-                    </label>
-                    <label className="company-form__field">
-                      <span className="company-form__label">Custom unit</span>
-                      <select
-                        className="company-form__input"
-                        value={form.custom_unit}
-                        onChange={(e) => setField('custom_unit', e.target.value)}
-                      >
-                        <option value="day">Day</option>
-                        <option value="week">Week</option>
-                        <option value="month">Month</option>
-                        <option value="year">Year</option>
-                      </select>
-                    </label>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {usesReading && (
-              <div className="pm-schedule-block">
-                <h4 className="pm-schedule-block__title">Reading interval</h4>
-                {renderLatestReading()}
-                <div className="company-form__grid company-form__grid--2">
-                  <label className="company-form__field">
-                    <span className="company-form__label">Last reading</span>
-                    <input
-                      className="company-form__input"
-                      type="number"
-                      min="0"
-                      step="any"
-                      value={form.last_reading}
-                      onChange={(e) => setField('last_reading', e.target.value)}
-                      placeholder="Optional"
-                    />
-                  </label>
-                  <label className="company-form__field">
-                    <span className="company-form__label">Last service date</span>
-                    <DateField
-                      value={form.last_service_date}
-                      onChange={(value) => setField('last_service_date', value)}
-                    />
-                  </label>
-                  <label className="company-form__field" id="pm-field-reading-interval">
-                    <span className="company-form__label">Reading value *</span>
-                    <input
-                      className="company-form__input"
-                      type="number"
-                      min="0"
-                      step="any"
-                      value={form.reading_interval}
-                      onChange={(e) => setField('reading_interval', e.target.value)}
-                      placeholder="Trigger after this reading"
-                    />
-                  </label>
-                </div>
-              </div>
-            )}
-
-            {form.schedule_type === 'both' && (
-              <div className="pm-schedule-block pm-schedule-block--trigger">
-                <div className="company-form__field">
-                  <span className="company-form__label">Whichever comes first</span>
-                  <GooToggle
-                    checked={form.whichever_comes_first}
-                    onChange={(checked) => setField('whichever_comes_first', checked)}
-                    ariaLabel="Whichever comes first"
-                  />
-                  <p className="pm-section__hint">
-                    When enabled, a work order is triggered by the calendar due date or the reading
-                    threshold — whichever is reached first.
-                  </p>
-                </div>
-              </div>
-            )}
-
-            <div className="company-form__grid company-form__grid--2">
-              {usesCalendar && (
-                <>
-                  <label className="company-form__field" id="pm-field-start-date">
-                    <span className="company-form__label">Start date *</span>
-                    <DateField value={form.start_date} onChange={(value) => setField('start_date', value)} />
-                  </label>
-                  <label className="company-form__field">
-                    <span className="company-form__label">End date</span>
-                    <DateField
-                      value={form.never_ends ? '' : form.end_date}
-                      onChange={(value) => setField('end_date', value)}
-                      disabled={form.never_ends}
-                    />
-                  </label>
-                  <div className="company-form__field">
-                    <span className="company-form__label">Never ends</span>
-                    <GooToggle
-                      checked={form.never_ends}
-                      onChange={(checked) => setField('never_ends', checked)}
-                      ariaLabel="Never ends"
-                    />
-                  </div>
-                </>
-              )}
-              <label className="company-form__field">
-                <span className="company-form__label">Grace period (days)</span>
-                <input
-                  className="company-form__input"
-                  type="number"
-                  min="0"
-                  value={form.grace_days}
-                  onChange={(e) => setField('grace_days', e.target.value)}
-                />
-              </label>
-              <label className="company-form__field" id="pm-field-generate-before">
-                <span className="company-form__label">Generate before due (days) *</span>
-                <input
-                  className="company-form__input"
-                  type="number"
-                  min="0"
-                  value={form.generate_before_days}
-                  onChange={(e) => setField('generate_before_days', e.target.value)}
-                />
-              </label>
-            </div>
+            {renderScheduleFields('company-form__field company-form__field--full')}
           </section>
           )}
           </>

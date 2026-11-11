@@ -23,6 +23,7 @@ import {
   recordTechnicianAssignment,
   addWorkOrderAuditEntry,
   mapRequestTypeToSource,
+  assigneeIdsForUserSelfRequest,
 } from './workOrderService.js'
 import { clipDynamicFieldValues, clipTrimmedToLimit, getTextFieldLimitsMap } from './textFieldLimits.js'
 import { isMissingDisabledModulesColumn, isProductModuleEnabled, normalizeDisabledModules } from './orgModules.js'
@@ -38,7 +39,13 @@ import { shouldRequire, systemId, parseLayoutId } from './formLayoutIds.js'
 import { getMasterSource } from './formFieldSources.js'
 import { assertChecklistForForm, snapshotChecklistTemplate } from './checklistService.js'
 import { normalizeOptions } from './formOptionRules.js'
-import { assignedStatusForTechnicians, assertChecklistSelected, maybePromoteAssignedToAccepted } from './formSkips.js'
+import { REQUEST_TYPE_OPTIONS } from './systemFieldFallback.js'
+import {
+  assignedStatusForTechnicians,
+  assertChecklistSelected,
+  maybePromoteAssignedToAccepted,
+  shouldSkipTechnicianAcceptance,
+} from './formSkips.js'
 import { workOrderFormIdForSource } from './workOrderForms.js'
 import {
   resolveJobNatureChoiceList,
@@ -815,12 +822,7 @@ export async function getWorkRequestFormContext(orgId, profileId, email, { isOrg
       }
       : null,
     job_natures: jobNatureChoices,
-    request_types: [
-      { value: 'inter_department', label: 'Inter Department' },
-      { value: 'intra_department', label: 'Intra Department' },
-      { value: 'user_self', label: 'User Self Request' },
-      { value: 'manual', label: 'Manual Work Request' },
-    ],
+    request_types: REQUEST_TYPE_OPTIONS,
     priorities: await loadWorkRequestPriorityOptions(orgId),
   }
 }
@@ -914,7 +916,7 @@ export async function createWorkRequest(orgId, profileId, email, body, { isOrgAd
   const requireField = (key, whenNoLayout) => shouldRequire(layout, systemId(key), whenNoLayout)
 
   let requestType = body?.request_type
-  const validTypes = new Set(['inter_department', 'intra_department', 'user_self', 'manual'])
+  const validTypes = new Set(REQUEST_TYPE_OPTIONS.map((opt) => opt.value))
   if (!validTypes.has(requestType)) {
     if (requireField('request_type', true)) {
       const err = new Error('Invalid request type.')
@@ -1160,7 +1162,10 @@ export async function createWorkRequest(orgId, profileId, email, body, { isOrgAd
         orgId,
         profileId,
         row,
-        { autoApproved: true },
+        {
+          autoApproved: true,
+          assigneeIds: requestType === 'user_self' && employee?.id ? [employee.id] : [],
+        },
       )
       try {
         await notifyWorkRequestInbox(orgId, row, {
@@ -1221,6 +1226,17 @@ async function createLinkedWorkOrderFromRequest(orgId, profileId, wr, {
 } = {}) {
   const fieldLimits = await getTextFieldLimitsMap(orgId)
   const limitedAssignmentRemarks = clipTrimmedToLimit(fieldLimits, 'remarks', assignmentRemarks)
+  const explicitAssigneeIds = [...new Set((assigneeIds || []).filter(Boolean))]
+  let creatorEmployeeId = null
+  if (!explicitAssigneeIds.length && wr?.request_type === 'user_self' && wr.requested_by) {
+    const creator = await getEmployeeByProfile(orgId, wr.requested_by)
+    creatorEmployeeId = creator?.id || null
+  }
+  const resolvedAssigneeIds = assigneeIdsForUserSelfRequest(
+    wr?.request_type,
+    explicitAssigneeIds,
+    creatorEmployeeId,
+  )
 
   const { data: equipment } = await supabaseAdmin
     .from('equipment')
@@ -1256,7 +1272,7 @@ async function createLinkedWorkOrderFromRequest(orgId, profileId, wr, {
     const initialStatus = await assignedStatusForTechnicians(
       orgId,
       woFormId,
-      Boolean(assigneeIds.length),
+      Boolean(resolvedAssigneeIds.length),
     )
     const insert = await supabaseAdmin
       .from('manual_work_orders')
@@ -1312,8 +1328,8 @@ async function createLinkedWorkOrderFromRequest(orgId, profileId, wr, {
 
   const linkedNumber = workOrder.wo_number || woNumber
 
-  if (assigneeIds.length) {
-    await syncWorkOrderAssignees(orgId, workOrder.id, assigneeIds)
+  if (resolvedAssigneeIds.length) {
+    await syncWorkOrderAssignees(orgId, workOrder.id, resolvedAssigneeIds)
     const nextStatus = await maybePromoteAssignedToAccepted(orgId, {
       formId: workOrderFormIdForSource(workOrder.source_type || sourceType),
       workOrderId: workOrder.id,
@@ -1348,7 +1364,7 @@ async function createLinkedWorkOrderFromRequest(orgId, profileId, wr, {
   }
 
   if (wr.status === 'approved' && wr.manual_work_order_id === workOrder.id) {
-    return { workOrder, updated: wr, woNumber: linkedNumber }
+    return { workOrder, updated: wr, woNumber: linkedNumber, assigneeIds: resolvedAssigneeIds }
   }
 
   const now = new Date().toISOString()
@@ -1379,7 +1395,7 @@ async function createLinkedWorkOrderFromRequest(orgId, profileId, wr, {
       ? `Work request auto-converted. Work order ${linkedNumber} generated.`
       : `Work request approved. Work order ${linkedNumber} generated.`,
     profileId,
-    { manual_work_order_id: workOrder.id, wo_number: linkedNumber, assignee_ids: assigneeIds },
+    { manual_work_order_id: workOrder.id, wo_number: linkedNumber, assignee_ids: resolvedAssigneeIds },
   )
   await addTimelineEvent(
     orgId,
@@ -1390,14 +1406,219 @@ async function createLinkedWorkOrderFromRequest(orgId, profileId, wr, {
     { manual_work_order_id: workOrder.id, wo_number: linkedNumber },
   )
 
-  if (assigneeIds.length) {
+  if (resolvedAssigneeIds.length) {
     await recordTechnicianAssignment(orgId, profileId, {
       ...workOrder,
       work_request_id: workOrder.work_request_id || wr.id,
-    }, assigneeIds)
+    }, resolvedAssigneeIds)
   }
 
-  return { workOrder, updated, woNumber: linkedNumber }
+  return { workOrder, updated, woNumber: linkedNumber, assigneeIds: resolvedAssigneeIds }
+}
+
+async function loadEmployeesByProfileIds(orgId, profileIds) {
+  const ids = [...new Set((profileIds || []).filter(Boolean))]
+  const byProfile = new Map()
+  if (!ids.length) return byProfile
+
+  const { data, error } = await supabaseAdmin
+    .from('org_employees')
+    .select('id, name, profile_id, email')
+    .eq('org_id', orgId)
+    .eq('is_active', true)
+    .in('profile_id', ids)
+  if (error) throw error
+  for (const employee of data || []) {
+    if (employee.profile_id && !byProfile.has(employee.profile_id)) {
+      byProfile.set(employee.profile_id, employee)
+    }
+  }
+
+  const missing = ids.filter((id) => !byProfile.has(id))
+  if (!missing.length) return byProfile
+
+  const { data: people, error: profileError } = await supabaseAdmin
+    .from('profiles')
+    .select('id, email')
+    .in('id', missing)
+  if (profileError) throw profileError
+
+  const profileByEmail = new Map()
+  const emails = []
+  for (const person of people || []) {
+    const email = String(person.email || '').trim()
+    if (!email) continue
+    emails.push(email)
+    profileByEmail.set(email.toLowerCase(), person.id)
+  }
+  if (!emails.length) return byProfile
+
+  const { data: byEmail, error: emailError } = await supabaseAdmin
+    .from('org_employees')
+    .select('id, name, profile_id, email')
+    .eq('org_id', orgId)
+    .eq('is_active', true)
+    .in('email', emails)
+  if (emailError) throw emailError
+  for (const employee of byEmail || []) {
+    const profileId = profileByEmail.get(String(employee.email || '').trim().toLowerCase())
+    if (profileId && !byProfile.has(profileId)) byProfile.set(profileId, employee)
+  }
+  return byProfile
+}
+
+/**
+ * Assign the work-request creator on user self work orders that were converted
+ * with nobody assigned. Skips orders that already have a technician assignment
+ * event, so a later unassign is left alone.
+ */
+export async function ensureUserSelfCreatorAssigned(orgId, workOrders, { skipAssigneeCheck = false } = {}) {
+  const statusById = new Map()
+  const candidates = (workOrders || []).filter((row) => row?.id && row.source_type === 'user_self_request')
+  if (!candidates.length) return { statusById }
+
+  let open = candidates
+  if (!skipAssigneeCheck) {
+    const { data: links, error } = await supabaseAdmin
+      .from('manual_work_order_assignees')
+      .select('work_order_id')
+      .eq('org_id', orgId)
+      .in('work_order_id', candidates.map((row) => row.id))
+    if (error) throw error
+    const assigned = new Set((links || []).map((row) => row.work_order_id))
+    open = candidates.filter((row) => !assigned.has(row.id))
+  }
+  if (!open.length) return { statusById }
+
+  const { data: events, error: eventError } = await supabaseAdmin
+    .from('work_order_timeline')
+    .select('work_order_id')
+    .eq('org_id', orgId)
+    .eq('event_type', 'technician_assigned')
+    .in('work_order_id', open.map((row) => row.id))
+  if (eventError) throw eventError
+  const touched = new Set((events || []).map((row) => row.work_order_id))
+  const fresh = open.filter((row) => !touched.has(row.id))
+  if (!fresh.length) return { statusById }
+
+  const requestIds = [...new Set(fresh.map((row) => row.work_request_id).filter(Boolean))]
+  const profileByRequest = new Map()
+  if (requestIds.length) {
+    const { data: requests, error: requestError } = await supabaseAdmin
+      .from('work_requests')
+      .select('id, requested_by')
+      .eq('org_id', orgId)
+      .in('id', requestIds)
+    if (requestError) throw requestError
+    for (const request of requests || []) {
+      if (request.requested_by) profileByRequest.set(request.id, request.requested_by)
+    }
+  }
+
+  const profileByWorkOrder = new Map()
+  for (const row of fresh) {
+    const profileId = (row.work_request_id && profileByRequest.get(row.work_request_id))
+      || row.requester_id
+      || null
+    if (profileId) profileByWorkOrder.set(row.id, profileId)
+  }
+  const employeeByProfile = await loadEmployeesByProfileIds(orgId, [...profileByWorkOrder.values()])
+
+  const planned = []
+  for (const row of fresh) {
+    const profileId = profileByWorkOrder.get(row.id)
+    const employee = employeeByProfile.get(profileId)
+    if (!employee) continue
+    planned.push({ row, profileId, employee })
+  }
+  if (!planned.length) return { statusById }
+
+  const now = new Date().toISOString()
+  const { error: insertError } = await supabaseAdmin
+    .from('manual_work_order_assignees')
+    .upsert(
+      planned.map((item) => ({
+        org_id: orgId,
+        work_order_id: item.row.id,
+        employee_id: item.employee.id,
+      })),
+      { onConflict: 'work_order_id,employee_id', ignoreDuplicates: true },
+    )
+  if (insertError) throw insertError
+
+  const skipAcceptance = await shouldSkipTechnicianAcceptance(
+    orgId,
+    workOrderFormIdForSource('user_self_request'),
+  )
+  const promoteIds = skipAcceptance
+    ? planned.filter((item) => item.row.status === 'assigned').map((item) => item.row.id)
+    : []
+  if (promoteIds.length) {
+    const { error: promoteError } = await supabaseAdmin
+      .from('manual_work_orders')
+      .update({ status: 'accepted', updated_at: now })
+      .eq('org_id', orgId)
+      .in('id', promoteIds)
+      .eq('status', 'assigned')
+    if (promoteError) throw promoteError
+  }
+  const promoted = new Set(promoteIds)
+
+  const woTimeline = []
+  const wrTimeline = []
+  const requestIdsByStatus = new Map()
+  for (const item of planned) {
+    const status = promoted.has(item.row.id) ? 'accepted' : (item.row.status || 'assigned')
+    statusById.set(item.row.id, status)
+    const message = formatTechnicianAssignmentMessage([item.employee.name]) || 'Technician assigned.'
+    woTimeline.push({
+      org_id: orgId,
+      work_order_id: item.row.id,
+      event_type: 'technician_assigned',
+      message,
+      actor_id: item.profileId,
+      new_status: status,
+      metadata: { assignee_ids: [item.employee.id], auto_assigned_creator: true },
+    })
+    if (!item.row.work_request_id) continue
+    wrTimeline.push({
+      org_id: orgId,
+      work_request_id: item.row.work_request_id,
+      event_type: 'technician_assigned',
+      message,
+      actor_id: item.profileId,
+      metadata: {
+        assignee_ids: [item.employee.id],
+        work_order_id: item.row.id,
+        auto_assigned_creator: true,
+        status,
+      },
+    })
+    const bucket = requestIdsByStatus.get(status) || []
+    bucket.push(item.row.work_request_id)
+    requestIdsByStatus.set(status, bucket)
+  }
+
+  const { error: woTimelineError } = await supabaseAdmin.from('work_order_timeline').insert(woTimeline)
+  if (woTimelineError) throw woTimelineError
+  if (wrTimeline.length) {
+    const { error: wrTimelineError } = await supabaseAdmin.from('work_request_timeline').insert(wrTimeline)
+    if (wrTimelineError) throw wrTimelineError
+  }
+
+  const requestUpdates = [...requestIdsByStatus].map(([status, ids]) => (
+    supabaseAdmin
+      .from('work_requests')
+      .update({ execution_status: status, updated_at: now })
+      .eq('org_id', orgId)
+      .in('id', [...new Set(ids)])
+      .then(({ error }) => {
+        if (error) throw error
+      })
+  ))
+  await Promise.all(requestUpdates)
+
+  return { statusById }
 }
 
 export async function approveWorkRequest(orgId, profileId, workRequestId, body) {
@@ -1438,7 +1659,7 @@ export async function approveWorkRequest(orgId, profileId, workRequestId, body) 
     ? [...new Set(body.assigned_employee_ids.filter(Boolean))]
     : []
 
-  const { workOrder, updated, woNumber } = await createLinkedWorkOrderFromRequest(
+  const { workOrder, updated, woNumber, assigneeIds: linkedAssigneeIds } = await createLinkedWorkOrderFromRequest(
     orgId,
     profileId,
     wr,
@@ -1469,7 +1690,7 @@ export async function approveWorkRequest(orgId, profileId, workRequestId, body) 
         url: '/',
       })
     }
-    await notifyEmployees(orgId, assigneeIds, {
+    await notifyEmployees(orgId, linkedAssigneeIds?.length ? linkedAssigneeIds : assigneeIds, {
       title: 'Work order assigned',
       body: `${woNumber} assigned to you`,
       data: {

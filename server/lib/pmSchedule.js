@@ -147,3 +147,28 @@ export function resolveLivePlanStatus(plan, now = new Date()) {
   if (String(plan?.status || '') === 'inactive') return 'inactive'
   return isOverdue(plan, now) ? 'overdue' : 'active'
 }
+
+/** Missing meta defaults to recurring (legacy plans). */
+export function isRecurringPlan(plan) {
+  return plan?.is_recurring !== false
+}
+
+/**
+ * Next due date after a scheduled work order is generated.
+ * - One-time: clear due (no further generation)
+ * - Recurring calendar/both with allow_multiple_open: advance by interval
+ * - Recurring reading-only with allow_multiple_open: clear due (meter trigger not implemented)
+ * - Legacy close-gated: leave due unchanged until WO closes
+ */
+export function nextDueAfterGenerate(plan) {
+  if (!isRecurringPlan(plan)) {
+    return null
+  }
+  if (!plan?.allow_multiple_open) {
+    return plan?.next_due_at || null
+  }
+  if (isCalendarSchedule(plan.schedule_type)) {
+    return computeNextDueDate(plan, plan.next_due_at)
+  }
+  return null
+}

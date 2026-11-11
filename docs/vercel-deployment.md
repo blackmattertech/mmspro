@@ -21,8 +21,8 @@ Vercel auto-detects [`server/app.js`](server/app.js) as the Express entry point.
 |----------|---------|-------|
 | `SUPABASE_URL` | `https://xxx.supabase.co` | Required |
 | `SUPABASE_SERVICE_ROLE_KEY` | `eyJ...` | Required |
-| `CLIENT_URL` | `https://mmspro-client.vercel.app` | CORS allowlist (comma-separated) |
-| `APP_PUBLIC_URL` | `https://mmspro-client.vercel.app` | Password-reset / invite email links |
+| `CLIENT_URL` | `https://mmspro.vercel.app` | CORS allowlist (comma-separated) |
+| `APP_PUBLIC_URL` | `https://mmspro.vercel.app` | Password-reset / invite email links (must NOT be ngrok) |
 | `API_PUBLIC_URL` | `https://mmspro-server.vercel.app` | Optional — Swagger server URL |
 | `FIREBASE_SERVICE_ACCOUNT_JSON` | `{"type":"service_account",...}` | Required on Vercel — paste full JSON as one line |
 | `MAILJET_API_KEY` | | Required for emails |
@@ -73,10 +73,15 @@ Redeploy the client whenever `VITE_API_URL` changes.
 
 Authentication → URL Configuration:
 
-- **Site URL**: `https://<client-vercel-url>`
-- **Redirect URLs**: add:
-  - `https://<client-vercel-url>/reset-password`
-  - `https://<client-vercel-url>/**` (or specific routes)
+- **Site URL**: `https://mmspro.vercel.app` (production only — do not set Site URL to ngrok)
+- **Redirect URLs**: add both production and any active local tunnel, e.g.:
+  - `https://mmspro.vercel.app/**`
+  - `https://mmspro.vercel.app/reset-password`
+  - `https://mmspro.in/**`
+  - `https://<your-ngrok-host>/**`
+  - `https://<your-ngrok-host>/reset-password`
+
+Password-reset emails use `APP_PUBLIC_URL` + `token_hash` so local links stay on ngrok while production stays on `mmspro.vercel.app`.
 
 ### Firebase Console
 

@@ -4,7 +4,15 @@ import { useAreas } from '../../hooks/useAreas'
 import { useLocations } from '../../hooks/useLocations'
 import { useDepartments } from '../../hooks/useDepartments'
 import { useDebouncedValue } from '../../hooks/useDebouncedValue'
-import { getAreasTemplate, bulkUploadAreas, deleteArea } from '../../lib/api'
+import {
+  getAreasTemplate,
+  bulkUploadAreas,
+  deleteArea,
+  exportAreas,
+  downloadBlobFile,
+} from '../../lib/api'
+import { ExportCsvButton } from '../shared/ListTableChrome'
+import '../shared/ListTableChrome.css'
 import GooToggle from '../ui/GooToggle'
 import TrashIcon from '../ui/TrashIcon'
 import EditIcon from '../ui/EditIcon'
@@ -101,6 +109,7 @@ export default function AreasTab({ canManage }) {
   const pagedAreas = filteredAreas
   const [selected, setSelected] = useState(() => new Set())
   const [bulkDeleting, setBulkDeleting] = useState(false)
+  const [exporting, setExporting] = useState(false)
   const [deleteError, setDeleteError] = useState(null)
   const selectAllRef = useRef(null)
   const visibleIds = useMemo(() => pagedAreas.map((area) => area.id), [pagedAreas])
@@ -259,9 +268,26 @@ export default function AreasTab({ canManage }) {
             onChange: setColumnFilters,
           }}
           sort={{ value: sortBy, onChange: setSortBy, options: TABLE_SORT_OPTIONS }}
-          actions={canManage && (
+          actions={(
             <>
-              {selected.size > 0 && (
+              <ExportCsvButton
+                busy={exporting}
+                onClick={async () => {
+                  setExporting(true)
+                  try {
+                    const file = await exportAreas({
+                      location_id: scopedLocationId,
+                      search: debouncedSearch,
+                      filters: listFilters,
+                      sort_by: sortBy,
+                    })
+                    downloadBlobFile(file)
+                  } finally {
+                    setExporting(false)
+                  }
+                }}
+              />
+              {canManage && selected.size > 0 && (
               <button
                 type="button"
                 className="company-btn company-btn--danger"
@@ -274,6 +300,7 @@ export default function AreasTab({ canManage }) {
                 {bulkDeleting ? 'Deleting...' : `Delete (${selected.size})`}
               </button>
               )}
+              {canManage && (
               <MasterBulkActions
                 onDownload={handleDownloadTemplate}
                 bulkBusy={bulkBusy}
@@ -286,6 +313,7 @@ export default function AreasTab({ canManage }) {
                 bulkResult={bulkResult}
                 noun="area"
               />
+              )}
             </>
           )}
           columnPicker={(

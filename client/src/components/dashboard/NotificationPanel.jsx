@@ -13,6 +13,15 @@ function formatTime(date) {
   return date.toLocaleDateString()
 }
 
+function shortDescription(item) {
+  const text = String(item?.data?.short_description || '').replace(/\s+/g, ' ').trim()
+  if (!text) return ''
+  const body = String(item?.body || '').trim().toLowerCase()
+  const sample = text.slice(0, Math.min(40, text.length)).toLowerCase()
+  if (sample && body.includes(sample)) return ''
+  return text
+}
+
 export default function NotificationPanel({ open, onClose, anchorRef }) {
   const panelRef = useRef(null)
   const navigate = useNavigate()
@@ -131,18 +140,22 @@ export default function NotificationPanel({ open, onClose, anchorRef }) {
             {inboxReady ? 'No notifications yet' : 'In-app inbox is not set up yet. Apply supabase-patches/64-user-notifications.sql in the Supabase SQL editor.'}
           </p>
         ) : (
-          notifications.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              className={`notif-panel__item ${item.read ? '' : 'notif-panel__item--unread'}`}
-              onClick={() => openItem(item)}
-            >
-              <span className="notif-panel__item-title">{item.title}</span>
-              {item.body && <span className="notif-panel__item-body">{item.body}</span>}
-              <span className="notif-panel__item-time">{formatTime(item.time)}</span>
-            </button>
-          ))
+          notifications.map((item) => {
+            const description = shortDescription(item)
+            return (
+              <button
+                key={item.id}
+                type="button"
+                className={`notif-panel__item ${item.read ? '' : 'notif-panel__item--unread'}`}
+                onClick={() => openItem(item)}
+              >
+                <span className="notif-panel__item-title">{item.title}</span>
+                {item.body && <span className="notif-panel__item-body">{item.body}</span>}
+                {description && <span className="notif-panel__item-desc">{description}</span>}
+                <span className="notif-panel__item-time">{formatTime(item.time)}</span>
+              </button>
+            )
+          })
         )}
       </div>
     </div>

@@ -98,7 +98,7 @@ export const ACCESS_MODULE_GROUPS = [
       // Hidden for now — work centers are form dropdown values only
       // { key: 'work_centers', label: 'Work Center', actions: ['create', 'read', 'update', 'delete'] },
       { key: 'vendors', label: 'Vendors', actions: ['create', 'read', 'update', 'delete'] },
-      { key: 'others', label: 'Others (Status, Checklists, Limits)', actions: ['create', 'read', 'update', 'delete'] },
+      { key: 'others', label: 'Checklists', actions: ['create', 'read', 'update', 'delete'] },
       { key: 'assets', label: 'Forms Master', actions: ['create', 'read', 'update', 'delete'] },
     ],
   },

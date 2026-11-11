@@ -242,7 +242,6 @@
 }
 
 .wr-create-form input.company-form__input,
-.wr-create-form textarea.company-form__input,
 .wr-create-form .filterable-select__input {
   min-height: 42px;
   height: 42px;
@@ -255,12 +254,20 @@
   border-radius: 8px;
 }
 
-.wr-create-form .company-form__textarea,
-.wr-create-form textarea.company-form__input {
-  height: auto;
+.wr-create-form textarea.company-form__input,
+.wr-create-form .company-form__textarea {
+  height: auto !important;
   min-height: 88px;
-  padding-top: 10px;
-  padding-bottom: 10px;
+  padding: 10px 12px;
+  font-size: 14px;
+  color: #1f2430;
+  background: #fff;
+  border: 1px solid #e1e4ea;
+  border-radius: 8px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  resize: none;
 }
 
 .wr-create-form .company-form__input:disabled,
@@ -341,36 +348,10 @@
 .checklist-opt-in__row {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 16px;
   min-height: 40px;
-}
-
-.checklist-opt-in__add {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 36px;
-  height: 36px;
-  padding: 0;
-  font-size: 22px;
-  font-weight: 500;
-  line-height: 1;
-  color: #1f2430;
-  background: #fff;
-  border: 1px solid #e1e4ea;
-  border-radius: 8px;
-  cursor: pointer;
-}
-
-.checklist-opt-in__add:hover:not(:disabled) {
-  border-color: var(--color-primary);
-  color: var(--color-primary);
-  background: var(--color-light-pink-1, #fff1f2);
-}
-
-.checklist-opt-in__add:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+  max-width: 420px;
 }
 
 .checklist-opt-in__picker {
@@ -519,6 +500,15 @@
   background: transparent;
 }
 
+.wr-create-form .wr-form__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 16px;
+}
+
 @media (max-width: 768px) {
   .wo-page__top--with-actions {
     flex-direction: column;
@@ -526,7 +516,27 @@
   }
 
   .wr-page__header-actions {
-    justify-content: space-between;
+    justify-content: stretch;
+  }
+
+  .wr-create-form .wr-form__actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .wr-create-form .wr-form__actions .company-btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .wr-page__toolbar.wo-page__toolbar--command .wo-command {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .wr-page__toolbar.wo-page__toolbar--command .wo-command__actions {
+    width: 100%;
+    justify-content: flex-end;
   }
 }
 

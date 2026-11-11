@@ -241,9 +241,30 @@ function layoutFieldLines(fields) {
     .map((field) => maybeLine(field.label || field.name || prettyLabel(field.id), field.value || field.display_value || field.value_text))
 }
 
+function formatChecklistValue(value) {
+  if (value == null || value === '') return null
+  if (typeof value === 'boolean') return value ? 'Yes' : 'No'
+  if (Array.isArray(value)) {
+    const parts = value
+      .map((item) => (item && typeof item === 'object' ? (item.label || item.name || item.value || item.id) : item))
+      .filter((item) => item != null && item !== '')
+      .map(String)
+    return parts.length ? parts.join(', ') : null
+  }
+  if (typeof value === 'object') {
+    return value.label || value.name || value.value || value.display_value || null
+  }
+  return String(value)
+}
+
 function checklistLines(snapshot, values) {
   const fields = snapshot?.fields || []
-  return fields.map((field) => line(field.name || field.label || prettyLabel(field.id), values?.[field.id]))
+  return fields
+    .map((field) => maybeLine(
+      field.name || field.label || prettyLabel(field.id),
+      formatChecklistValue(values?.[field.id]),
+    ))
+    .filter(Boolean)
 }
 
 function timelineLines(events) {
@@ -454,11 +475,18 @@ function workOrderSections(order, { includeAsset = true, statuses = [] } = {}) {
     section('Supervisor verification', [
       maybeLine('Verification remarks', order.verification_remarks),
     ]),
-    (Array.isArray(order.daily_logs) && order.daily_logs.some((log) => (
-      log.field_snapshot && Object.keys(log.field_snapshot).length
-    )))
-      ? null
-      : section('Work order checklist', checklistLines(order.checklist_snapshot, order.checklist_values)),
+    (() => {
+      const daysHaveChecklist = (Array.isArray(order.daily_logs) ? order.daily_logs : []).some((log) => {
+        const snap = log.field_snapshot
+        return snap
+          && typeof snap === 'object'
+          && snap.checklist_values
+          && typeof snap.checklist_values === 'object'
+          && Object.keys(snap.checklist_values).length > 0
+      })
+      if (daysHaveChecklist) return null
+      return section('Work order checklist', checklistLines(order.checklist_snapshot, order.checklist_values))
+    })(),
     section('Attachments', [
       maybeLine('Technician photos & files', attachmentNames(order.execution_attachments || order.attachments)),
     ]),

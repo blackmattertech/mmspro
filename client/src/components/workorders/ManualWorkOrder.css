@@ -1339,43 +1339,36 @@
   padding-top: 4px;
 }
 
+.wo-status-actions__progress {
+  width: 40%;
+  max-width: 100%;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--color-light-gray-1);
+}
+
+@media (max-width: 720px) {
+  .wo-status-actions__progress {
+    width: 100%;
+  }
+}
+
 .wo-status-actions__save {
   border-radius: 10px;
   min-height: 42px;
   padding: 0 18px;
+  margin-right: auto;
 }
 
-.wo-status-actions__group {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  flex: 1 1 auto;
-  align-items: center;
+.wo-assignment-actions .wo-status-picker {
+  margin-top: 4px;
 }
 
-.wo-status-actions__chip {
-  min-height: 40px;
-  padding: 0 14px;
-  border-radius: 10px;
-  font-size: 13px;
-}
-
-.wo-status-actions__chip.is-current {
-  box-shadow: 0 0 0 2px rgba(230, 57, 70, 0.2);
-}
-
-.wo-status-actions__chip--rework {
-  color: #b42318;
-  border-color: #fecdca;
-  background: #fff;
-}
-
-.wo-status-actions__chip--rework:hover:not(:disabled) {
-  background: #fef3f2;
+.wo-assignment-actions .wo-status-picker-actions {
+  margin-top: 16px;
 }
 
 .pm-wo-followup-btn {
-  margin-left: auto;
   border-radius: 10px;
   min-height: 42px;
 }
@@ -1729,6 +1722,14 @@
   margin: 0 0 12px;
   font-size: 12px;
   color: var(--color-gray-blue);
+}
+
+.wo-day-tabs__stamps {
+  margin: -6px 0 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-dark-navy);
+  font-variant-numeric: tabular-nums;
 }
 
 .wo-daily-log__header {
@@ -2279,4 +2280,10 @@
 
 .wo-close-confirm-overlay {
   z-index: 1200;
+}
+
+.wo-manual-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }

@@ -58,14 +58,14 @@ export function resolveFormActors({
 
 export function canEditFilledBy(filledBy, actors = {}) {
   const role = normalizeFilledBy(filledBy)
-  if (role === 'technician') return Boolean(actors.isTechnician)
-  if (actors.isOrgAdmin) return true
+  if (actors?.isOrgAdmin) return true
   if (role === 'any') return true
-  if (role === 'creator') return Boolean(actors.isCreator)
+  if (role === 'technician') return Boolean(actors?.isTechnician)
+  if (role === 'creator') return Boolean(actors?.isCreator)
   if (role === 'order_to_dept_head') {
-    return Boolean(actors.isOrderToDeptHead || actors.isTechnician)
+    return Boolean(actors?.isOrderToDeptHead || actors?.isTechnician)
   }
-  if (role === 'supervisor') return Boolean(actors.isSupervisor)
+  if (role === 'supervisor') return Boolean(actors?.isSupervisor)
   return true
 }
 

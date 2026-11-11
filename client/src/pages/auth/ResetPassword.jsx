@@ -40,6 +40,8 @@ export default function ResetPassword() {
       return
     }
 
+    let cancelled = false
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
       if (event === 'PASSWORD_RECOVERY') {
         setReady(true)
@@ -47,14 +49,41 @@ export default function ResetPassword() {
       }
     })
 
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) {
-        setReady(true)
-      }
-      setChecking(false)
-    })
+    async function bootstrap() {
+      const params = new URLSearchParams(window.location.search)
+      const tokenHash = params.get('token_hash')
+      const type = params.get('type') || 'recovery'
 
-    return () => subscription.unsubscribe()
+      // App-hosted recovery links (dev ngrok / prod domain) bypass Supabase Site URL redirects.
+      if (tokenHash) {
+        const { error: verifyError } = await supabase.auth.verifyOtp({
+          token_hash: tokenHash,
+          type,
+        })
+        if (cancelled) return
+        if (verifyError) {
+          setError(verifyError.message || 'This reset link is invalid or has expired.')
+          setChecking(false)
+          return
+        }
+        window.history.replaceState({}, '', '/reset-password')
+        setReady(true)
+        setChecking(false)
+        return
+      }
+
+      const { data: { session } } = await supabase.auth.getSession()
+      if (cancelled) return
+      if (session) setReady(true)
+      setChecking(false)
+    }
+
+    bootstrap()
+
+    return () => {
+      cancelled = true
+      subscription.unsubscribe()
+    }
   }, [])
 
   const handleSubmit = async (e) => {

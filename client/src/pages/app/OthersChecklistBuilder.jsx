@@ -22,6 +22,7 @@ import {
   updateChecklistField,
   deleteChecklistField,
   reorderChecklistFields,
+  getChecklistSettings,
 } from '../../lib/api-pm'
 import PageBack from '../../components/shared/PageBack'
 import EditIcon from '../../components/ui/EditIcon'
@@ -91,11 +92,30 @@ export default function OthersChecklistBuilder() {
   const [sectionNameDraft, setSectionNameDraft] = useState('')
   const [fieldDraft, setFieldDraft] = useState(emptyFieldDraft())
   const [editingFieldId, setEditingFieldId] = useState(null)
+  const [enabledFormIds, setEnabledFormIds] = useState(null)
 
-  const backTo = org?.slug ? orgPath(org.slug, 'masters/others/checklists') : '#'
-  const availableForms = useMemo(() => (
-    CHECKLIST_FORMS.filter((item) => isProductModuleEnabled(org?.disabled_modules, item.moduleId))
-  ), [org?.disabled_modules])
+  const backTo = org?.slug ? orgPath(org.slug, 'masters/checklists') : '#'
+  const availableForms = useMemo(() => {
+    const productEnabled = CHECKLIST_FORMS.filter((item) => (
+      isProductModuleEnabled(org?.disabled_modules, item.moduleId)
+    ))
+    if (!Array.isArray(enabledFormIds)) return productEnabled
+    const allowed = new Set(enabledFormIds)
+    return productEnabled.filter((item) => allowed.has(item.formId))
+  }, [org?.disabled_modules, enabledFormIds])
+
+  useEffect(() => {
+    let cancelled = false
+    getChecklistSettings()
+      .then((data) => {
+        if (cancelled) return
+        setEnabledFormIds(Array.isArray(data?.form_ids) ? data.form_ids : [])
+      })
+      .catch(() => {
+        if (!cancelled) setEnabledFormIds(CHECKLIST_FORMS.map((item) => item.formId))
+      })
+    return () => { cancelled = true }
+  }, [])
 
   const toggleForm = (formId) => {
     setForm((current) => {
@@ -195,7 +215,7 @@ export default function OthersChecklistBuilder() {
       })
       applyDetail(created)
       if (org?.slug) {
-        navigate(orgPath(org.slug, `masters/others/checklists/${created.id}`), { replace: true })
+        navigate(orgPath(org.slug, `masters/checklists/${created.id}`), { replace: true })
       }
       return created
     } finally {
@@ -405,9 +425,9 @@ export default function OthersChecklistBuilder() {
         <aside className="checklist-builder__sidebar">
           <form className="checklist-builder__meta" onSubmit={handleSaveMeta}>
             <fieldset className="checklist-builder__forms">
-              <legend className="company-form__label">Show on forms *</legend>
+              <legend className="company-form__label">Modules that can use this checklist *</legend>
               <p className="checklist-builder__forms-hint">
-                People filling a selected form can add this checklist.
+                Select modules where this checklist can be enabled and chosen on the form.
               </p>
               {availableForms.map((item) => (
                 <label key={item.formId} className="checklist-builder__form-option">

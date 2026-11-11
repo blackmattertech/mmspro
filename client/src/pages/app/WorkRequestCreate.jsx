@@ -4,21 +4,19 @@ import { useOrg } from '../../hooks/useOrg'
 import { usePermissions } from '../../hooks/usePermissions'
 import { useAuth } from '../../hooks/useAuth'
 import { useTextFieldLimits } from '../../hooks/useTextFieldLimits'
-import { useDebouncedValue } from '../../hooks/useDebouncedValue'
 import { orgPath } from '../../config/navigation'
 import {
   getWorkRequestFormContext,
-  getWorkRequestEquipmentCatalog,
   createWorkRequest,
 } from '../../lib/api-work-requests'
 import { notifyTabCountsChanged } from '../../lib/tabCountEvents'
-import WorkRequestAssetFields from '../../components/workrequests/WorkRequestAssetFields'
 import WorkRequestSectionHead from '../../components/workrequests/WorkRequestSectionHead'
 import WorkRequestBreakdownFields from '../../components/workrequests/WorkRequestBreakdownFields'
 import WorkRequestAttachmentsField from '../../components/workrequests/WorkRequestAttachmentsField'
 import FilterableSelect from '../../components/ui/FilterableSelect'
 import SpellcheckInput from '../../components/shared/SpellcheckInput'
 import FormLabel from '../../components/shared/FormLabel'
+import { firstCharacterLimitMessage } from '../../lib/textFieldLimits'
 import {
   clearBreakdownFieldValues,
   missingRequiredBreakdownFields,
@@ -35,32 +33,17 @@ import '../../components/workrequests/WorkRequests.css'
 import { useFormLayout } from '../../hooks/useFormLayout'
 import { useFormFieldValues } from '../../hooks/useFormFieldValues'
 import OrderedFormLayout from '../../components/forms/OrderedFormLayout'
+import AssetPickerField from '../../components/forms/AssetPickerField'
 import ChecklistOptIn from '../../components/forms/ChecklistOptIn'
-import { findLayoutField, layoutHasSection, layoutWithoutAreasMaster, shouldRequire, systemId, parseLayoutId } from '../../lib/formLayoutIds'
+import { findLayoutField, layoutHasSection, shouldRequire, systemId, parseLayoutId } from '../../lib/formLayoutIds'
 import { missingRequiredLayoutValues, splitBoundValues } from '../../lib/formFieldSources'
+import { readFieldValue } from '../../lib/manualWorkOrderWizard'
 import { layoutHasOptionRules, isInterDepartmentRequestType, isSameDepartmentRequestType } from '../../lib/formOptionRules'
+import { REQUEST_TYPE_OPTIONS } from '../../lib/systemFieldFallback'
 import { layoutRequiresChecklist } from '../../lib/formSkips'
 import { resolveFormActors, validateRepeatableGroups } from '../../lib/formFillership'
-import {
-  augmentLayoutWithEquipmentCatalog,
-  catalogRowFromEquipmentDetail,
-  equipmentCatalogParents,
-  equipmentValuesByFieldId,
-  isEquipmentMasterField,
-} from '../../lib/equipmentLayoutFields'
+import { isEquipmentMasterField } from '../../lib/equipmentLayoutFields'
 import { getEquipment } from '../../lib/api-equipment'
-import { fieldValuesFromEquipment, flattenAssetSections } from '../../lib/workRequestAssetPicker'
-
-const ASSET_PICKER_KEYS = new Set(['asset_picker', 'area_id', 'equipment_id'])
-
-function isAssetPickerLayoutField(field) {
-  if (!field) return false
-  const parsed = parseLayoutId(field.id)
-  if (parsed.kind === 'system' && ASSET_PICKER_KEYS.has(parsed.value)) return true
-  if (field.masterSource === 'areas' || field.masterSource === 'equipment') return true
-  if (field.bindKey === 'area_id' || field.bindKey === 'equipment_id') return true
-  return false
-}
 
 function selectedLayoutPriority(layout, values, fallback) {
   for (const field of layout?.fields || []) {
@@ -72,17 +55,6 @@ function selectedLayoutPriority(layout, values, fallback) {
     if (text === 'high' || text === 'medium' || text === 'low') return text
   }
   return fallback
-}
-
-function isAssetLayoutSection(sectionId, section, layout) {
-  if (/asset/i.test(String(section?.label || ''))) return true
-  return (layout?.fields || []).some((field) => (
-    field.sectionId === sectionId && isAssetPickerLayoutField(field)
-  ))
-}
-
-function formatEquipmentLabel(row) {
-  return row?.name || row?.id || ''
 }
 
 function routingFieldValues(layout, { requestType, orderFromId, orderToId }) {
@@ -124,35 +96,31 @@ function WorkRequestFormActions({
   className = '',
 }) {
   return (
-    <div className={`wr-page__header-actions${className ? ` ${className}` : ''}`}>
-      <div className="wr-page__bar-actions">
-        <button
-          type="button"
-          className="company-btn company-btn--secondary wr-form__btn--ghost"
-          onClick={onCancel}
-          disabled={saving}
-        >
-          Cancel
-        </button>
-        <button
-          type="button"
-          className="company-btn company-btn--secondary wr-form__btn--draft"
-          onClick={onSaveDraft}
-          disabled={saving || !canSaveDraft}
-        >
-          {saving && saveMode === 'draft' ? 'Saving…' : 'Save as Draft'}
-        </button>
-      </div>
-      <div className="wr-page__bar-actions">
-        <button
-          type="submit"
-          form={formId}
-          className="company-btn company-btn--primary"
-          disabled={saving || !canSubmitAssets}
-        >
-          {saving && saveMode === 'submit' ? 'Submitting…' : 'Submit'}
-        </button>
-      </div>
+    <div className={`wr-page__header-actions wr-form__actions${className ? ` ${className}` : ''}`}>
+      <button
+        type="button"
+        className="company-btn company-btn--secondary wr-form__btn--ghost"
+        onClick={onCancel}
+        disabled={saving}
+      >
+        Cancel
+      </button>
+      <button
+        type="button"
+        className="company-btn company-btn--secondary wr-form__btn--draft"
+        onClick={onSaveDraft}
+        disabled={saving || !canSaveDraft}
+      >
+        {saving && saveMode === 'draft' ? 'Saving…' : 'Save as Draft'}
+      </button>
+      <button
+        type="submit"
+        form={formId}
+        className="company-btn company-btn--primary"
+        disabled={saving || !canSubmitAssets}
+      >
+        {saving && saveMode === 'submit' ? 'Submitting…' : 'Submit'}
+      </button>
     </div>
   )
 }
@@ -165,7 +133,9 @@ export default function WorkRequestCreate() {
   const { user } = useAuth()
   const { isOrgAdmin, session, canUpdate } = usePermissions()
   const { maxLength } = useTextFieldLimits()
-  const { layout, catalogFields, isVisible, fieldClass, hasLayout } = useFormLayout('work_request.create')
+  const { layout, catalogFields, isVisible, fieldClass, hasLayout } = useFormLayout('work_request.create', {
+    fallbackToDefault: true,
+  })
   const checklistRequired = layoutRequiresChecklist(layout)
   const extras = useFormFieldValues('work_request.create', null)
   const formActors = useMemo(() => resolveFormActors({
@@ -190,12 +160,6 @@ export default function WorkRequestCreate() {
   const [checklistId, setChecklistId] = useState('')
   const [orderFromId, setOrderFromId] = useState('')
   const [orderToId, setOrderToId] = useState('')
-  const [catalogEquipment, setCatalogEquipment] = useState([])
-  const [catalogSections, setCatalogSections] = useState([])
-  const [equipmentQuery, setEquipmentQuery] = useState('')
-  const debouncedEquipmentQuery = useDebouncedValue(equipmentQuery.trim())
-  const [equipmentLoading, setEquipmentLoading] = useState(false)
-  const [equipmentEmpty, setEquipmentEmpty] = useState(false)
   const [assetFieldValues, setAssetFieldValues] = useState({})
   const [equipmentId, setEquipmentId] = useState(prefillEquipmentId)
   const [pinnedEquipment, setPinnedEquipment] = useState(null)
@@ -209,37 +173,11 @@ export default function WorkRequestCreate() {
   const attachmentFilesRef = useRef(attachmentFiles)
   attachmentFilesRef.current = attachmentFiles
 
-  const assetSections = useMemo(() => {
-    const fromCtx = ctx?.asset_sections || ctx?.assetSections || []
-    if (fromCtx.some((section) => (section.fields || []).length > 0)) return fromCtx
-    return catalogSections
-  }, [ctx, catalogSections])
   const maintenanceSchema = ctx?.maintenance_form_schema || { sections: [] }
   const jobNatureOptions = ctx?.job_natures || []
-  const hasAssetFields = assetSections.some((s) => (s.fields || []).length > 0)
   const isBreakdown = String(jobNature || '').trim().toLowerCase() === 'breakdown'
-
-  const effectiveLayout = useMemo(() => {
-    const augmented = layoutWithoutAreasMaster(augmentLayoutWithEquipmentCatalog(layout, catalogFields))
-    if (!augmented?.fields?.length) return augmented
-    const hasAssetPicker = augmented.fields.some((field) => {
-      const parsed = parseLayoutId(field.id)
-      return parsed.kind === 'system' && (
-        parsed.value === 'asset_picker' || parsed.value === 'equipment_id' || parsed.value === 'area_id'
-      )
-    })
-    if (!hasAssetPicker) return augmented
-    const catalogById = new Map((catalogFields || []).map((row) => [String(row.id), row]))
-    return {
-      ...augmented,
-      fields: augmented.fields.filter((field) => {
-        const parsed = parseLayoutId(field.id)
-        if (parsed.kind !== 'catalog') return true
-        const source = catalogById.get(String(parsed.value))
-        return source?.field_source !== 'equipment'
-      }),
-    }
-  }, [layout, catalogFields])
+  // useFormLayout already runs normalizeAssetLayout
+  const effectiveLayout = layout
 
   useEffect(() => {
     if (isBreakdown) return
@@ -397,13 +335,6 @@ export default function WorkRequestCreate() {
     return () => { cancelled = true }
   }, [prefillEquipmentId])
 
-  const equipmentOptions = useMemo(() => {
-    if (!pinnedEquipment) return catalogEquipment
-    const shaped = catalogRowFromEquipmentDetail(pinnedEquipment)
-    if (catalogEquipment.some((row) => row.id === pinnedEquipment.id)) return catalogEquipment
-    return shaped ? [shaped, ...catalogEquipment] : catalogEquipment
-  }, [catalogEquipment, pinnedEquipment])
-
   useEffect(() => {
     if (!pinnedEquipment || !ctx) return
     const fromId = orderFromId || ctx.order_from_department?.id || ctx.employee?.department_id || ''
@@ -416,150 +347,22 @@ export default function WorkRequestCreate() {
     }
   }, [pinnedEquipment, ctx, orderFromId])
 
-  useEffect(() => {
-    if (!pinnedEquipment) return
-    const fields = flattenAssetSections(assetSections)
-    if (!fields.length) return
-    const fromRow = fieldValuesFromEquipment(catalogRowFromEquipmentDetail(pinnedEquipment), fields)
-    if (!Object.keys(fromRow).length) return
-    setAssetFieldValues((prev) => {
-      const next = { ...prev }
-      let changed = false
-      for (const [fieldId, value] of Object.entries(fromRow)) {
-        if (next[fieldId] == null || next[fieldId] === '') {
-          next[fieldId] = value
-          changed = true
-        }
-      }
-      return changed ? next : prev
-    })
-  }, [pinnedEquipment, assetSections])
-
   const previousOrderToId = useRef('')
 
   useEffect(() => {
     const previous = previousOrderToId.current
     previousOrderToId.current = orderToId
-    if (!previous || previous === orderToId) {
-      if (!orderToId) {
-        setCatalogEquipment([])
-        setCatalogSections([])
-        setEquipmentEmpty(false)
-      }
-      return
-    }
+    if (!previous || previous === orderToId) return
     setAssetFieldValues({})
-    setEquipmentQuery('')
     setEquipmentId('')
     setPinnedEquipment(null)
   }, [orderToId])
 
-  useEffect(() => {
-    if (!orderToId) return undefined
-
-    let cancelled = false
-    ;(async () => {
-      setEquipmentLoading(true)
-      try {
-        const catalog = await getWorkRequestEquipmentCatalog(orderToId, {
-          search: debouncedEquipmentQuery || undefined,
-          limit: 500,
-        })
-        if (cancelled) return
-        setCatalogEquipment((catalog.equipment || []).filter((row) => (
-          !row.department_id || String(row.department_id) === String(orderToId)
-        )))
-        setCatalogSections(Array.isArray(catalog.sections) ? catalog.sections : [])
-        setEquipmentEmpty(!catalog.has_assets)
-      } catch (err) {
-        if (!cancelled) setError(err.message)
-      } finally {
-        if (!cancelled) setEquipmentLoading(false)
-      }
-    })()
-    return () => { cancelled = true }
-  }, [orderToId, debouncedEquipmentQuery])
-
-  useEffect(() => {
-    if (!hasLayout || !effectiveLayout) return undefined
-
-    const layoutCatalogIds = new Set(
-      (effectiveLayout.fields || [])
-        .map((field) => {
-          const parsed = parseLayoutId(field.id)
-          return parsed.kind === 'catalog' ? parsed.value : null
-        })
-        .filter(Boolean),
-    )
-    const autoParents = equipmentCatalogParents(catalogFields)
-    const hydrateParents = autoParents.length
-      ? autoParents
-      : (catalogFields || []).filter((item) => (
-        item.kind === 'parent' && layoutCatalogIds.has(String(item.id))
-      ))
-    const autoIds = hydrateParents.map((row) => row.id)
-
-    if (!equipmentId) {
-      if (autoIds.length) {
-        extras.setValues((prev) => {
-          const next = { ...prev }
-          let changed = false
-          for (const id of autoIds) {
-            if (next[id] != null && next[id] !== '') {
-              delete next[id]
-              changed = true
-            }
-          }
-          return changed ? next : prev
-        })
-      }
-      return undefined
-    }
-
-    let cancelled = false
-    ;(async () => {
-      let row = catalogEquipment.find((item) => item.id === equipmentId)
-        || (pinnedEquipment?.id === equipmentId ? catalogRowFromEquipmentDetail(pinnedEquipment) : null)
-      let valuesMap = equipmentValuesByFieldId(row)
-      if (!Object.keys(valuesMap).length) {
-        try {
-          const detail = await getEquipment(equipmentId)
-          if (cancelled || !detail) return
-          valuesMap = equipmentValuesByFieldId(detail)
-          row = {
-            ...detail,
-            values: valuesMap,
-            name: detail.name,
-            code: detail.code,
-            area_id: detail.area_id,
-          }
-        } catch {
-          return
-        }
-      } else if (row) {
-        row = { ...row, values: valuesMap }
-      }
-      if (cancelled || !row) return
-
-      const fromRow = fieldValuesFromEquipment(row, hydrateParents)
-      if (Object.keys(fromRow).length) {
-        extras.setValues((prev) => ({ ...prev, ...fromRow }))
-      }
-    })()
-
-    return () => { cancelled = true }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- hydrate when equipment selection changes
-  }, [hasLayout, effectiveLayout, equipmentId, catalogEquipment, catalogFields, pinnedEquipment])
-
-  const assetRequired = shouldRequire(layout, systemId('asset_picker'), true)
-  const hasPinnedEquipment = pinnedEquipment?.id && pinnedEquipment.id === equipmentId
+  const assetRequired = shouldRequire(effectiveLayout || layout, systemId('asset_picker'), true)
   const canSubmitAssets = useMemo(() => {
     if (hasLayout && !assetRequired) return true
-    if (!equipmentId) return false
-    if (pinnedEquipment?.id === equipmentId) return true
-    if (equipmentEmpty) return false
-    return equipmentOptions.some((row) => row.id === equipmentId)
-  }, [assetRequired, equipmentEmpty, equipmentId, equipmentOptions, hasLayout, pinnedEquipment])
+    return Boolean(equipmentId)
+  }, [assetRequired, equipmentId, hasLayout])
 
   const canSaveDraft = hasLayout
     ? true
@@ -607,6 +410,15 @@ export default function WorkRequestCreate() {
       if (saveAs === 'submit') {
         if (checklistRequired && !checklistId) {
           setError('Select a checklist.')
+          return
+        }
+        const limitError = firstCharacterLimitMessage([
+          { key: 'short_description', label: 'Short description', value: shortDescription },
+          { key: 'problem_description', label: 'Detailed description', value: problem },
+          { key: 'remarks', label: 'Remark', value: remarks },
+        ], maxLength)
+        if (limitError) {
+          setError(limitError)
           return
         }
         if (hasLayout) {
@@ -697,9 +509,21 @@ export default function WorkRequestCreate() {
           )
           uploaded.push(meta)
         }
+        const formLayout = effectiveLayout || layout
+        const layoutShort = String(readFieldValue(formLayout, extras.values, [
+          'short_description',
+          'shortdescription',
+        ]) || '').trim()
+        const layoutProblem = String(readFieldValue(formLayout, extras.values, [
+          'problem_description',
+          'detaileddescription',
+          'problemdetaileddescription',
+        ]) || '').trim()
         const created = await createWorkRequest({
           ...buildPayload(saveAs, uploaded),
-          priority: selectedLayoutPriority(effectiveLayout || layout, extras.values, priority),
+          short_description: String(shortDescription || layoutShort).trim(),
+          problem_description: String(problem || layoutProblem).trim(),
+          priority: selectedLayoutPriority(formLayout, extras.values, priority),
           equipment_id: equipmentId || native.equipment_id || null,
           order_from_department_id: fromId,
           order_to_department_id: toId,
@@ -751,12 +575,14 @@ export default function WorkRequestCreate() {
       effectiveLayout,
       maintenanceFieldValues,
       maintenanceSchema,
+      maxLength,
       navigate,
       orderToId,
       org?.id,
       org?.slug,
       priority,
       problem,
+      remarks,
       requestType,
       shortDescription,
     ],
@@ -782,56 +608,24 @@ export default function WorkRequestCreate() {
     return <div className="wo-alert wo-alert--error">{error || 'Unable to load form.'}</div>
   }
 
-  const renderAssetPickerBody = (required = false) => {
-    if (!orderToId) {
-      return (
-        <p className="wo-manual__intro" style={{ margin: 0 }}>
-          Select Order to to see assets for that department.
-        </p>
-      )
-    }
-    return (
-      <>
-        {equipmentLoading && (
-          <p className="wo-manual__intro" style={{ marginTop: 0 }}>Loading assets…</p>
-        )}
-        {!equipmentLoading && equipmentEmpty && !hasPinnedEquipment && (
-          <div className="wo-alert wo-alert--error" role="alert">
-            No assets are available for the selected department.
-          </div>
-        )}
-        {hasAssetFields ? (
-          <WorkRequestAssetFields
-            sections={assetSections}
-            equipment={equipmentOptions}
-            fieldValues={assetFieldValues}
-            onFieldValuesChange={setAssetFieldValues}
-            equipmentId={equipmentId}
-            onEquipmentIdChange={setEquipmentId}
-            loading={equipmentLoading}
-            disabled={saving}
-          />
-        ) : (
-          <label className="company-form__field company-form__field--full">
-            <span className="company-form__label">Asset</span>
-            <FilterableSelect
-              value={equipmentId}
-              onChange={setEquipmentId}
-              options={equipmentOptions}
-              getOptionValue={(row) => row.id}
-              getOptionLabel={formatEquipmentLabel}
-              placeholder="Select asset"
-              className="company-form__input--select"
-              onQueryChange={setEquipmentQuery}
-              required={required}
-            />
-          </label>
-        )}
-      </>
-    )
-  }
+  const mountAssetPicker = ({ className = '', required = false, field } = {}) => (
+    <AssetPickerField
+      key={field?.id || 'asset_picker'}
+      className={className}
+      departmentId={orderToId}
+      requireDepartment
+      catalogSource="work_request"
+      searchEnabled
+      equipmentId={equipmentId}
+      onEquipmentIdChange={setEquipmentId}
+      fieldValues={assetFieldValues}
+      onFieldValuesChange={setAssetFieldValues}
+      disabled={saving}
+      required={required}
+      emptyDepartmentMessage="Select Order to to see assets for that department."
+    />
+  )
 
-  let assetPickerShown = false
   const renderWrField = (key, meta = {}) => {
     const className = meta.className || fieldClass(key)
     const required = Boolean(meta.required)
@@ -849,7 +643,7 @@ export default function WorkRequestCreate() {
                 setOrderToId('')
               }
             }}
-            options={ctx.request_types || []}
+            options={REQUEST_TYPE_OPTIONS}
             getOptionValue={(t) => t.value}
             getOptionLabel={(t) => t.label}
             placeholder="Select type"
@@ -907,13 +701,7 @@ export default function WorkRequestCreate() {
       )
     }
     if (key === 'asset_picker' || key === 'area_id' || key === 'equipment_id') {
-      if (assetPickerShown) return <span key={`${key}-asset`} hidden />
-      assetPickerShown = true
-      return (
-        <div key={key} className={`wr-asset-picker company-form__field company-form__field--full${className ? ` ${className}` : ''}`}>
-          {renderAssetPickerBody(required)}
-        </div>
-      )
+      return mountAssetPicker({ className, required, field: meta.field })
     }
     if (key === 'short_description') {
       return (
@@ -1036,15 +824,6 @@ export default function WorkRequestCreate() {
     <>
       {error && <div className="wo-alert wo-alert--error" role="alert">{error}</div>}
 
-      <WorkRequestFormActions
-        saving={saving}
-        saveMode={saveMode}
-        canSaveDraft={canSaveDraft}
-        canSubmitAssets={canSubmitAssets}
-        onCancel={goBack}
-        onSaveDraft={handleSaveDraft}
-      />
-
       <form id="wr-create-form" className="wo-form wr-create-form" onSubmit={handleSubmit}>
           {hasLayout ? (
             <OrderedFormLayout
@@ -1068,9 +847,12 @@ export default function WorkRequestCreate() {
               actors={formActors}
               currentEmployeeId={session?.employee_id || null}
               renderField={renderWrField}
-              omitField={(item) => isAssetPickerLayoutField(item)}
+              assetPicker={({ className, field, required }) => (
+                mountAssetPicker({ className, required: Boolean(required), field })
+              )}
               renderSection={(id, children, section) => {
-                const showAssetPicker = isAssetLayoutSection(id, section, effectiveLayout)
+                const nodes = (children || []).filter(Boolean)
+                if (!nodes.length) return null
                 return (
                   <section key={id} className="wr-form-section" aria-labelledby={`${id}-title`}>
                     {section.label ? (
@@ -1080,11 +862,7 @@ export default function WorkRequestCreate() {
                       </header>
                     ) : null}
                     <div className="wr-form-section__body">
-                      {showAssetPicker ? (
-                        <div className="wr-asset-picker">{renderAssetPickerBody(true)}</div>
-                      ) : (
-                        <div className="company-form__grid company-form__grid--12">{children}</div>
-                      )}
+                      <div className="company-form__grid company-form__grid--12">{nodes}</div>
                     </div>
                   </section>
                 )
@@ -1114,7 +892,7 @@ export default function WorkRequestCreate() {
                         setOrderToId('')
                       }
                     }}
-                    options={ctx.request_types || []}
+                    options={REQUEST_TYPE_OPTIONS}
                     getOptionValue={(t) => t.value}
                     getOptionLabel={(t) => t.label}
                     placeholder="Select type"
@@ -1178,7 +956,7 @@ export default function WorkRequestCreate() {
               title="Asset information"
             />
             <div className="wo-section__body">
-              {renderAssetPickerBody()}
+              {mountAssetPicker({ required: true })}
             </div>
           </section>
           )}

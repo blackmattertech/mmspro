@@ -510,7 +510,7 @@ export default function DashboardBoard({
     show('company') ? { label: 'Employees', value: moduleKpi(modules, 'company', 'employees'), to: pathFor('masters/company') } : null,
     show('vendors') ? { label: 'Vendors', value: moduleKpi(modules, 'vendors', 'total'), to: pathFor('masters/vendors') } : null,
     show('calendar') ? { label: 'Calendar', value: moduleKpi(modules, 'calendar', 'upcoming'), to: pathFor('calendar') } : null,
-    show('others') ? { label: 'Checklists', value: moduleKpi(modules, 'others', 'checklists'), to: pathFor('masters/others/checklists') } : null,
+    show('others') ? { label: 'Checklists', value: moduleKpi(modules, 'others', 'checklists'), to: pathFor('masters/checklists') } : null,
     show('roles') ? { label: 'Roles', value: moduleKpi(modules, 'roles', 'total'), to: pathFor('configuration/roles') } : null,
     show('notifications') ? { label: 'Unread', value: moduleKpi(modules, 'notifications', 'unread'), to: null } : null,
   ].filter((item) => item && item.value != null)
