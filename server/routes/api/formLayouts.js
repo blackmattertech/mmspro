@@ -81,13 +81,17 @@ router.get('/:formId', async (req, res) => {
       : null
     let catalogFields = []
     if (layout) {
-      const ids = new Set(
-        (layout.fields || [])
-          .map((field) => parseLayoutId(field.id))
-          .filter((parsed) => parsed.kind === 'catalog')
-          .map((parsed) => parsed.value),
-      )
-      if (ids.size) {
+      const fieldIds = new Set()
+      const sectionIds = new Set()
+      for (const section of layout.sections || []) {
+        const parsed = parseLayoutId(section.id)
+        if (parsed.kind === 'catalog') sectionIds.add(String(parsed.value))
+      }
+      for (const field of layout.fields || []) {
+        const parsed = parseLayoutId(field.id)
+        if (parsed.kind === 'catalog') fieldIds.add(String(parsed.value))
+      }
+      if (fieldIds.size || sectionIds.size) {
         const all = catalogSource === 'platform'
           ? (platformCatalog || []).map((row) => ({
             ...row,
@@ -95,7 +99,14 @@ router.get('/:formId', async (req, res) => {
           }))
           : await loadOrgCatalogFields(orgId)
         catalogFields = attachCatalogDropdownOptions(
-          all.filter((row) => ids.has(row.id) && row.kind === 'parent'),
+          all.filter((row) => (
+            row.kind === 'parent'
+            && row.is_active !== false
+            && (
+              fieldIds.has(String(row.id))
+              || (row.section_id && sectionIds.has(String(row.section_id)))
+            )
+          )),
           all,
         )
         catalogFields = applyCompanyOptionsToCatalog(formId, catalogFields, overlays)
@@ -107,14 +118,38 @@ router.get('/:formId', async (req, res) => {
   }
 })
 
+function canReadWorkOrderFormValues(req) {
+  return hasModulePermission(req.orgPermissions, 'work_orders', 'read')
+    || hasModulePermission(req.orgPermissions, 'work_orders_manual', 'read')
+    || hasModulePermission(req.orgPermissions, 'work_orders_assigned', 'read')
+    || hasModulePermission(req.orgPermissions, 'work_orders_received', 'read')
+    || hasModulePermission(req.orgPermissions, 'work_orders_scheduled', 'read')
+    || hasModulePermission(req.orgPermissions, 'work_request_approve', 'update')
+    || hasModulePermission(req.orgPermissions, 'work_request_incoming', 'read')
+}
+
+function canWriteWorkOrderFormValues(req) {
+  return hasModulePermission(req.orgPermissions, 'work_orders', 'update')
+    || hasModulePermission(req.orgPermissions, 'work_orders', 'create')
+    || hasModulePermission(req.orgPermissions, 'work_orders_manual', 'update')
+    || hasModulePermission(req.orgPermissions, 'work_orders_manual', 'create')
+    || hasModulePermission(req.orgPermissions, 'work_orders_assigned', 'update')
+    || hasModulePermission(req.orgPermissions, 'work_orders_received', 'update')
+    || hasModulePermission(req.orgPermissions, 'work_orders_scheduled', 'update')
+    || hasModulePermission(req.orgPermissions, 'work_request_approve', 'update')
+    || hasModulePermission(req.orgPermissions, 'work_request_incoming', 'update')
+}
+
 router.get('/:formId/values/:recordId', async (req, res) => {
   try {
     const formId = req.params.formId
     const formDef = getFormDef(formId)
     if (!formDef) return res.status(404).json({ error: 'Unknown form' })
+    const isManualWorkOrderForm = formId === 'work_orders.manual'
     const workRecordForm = formId === 'work_request.create'
       || formId === 'pm.plan'
       || isWorkOrderProcessForm(formId)
+      || isManualWorkOrderForm
     const canRead = !formDef.permissionKey || (
       (workRecordForm && canViewAssociatedWorkRecord(req.orgPermissions))
       || hasModulePermission(req.orgPermissions, formDef.permissionKey, 'read')
@@ -125,14 +160,7 @@ router.get('/:formId/values/:recordId', async (req, res) => {
         || hasModulePermission(req.orgPermissions, 'work_orders', 'read')
         || hasModulePermission(req.orgPermissions, 'work_orders_assigned', 'read')
       ))
-      || (isWorkOrderProcessForm(formId) && (
-        hasModulePermission(req.orgPermissions, 'work_orders', 'read')
-        || hasModulePermission(req.orgPermissions, 'work_orders_assigned', 'read')
-        || hasModulePermission(req.orgPermissions, 'work_orders_received', 'read')
-        || hasModulePermission(req.orgPermissions, 'work_orders_scheduled', 'read')
-        || hasModulePermission(req.orgPermissions, 'work_request_approve', 'update')
-        || hasModulePermission(req.orgPermissions, 'work_request_incoming', 'read')
-      ))
+      || ((isWorkOrderProcessForm(formId) || isManualWorkOrderForm) && canReadWorkOrderFormValues(req))
     )
     if (!canRead) {
       return res.status(403).json({
@@ -155,6 +183,7 @@ router.put('/:formId/values/:recordId', async (req, res) => {
     const formId = req.params.formId
     const formDef = getFormDef(formId)
     if (!formDef) return res.status(404).json({ error: 'Unknown form' })
+    const isManualWorkOrderForm = formId === 'work_orders.manual'
     const canWrite = !formDef.permissionKey || (
       hasModulePermission(req.orgPermissions, formDef.permissionKey, 'update')
       || hasModulePermission(req.orgPermissions, formDef.permissionKey, 'create')
@@ -165,14 +194,7 @@ router.put('/:formId/values/:recordId', async (req, res) => {
         || hasModulePermission(req.orgPermissions, 'work_orders', 'update')
         || hasModulePermission(req.orgPermissions, 'work_orders_assigned', 'update')
       ))
-      || (isWorkOrderProcessForm(formId) && (
-        hasModulePermission(req.orgPermissions, 'work_orders', 'update')
-        || hasModulePermission(req.orgPermissions, 'work_orders_assigned', 'update')
-        || hasModulePermission(req.orgPermissions, 'work_orders_received', 'update')
-        || hasModulePermission(req.orgPermissions, 'work_orders_scheduled', 'update')
-        || hasModulePermission(req.orgPermissions, 'work_request_approve', 'update')
-        || hasModulePermission(req.orgPermissions, 'work_request_incoming', 'update')
-      ))
+      || ((isWorkOrderProcessForm(formId) || isManualWorkOrderForm) && canWriteWorkOrderFormValues(req))
     )
     if (!canWrite) {
       return res.status(403).json({
@@ -184,6 +206,13 @@ router.put('/:formId/values/:recordId', async (req, res) => {
 
     const orgId = req.userProfile.org_id
     const recordId = req.params.recordId
+    // Manual WO is a single post-work form (no stage fillership). Match the client
+    // which unlocks every section, and persist extras without role gating.
+    if (isManualWorkOrderForm) {
+      const saved = await upsertFormFieldValues(orgId, formId, recordId, values)
+      return res.json({ values: saved })
+    }
+
     const layout = await loadRuntimeFormLayout(orgId, formId)
     const record = await loadFillershipRecord(orgId, formId, recordId)
     const actors = actorsFromRequest(req, record, {

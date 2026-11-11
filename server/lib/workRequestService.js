@@ -38,6 +38,7 @@ import { shouldRequire, systemId, parseLayoutId } from './formLayoutIds.js'
 import { getMasterSource } from './formFieldSources.js'
 import { assertChecklistForForm, snapshotChecklistTemplate } from './checklistService.js'
 import { normalizeOptions } from './formOptionRules.js'
+import { REQUEST_TYPE_OPTIONS } from './systemFieldFallback.js'
 import { assignedStatusForTechnicians, assertChecklistSelected, maybePromoteAssignedToAccepted } from './formSkips.js'
 import { workOrderFormIdForSource } from './workOrderForms.js'
 import {
@@ -815,12 +816,7 @@ export async function getWorkRequestFormContext(orgId, profileId, email, { isOrg
       }
       : null,
     job_natures: jobNatureChoices,
-    request_types: [
-      { value: 'inter_department', label: 'Inter Department' },
-      { value: 'intra_department', label: 'Intra Department' },
-      { value: 'user_self', label: 'User Self Request' },
-      { value: 'manual', label: 'Manual Work Request' },
-    ],
+    request_types: REQUEST_TYPE_OPTIONS,
     priorities: await loadWorkRequestPriorityOptions(orgId),
   }
 }

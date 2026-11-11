@@ -7,6 +7,7 @@ import {
   LOCKED_ENUM_FIELD_KEYS,
   SYSTEM_FIELD_MASTERS,
   SYSTEM_FIELD_OPTIONS,
+  isRequestTypeField,
 } from './systemFieldFallback.js'
 import {
   jobNatureOptionsFromField,
@@ -123,6 +124,7 @@ export function describeConfigurableField(field, formDef, catalogById = new Map(
   const parsed = parseLayoutId(field.id)
   const systemKey = parsed.kind === 'system' ? parsed.value : ''
   if (LOCKED_ENUM_FIELD_KEYS.has(systemKey)) return null
+  if (isRequestTypeField(field)) return null
   const masterSource = fieldMasterSource(field)
   if (masterSource && getMasterSource(masterSource) && systemKey !== 'work_center') return null
 
@@ -141,6 +143,9 @@ export function describeConfigurableField(field, formDef, catalogById = new Map(
     if (catalogRow.field_source === 'equipment' || catalogRow.source === 'equipment') return null
     fieldType = catalogRow.field_type || fieldType
     label = catalogRow.name || catalogRow.label || label
+    if (isRequestTypeField({ ...field, label, name: label, bindKey: field.bindKey || catalogRow.bind_key })) {
+      return null
+    }
   }
 
   if (!OPTION_FIELD_TYPES.has(fieldType)) {
