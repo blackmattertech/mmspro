@@ -12,10 +12,16 @@ import {
   catalogId,
   normalizeFilledBy,
   layoutGroupsForSection,
+  isPrimaryAssetPickerField,
 } from '../../lib/formLayoutIds'
 import WorkOrderFieldInput from '../workorders/WorkOrderFieldInput'
 import { findSystemField, getFormDef } from '../../lib/formRegistry'
-import { SYSTEM_FIELD_MASTERS, SYSTEM_FIELD_OPTIONS } from '../../lib/systemFieldFallback'
+import {
+  SYSTEM_FIELD_MASTERS,
+  SYSTEM_FIELD_OPTIONS,
+  isRequestTypeField,
+  REQUEST_TYPE_OPTIONS,
+} from '../../lib/systemFieldFallback'
 import { currentUserDefaultPatches, getMasterSource, resolveMasterFilters } from '../../lib/formFieldSources'
 import { isFieldDependencyMet } from '../../lib/assetFieldDependencies'
 import {
@@ -151,6 +157,12 @@ function layoutItemVisible(item, catalogSource, values, activeRules) {
 }
 
 function selectOptionsForField(item) {
+  if (isRequestTypeField(item)) {
+    return REQUEST_TYPE_OPTIONS.map((opt) => ({
+      value: opt.value,
+      label: opt.label,
+    }))
+  }
   return normalizeOptions(item.options).map((opt) => ({
     value: opt.value,
     label: opt.label,
@@ -264,7 +276,9 @@ export default function OrderedFormLayout({
   fallback,
   renderField,
   renderSection,
+  renderAssetPicker,
   omitField,
+  omitFillershipBadge = false,
   catalogLookup = [],
   catalogValues = {},
   onCatalogChange,
@@ -398,6 +412,7 @@ export default function OrderedFormLayout({
     const sectionDisabled = disabled || !sectionEditable
     const sectionFields = fields.filter((field) => field.sectionId === section.id)
     const sectionGroups = layoutGroupsForSection(layout, section.id)
+    let assetPickerShownInSection = false
 
     const children = sectionFields.map((item) => {
       const parsed = parseLayoutId(item.id)
@@ -406,19 +421,67 @@ export default function OrderedFormLayout({
       const catalogSource = parsed.kind === 'catalog' ? catalogById.get(parsed.value) : null
       const locked = isFieldLockedByRules(item.id, activeRules) || sectionDisabled
       const excludeIds = excludedValuesForField(item.id, activeRules, dependencyValues)
+      const primaryAsset = isPrimaryAssetPickerField(item)
 
-      if (omitField?.(item, section)) return null
+      // Never blank the Asset picker via omitField — forms must render it or get a fallback.
+      if (omitField?.(item, section) && !primaryAsset) return null
 
       if (!layoutItemVisible(item, catalogSource, dependencyValues, activeRules)) return null
 
+      // Resolve Asset picker before catalog/master branches so odd ids still mount the control.
+      if (primaryAsset) {
+        if (assetPickerShownInSection) return null
+        assetPickerShownInSection = true
+        const rawKey = parsed.kind === 'system'
+          ? parsed.value
+          : (item.bindKey || 'asset_picker')
+        const assetKey = (rawKey === 'area_id' || rawKey === 'equipment_id')
+          ? rawKey
+          : 'asset_picker'
+        const rendered = renderField?.(assetKey, {
+          className,
+          colSpan: item.colSpan,
+          field: item,
+          required,
+          disabled: locked,
+          section,
+        })
+        if (rendered) return rendered
+        const fromProp = renderAssetPicker?.({
+          field: item,
+          className,
+          required,
+          disabled: locked,
+          section,
+        })
+        if (fromProp) return fromProp
+        // Last resort: still reserve space so host section injectors can fill it.
+        return (
+          <div
+            key={item.id}
+            data-asset-picker-slot="1"
+            className={`wr-asset-picker company-form__field company-form__field--full ${className}`.trim()}
+          />
+        )
+      }
+
       if (parsed.kind === 'catalog') {
         if (!catalogSource) return null
-        const dropdownOptions = Array.isArray(catalogSource.dropdown_options)
-          ? catalogSource.dropdown_options.filter((opt) => {
+        const catalogRequestType = isRequestTypeField({
+          ...item,
+          label: item.label || catalogSource.name || catalogSource.label,
+          name: catalogSource.name || catalogSource.label,
+          bindKey: item.bindKey || catalogSource.bind_key,
+        })
+        const sourceOptions = catalogRequestType
+          ? REQUEST_TYPE_OPTIONS
+          : catalogSource.dropdown_options
+        const dropdownOptions = Array.isArray(sourceOptions)
+          ? sourceOptions.filter((opt) => {
             const val = String(opt?.value ?? opt?.label ?? opt ?? '')
             return !excludeIds.includes(val)
           })
-          : catalogSource.dropdown_options
+          : sourceOptions
         const fromEquipment = Boolean(item.autoFromEquipment)
           || (equipmentMasterOnLayout && catalogSource.field_source === 'equipment')
         const catalogValue = catalogValues[catalogSource.id] ?? catalogValues[item.id]
@@ -544,6 +607,7 @@ export default function OrderedFormLayout({
           field: systemField,
           required,
           disabled: locked,
+          section,
         })
         if (rendered) return rendered
         if (systemField?.compound) return null
@@ -576,9 +640,11 @@ export default function OrderedFormLayout({
           )
         }
         const staticOptions = SYSTEM_FIELD_OPTIONS[parsed.value] || []
-        const options = selectOptionsForField(item).length
-          ? selectOptionsForField(item)
-          : staticOptions
+        const options = isRequestTypeField({ ...item, key: parsed.value })
+          ? REQUEST_TYPE_OPTIONS
+          : (selectOptionsForField(item).length
+            ? selectOptionsForField(item)
+            : staticOptions)
         const fieldType = item.fieldType || systemField?.fieldType || 'text'
         const resolvedType = fieldType === 'dropdown' && !options.length ? 'text' : fieldType
         return (
@@ -616,10 +682,17 @@ export default function OrderedFormLayout({
     ))
 
     const allChildren = [...children, ...groupNodes]
-    const omittedFields = sectionFields.some((item) => omitField?.(item, section))
-    if (!allChildren.length && !omittedFields && !isCloseoutSection(section)) return null
+    const omittedFields = sectionFields.some((item) => (
+      omitField?.(item, section) && !isPrimaryAssetPickerField(item)
+    ))
+    const isAssetSection = /asset/i.test(String(section.label || ''))
+      || sectionFields.some((field) => isPrimaryAssetPickerField(field))
+    // Keep asset sections alive so host forms can inject the picker if field render returned nothing.
+    if (!allChildren.length && !omittedFields && !isCloseoutSection(section) && !isAssetSection) {
+      return null
+    }
 
-    const badge = filledBy !== 'any' ? (
+    const badge = (!omitFillershipBadge && filledBy !== 'any') ? (
       <span className="company-form__fillership-badge">
         {sectionEditable
           ? `Filled by you (${filledByLabel(filledBy)})`

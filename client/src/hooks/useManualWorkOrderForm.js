@@ -108,6 +108,7 @@ export function useManualWorkOrderForm({ workOrderId = null, initialEquipmentId 
   const [assignedLocationId, setAssignedLocationId] = useState(null)
   const [linkedEquipment, setLinkedEquipment] = useState(null)
   const [existingStatus, setExistingStatus] = useState(null)
+  const [record, setRecord] = useState(null)
   const [formOpen, setFormOpen] = useState(true)
   const valuesRef = useRef(values)
   const draftHydratedRef = useRef(false)
@@ -119,6 +120,7 @@ export function useManualWorkOrderForm({ workOrderId = null, initialEquipmentId 
 
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const savingRef = useRef(false)
   const [error, setError] = useState(null)
   const [success, setSuccess] = useState(null)
 
@@ -158,6 +160,7 @@ export function useManualWorkOrderForm({ workOrderId = null, initialEquipmentId 
       try {
         const detail = await getManualWorkOrder(workOrderId)
         if (cancelled) return
+        setRecord(detail)
         setExistingStatus(detail.status || 'draft')
         setValues(formValuesFromDetail(detail))
         const assigneeIds = (detail.assignees || []).map((a) => a.id).filter(Boolean)
@@ -327,12 +330,19 @@ export function useManualWorkOrderForm({ workOrderId = null, initialEquipmentId 
       setError('Organization not loaded')
       return
     }
+    if (savingRef.current) return
+    const departmentId = extras.assignedDepartmentId !== undefined
+      ? extras.assignedDepartmentId
+      : assignedDepartmentId
+    const locationId = extras.assignedLocationId !== undefined
+      ? extras.assignedLocationId
+      : assignedLocationId
     const requireAssignedDepartment = extras.requireAssignedDepartment !== false
-    if (status === 'created' && requireAssignedDepartment && !assignedDepartmentId) {
+    if (status === 'created' && requireAssignedDepartment && !departmentId) {
       setError('Select an Order to department before creating the work order.')
       return
     }
-    if (status === 'created') {
+    if (status === 'created' && !extras.skipSchemaValidation) {
       const missing = findMissingRequiredFields(schema, values)
       if (missing.length) {
         setError(`Fill the mandatory field${missing.length === 1 ? '' : 's'}: ${missing.join(', ')}`)
@@ -340,6 +350,7 @@ export function useManualWorkOrderForm({ workOrderId = null, initialEquipmentId 
       }
     }
 
+    savingRef.current = true
     setSaving(true)
     setError(null)
     setSuccess(null)
@@ -372,17 +383,45 @@ export function useManualWorkOrderForm({ workOrderId = null, initialEquipmentId 
       const payload = {
         status,
         values: textValues,
-        assignedDepartmentId: assignedDepartmentId || null,
-        assignedLocationId: assignedLocationId || null,
+        clientRequestId: extras.clientRequestId || null,
+        assignedDepartmentId: departmentId || null,
+        assignedLocationId: locationId || null,
+        assignedEmployeeIds: extras.assignedEmployeeIds,
         checklist_template_id: extras.checklistTemplateId || null,
+        shortDescription: extras.shortDescription,
+        problemDescription: extras.problemDescription,
+        priority: extras.priority,
+        workCenter: extras.workCenter,
+        specialInstructions: extras.specialInstructions,
+        plannedStartAt: extras.plannedStartAt,
+        plannedEndAt: extras.plannedEndAt,
+        attachments: extras.attachments,
+        isBreakdown: extras.isBreakdown,
+        formFieldValues: extras.formFieldValues,
+        equipmentId: extras.equipmentId || linkedEquipment?.id || initialEquipmentId || null,
+        vendorId: extras.vendorId,
+        vendorExpense: extras.vendorExpense,
+        labourCount: extras.labourCount,
+        workStartAt: extras.workStartAt,
+        workEndAt: extras.workEndAt,
+        jobDescription: extras.jobDescription,
+        rootCause: extras.rootCause,
+        actionTaken: extras.actionTaken,
+        specialToolsUsed: extras.specialToolsUsed,
+        safetyPrecautions: extras.safetyPrecautions,
+        lessonsLearned: extras.lessonsLearned,
+        executionRemarks: extras.executionRemarks,
+        materialConsumed: extras.materialConsumed,
+        permitRequired: extras.permitRequired,
+        permitTypes: extras.permitTypes,
+        permitNumber: extras.permitNumber,
+        permitIssueAt: extras.permitIssueAt,
+        permitExpiryAt: extras.permitExpiryAt,
       }
 
       const workOrder = isEdit
         ? await updateManualWorkOrder(workOrderId, payload)
-        : await createManualWorkOrder({
-          ...payload,
-          equipmentId: extras.equipmentId || linkedEquipment?.id || initialEquipmentId || null,
-        })
+        : await createManualWorkOrder(payload)
 
       if (fileEntries.length) {
         const uploadsByField = new Map()
@@ -423,6 +462,7 @@ export function useManualWorkOrderForm({ workOrderId = null, initialEquipmentId 
       setError(err.message)
       throw err
     } finally {
+      savingRef.current = false
       setSaving(false)
     }
   }
@@ -439,6 +479,7 @@ export function useManualWorkOrderForm({ workOrderId = null, initialEquipmentId 
     assignedDepartment,
     setDepartmentTarget,
     linkedEquipment,
+    record,
     formOpen,
     setFormOpen,
     isEdit,

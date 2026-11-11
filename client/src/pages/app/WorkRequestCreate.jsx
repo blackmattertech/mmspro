@@ -39,6 +39,7 @@ import ChecklistOptIn from '../../components/forms/ChecklistOptIn'
 import { findLayoutField, layoutHasSection, layoutWithoutAreasMaster, shouldRequire, systemId, parseLayoutId } from '../../lib/formLayoutIds'
 import { missingRequiredLayoutValues, splitBoundValues } from '../../lib/formFieldSources'
 import { layoutHasOptionRules, isInterDepartmentRequestType, isSameDepartmentRequestType } from '../../lib/formOptionRules'
+import { REQUEST_TYPE_OPTIONS } from '../../lib/systemFieldFallback'
 import { layoutRequiresChecklist } from '../../lib/formSkips'
 import { resolveFormActors, validateRepeatableGroups } from '../../lib/formFillership'
 import {
@@ -51,17 +52,6 @@ import {
 import { getEquipment } from '../../lib/api-equipment'
 import { fieldValuesFromEquipment, flattenAssetSections } from '../../lib/workRequestAssetPicker'
 
-const ASSET_PICKER_KEYS = new Set(['asset_picker', 'area_id', 'equipment_id'])
-
-function isAssetPickerLayoutField(field) {
-  if (!field) return false
-  const parsed = parseLayoutId(field.id)
-  if (parsed.kind === 'system' && ASSET_PICKER_KEYS.has(parsed.value)) return true
-  if (field.masterSource === 'areas' || field.masterSource === 'equipment') return true
-  if (field.bindKey === 'area_id' || field.bindKey === 'equipment_id') return true
-  return false
-}
-
 function selectedLayoutPriority(layout, values, fallback) {
   for (const field of layout?.fields || []) {
     const parsed = parseLayoutId(field?.id)
@@ -72,13 +62,6 @@ function selectedLayoutPriority(layout, values, fallback) {
     if (text === 'high' || text === 'medium' || text === 'low') return text
   }
   return fallback
-}
-
-function isAssetLayoutSection(sectionId, section, layout) {
-  if (/asset/i.test(String(section?.label || ''))) return true
-  return (layout?.fields || []).some((field) => (
-    field.sectionId === sectionId && isAssetPickerLayoutField(field)
-  ))
 }
 
 function formatEquipmentLabel(row) {
@@ -849,7 +832,7 @@ export default function WorkRequestCreate() {
                 setOrderToId('')
               }
             }}
-            options={ctx.request_types || []}
+            options={REQUEST_TYPE_OPTIONS}
             getOptionValue={(t) => t.value}
             getOptionLabel={(t) => t.label}
             placeholder="Select type"
@@ -1068,9 +1051,23 @@ export default function WorkRequestCreate() {
               actors={formActors}
               currentEmployeeId={session?.employee_id || null}
               renderField={renderWrField}
-              omitField={(item) => isAssetPickerLayoutField(item)}
+              renderAssetPicker={({ className, field, required }) => {
+                if (assetPickerShown) {
+                  return <span key={field?.id || 'asset'} hidden aria-hidden="true" />
+                }
+                assetPickerShown = true
+                return (
+                  <div
+                    key={field?.id || 'asset_picker'}
+                    className={`wr-asset-picker company-form__field company-form__field--full${className ? ` ${className}` : ''}`}
+                  >
+                    {renderAssetPickerBody(Boolean(required))}
+                  </div>
+                )
+              }}
               renderSection={(id, children, section) => {
-                const showAssetPicker = isAssetLayoutSection(id, section, effectiveLayout)
+                const nodes = (children || []).filter(Boolean)
+                if (!nodes.length) return null
                 return (
                   <section key={id} className="wr-form-section" aria-labelledby={`${id}-title`}>
                     {section.label ? (
@@ -1080,11 +1077,7 @@ export default function WorkRequestCreate() {
                       </header>
                     ) : null}
                     <div className="wr-form-section__body">
-                      {showAssetPicker ? (
-                        <div className="wr-asset-picker">{renderAssetPickerBody(true)}</div>
-                      ) : (
-                        <div className="company-form__grid company-form__grid--12">{children}</div>
-                      )}
+                      <div className="company-form__grid company-form__grid--12">{nodes}</div>
                     </div>
                   </section>
                 )
@@ -1114,7 +1107,7 @@ export default function WorkRequestCreate() {
                         setOrderToId('')
                       }
                     }}
-                    options={ctx.request_types || []}
+                    options={REQUEST_TYPE_OPTIONS}
                     getOptionValue={(t) => t.value}
                     getOptionLabel={(t) => t.label}
                     placeholder="Select type"
