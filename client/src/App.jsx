@@ -29,6 +29,7 @@ const PlaceholderPage = lazyPage(() => import('./pages/app/PlaceholderPage'))
 const OrgSettings = lazyPage(() => import('./pages/app/OrgSettings'))
 const Approvals = lazyPage(() => import('./pages/app/Approvals'))
 const ReportPage = lazyPage(() => import('./pages/app/reports/ReportPage'))
+const ReportSchedulesPage = lazyPage(() => import('./pages/app/reports/ReportSchedulesPage'))
 const TasksRouteLayout = lazyPage(() => import('./components/tasks/TasksRouteLayout'))
 const TasksManager = lazyPage(() => import('./pages/app/TasksManager'))
 const TaskDetailPage = lazyPage(() => import('./pages/app/TaskDetailPage'))
@@ -251,6 +252,10 @@ export default function App() {
                 <Route path="manual/create" element={withSuspense(<ManualWorkOrderCreate />)} />
                 <Route path="manual/:workOrderId/edit" element={withSuspense(<ManualWorkOrderCreate />)} />
               </Route>
+              <Route
+                path="reports/schedules"
+                element={withModule(REPORT_MODULE_KEYS, <ReportSchedulesPage />)}
+              />
               <Route
                 path="reports"
                 element={withModule(REPORT_MODULE_KEYS, <ReportPage />)}

@@ -332,6 +332,36 @@
   background: #eff8ff;
 }
 
+.reports-email-body-input {
+  min-height: 180px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.reports-email-preview {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid var(--color-light-gray-1);
+  border-radius: var(--radius-md);
+  background: var(--color-off-white);
+}
+
+.reports-email-preview__subject {
+  margin: 0 0 10px;
+  font-size: 13px;
+  color: var(--color-dark-navy);
+}
+
+.reports-email-preview__frame {
+  display: block;
+  width: 100%;
+  min-height: 360px;
+  border: 1px solid var(--color-light-gray-2);
+  border-radius: var(--radius-sm);
+  background: var(--color-white);
+}
+
 .reports-schedule-list {
   display: flex;
   flex-direction: column;

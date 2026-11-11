@@ -3,10 +3,19 @@ import {
   createReportSchedule,
   deleteReportSchedule,
   listReportSchedules,
+  previewReportEmail,
   sendReportScheduleNow,
   updateReportSchedule,
 } from '../../lib/api-reports'
 import { asListArray } from '../../lib/listResponse'
+import {
+  SCHEDULE_FREQUENCIES,
+  SCHEDULE_WEEKDAYS,
+  SCHEDULE_WINDOWS,
+  scheduleFrequencyLabel,
+  scheduleHourLabel,
+  scheduleWindowLabel,
+} from '../../lib/reportScheduleLabels'
 import { useBackdropClose } from '../../hooks/useBackdropClose'
 import { useConfirmDelete } from '../../hooks/useConfirmDelete'
 import SpellcheckInput from '../shared/SpellcheckInput'
@@ -15,39 +24,9 @@ import TrashIcon from '../ui/TrashIcon'
 import '../company/CompanyShared.css'
 import './ReportsLayout.css'
 
-const WEEKDAYS = [
-  { value: 0, label: 'Sunday' },
-  { value: 1, label: 'Monday' },
-  { value: 2, label: 'Tuesday' },
-  { value: 3, label: 'Wednesday' },
-  { value: 4, label: 'Thursday' },
-  { value: 5, label: 'Friday' },
-  { value: 6, label: 'Saturday' },
-]
-
-const WINDOWS = [
-  { value: 'previous_day', label: 'Previous day' },
-  { value: 'last_7_days', label: 'Last 7 days' },
-  { value: 'last_30_days', label: 'Last 30 days' },
-  { value: 'month_to_date', label: 'Month to date' },
-]
-
-const FREQUENCIES = [
-  { value: 'daily', label: 'Once a day' },
-  { value: 'twice_daily', label: 'Twice a day' },
-  { value: 'every_2_days', label: 'Once in 2 days' },
-  { value: 'every_3_days', label: 'Once in 3 days' },
-  { value: 'weekly', label: 'Once a week' },
-  { value: 'twice_weekly', label: 'Twice a week' },
-  { value: 'biweekly', label: 'Bi-weekly' },
-  { value: 'monthly', label: 'Monthly' },
-  { value: 'quarterly', label: 'Quarterly' },
-  { value: 'half_yearly', label: 'Half-yearly' },
-  { value: 'yearly', label: 'Yearly' },
-]
-
 const WEEKDAY_FREQUENCIES = new Set(['weekly', 'biweekly'])
 const MONTH_DAY_FREQUENCIES = new Set(['monthly', 'quarterly', 'half_yearly', 'yearly'])
+const EMAIL_BODY_MAX = 8000
 
 function emptyForm(customReportId) {
   return {
@@ -61,6 +40,7 @@ function emptyForm(customReportId) {
     month_day: 1,
     date_window: 'last_7_days',
     is_active: true,
+    email_body_text: '',
   }
 }
 
@@ -76,44 +56,7 @@ function formFromSchedule(row) {
     month_day: row.month_day ?? 1,
     date_window: row.date_window || 'last_7_days',
     is_active: row.is_active !== false,
-  }
-}
-
-function hourLabel(hour) {
-  return `${String(Number(hour) || 0).padStart(2, '0')}:00 UTC`
-}
-
-function weekdayName(value) {
-  return WEEKDAYS.find((item) => item.value === Number(value))?.label || 'weekday'
-}
-
-function frequencyLabel(row) {
-  const hour = hourLabel(row.send_hour)
-  switch (row.frequency) {
-    case 'daily':
-      return `Once a day at ${hour}`
-    case 'twice_daily':
-      return `Twice a day at ${hour} and ${hourLabel(row.send_hour_2)}`
-    case 'every_2_days':
-      return `Once in 2 days at ${hour}`
-    case 'every_3_days':
-      return `Once in 3 days at ${hour}`
-    case 'weekly':
-      return `Every ${weekdayName(row.weekday)} at ${hour}`
-    case 'twice_weekly':
-      return `${weekdayName(row.weekday)} and ${weekdayName(row.weekday_2)} at ${hour}`
-    case 'biweekly':
-      return `Every 2 weeks on ${weekdayName(row.weekday)} at ${hour}`
-    case 'monthly':
-      return `Monthly on day ${row.month_day} at ${hour}`
-    case 'quarterly':
-      return `Quarterly on day ${row.month_day} at ${hour}`
-    case 'half_yearly':
-      return `Half-yearly on day ${row.month_day} at ${hour}`
-    case 'yearly':
-      return `Yearly on day ${row.month_day} at ${hour}`
-    default:
-      return FREQUENCIES.find((item) => item.value === row.frequency)?.label || row.frequency
+    email_body_text: row.email_body_text || '',
   }
 }
 
@@ -128,16 +71,22 @@ export default function ReportScheduleModal({
   title,
   customReports = [],
   defaultCustomId = '',
+  initialSchedule = null,
   onClose,
 }) {
   const { requestDelete, deleteModal } = useConfirmDelete()
   const [schedules, setSchedules] = useState([])
-  const [form, setForm] = useState(() => emptyForm(defaultCustomId))
-  const [editingId, setEditingId] = useState(null)
+  const [form, setForm] = useState(() => (
+    initialSchedule ? formFromSchedule(initialSchedule) : emptyForm(defaultCustomId || initialSchedule?.custom_report_id)
+  ))
+  const [editingId, setEditingId] = useState(initialSchedule?.id || null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [sendingId, setSendingId] = useState(null)
   const [error, setError] = useState(null)
+  const [previewHtml, setPreviewHtml] = useState('')
+  const [previewSubject, setPreviewSubject] = useState('')
+  const [previewing, setPreviewing] = useState(false)
 
   const hours = useMemo(() => Array.from({ length: 24 }, (_, hour) => hour), [])
   const handleBackdropClick = useBackdropClose(onClose)
@@ -164,26 +113,49 @@ export default function ReportScheduleModal({
   const resetForm = () => {
     setEditingId(null)
     setForm(emptyForm(defaultCustomId))
+    setPreviewHtml('')
+    setPreviewSubject('')
+  }
+
+  const schedulePayload = () => ({
+    custom_report_id: form.custom_report_id,
+    emails: form.emails,
+    frequency: form.frequency,
+    send_hour: Number(form.send_hour),
+    send_hour_2: form.frequency === 'twice_daily' ? Number(form.send_hour_2) : null,
+    weekday: WEEKDAY_FREQUENCIES.has(form.frequency) || form.frequency === 'twice_weekly'
+      ? Number(form.weekday)
+      : null,
+    weekday_2: form.frequency === 'twice_weekly' ? Number(form.weekday_2) : null,
+    month_day: MONTH_DAY_FREQUENCIES.has(form.frequency) ? Number(form.month_day) : null,
+    date_window: form.date_window,
+    is_active: form.is_active,
+    email_body_text: form.email_body_text,
+  })
+
+  const runPreview = async () => {
+    setPreviewing(true)
+    setError(null)
+    try {
+      const data = await previewReportEmail(reportKey, {
+        custom_report_id: form.custom_report_id || undefined,
+        date_window: form.date_window,
+        email_body_text: form.email_body_text,
+      })
+      setPreviewHtml(data.html || '')
+      setPreviewSubject(data.subject || '')
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setPreviewing(false)
+    }
   }
 
   const save = async (event) => {
     event.preventDefault()
     setSaving(true)
     setError(null)
-    const body = {
-      custom_report_id: form.custom_report_id,
-      emails: form.emails,
-      frequency: form.frequency,
-      send_hour: Number(form.send_hour),
-      send_hour_2: form.frequency === 'twice_daily' ? Number(form.send_hour_2) : null,
-      weekday: WEEKDAY_FREQUENCIES.has(form.frequency) || form.frequency === 'twice_weekly'
-        ? Number(form.weekday)
-        : null,
-      weekday_2: form.frequency === 'twice_weekly' ? Number(form.weekday_2) : null,
-      month_day: MONTH_DAY_FREQUENCIES.has(form.frequency) ? Number(form.month_day) : null,
-      date_window: form.date_window,
-      is_active: form.is_active,
-    }
+    const body = schedulePayload()
     try {
       if (editingId) {
         await updateReportSchedule(editingId, body)
@@ -263,7 +235,7 @@ export default function ReportScheduleModal({
                 value={form.frequency}
                 onChange={(event) => setField('frequency', event.target.value)}
               >
-                {FREQUENCIES.map((item) => (
+                {SCHEDULE_FREQUENCIES.map((item) => (
                   <option key={item.value} value={item.value}>{item.label}</option>
                 ))}
               </select>
@@ -277,7 +249,7 @@ export default function ReportScheduleModal({
                 onChange={(event) => setField('send_hour', Number(event.target.value))}
               >
                 {hours.map((hour) => (
-                  <option key={hour} value={hour}>{hourLabel(hour)}</option>
+                  <option key={hour} value={hour}>{scheduleHourLabel(hour)}</option>
                 ))}
               </select>
             </div>
@@ -291,7 +263,7 @@ export default function ReportScheduleModal({
                   onChange={(event) => setField('send_hour_2', Number(event.target.value))}
                 >
                   {hours.map((hour) => (
-                    <option key={hour} value={hour}>{hourLabel(hour)}</option>
+                    <option key={hour} value={hour}>{scheduleHourLabel(hour)}</option>
                   ))}
                 </select>
               </div>
@@ -307,7 +279,7 @@ export default function ReportScheduleModal({
                   value={form.weekday}
                   onChange={(event) => setField('weekday', Number(event.target.value))}
                 >
-                  {WEEKDAYS.map((day) => (
+                  {SCHEDULE_WEEKDAYS.map((day) => (
                     <option key={day.value} value={day.value}>{day.label}</option>
                   ))}
                 </select>
@@ -322,7 +294,7 @@ export default function ReportScheduleModal({
                   value={form.weekday_2}
                   onChange={(event) => setField('weekday_2', Number(event.target.value))}
                 >
-                  {WEEKDAYS.map((day) => (
+                  {SCHEDULE_WEEKDAYS.map((day) => (
                     <option key={day.value} value={day.value}>{day.label}</option>
                   ))}
                 </select>
@@ -350,11 +322,31 @@ export default function ReportScheduleModal({
                 value={form.date_window}
                 onChange={(event) => setField('date_window', event.target.value)}
               >
-                {WINDOWS.map((item) => (
+                {SCHEDULE_WINDOWS.map((item) => (
                   <option key={item.value} value={item.value}>{item.label}</option>
                 ))}
               </select>
             </div>
+          </div>
+
+          <div className="company-form__field company-form__field--full">
+            <label className="company-form__label" htmlFor="report-email-body">Email body</label>
+            <SpellcheckInput
+              multiline
+              id="report-email-body"
+              className="company-form__input company-form__textarea reports-email-body-input"
+              rows={10}
+              value={form.email_body_text}
+              onChange={(event) => setField('email_body_text', event.target.value.slice(0, EMAIL_BODY_MAX))}
+              placeholder={'Write the full email body.\n\n# Title\nYour intro paragraph.\n\n- Bullet one\n- Bullet two\n\n**Bold** and *italic* are supported.'}
+              maxLength={EMAIL_BODY_MAX}
+            />
+            <p className="company-modal__hint">
+              Your text becomes the full email body and is auto-formatted (headings with #, lists with - or 1., quotes with {'>'}, **bold**).
+              Leave blank for the default report summary. Attachments and delivery meta stay automatic.
+              {' '}
+              {form.email_body_text.length}/{EMAIL_BODY_MAX}
+            </p>
           </div>
 
           <label className="reports-columns-grid" style={{ gridTemplateColumns: '1fr' }}>
@@ -375,6 +367,14 @@ export default function ReportScheduleModal({
               </button>
             )}
             <button
+              type="button"
+              className="company-btn company-btn--secondary"
+              onClick={runPreview}
+              disabled={previewing || !form.custom_report_id}
+            >
+              {previewing ? 'Building preview…' : 'Preview email'}
+            </button>
+            <button
               type="submit"
               className="company-btn company-btn--primary"
               disabled={saving || !form.custom_report_id}
@@ -382,6 +382,22 @@ export default function ReportScheduleModal({
               {saving ? 'Saving…' : editingId ? 'Update schedule' : 'Create schedule'}
             </button>
           </div>
+
+          {previewHtml ? (
+            <div className="reports-email-preview">
+              {previewSubject ? (
+                <p className="reports-email-preview__subject">
+                  <strong>Subject:</strong> {previewSubject}
+                </p>
+              ) : null}
+              <iframe
+                title="Email preview"
+                className="reports-email-preview__frame"
+                sandbox=""
+                srcDoc={previewHtml}
+              />
+            </div>
+          ) : null}
 
           <h3 className="company-form__label" style={{ marginTop: 8 }}>Existing schedules</h3>
           {loading ? (
@@ -398,7 +414,7 @@ export default function ReportScheduleModal({
                       {(row.emails || []).join(', ')}
                     </p>
                     <p className="reports-schedule-card__meta">
-                      {frequencyLabel(row)} · {WINDOWS.find((item) => item.value === row.date_window)?.label || row.date_window}
+                      {scheduleFrequencyLabel(row)} · {scheduleWindowLabel(row.date_window)}
                       {row.is_active ? '' : ' · Paused'}
                     </p>
                     {row.last_error ? (

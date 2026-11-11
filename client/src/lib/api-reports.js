@@ -108,8 +108,19 @@ export function deleteCustomReport(id) {
   })
 }
 
+export function listAllReportSchedules() {
+  return reportsFetch('/schedules')
+}
+
 export function listReportSchedules(key) {
   return reportsFetch(`/${encodeURIComponent(key)}/schedules`)
+}
+
+export function previewReportEmail(key, body) {
+  return reportsFetch(`/${encodeURIComponent(key)}/email-preview`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
 }
 
 export function createReportSchedule(key, body) {

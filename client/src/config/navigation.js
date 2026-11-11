@@ -268,7 +268,16 @@ export function getNavItems(orgSlug, { canRead, disabledModules, reportShortcuts
       }
       if (item.id === 'reports') {
         if (!allowItem(item)) return null
-        const children = (Array.isArray(reportShortcuts) ? reportShortcuts : [])
+        const scheduleChild = {
+          id: 'report-schedules',
+          label: 'Scheduled reports',
+          segment: 'reports/schedules',
+          path: orgPath(orgSlug, 'reports/schedules'),
+          moduleKey: 'reports',
+          altModuleKeys: REPORT_MODULE_KEYS,
+          icon: 'alarmCheck',
+        }
+        const customChildren = (Array.isArray(reportShortcuts) ? reportShortcuts : [])
           .filter((row) => row?.id && row?.name)
           .slice(0, 50)
           .map((row) => ({
@@ -281,10 +290,11 @@ export function getNavItems(orgSlug, { canRead, disabledModules, reportShortcuts
             icon: 'chart',
             isCustomReport: true,
           }))
+        const children = [scheduleChild, ...customChildren]
         return {
           ...item,
           path: orgPath(orgSlug, 'reports'),
-          ...(children.length ? { children } : {}),
+          children,
         }
       }
       if (item.children) {
