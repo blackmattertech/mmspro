@@ -909,13 +909,32 @@ export default function WorkRequestDetailModal({
                         disabled
                         actors={formActors}
                         valueLabels={routingValueLabels}
-                        omitField={(item) => isAssetPickerLayoutField(item)}
                         renderField={(key, props) => renderIncomingRequestInfoField(detail, key, props)}
+                        renderAssetPicker={({ className, field }) => {
+                          const steps = hierarchyDisplaySteps(hierarchy)
+                          if (!steps.length && !qrValue) {
+                            return (
+                              <div key={field?.id || 'asset_picker'} className={className}>
+                                <p className="company-form__hint">No asset selected.</p>
+                              </div>
+                            )
+                          }
+                          return (
+                            <div key={field?.id || 'asset_picker'} className={`wr-detail-equip ${className || ''}`.trim()}>
+                              <AssetHierarchySummary steps={hierarchy} />
+                              {qrValue ? (
+                                <EquipmentQrCode
+                                  value={qrValue}
+                                  caption={{ label: 'QR code', value: equipment?.code || equipment?.name || qrValue }}
+                                  fileName={equipment?.code || equipment?.name || 'asset-qr'}
+                                />
+                              ) : null}
+                            </div>
+                          )
+                        }}
                         renderSection={(id, children, section) => {
-                          const showAsset = isAssetLayoutSection(id, section, layout)
-                            && (hierarchyDisplaySteps(hierarchy).length > 0 || Boolean(qrValue))
                           const nodes = (Array.isArray(children) ? children : [children]).filter(Boolean)
-                          if (!showAsset && !nodes.length) return null
+                          if (!nodes.length) return null
                           const filledBy = section.filledBy || 'any'
                           return (
                             <section
@@ -930,21 +949,7 @@ export default function WorkRequestDetailModal({
                                 </div>
                               ) : null}
                               <div className={`wo-section__body company-form__layout-section-body ${section.label || section.badge ? '' : 'company-form__layout-section-body--flush'}`.trim()}>
-                                {showAsset ? (
-                                  <div className="wr-detail-equip">
-                                    <AssetHierarchySummary steps={hierarchy} />
-                                    {qrValue ? (
-                                      <EquipmentQrCode
-                                        value={qrValue}
-                                        caption={{ label: 'QR code', value: equipment?.code || equipment?.name || qrValue }}
-                                        fileName={equipment?.code || equipment?.name || 'asset-qr'}
-                                      />
-                                    ) : null}
-                                  </div>
-                                ) : null}
-                                {nodes.length > 0 ? (
-                                  <div className="company-form__grid company-form__grid--12">{children}</div>
-                                ) : null}
+                                <div className="company-form__grid company-form__grid--12">{nodes}</div>
                               </div>
                             </section>
                           )

@@ -201,16 +201,45 @@ const WORK_ORDERS_MANUAL = form(
   'work_orders.manual',
   'Manual work order',
   [
-    section('wo_assignment', 'Assignment', [
-      field('assignment', 'Work order assignment', { compound: true, required: true, colSpan: 100 }),
+    section('wo_info', 'Workorder Information', [
+      field('request_type', 'Request type', { type: 'dropdown' }),
+      field('order_from_department_id', 'Order from', { type: 'dropdown' }),
+      field('order_to_department_id', 'Order to', { type: 'dropdown', required: true }),
     ], { stage: 'create' }),
-    woAssignmentSection({ requiredAssignees: false }),
-    ...woExecutionSections(),
+    section('wo_asset', 'Asset information', [
+      field('asset_picker', 'Asset picker', { compound: true, required: true, colSpan: 100 }),
+    ], { stage: 'create' }),
+    section('wo_maintenance', 'Maintenance Information', [
+      field('short_description', 'Short description', { required: true, colSpan: 100 }),
+      field('problem_description', 'Detailed description', { type: 'textarea', colSpan: 100 }),
+      field('job_nature', 'Job nature', { type: 'dropdown' }),
+      field('priority', 'Job priority', { type: 'dropdown', required: true }),
+      field('remarks', 'Remark', { type: 'textarea' }),
+    ], { stage: 'create' }),
+    section('wo_activity', 'Activity Information', [
+      field('permit_details', 'Permit details', { compound: true, colSpan: 100 }),
+      field('vendor_id', 'Vendor', { type: 'dropdown' }),
+      field('vendor_expense', 'Vendor expense', { type: 'number' }),
+      field('labour_count', 'Labour count', { type: 'number' }),
+      field('work_stamps', 'Work start / end', { compound: true, colSpan: 100 }),
+    ], { stage: 'create' }),
+    section('wo_docs', 'Detailed Work Description', [
+      field('job_description', 'Detailed job description', { type: 'textarea', colSpan: 100 }),
+      field('root_cause', 'Root cause analysis', { type: 'textarea', colSpan: 100 }),
+      field('action_taken', 'Action taken', { type: 'textarea', colSpan: 100 }),
+      field('material_consumed', 'Material consumed', { compound: true, colSpan: 100 }),
+      field('special_tools_used', 'Special tools used', { type: 'textarea', colSpan: 100 }),
+      field('safety_precautions', 'Safety precautions', { type: 'textarea', colSpan: 100 }),
+      field('execution_remarks', 'Remarks', { type: 'textarea', colSpan: 100 }),
+    ], { stage: 'create' }),
+    section('wo_attended', 'Attended by', [
+      field('assignment', 'Order to / attended department', { compound: true, required: true, colSpan: 100 }),
+    ], { stage: 'create' }),
   ],
   {
     permissionKey: 'work_orders_manual',
     catalogMode: 'all',
-    info: 'Create collects Order To and asset fields. Assignment and technician sections are filled after the work order is created.',
+    info: 'Filled after work is already done. Shown as a single form. There is no assignment workflow.',
   },
 )
 

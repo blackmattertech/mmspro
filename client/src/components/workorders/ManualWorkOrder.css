@@ -2280,3 +2280,9 @@
 .wo-close-confirm-overlay {
   z-index: 1200;
 }
+
+.wo-manual-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
