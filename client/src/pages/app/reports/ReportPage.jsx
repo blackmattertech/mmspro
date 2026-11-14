@@ -4,9 +4,9 @@ import ReportsLayout from '../../../components/reports/ReportsLayout'
 import ReportsFilters, { countActiveReportFilters } from '../../../components/reports/ReportsFilters'
 import ReportScheduleModal from '../../../components/reports/ReportScheduleModal'
 import ReportSendNowModal from '../../../components/reports/ReportSendNowModal'
-import { useAuth } from '../../../hooks/useAuth'
 import { useOrg } from '../../../hooks/useOrg'
 import { usePermissions } from '../../../hooks/usePermissions'
+import { useTableColumnPrefs } from '../../../hooks/useTableColumnPrefs'
 import {
   createCustomReport,
   deleteCustomReport,
@@ -23,10 +23,6 @@ import { downloadBase64File } from '../../../lib/fileDownload'
 import { asListArray } from '../../../lib/listResponse'
 import { notifyCustomReportsChanged } from '../../../lib/reportNavEvents'
 import {
-  buildTableColumnStorageKey,
-  loadTableColumnPrefs,
-} from '../../../lib/tableColumnPrefs'
-import {
   columnsForReportKey,
   defaultReportDateRange,
   defaultReportFilters,
@@ -40,33 +36,13 @@ import {
   UNIFIED_REPORT_KEY,
 } from '../../../lib/reportColumns'
 import TableEmptyRow from '../../../components/shared/TableEmptyRow'
+import TruncatedText from '../../../components/shared/TruncatedText'
+import { VirtualTableBody } from '../../../components/shared/VirtualTableBody'
 import { useOrgStatusOptions } from '../../../hooks/useOrgStatusOptions'
 import { formatWorkOrderStatusLabel } from '../../../lib/workOrderStatusLabel'
 import '../../../components/company/CompanyShared.css'
 import '../../../components/reports/ReportsLayout.css'
 import { useConfirmDelete } from '../../../hooks/useConfirmDelete'
-
-const WRAP_COLUMNS = new Set([
-  'short_description',
-  'equipment',
-  'assignees',
-  'order_from',
-  'order_to',
-  'job_nature',
-  'problem_description',
-  'remarks',
-  'job_description',
-  'root_cause',
-  'action_taken',
-  'material_consumed',
-  'work_done',
-  'special_tools_used',
-  'safety_precautions',
-  'dos_and_donts',
-  'lessons_learned',
-  'execution_remarks',
-  'name',
-])
 
 function sameIds(a = [], b = []) {
   return a.length === b.length && a.every((id, index) => id === b[index])
@@ -127,7 +103,11 @@ const KPI_META = {
 
 function ReportCell({ columnId, value, row, statusLabels, reportKind }) {
   if (columnId === 'wo_number' || columnId === 'request_number' || columnId === 'plan_number') {
-    return <span className="company-table__name">{value || '—'}</span>
+    return (
+      <TruncatedText className="company-table__name" text={value || '—'}>
+        {value || '—'}
+      </TruncatedText>
+    )
   }
   if (columnId === 'status') {
     const label = reportKind === 'unified'
@@ -150,16 +130,8 @@ function ReportCell({ columnId, value, row, statusLabels, reportKind }) {
       </div>
     )
   }
-  return formatReportCell(columnId, value)
-}
-
-function savedReportColumnIds(saved, columnDefs) {
-  const order = Array.isArray(saved) ? saved : saved?.order
-  const hidden = new Set(Array.isArray(saved) ? [] : (saved?.hidden || []))
-  return validColumnIds(
-    columnDefs,
-    (order || []).filter((id) => !hidden.has(id)),
-  )
+  const text = formatReportCell(columnId, value)
+  return <TruncatedText text={text}>{text}</TruncatedText>
 }
 
 function validColumnIds(columnDefs, ids) {
@@ -196,7 +168,6 @@ export default function ReportPage() {
   const navigate = useNavigate()
   const { reportKey: routeReportKey, customId: routeCustomId } = useParams()
   const { org } = useOrg()
-  const { user } = useAuth()
   const { isOrgAdmin } = usePermissions()
 
   const routeIsLegacy = Boolean(routeReportKey && LEGACY_REPORT_KEYS.has(routeReportKey))
@@ -212,6 +183,20 @@ export default function ReportPage() {
   const reportKind = kindForReportKey(reportKey)
   const title = REPORT_TITLES[reportKey] || 'Reports'
   const columnDefs = useMemo(() => columnsForReportKey(reportKey), [reportKey])
+  const columnTableId = useMemo(() => `report-${reportKey}`, [reportKey])
+  const {
+    visibleColumnIds: selectedColumnIds,
+    columnOrder,
+    toggleColumn,
+    resetColumns,
+    reorderColumns,
+    moveColumn,
+    saveColumns,
+    applyVisibleOrder,
+    makeDefaultColumns,
+    makingDefault,
+    prefsReady,
+  } = useTableColumnPrefs(columnTableId, columnDefs)
   const statusEntity = reportKind === 'work_request'
     ? 'work_request'
     : reportKind === 'pm_plan'
@@ -221,7 +206,6 @@ export default function ReportPage() {
         : 'work_order'
   const { labelByKey: statusLabels } = useOrgStatusOptions(statusEntity, { includeInactive: true })
   const defaults = useMemo(() => defaultReportDateRange(), [])
-  const defaultColumnIds = useMemo(() => columnDefs.map((col) => col.id), [columnDefs])
   const initialFilters = useMemo(() => defaultReportFilters(defaults), [defaults])
 
   const [draftFilters, setDraftFilters] = useState(initialFilters)
@@ -240,7 +224,6 @@ export default function ReportPage() {
   const [customReports, setCustomReports] = useState([])
   const [selectedCustomId, setSelectedCustomId] = useState('')
   const [customName, setCustomName] = useState('')
-  const [selectedColumnIds, setSelectedColumnIds] = useState(defaultColumnIds)
   const [savingCustom, setSavingCustom] = useState(false)
 
   const selectedCustom = customReports.find((item) => item.id === selectedCustomId) || null
@@ -258,7 +241,7 @@ export default function ReportPage() {
     if (!custom) {
       setSelectedCustomId('')
       setCustomName('')
-      setSelectedColumnIds(defs.map((col) => col.id))
+      resetColumns()
       if (!keepLocation) {
         setDraftFilters((prev) => ({ ...prev, facility_id: prev.facility_id }))
         setAppliedFilters((prev) => ({ ...prev, facility_id: prev.facility_id }))
@@ -268,13 +251,13 @@ export default function ReportPage() {
     setSelectedCustomId(custom.id)
     setCustomName(custom.name)
     const cols = validColumnIds(defs, custom.columns)
-    setSelectedColumnIds(cols.length ? cols : defs.map((col) => col.id))
+    applyVisibleOrder(cols.length ? cols : defs.map((col) => col.id))
     if (!keepLocation) {
       const facilityId = custom.location_id || ''
       setDraftFilters((prev) => ({ ...prev, facility_id: facilityId }))
       setAppliedFilters((prev) => ({ ...prev, facility_id: facilityId }))
     }
-  }, [])
+  }, [applyVisibleOrder, resetColumns])
 
   const reloadCustomReports = useCallback(async (preferredId) => {
     const data = await listCustomReports(reportKey)
@@ -306,9 +289,6 @@ export default function ReportPage() {
         setReportKey(custom.report_key)
         setSelectedCustomId(custom.id)
         setCustomName(custom.name || '')
-        const defs = columnsForReportKey(custom.report_key)
-        const cols = validColumnIds(defs, custom.columns)
-        setSelectedColumnIds(cols.length ? cols : defs.map((col) => col.id))
         if (custom.location_id) {
           setDraftFilters((prev) => ({ ...prev, facility_id: custom.location_id }))
           setAppliedFilters((prev) => ({ ...prev, facility_id: custom.location_id }))
@@ -346,23 +326,31 @@ export default function ReportPage() {
 
   useEffect(() => {
     let cancelled = false
-    setSelectedCustomId('')
-    setCustomName('')
-    setSelectedColumnIds(columnDefs.map((col) => col.id))
     setReport(null)
+    if (!routeCustomId) {
+      setSelectedCustomId('')
+      setCustomName('')
+    }
     async function loadCustoms() {
       try {
         const data = await listCustomReports(reportKey)
         if (cancelled) return
         const items = asListArray(data)
         setCustomReports(items)
-        applyCustom(items[0] || null, columnDefs)
-        const storageKey = buildTableColumnStorageKey(org?.id, user?.id, `report-${reportKey}`)
-        const savedIds = savedReportColumnIds(
-          storageKey ? loadTableColumnPrefs(storageKey) : null,
-          columnDefs,
-        )
-        if (savedIds.length) setSelectedColumnIds(savedIds)
+        if (routeCustomId) {
+          const matched = items.find((item) => item.id === routeCustomId)
+          if (matched && prefsReady) applyCustom(matched, columnDefs)
+          return
+        }
+        // Keep personal/org column prefs; only attach the first saved view's metadata.
+        const first = items[0] || null
+        if (!first) return
+        setSelectedCustomId(first.id)
+        setCustomName(first.name)
+        if (first.location_id) {
+          setDraftFilters((prev) => ({ ...prev, facility_id: first.location_id }))
+          setAppliedFilters((prev) => ({ ...prev, facility_id: first.location_id }))
+        }
       } catch (err) {
         if (!cancelled) {
           setCustomReports([])
@@ -372,7 +360,7 @@ export default function ReportPage() {
     }
     loadCustoms()
     return () => { cancelled = true }
-  }, [columnDefs, applyCustom, org?.id, user?.id, reportKey])
+  }, [columnDefs, applyCustom, reportKey, routeCustomId, prefsReady])
 
   useEffect(() => {
     let cancelled = false
@@ -590,16 +578,14 @@ export default function ReportPage() {
             reportKind={reportKind}
             columnDefs={columnDefs}
             selectedColumnIds={selectedColumnIds}
-            onToggleColumn={(id) => {
-              if (selectedColumnIds.includes(id)) {
-                if (selectedColumnIds.length <= 1) return
-                setSelectedColumnIds(selectedColumnIds.filter((item) => item !== id))
-                return
-              }
-              setSelectedColumnIds([...selectedColumnIds, id])
-            }}
-            onSelectAllColumns={() => setSelectedColumnIds(columnDefs.map((col) => col.id))}
-            onResetColumns={() => setSelectedColumnIds(defaultColumnIds)}
+            columnOrder={columnOrder}
+            onToggleColumn={toggleColumn}
+            onResetColumns={resetColumns}
+            onReorderColumns={reorderColumns}
+            onMoveColumn={moveColumn}
+            onSaveColumns={saveColumns}
+            onMakeDefaultColumns={makeDefaultColumns}
+            makingDefaultColumns={makingDefault}
             activeCount={countActiveReportFilters(
               appliedFilters,
               canSelectLocation ? '' : (filterOptions?.location_id || appliedFilters.facility_id),
@@ -649,7 +635,7 @@ export default function ReportPage() {
                   <h2 className="reports-results__title">Results</h2>
                   <p className="reports-results__meta">
                     {report?.total != null
-                      ? `${report.total.toLocaleString()} row${report.total === 1 ? '' : 's'}`
+                      ? `${report.total.toLocaleString()} row${report.total === 1 ? '' : 's'}${report?.truncated ? ' (preview capped — download for full export)' : ''}`
                       : 'Filtered report rows'}
                   </p>
                 </div>
@@ -665,31 +651,33 @@ export default function ReportPage() {
                         ))}
                       </tr>
                     </thead>
-                    <tbody>
-                      {rows.length === 0 ? (
+                    {rows.length === 0 ? (
+                      <tbody>
                         <TableEmptyRow colSpan={Math.max(visibleCols.length, 1)}>
                           <p>No rows for this period.</p>
                           <p className="wo-page__empty-hint">Try adjusting the filters and tap Search.</p>
                         </TableEmptyRow>
-                      ) : rows.map((row) => (
-                        <tr key={row.id}>
-                          {visibleCols.map((col) => (
-                            <td
-                              key={col.id}
-                              className={WRAP_COLUMNS.has(col.id) ? 'reports-table__cell--wrap' : undefined}
-                            >
-                              <ReportCell
-                                columnId={col.id}
-                                value={row[col.id]}
-                                row={row}
-                                statusLabels={statusLabels}
-                                reportKind={reportKind}
-                              />
-                            </td>
-                          ))}
-                        </tr>
-                      ))}
-                    </tbody>
+                      </tbody>
+                    ) : (
+                      <VirtualTableBody
+                        items={rows}
+                        renderRow={(row) => (
+                          <tr key={row.id}>
+                            {visibleCols.map((col) => (
+                              <td key={col.id}>
+                                <ReportCell
+                                  columnId={col.id}
+                                  value={row[col.id]}
+                                  row={row}
+                                  statusLabels={statusLabels}
+                                  reportKind={reportKind}
+                                />
+                              </td>
+                            ))}
+                          </tr>
+                        )}
+                      />
+                    )}
                   </table>
                 </div>
               </div>

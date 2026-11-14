@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { useDebouncedValue } from '../../hooks/useDebouncedValue'
 import { NavLink, Navigate, Outlet, useNavigate, useLocation } from 'react-router-dom'
 import { useOrg } from '../../hooks/useOrg'
@@ -6,7 +6,6 @@ import { useProfile } from '../../hooks/useProfile'
 import { useLocations } from '../../hooks/useLocations'
 import { useWorkCenters } from '../../hooks/useWorkCenters'
 import { useEmployees } from '../../hooks/useEmployees'
-import { uniqueNameOptions } from '../../lib/tableFilters'
 import { useOrgStatusOptions } from '../../hooks/useOrgStatusOptions'
 import { useWorkOrderToolbar } from '../../hooks/useWorkOrderToolbar'
 import { usePermissions } from '../../hooks/usePermissions'
@@ -17,13 +16,11 @@ import {
   visibleWorkOrderTabs,
 } from '../../config/workOrders'
 import { createFilterRule, WO_SORT_OPTIONS } from '../../lib/workOrderFilters'
+import { buildWorkOrderFilterFields } from '../../lib/listFilterOptions'
 import {
   getWorkOrdersTemplate,
   bulkUploadWorkOrders,
   exportWorkOrderList,
-  getManualWorkOrders,
-  getReceivedWorkOrders,
-  getAssignedWorkOrders,
 } from '../../lib/api-work-orders'
 import { downloadBlobFile } from '../../lib/api'
 import { useWorkOrderCounts } from '../../hooks/useWorkOrderCounts'
@@ -43,7 +40,7 @@ import './WorkOrdersPage.css'
 
 const WO_STATUS_FALLBACK = [
   { value: 'draft', label: 'Draft' },
-  { value: 'assigned', label: 'Approval Pending / Technician assigned' },
+  { value: 'assigned', label: 'Technician assignment pending / Technician assigned' },
   { value: 'accepted', label: 'Accepted' },
   { value: 'started', label: 'Started' },
   { value: 'in_progress', label: 'In progress' },
@@ -121,84 +118,18 @@ export default function WorkOrdersLayout() {
 
   const locationFilter = canSeeAllLocations ? 'all' : (userLocationId || 'all')
   const [filterRows, setFilterRows] = useState([])
-  useEffect(() => {
-    let cancelled = false
-    const load = activeTab === 'received'
-      ? getReceivedWorkOrders
-      : activeTab === 'assigned'
-        ? getAssignedWorkOrders
-        : getManualWorkOrders
-    load({ limit: 200, offset: 0 })
-      .then((rows) => { if (!cancelled) setFilterRows(Array.isArray(rows) ? rows : []) })
-      .catch(() => { if (!cancelled) setFilterRows([]) })
-    return () => { cancelled = true }
-  }, [activeTab])
-  const workOrderFilterFields = useMemo(() => ([
-    {
-      id: 'wo_number',
-      label: 'WO #',
-      type: 'select',
-      emptyLabel: 'All WO #',
-      options: uniqueNameOptions(filterRows, (row) => row.wo_number),
-    },
-    {
-      id: 'summary',
-      label: 'Short description',
-      type: 'select',
-      emptyLabel: 'All descriptions',
-      options: uniqueNameOptions(filterRows, (row) => row.short_description || row.summary),
-    },
-    {
-      id: 'status',
-      label: 'Status',
-      type: 'select',
-      emptyLabel: 'All Status',
-      options: loadedStatusOptions.length ? loadedStatusOptions : WO_STATUS_FALLBACK,
-    },
-    {
-      id: 'priority',
-      label: 'Priority',
-      type: 'select',
-      emptyLabel: 'All Priorities',
-      options: WO_PRIORITY_OPTIONS,
-    },
-    {
-      id: 'location',
-      label: 'Location',
-      type: 'select',
-      emptyLabel: 'All Locations',
-      options: activeLocations.map((loc) => ({ value: loc.id, label: loc.name })),
-    },
-    {
-      id: 'work_center',
-      label: 'Work center',
-      type: 'select',
-      emptyLabel: 'All Work Centers',
-      options: (workCenters || []).map((center) => ({ value: center.name, label: center.name })),
-    },
-    {
-      id: 'assignee',
-      label: 'Assignee',
-      type: 'select',
-      emptyLabel: 'All Assignees',
-      options: uniqueNameOptions(employees),
-    },
-    {
-      id: 'creator',
-      label: 'Created by',
-      type: 'select',
-      emptyLabel: 'All creators',
-      options: uniqueNameOptions(employees),
-    },
-    {
-      id: 'work_request',
-      label: 'Work request',
-      type: 'select',
-      emptyLabel: 'All work requests',
-      options: uniqueNameOptions(filterRows, (row) => row.work_request_number),
-    },
-    { id: 'created', label: 'Created', type: 'date-range', fromKey: 'created_from', toKey: 'created_to' },
-  ]), [activeLocations, loadedStatusOptions, workCenters, employees, filterRows])
+  const reportFilterRows = useCallback((rows) => {
+    setFilterRows(Array.isArray(rows) ? rows : [])
+  }, [])
+  const workOrderFilterFields = useMemo(() => buildWorkOrderFilterFields({
+    pageRows: filterRows,
+    statusOptions: loadedStatusOptions,
+    statusFallback: WO_STATUS_FALLBACK,
+    priorityOptions: WO_PRIORITY_OPTIONS,
+    locations: activeLocations,
+    workCenters,
+    employees,
+  }), [activeLocations, loadedStatusOptions, workCenters, employees, filterRows])
 
   const handleAddWorkOrder = () => {
     if (!org?.slug) return
@@ -251,9 +182,11 @@ export default function WorkOrdersLayout() {
     headerSort,
     setHeaderSort,
     statusFilters,
+    reportFilterRows,
   }), [
     debouncedSearch, locationFilter, sortBy, advancedRules,
     activeLocations, bulkReloadToken, columnFilters, headerSort, statusFilters,
+    reportFilterRows,
   ])
 
   if (!permsLoading && onIndex && org?.slug && fallbackTab) {

@@ -20,8 +20,11 @@ import { readFileAsDataUrl } from '../../config/warrantyDocuments'
 import DateField from '../ui/DateField'
 import GooToggle from '../ui/GooToggle'
 import FilterableSelect from '../ui/FilterableSelect'
+import FormLabel from '../shared/FormLabel'
 import SpellcheckInput from '../shared/SpellcheckInput'
 import EquipmentQrCode from './EquipmentQrCode'
+import { useTextFieldLimits } from '../../hooks/useTextFieldLimits'
+import { masterFieldLimit } from '../../lib/textFieldLimits'
 import '../company/CompanyShared.css'
 
 const EQUIPMENT_IMAGE_ACCEPT = 'image/png,image/jpeg,image/webp,image/svg+xml,.svg'
@@ -195,6 +198,7 @@ export default function EquipmentModal({
   const [departments, setDepartments] = useState([])
   const [equipmentRows, setEquipmentRows] = useState([])
   const { layout, loading: layoutLoading } = useFormLayout('equipment.create')
+  const { maxLengthForField } = useTextFieldLimits()
   const [error, setError] = useState(null)
   const handleBackdropClick = useBackdropClose(onClose)
 
@@ -418,10 +422,25 @@ export default function EquipmentModal({
       values[field.id],
     )
     const choicePlaceholder = blockedBy ? `Select ${blockedBy} first` : `Select ${field.name}`
+    const fieldLabel = field.is_required ? `${field.name} *` : field.name
+    const textLimit = maxLengthForField(field) || masterFieldLimit(
+      field.field_type === 'textarea' ? 'description' : 'name',
+    )
     return (
     <div key={field.id} className="equipment-field">
       <div className="company-form__field">
-        <span className="company-form__label">{field.is_required ? `${field.name} *` : field.name}</span>
+        {isImageField(field) ? (
+          <FormLabel fieldType="image">{fieldLabel}</FormLabel>
+        ) : field.field_type === 'textarea' || field.field_type === 'text' || !field.field_type ? (
+          <FormLabel
+            fieldType={field.field_type === 'textarea' ? 'textarea' : 'text'}
+            limit={textLimit}
+          >
+            {fieldLabel}
+          </FormLabel>
+        ) : (
+          <span className="company-form__label">{fieldLabel}</span>
+        )}
         {isImageField(field) ? (
           <ImageUpload
             field={field}
@@ -441,6 +460,7 @@ export default function EquipmentModal({
             value={values[field.id] || ''}
             onChange={(e) => write(e.target.value)}
             disabled={locked}
+            maxLength={textLimit}
           />
         ) : field.field_type === 'dropdown' || (field.field_type === 'radio' && !configuredOptions.length) ? (
           <FilterableSelect
@@ -522,6 +542,7 @@ export default function EquipmentModal({
             value={values[field.id] || ''}
             onChange={(e) => write(e.target.value)}
             disabled={locked}
+            maxLength={textLimit}
           />
         )}
         {blockedBy && (

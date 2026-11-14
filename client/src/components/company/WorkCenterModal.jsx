@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useBackdropClose } from '../../hooks/useBackdropClose'
 import { useLocations } from '../../hooks/useLocations'
+import { masterFieldLimit } from '../../lib/textFieldLimits'
 import FilterableSelect from '../ui/FilterableSelect'
 import PageBack from '../shared/PageBack'
+import FormLabel from '../shared/FormLabel'
 import SpellcheckInput from '../shared/SpellcheckInput'
 import '../company/CompanyShared.css'
 
@@ -12,6 +14,10 @@ const EMPTY = {
   description: '',
   location_id: '',
 }
+
+const NAME_LIMIT = masterFieldLimit('name')
+const CODE_LIMIT = masterFieldLimit('code')
+const DESC_LIMIT = masterFieldLimit('description')
 
 export default function WorkCenterModal({
   workCenter,
@@ -80,21 +86,23 @@ export default function WorkCenterModal({
         <form className="company-modal__form" onSubmit={handleSubmit}>
           {error && <div className="company-alert">{error}</div>}
           <label className="company-form__field">
-            <span className="company-form__label">Name *</span>
+            <FormLabel fieldType="text" limit={NAME_LIMIT}>Name *</FormLabel>
             <SpellcheckInput
               className="company-form__input"
               value={form.name}
               onChange={(e) => setForm((current) => ({ ...current, name: e.target.value }))}
               required
+              maxLength={NAME_LIMIT}
             />
           </label>
           <label className="company-form__field">
-            <span className="company-form__label">Code</span>
-            <input
+            <FormLabel fieldType="text" limit={CODE_LIMIT}>Code</FormLabel>
+            <SpellcheckInput
               className="company-form__input"
               value={form.code}
               onChange={(e) => setForm((current) => ({ ...current, code: e.target.value }))}
               placeholder="Optional"
+              maxLength={CODE_LIMIT}
             />
           </label>
           <label className="company-form__field">
@@ -112,13 +120,14 @@ export default function WorkCenterModal({
             />
           </label>
           <label className="company-form__field company-form__field--full">
-            <span className="company-form__label">Description</span>
+            <FormLabel fieldType="textarea" limit={DESC_LIMIT}>Description</FormLabel>
             <SpellcheckInput
               multiline
               className="company-form__input company-form__textarea"
               rows={3}
               value={form.description}
               onChange={(e) => setForm((current) => ({ ...current, description: e.target.value }))}
+              maxLength={DESC_LIMIT}
             />
           </label>
           <div className="company-modal__actions">

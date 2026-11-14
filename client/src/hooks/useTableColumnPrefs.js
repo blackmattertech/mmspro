@@ -219,6 +219,39 @@ export function useTableColumnPrefs(tableId, columnDefs) {
     return true
   }, [prefs])
 
+  /** Set visible columns (and their order); remaining defs stay in order but hidden. */
+  const applyVisibleOrder = useCallback((visibleIds) => {
+    setPrefs((prev) => {
+      const defs = columnDefsRef.current
+      const resolved = resolveColumnPrefs(prev, defs)
+      const valid = new Set(resolved.order)
+      const locked = new Set(defs.filter((col) => col.locked).map((col) => col.id))
+      const visible = []
+      const seen = new Set()
+      for (const id of visibleIds || []) {
+        if (!valid.has(id) || seen.has(id)) continue
+        visible.push(id)
+        seen.add(id)
+      }
+      for (const id of locked) {
+        if (!seen.has(id) && valid.has(id)) {
+          visible.push(id)
+          seen.add(id)
+        }
+      }
+      if (!visible.length) return prev
+      const rest = resolved.order.filter((id) => !seen.has(id))
+      const next = {
+        ...resolved,
+        order: pinActionsLast([...visible, ...rest]),
+        hidden: rest.filter((id) => !locked.has(id)),
+      }
+      if (samePrefs(prev, next)) return prev
+      writePrefs(next)
+      return next
+    })
+  }, [writePrefs])
+
   const makeDefaultColumns = useCallback(async () => {
     if (!tableId || !isOrgAdmin) return false
     setMakingDefault(true)
@@ -250,8 +283,10 @@ export function useTableColumnPrefs(tableId, columnDefs) {
     reorderColumns,
     moveColumn,
     saveColumns,
+    applyVisibleOrder,
     makeDefaultColumns: isOrgAdmin ? makeDefaultColumns : undefined,
     makingDefault,
     canMakeDefault: Boolean(isOrgAdmin && tableId),
+    prefsReady: Boolean(loadedKey),
   }
 }

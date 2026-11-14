@@ -8,8 +8,10 @@ import GooToggle from '../ui/GooToggle'
 import LocationModal from './LocationModal'
 import DepartmentModal from './DepartmentModal'
 import PhoneInput from '../shared/PhoneInput'
+import FormLabel from '../shared/FormLabel'
 import SpellcheckInput from '../shared/SpellcheckInput'
 import FilterableSelect from '../ui/FilterableSelect'
+import { masterFieldLimit } from '../../lib/textFieldLimits'
 import ImageCropModal from '../shared/ImageCropModal'
 import {
   departmentManagerScopeIds,
@@ -450,22 +452,24 @@ export default function EmployeeModal({
 
             <div className="company-form__grid company-form__grid--2">
               <label className="company-form__field">
-                <span className="company-form__label">Emp ID *</span>
-                <input
+                <FormLabel fieldType="text" limit={masterFieldLimit('code')}>Emp ID *</FormLabel>
+                <SpellcheckInput
                   className="company-form__input"
                   value={form.emp_id}
                   onChange={(e) => setForm({ ...form, emp_id: e.target.value })}
                   required
                   placeholder="e.g. EMP001"
+                  maxLength={masterFieldLimit('code')}
                 />
               </label>
               <label className="company-form__field">
-                <span className="company-form__label">Employee Name *</span>
+                <FormLabel fieldType="text" limit={masterFieldLimit('name')}>Employee Name *</FormLabel>
                 <SpellcheckInput
                   className="company-form__input"
                   value={form.name}
                   onChange={(e) => setForm({ ...form, name: e.target.value })}
                   required
+                  maxLength={masterFieldLimit('name')}
                 />
               </label>
             </div>

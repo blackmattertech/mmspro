@@ -7,6 +7,8 @@ import {
   bulkUploadDepartments,
   getEmployeesTemplate,
   bulkUploadEmployees,
+  getWorkCentersTemplate,
+  bulkUploadWorkCenters,
 } from '../lib/api'
 import { getEquipmentTemplate, bulkUploadEquipment } from '../lib/api-equipment'
 import { getVendorsTemplate, bulkUploadVendors } from '../lib/api-vendors'
@@ -17,7 +19,7 @@ import { getTasksTemplate, bulkUploadTasks } from '../lib/api-tasks'
 import { getLogbookTemplate, bulkUploadLogbook } from '../lib/api-logbook'
 import { getWarrantiesTemplate, bulkUploadWarranties, previewWarrantyImport } from '../lib/api-warranties'
 
-/** @typedef {'locations' | 'departments' | 'employees' | 'areas' | 'equipment' | 'vendors' | 'work_requests' | 'work_orders' | 'pm_plans' | 'tasks' | 'warranties' | 'meter_readings'} ImportTemplateId */
+/** @typedef {'locations' | 'departments' | 'employees' | 'areas' | 'work_centers' | 'equipment' | 'vendors' | 'work_requests' | 'work_orders' | 'pm_plans' | 'tasks' | 'warranties' | 'meter_readings'} ImportTemplateId */
 
 /**
  * @typedef {Object} ImportTemplateConfig
@@ -63,6 +65,11 @@ export const IMPORT_PREVIEW_COLUMNS = {
     { key: 'code', label: 'Code' },
     { key: 'location', label: 'Location' },
     { key: 'department', label: 'Department' },
+  ],
+  work_centers: [
+    { key: 'name', label: 'Name' },
+    { key: 'code', label: 'Code' },
+    { key: 'location', label: 'Location' },
   ],
   equipment: [
     { key: 'name', label: 'Name' },
@@ -178,6 +185,22 @@ export const IMPORT_TEMPLATES = [
     downloadTemplate: getAreasTemplate,
     upload: bulkUploadAreas,
     failedFilename: 'areas-import-failed-rows.xlsx',
+  },
+  {
+    id: 'work_centers',
+    label: 'Work Centers',
+    description: 'Bulk create or update work centers used across work request, work order, and PM forms.',
+    moduleKey: 'work_centers',
+    instructions: [
+      'Download the Work Centers Excel template for your organization.',
+      'On the Template sheet, enter one work center per row. Name is required; Code and Description are optional.',
+      'Location and Active must match the Valid values sheet (use No location when not tied to a site).',
+      'Save as .xlsx and upload. Matching Code (or Name + Location) updates an existing work center.',
+      'Failed rows can be downloaded, fixed, and re-uploaded.',
+    ],
+    downloadTemplate: getWorkCentersTemplate,
+    upload: bulkUploadWorkCenters,
+    failedFilename: 'work-centers-import-failed-rows.xlsx',
   },
   {
     id: 'equipment',

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
-import { useLocation } from 'react-router-dom'
+import { useOrg } from './useOrg'
+import { usePermissions } from './usePermissions'
 import { getWorkOrderCounts } from '../lib/api-work-orders'
 import { peekReferenceData, seedReferenceData } from '../lib/referenceDataCache'
 import { TAB_COUNTS_EVENT } from '../lib/tabCountEvents'
@@ -21,7 +22,8 @@ function normalizeWorkOrderCounts(data) {
 }
 
 export function useWorkOrderCounts() {
-  const location = useLocation()
+  const { org } = useOrg()
+  const { locationId: scopedLocationId } = usePermissions()
   const cached = peekReferenceData('tab-counts', { module: 'work_orders' })
   const [counts, setCounts] = useState(cached || EMPTY_COUNTS)
   const [loading, setLoading] = useState(!cached)
@@ -41,14 +43,14 @@ export function useWorkOrderCounts() {
   }, [])
 
   useEffect(() => {
-    load({ silent: true })
+    load({ silent: Boolean(peekReferenceData('tab-counts', { module: 'work_orders' })) })
     const onChange = (event) => {
       if (event.detail?.module && event.detail.module !== 'work_orders') return
       load({ silent: true })
     }
     window.addEventListener(TAB_COUNTS_EVENT, onChange)
     return () => window.removeEventListener(TAB_COUNTS_EVENT, onChange)
-  }, [load, location.pathname])
+  }, [load, org?.id, scopedLocationId])
 
   return { counts, loading, reload: load }
 }

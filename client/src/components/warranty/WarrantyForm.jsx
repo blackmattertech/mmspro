@@ -3,8 +3,10 @@ import DateField from '../ui/DateField'
 import FilterableSelect from '../ui/FilterableSelect'
 import VendorModal from '../vendors/VendorModal'
 import WarrantyDocumentsSection from './WarrantyDocumentsSection'
+import FormLabel from '../shared/FormLabel'
 import SpellcheckInput from '../shared/SpellcheckInput'
 import { useTextFieldLimits } from '../../hooks/useTextFieldLimits'
+import { masterFieldLimit } from '../../lib/textFieldLimits'
 import { useFormLayout } from '../../hooks/useFormLayout'
 import { usePermissions } from '../../hooks/usePermissions'
 import { useAuth } from '../../hooks/useAuth'
@@ -399,24 +401,25 @@ export default function WarrantyForm({
           </div>
           <div className="warranty-create__item-grid">
               <label className="company-form__field">
-                <span className="company-form__label">Product / Material Name</span>
+                <FormLabel fieldType="text" limit={masterFieldLimit('name')}>Product / Material Name</FormLabel>
                 <SpellcheckInput
                   className="company-form__input"
                   value={item.product_name}
                   placeholder="Enter product / material name"
                   disabled={!canSave}
                   onChange={(e) => setItemField(index, 'product_name', e.target.value)}
+                  maxLength={masterFieldLimit('name')}
                 />
               </label>
               <label className="company-form__field">
-                <span className="company-form__label">Model / P.No</span>
-                <input
-                  type="text"
+                <FormLabel fieldType="text" limit={masterFieldLimit('code')}>Model / P.No</FormLabel>
+                <SpellcheckInput
                   className="company-form__input"
                   value={item.model_part_no}
                   placeholder="Enter model or part number"
                   disabled={!canSave}
                   onChange={(e) => setItemField(index, 'model_part_no', e.target.value)}
+                  maxLength={masterFieldLimit('code')}
                 />
               </label>
               <label className="company-form__field">
@@ -433,13 +436,14 @@ export default function WarrantyForm({
                 />
               </label>
               <label className="company-form__field">
-                <span className="company-form__label">Make</span>
+                <FormLabel fieldType="text" limit={masterFieldLimit('name')}>Make</FormLabel>
                 <SpellcheckInput
                   className="company-form__input"
                   value={item.make}
                   placeholder="Enter make"
                   disabled={!canSave}
                   onChange={(e) => setItemField(index, 'make', e.target.value)}
+                  maxLength={masterFieldLimit('name')}
                 />
               </label>
               <label className="company-form__field">
@@ -531,12 +535,7 @@ export default function WarrantyForm({
             </div>
             <div className="warranty-create__item-foot">
               <label className="company-form__field">
-                <span className="company-form__label">
-                  <span>Remarks{remarksLimit ? ` (max ${remarksLimit})` : ''}</span>
-                  {remarksLimit ? (
-                    <span className="warranty-create__count">{(item.remarks || '').length} / {remarksLimit}</span>
-                  ) : null}
-                </span>
+                <FormLabel fieldType="textarea" limit={remarksLimit}>Remarks</FormLabel>
                 <SpellcheckInput
                   multiline
                   rows={4}
@@ -629,13 +628,14 @@ export default function WarrantyForm({
           <div className="warranty-create__contacts">
             {isVisible('contact_name') && (
               <label className="company-form__field">
-                <span className="company-form__label">Contact name</span>
+                <FormLabel fieldType="text" limit={masterFieldLimit('name')}>Contact name</FormLabel>
                 <SpellcheckInput
                   className="company-form__input"
                   value={values.contact_name}
                   placeholder="Enter contact name"
                   disabled={!canSave}
                   onChange={(e) => setField('contact_name', e.target.value)}
+                  maxLength={masterFieldLimit('name')}
                 />
               </label>
             )}

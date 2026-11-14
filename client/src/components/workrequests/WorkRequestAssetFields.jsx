@@ -102,7 +102,7 @@ function AssetFieldInput({
   if (field.field_type === 'textarea') {
     return (
       <label className="company-form__field company-form__field--full">
-        <FormLabel limit={limit}>{label}</FormLabel>
+        <FormLabel fieldType="textarea" limit={limit}>{label}</FormLabel>
         {hint && (
           <span className="wo-manual__intro" style={{ margin: '0 0 6px', fontSize: 12 }}>{hint}</span>
         )}
@@ -204,7 +204,7 @@ function AssetFieldInput({
 
   return (
     <label className="company-form__field">
-      <FormLabel limit={limit}>{label}</FormLabel>
+      <FormLabel fieldType="text" limit={limit || undefined}>{label}</FormLabel>
       <SpellcheckInput
         className="company-form__input"
         value={value || ''}

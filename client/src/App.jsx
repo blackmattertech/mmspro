@@ -40,8 +40,8 @@ const WarrantyDetailPage = lazyPage(() => import('./pages/app/WarrantyDetailPage
 const WarrantyFormPage = lazyPage(() => import('./pages/app/WarrantyFormPage'))
 const Vendors = lazyPage(() => import('./pages/app/Vendors'))
 const VendorDetailPage = lazyPage(() => import('./pages/app/VendorDetailPage'))
-// Hidden for now with masters/work-centers route — page kept for later
-// const WorkCenters = lazyPage(() => import('./pages/app/WorkCenters'))
+const WorkCenters = lazyPage(() => import('./pages/app/WorkCenters'))
+const Uoms = lazyPage(() => import('./pages/app/Uoms'))
 const Masters = lazyPage(() => import('./pages/app/Masters'))
 const FormMasters = lazyPage(() => import('./pages/app/FormMasters'))
 const OthersStatusManage = lazyPage(() => import('./pages/app/OthersStatusManage'))
@@ -214,9 +214,8 @@ export default function App() {
               <Route path="masters/forms/:formId" element={withModule('assets', <FormMasters />)} />
               <Route path="masters/forms" element={withModule('assets', <FormMasters />)} />
               <Route path="masters/company" element={withModule(companyPageModules, <Company />)} />
-              {/* Hidden for now — work centers used as form dropdown values only
               <Route path="masters/work-centers" element={withModule('work_centers', <WorkCenters />)} />
-              */}
+              <Route path="masters/uoms" element={withModule('uoms', <Uoms />)} />
               <Route path="masters/assets" element={<Navigate to="../forms" relative="path" replace />} />
               <Route path="masters/equipment" element={withModule(['equipment', 'areas'], <Equipment />)} />
               <Route path="scan/equipment/:equipmentId" element={withSuspense(<EquipmentScan />)} />

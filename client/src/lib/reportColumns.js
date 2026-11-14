@@ -1,3 +1,5 @@
+import { formatCalendarDate, formatDisplayDateTime } from './displayDate.js'
+
 export const UNIFIED_REPORT_KEY = 'logs'
 export const WORK_REQUEST_REPORT_KEY = 'work-requests'
 export const PM_PLAN_REPORT_KEY = 'pm-plans'
@@ -316,39 +318,47 @@ export function defaultReportFilters(dateRange = defaultReportDateRange()) {
   }
 }
 
+const REPORT_DATE_COLUMNS = new Set([
+  'log_date',
+  'request_date',
+  'start_date',
+  'end_date',
+  'due_date',
+  'next_due_at',
+  'purchase_date',
+  'warranty_start',
+  'warranty_end',
+])
+
+const REPORT_DATETIME_COLUMNS = new Set([
+  'started_at',
+  'ended_at',
+  'updated_at',
+  'created_at',
+  'due_at',
+  'work_start_at',
+  'work_end_at',
+  'planned_start_at',
+  'planned_end_at',
+  'breakdown_start_at',
+  'breakdown_end_at',
+  'permit_issue_at',
+  'permit_expiry_at',
+  'reading_at',
+  'last_meter_reading_at',
+])
+
 export function formatReportCell(columnId, value) {
   if (value == null || value === '') return '—'
   if (columnId === 'progress_percent') {
     const n = Number(value)
     return Number.isFinite(n) ? `${n}%` : '—'
   }
-  if (['log_date', 'request_date', 'start_date', 'end_date'].includes(columnId)) {
-    return String(value).slice(0, 10)
+  if (REPORT_DATE_COLUMNS.has(columnId)) {
+    return formatCalendarDate(value) || String(value)
   }
-  if ([
-    'started_at',
-    'ended_at',
-    'updated_at',
-    'due_at',
-    'next_due_at',
-    'work_start_at',
-    'work_end_at',
-    'planned_start_at',
-    'planned_end_at',
-    'breakdown_start_at',
-    'breakdown_end_at',
-    'permit_issue_at',
-    'permit_expiry_at',
-  ].includes(columnId)) {
-    const date = new Date(value)
-    if (Number.isNaN(date.getTime())) return String(value)
-    return date.toLocaleString(undefined, {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    })
+  if (REPORT_DATETIME_COLUMNS.has(columnId)) {
+    return formatDisplayDateTime(value) || String(value)
   }
   if ([
     'day_status',

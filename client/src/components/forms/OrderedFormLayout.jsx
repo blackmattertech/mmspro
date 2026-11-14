@@ -584,6 +584,8 @@ export default function OrderedFormLayout({
             key={item.id}
             field={{
               id: item.id,
+              key: bindKey || undefined,
+              field_key: bindKey || undefined,
               name: label,
               field_type: item.fieldType || 'text',
               colSpan: item.colSpan,
@@ -652,6 +654,8 @@ export default function OrderedFormLayout({
             key={item.id}
             field={{
               id: item.id,
+              key: systemField?.key || parsed.value,
+              field_key: systemField?.key || parsed.value,
               name: label,
               field_type: resolvedType,
               colSpan: item.colSpan,

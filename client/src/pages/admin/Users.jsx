@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { getAdminUsers } from '../../lib/api'
+import { formatDisplayDate } from '../../lib/displayDate'
 import { downloadClientCsv } from '../../lib/clientCsv'
 import { ExportCsvButton } from '../../components/shared/ListTableChrome'
 import TablePagination from '../../components/shared/TablePagination'
@@ -77,7 +78,7 @@ export default function Users() {
                         <td className="admin-table__name">{user.email || '—'}</td>
                         <td>{ROLE_LABELS[user.role] || user.role}</td>
                         <td>{user.organizations?.name || '—'}</td>
-                        <td>{new Date(user.created_at).toLocaleDateString()}</td>
+                        <td>{formatDisplayDate(user.created_at) || '—'}</td>
                       </tr>
                     ))
                   )}

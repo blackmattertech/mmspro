@@ -8,6 +8,7 @@ import {
 import { formatDepartmentLocation } from './DepartmentModal'
 import { countryFlag, getCountryByIso, parsePhoneE164 } from '../../lib/countryCodes'
 import { isLocationHeadEmployee } from '../../lib/employeeRoles'
+import { formatDisplayDate, formatDisplayDateTime } from '../../lib/displayDate'
 import './CompanyShared.css'
 import '../shared/DetailView.css'
 import './EmployeeDetail.css'
@@ -67,26 +68,12 @@ const EMPLOYEE_TABS = [
 
 function formatDetailDateTime(value) {
   if (!value) return '—'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return '—'
-  return date.toLocaleString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  })
+  return formatDisplayDateTime(value) || '—'
 }
 
 function formatDetailDate(value) {
   if (!value) return '—'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return '—'
-  return date.toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  })
+  return formatDisplayDate(value) || '—'
 }
 
 function IconPhone() {

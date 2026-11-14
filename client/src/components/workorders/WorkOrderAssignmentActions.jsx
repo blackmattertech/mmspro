@@ -361,7 +361,7 @@ export default function WorkOrderAssignmentActions({ detail, onUpdated, readOnly
         if (key === 'assignment_remarks') {
           return (
             <label key={key} className={className}>
-              <FormLabel limit={remarksLimit}>Assignment remarks{requiredMark}</FormLabel>
+              <FormLabel fieldType="textarea" limit={remarksLimit}>Assignment remarks{requiredMark}</FormLabel>
               <SpellcheckInput
                 multiline
                 className="company-form__input company-form__textarea"
@@ -457,7 +457,7 @@ export default function WorkOrderAssignmentActions({ detail, onUpdated, readOnly
                 <DateField value={plannedEndAt} onChange={setPlannedEndAt} withTime disabled={saving} />
               </label>
               <label className="company-form__field">
-                <FormLabel limit={remarksLimit}>Assignment remarks</FormLabel>
+                <FormLabel fieldType="textarea" limit={remarksLimit}>Assignment remarks</FormLabel>
                 <SpellcheckInput
                   multiline
                   className="company-form__input company-form__textarea"

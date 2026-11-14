@@ -284,6 +284,17 @@ export function exportWorkCenters(params = {}) {
   return apiFetchBlob(`/api/company/work-centers${listQueryParams({ ...params, exportCsv: true })}`)
 }
 
+export function getWorkCentersTemplate() {
+  return companyFetch('/work-centers/template')
+}
+
+export function bulkUploadWorkCenters(base64Data) {
+  return companyFetch('/work-centers/bulk', {
+    method: 'POST',
+    body: JSON.stringify({ data: base64Data }),
+  })
+}
+
 export function createWorkCenter(data) {
   return companyFetch('/work-centers', { method: 'POST', body: JSON.stringify(data) })
 }
@@ -294,6 +305,54 @@ export function updateWorkCenter(id, data) {
 
 export function deleteWorkCenter(id) {
   return companyFetch(`/work-centers/${id}`, { method: 'DELETE' })
+}
+
+export async function getUoms({
+  search,
+  limit = 50,
+  offset = 0,
+  activeOnly = false,
+  filters,
+  sort,
+  sortDir,
+} = {}) {
+  const data = await companyFetch(`/uoms${listQueryParams({
+    search,
+    limit,
+    offset,
+    active: activeOnly ? '1' : undefined,
+    filters,
+    sort,
+    sortDir,
+  })}`)
+  return asListArray(data)
+}
+
+export function exportUoms(params = {}) {
+  return apiFetchBlob(`/api/company/uoms${listQueryParams({ ...params, exportCsv: true })}`)
+}
+
+export function getUomsTemplate() {
+  return companyFetch('/uoms/template')
+}
+
+export function bulkUploadUoms(base64Data) {
+  return companyFetch('/uoms/bulk', {
+    method: 'POST',
+    body: JSON.stringify({ data: base64Data }),
+  })
+}
+
+export function createUom(data) {
+  return companyFetch('/uoms', { method: 'POST', body: JSON.stringify(data) })
+}
+
+export function updateUom(id, data) {
+  return companyFetch(`/uoms/${id}`, { method: 'PATCH', body: JSON.stringify(data) })
+}
+
+export function deleteUom(id) {
+  return companyFetch(`/uoms/${id}`, { method: 'DELETE' })
 }
 
 export async function getAreas({ locationId, departmentId, search, limit = 50, offset = 0, ...rest } = {}) {

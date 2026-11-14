@@ -6,8 +6,18 @@ import { validatePostalCode } from '../../lib/validation'
 import { employeesForLocationHead } from '../../lib/departmentLocation'
 import EmployeeSelect from './EmployeeSelect'
 import GooToggle from '../ui/GooToggle'
+import FormLabel from '../shared/FormLabel'
 import SpellcheckInput from '../shared/SpellcheckInput'
+import { masterFieldLimit } from '../../lib/textFieldLimits'
 import './CompanyShared.css'
+
+const NAME_LIMIT = masterFieldLimit('name')
+const CODE_LIMIT = masterFieldLimit('code')
+const ADDR_LIMIT = masterFieldLimit('address_line1')
+const CITY_LIMIT = masterFieldLimit('city')
+const STATE_LIMIT = masterFieldLimit('state')
+const COUNTRY_LIMIT = masterFieldLimit('country')
+const POSTAL_LIMIT = masterFieldLimit('postal_code')
 
 const EMPTY = {
   name: '',
@@ -127,15 +137,28 @@ export default function LocationModal({
         </div>
         <form className="company-modal__form" onSubmit={handleSubmit}>
           <label className="company-form__field">
-            <span className="company-form__label">Name *</span>
-            <SpellcheckInput className="company-form__input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
+            <FormLabel fieldType="text" limit={NAME_LIMIT}>Name *</FormLabel>
+            <SpellcheckInput
+              className="company-form__input"
+              value={form.name}
+              onChange={(e) => setForm({ ...form, name: e.target.value })}
+              required
+              maxLength={NAME_LIMIT}
+            />
           </label>
           <label className="company-form__field">
-            <span className="company-form__label">Code *</span>
-            <input className="company-form__input" value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} required placeholder="e.g. HQ" />
+            <FormLabel fieldType="text" limit={CODE_LIMIT}>Code *</FormLabel>
+            <SpellcheckInput
+              className="company-form__input"
+              value={form.code}
+              onChange={(e) => setForm({ ...form, code: e.target.value })}
+              required
+              placeholder="e.g. HQ"
+              maxLength={CODE_LIMIT}
+            />
           </label>
           <label className="company-form__field">
-            <span className="company-form__label">Address Line 1</span>
+            <FormLabel fieldType="text" limit={ADDR_LIMIT}>Address Line 1</FormLabel>
             <AddressAutocomplete
               value={form.address_line1}
               onChange={(address_line1) => setForm((prev) => ({ ...prev, address_line1 }))}
@@ -144,32 +167,53 @@ export default function LocationModal({
             />
           </label>
           <label className="company-form__field">
-            <span className="company-form__label">Address Line 2</span>
-            <SpellcheckInput className="company-form__input" value={form.address_line2} onChange={(e) => setForm({ ...form, address_line2: e.target.value })} />
+            <FormLabel fieldType="text" limit={ADDR_LIMIT}>Address Line 2</FormLabel>
+            <SpellcheckInput
+              className="company-form__input"
+              value={form.address_line2}
+              onChange={(e) => setForm({ ...form, address_line2: e.target.value })}
+              maxLength={ADDR_LIMIT}
+            />
           </label>
           <div className="company-form__grid company-form__grid--2">
             <label className="company-form__field">
-              <span className="company-form__label">City</span>
-              <SpellcheckInput className="company-form__input" value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} />
+              <FormLabel fieldType="text" limit={CITY_LIMIT}>City</FormLabel>
+              <SpellcheckInput
+                className="company-form__input"
+                value={form.city}
+                onChange={(e) => setForm({ ...form, city: e.target.value })}
+                maxLength={CITY_LIMIT}
+              />
             </label>
             <label className="company-form__field">
-              <span className="company-form__label">State</span>
-              <SpellcheckInput className="company-form__input" value={form.state} onChange={(e) => setForm({ ...form, state: e.target.value })} />
+              <FormLabel fieldType="text" limit={STATE_LIMIT}>State</FormLabel>
+              <SpellcheckInput
+                className="company-form__input"
+                value={form.state}
+                onChange={(e) => setForm({ ...form, state: e.target.value })}
+                maxLength={STATE_LIMIT}
+              />
             </label>
           </div>
           <div className="company-form__grid company-form__grid--2">
             <label className="company-form__field">
-              <span className="company-form__label">Postal Code</span>
-              <input
+              <FormLabel fieldType="text" limit={POSTAL_LIMIT}>Postal Code</FormLabel>
+              <SpellcheckInput
                 className="company-form__input"
                 value={form.postal_code}
                 onChange={(e) => setForm({ ...form, postal_code: e.target.value })}
                 placeholder={form.country?.toLowerCase().includes('india') ? '6-digit PIN' : 'Postal / ZIP code'}
+                maxLength={POSTAL_LIMIT}
               />
             </label>
             <label className="company-form__field">
-              <span className="company-form__label">Country</span>
-              <SpellcheckInput className="company-form__input" value={form.country} onChange={(e) => setForm({ ...form, country: e.target.value })} />
+              <FormLabel fieldType="text" limit={COUNTRY_LIMIT}>Country</FormLabel>
+              <SpellcheckInput
+                className="company-form__input"
+                value={form.country}
+                onChange={(e) => setForm({ ...form, country: e.target.value })}
+                maxLength={COUNTRY_LIMIT}
+              />
             </label>
           </div>
           <div className="location-primary">

@@ -5,7 +5,8 @@ import {
   getManualWorkOrder,
   deleteManualWorkOrder,
 } from '../../lib/api-work-orders'
-import { useWorkOrderList } from '../../hooks/useWorkOrderList'
+import { useWorkOrderList, listResponseCacheKey } from '../../hooks/useWorkOrderList'
+import { invalidateListResponseCache } from '../../lib/listResponseCache'
 import { usePermissions } from '../../hooks/usePermissions'
 import { useOrg } from '../../hooks/useOrg'
 import { useDebouncedValue } from '../../hooks/useDebouncedValue'
@@ -37,11 +38,12 @@ export default function ManualWorkOrders() {
     search, locationFilter, sortBy, advancedRules, fieldFilter, locations, bulkReloadToken = 0,
     columnFilters = {}, setColumnFilter, headerSort = null, setHeaderSort,
     statusFilters = [],
+    reportFilterRows = null,
   } = useOutletContext()
   const debouncedSearch = useDebouncedValue(search)
   const [listTotal, setListTotal] = useState(0)
   const pagination = useTablePagination(listTotal, {
-    resetKey: `${debouncedSearch}|${locationFilter}|${JSON.stringify(columnFilters)}|${fieldFilter?.field}|${fieldFilter?.value}|${sortBy}|${headerSort?.id || ''}|${statusFilters.join(',')}`,
+    resetKey: `${debouncedSearch}|${locationFilter}|${JSON.stringify(columnFilters)}|${fieldFilter?.field}|${fieldFilter?.value}|${sortBy}|${headerSort?.id || ''}|${statusFilters.join(',')}|${bulkReloadToken}`,
   })
   const fetchManualOrders = useCallback(
     () => getManualWorkOrders(buildServerListParams({
@@ -57,8 +59,27 @@ export default function ManualWorkOrders() {
     })),
     [debouncedSearch, pagination.pageSize, pagination.offset, bulkReloadToken, columnFilters, fieldFilter, statusFilters, headerSort, sortBy],
   )
-  const { orders, total, loading, error, reload } = useWorkOrderList(fetchManualOrders)
+  const listCacheKey = useMemo(() => listResponseCacheKey('wo-manual', {
+    search: debouncedSearch,
+    limit: pagination.pageSize,
+    offset: pagination.offset,
+    filters: columnFilters,
+    field: fieldFilter?.field || '',
+    value: fieldFilter?.value || '',
+    statuses: statusFilters,
+    sort: headerSort?.id || '',
+    sortDir: headerSort?.dir || '',
+    sort_by: headerSort ? '' : sortBy,
+    bulk: bulkReloadToken,
+  }), [debouncedSearch, pagination.pageSize, pagination.offset, columnFilters, fieldFilter, statusFilters, headerSort, sortBy, bulkReloadToken])
+  const { orders, total, loading, error, reload } = useWorkOrderList(fetchManualOrders, {
+    cacheKey: listCacheKey,
+    onRows: reportFilterRows,
+  })
   useEffect(() => { setListTotal(total) }, [total])
+  useEffect(() => {
+    if (bulkReloadToken) invalidateListResponseCache('wo-manual')
+  }, [bulkReloadToken])
   const successMessage = location.state?.success
 
   const filteredOrders = useMemo(() => applyWorkOrderFilters(orders, {

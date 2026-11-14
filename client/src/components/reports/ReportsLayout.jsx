@@ -1,12 +1,33 @@
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import FilterableSelect from '../ui/FilterableSelect'
 import TableFilterToolbar from '../shared/TableFilterToolbar'
-import SpellcheckInput from '../shared/SpellcheckInput'
 import PageBreadcrumbs from '../shared/PageBreadcrumbs'
 import '../company/CompanyShared.css'
 import '../shared/TableFilterToolbar.css'
 import '../workorders/WorkOrdersPage.css'
 import './ReportsLayout.css'
+
+const SpellcheckInput = lazy(() => import('../shared/SpellcheckInput'))
+
+function LazySpellcheckInput(props) {
+  return (
+    <Suspense
+      fallback={(
+        <input
+          className={props.className}
+          type={props.type || 'text'}
+          value={props.value}
+          onChange={props.onChange}
+          placeholder={props.placeholder}
+          maxLength={props.maxLength}
+          aria-label={props['aria-label']}
+        />
+      )}
+    >
+      <SpellcheckInput {...props} />
+    </Suspense>
+  )
+}
 
 function TextButton({
   label,
@@ -86,7 +107,7 @@ function ReportToolbarControls({
           />
         </div>
         {canManageCustom && (
-          <SpellcheckInput
+          <LazySpellcheckInput
             wrapperClassName="reports-toolbar__name"
             className="company-form__input"
             type="text"
@@ -375,7 +396,7 @@ export default function ReportsLayout({
                           />
                         </div>
                         {canManageCustom && (
-                          <SpellcheckInput
+                          <LazySpellcheckInput
                             wrapperClassName="reports-toolbar__name"
                             className="company-form__input"
                             type="text"

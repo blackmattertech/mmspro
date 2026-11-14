@@ -24,6 +24,7 @@ import {
 import { useBackdropClose } from '../../hooks/useBackdropClose'
 import { orgPath } from '../../config/navigation'
 import DateField from '../ui/DateField'
+import { formatDisplayDateTime } from '../../lib/displayDate'
 import FilterableSelect from '../ui/FilterableSelect'
 import MasterPicker from '../forms/MasterPicker'
 import { hydrateMasterValues, splitBoundValues } from '../../lib/formFieldSources'
@@ -37,6 +38,7 @@ import WorkOrderProgressControl from './WorkOrderProgressControl'
 import WorkOrderStatusPicker, { orderStatusOptions } from './WorkOrderStatusPicker'
 import SpellcheckInput from '../shared/SpellcheckInput'
 import FormLabel from '../shared/FormLabel'
+import { FIELD_HELP_TEXT } from '../../lib/fieldHelpText'
 import NavIcon from '../layout/NavIcon'
 import { AssetHierarchySummary } from '../workrequests/WorkRequestAssetFields'
 import { hierarchyDisplaySteps } from '../../lib/assetHierarchy'
@@ -63,7 +65,7 @@ const PERMIT_LABELS = {
 
 const STATUS_LABELS = {
   draft: 'Draft',
-  assigned: 'Approval Pending',
+  assigned: 'Technician assignment pending',
   accepted: 'Accepted',
   started: 'Started',
   in_progress: 'In Progress',
@@ -86,14 +88,7 @@ const SOURCE_LABELS = {
 
 function formatDayStamp(value) {
   if (!value) return null
-  try {
-    return new Date(value).toLocaleString(undefined, {
-      dateStyle: 'medium',
-      timeStyle: 'short',
-    })
-  } catch {
-    return null
-  }
+  return formatDisplayDateTime(value) || null
 }
 
 function formatStatus(status, labelByKey = null, order = null) {
@@ -141,10 +136,10 @@ function toPendingFile(file) {
   }
 }
 
-function Field({ label, children, full = false, maxLength }) {
+function Field({ label, children, full = false, maxLength, fieldType }) {
   return (
     <label className={`company-form__field${full ? ' company-form__field--full' : ''}`}>
-      <FormLabel limit={maxLength}>{label}</FormLabel>
+      <FormLabel fieldType={fieldType} limit={maxLength}>{label}</FormLabel>
       {children}
     </label>
   )
@@ -784,7 +779,9 @@ export default function WorkOrderLifecyclePanel({
     || isChecklistComplete(detail.checklist_snapshot, form.checklist_values)
 
   const checklistInLayout = layoutHasSystemKey(processLayout, 'checklist_execution')
-  const canEditChecklist = isTechnician && !fieldsReadOnly
+  const canEditChecklist = canUpdate
+    && !viewingPastDay
+    && canEditFilledBy('technician', processActors)
   const checklistBlock = hasChecklist ? (
     <ChecklistExecution
       snapshot={detail.checklist_snapshot}
@@ -1121,7 +1118,7 @@ export default function WorkOrderLifecyclePanel({
       const [label, formKey] = textMap[key]
       return (
         <label key={key} className={className}>
-          <FormLabel limit={maxLength(formKey)}>{label}{requiredMark}</FormLabel>
+          <FormLabel fieldType="textarea" limit={maxLength(formKey)}>{label}{requiredMark}</FormLabel>
           <SpellcheckInput
             multiline
             className="company-form__input company-form__textarea"
@@ -1190,14 +1187,15 @@ export default function WorkOrderLifecyclePanel({
   const canSaveLifecycle = canUpdate && !viewingPastDay && (canEditExecution || canEditCloseout)
   const statusBlockedReasons = useMemo(() => {
     const blocked = {}
+    const checklistActor = canEditFilledBy('technician', processActors)
     for (const status of statusPickerOptions) {
       const needsChecklist = ['completed', 'verified', 'closed'].includes(status)
-      if (needsChecklist && hasChecklist && isTechnician && !checklistComplete) {
+      if (needsChecklist && hasChecklist && checklistActor && !checklistComplete) {
         blocked[status] = 'Complete the checklist before marking completed'
       }
     }
     return blocked
-  }, [statusPickerOptions, hasChecklist, isTechnician, checklistComplete])
+  }, [statusPickerOptions, hasChecklist, processActors, checklistComplete])
 
   const statusDirty = Boolean(pendingStatus) && pendingStatus !== detail?.status
 
@@ -1234,7 +1232,12 @@ export default function WorkOrderLifecyclePanel({
           </div>
         </div>
       )}
-      <Field label={isPmScheduled ? 'Remarks' : 'Action remarks'} full maxLength={maxLength('remarks')}>
+      <Field
+        label={isPmScheduled ? 'Remarks' : 'Action remarks'}
+        full
+        fieldType="textarea"
+        maxLength={maxLength('remarks')}
+      >
         <SpellcheckInput
           multiline
           className="company-form__input company-form__textarea"
@@ -1334,26 +1337,28 @@ export default function WorkOrderLifecyclePanel({
           {followUpError && <div className="wo-alert wo-alert--error" role="alert">{followUpError}</div>}
           <div className="company-form__grid company-form__grid--2">
             <label className="company-form__field company-form__field--full">
-              <FormLabel limit={maxLength('short_description')}>Short description *</FormLabel>
+              <FormLabel fieldType="text" limit={maxLength('short_description')}>Short description *</FormLabel>
               <SpellcheckInput
                 className="company-form__input"
                 value={followUp.short_description}
                 onChange={(e) => setFollowUp((prev) => ({ ...prev, short_description: e.target.value }))}
-                placeholder="Brief summary of the issue"
+                placeholder={FIELD_HELP_TEXT.short_description.placeholder}
                 maxLength={maxLength('short_description')}
               />
+              <p className="company-form__hint">{FIELD_HELP_TEXT.short_description.hint}</p>
             </label>
             <label className="company-form__field company-form__field--full">
-              <FormLabel limit={maxLength('problem_description')}>Details</FormLabel>
+              <FormLabel fieldType="textarea" limit={maxLength('problem_description')}>Details</FormLabel>
               <SpellcheckInput
                 multiline
                 className="company-form__input company-form__textarea"
                 rows={4}
                 value={followUp.problem_description}
                 onChange={(e) => setFollowUp((prev) => ({ ...prev, problem_description: e.target.value }))}
-                placeholder="Describe the unusual finding and work needed"
+                placeholder={FIELD_HELP_TEXT.problem_description.placeholder}
                 maxLength={maxLength('problem_description')}
               />
+              <p className="company-form__hint">{FIELD_HELP_TEXT.problem_description.hint}</p>
             </label>
             <label className="company-form__field">
               <span className="company-form__label">Priority</span>

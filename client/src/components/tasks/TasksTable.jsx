@@ -4,6 +4,7 @@ import { useOrg } from '../../hooks/useOrg'
 import { orgPath } from '../../config/navigation'
 import { stopTableRowClick, tableRowClickProps } from '../../lib/clickableTableRow'
 import { formatTaskDateTime } from '../../lib/taskDateUtils'
+import { formatDisplayDateTime } from '../../lib/displayDate'
 import { VISIBILITY_OPTIONS } from '../../config/tasks'
 import EditIcon from '../ui/EditIcon'
 import TrashIcon from '../ui/TrashIcon'
@@ -122,9 +123,9 @@ export default function TasksTable({
       case 'task_type':
         return task.task_type === 'recurring' ? 'Recurring' : 'One-Time'
       case 'created_at':
-        return task.created_at ? new Date(task.created_at).toLocaleString() : '—'
+        return task.created_at ? (formatDisplayDateTime(task.created_at) || '—') : '—'
       case 'updated_at':
-        return task.updated_at ? new Date(task.updated_at).toLocaleString() : '—'
+        return task.updated_at ? (formatDisplayDateTime(task.updated_at) || '—') : '—'
       default:
         return '—'
     }

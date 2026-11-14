@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useOrg } from '../../hooks/useOrg'
 import { useNotifications } from '../../hooks/useNotifications'
+import { formatDisplayDate } from '../../lib/displayDate'
 import './NotificationPanel.css'
 
 function formatTime(date) {
@@ -10,7 +11,16 @@ function formatTime(date) {
   if (diff < 60000) return 'Just now'
   if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`
   if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`
-  return date.toLocaleDateString()
+  return formatDisplayDate(date) || '—'
+}
+
+function shortDescription(item) {
+  const text = String(item?.data?.short_description || '').replace(/\s+/g, ' ').trim()
+  if (!text) return ''
+  const body = String(item?.body || '').trim().toLowerCase()
+  const sample = text.slice(0, Math.min(40, text.length)).toLowerCase()
+  if (sample && body.includes(sample)) return ''
+  return text
 }
 
 function shortDescription(item) {

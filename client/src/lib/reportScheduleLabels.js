@@ -1,3 +1,5 @@
+import { formatDisplayDateTime } from './displayDate'
+
 export const SCHEDULE_WEEKDAYS = [
   { value: 0, label: 'Sunday' },
   { value: 1, label: 'Monday' },
@@ -73,7 +75,5 @@ export function scheduleWindowLabel(value) {
 
 export function formatScheduleTimestamp(value) {
   if (!value) return '—'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return String(value)
-  return date.toLocaleString()
+  return formatDisplayDateTime(value) || String(value)
 }

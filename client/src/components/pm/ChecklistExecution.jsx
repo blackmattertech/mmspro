@@ -7,6 +7,7 @@ import PersonChip from '../shared/PersonChip'
 import { useOrg } from '../../hooks/useOrg'
 import { useProfile } from '../../hooks/useProfile'
 import { getOrgAssetSignedUrl } from '../../lib/orgAssets'
+import { formatDisplayDateTime } from '../../lib/displayDate'
 import './Pm.css'
 
 export function isFieldComplete(field, value) {
@@ -27,9 +28,7 @@ export function isChecklistComplete(snapshot, values) {
 }
 
 function formatStamp(value = new Date()) {
-  const date = value instanceof Date ? value : new Date(value)
-  if (Number.isNaN(date.getTime())) return '—'
-  return date.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
+  return formatDisplayDateTime(value) || '—'
 }
 
 function peopleRecords(list) {

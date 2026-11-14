@@ -5,8 +5,13 @@ import { useDepartments } from '../../hooks/useDepartments'
 import { departmentsForEmployeeLocation } from '../../lib/departmentLocation'
 import FilterableSelect from '../ui/FilterableSelect'
 import PageBack from '../shared/PageBack'
+import FormLabel from '../shared/FormLabel'
 import SpellcheckInput from '../shared/SpellcheckInput'
+import { masterFieldLimit } from '../../lib/textFieldLimits'
 import '../company/CompanyShared.css'
+
+const NAME_LIMIT = masterFieldLimit('name')
+const CODE_LIMIT = masterFieldLimit('code')
 
 const EMPTY = {
   name: '',
@@ -95,21 +100,23 @@ export default function AreaModal({
         </div>
         <form className="company-modal__form" onSubmit={handleSubmit}>
           <label className="company-form__field">
-            <span className="company-form__label">Name *</span>
+            <FormLabel fieldType="text" limit={NAME_LIMIT}>Name *</FormLabel>
             <SpellcheckInput
               className="company-form__input"
               value={form.name}
               onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
               required
+              maxLength={NAME_LIMIT}
             />
           </label>
           <label className="company-form__field">
-            <span className="company-form__label">Code</span>
-            <input
+            <FormLabel fieldType="text" limit={CODE_LIMIT}>Code</FormLabel>
+            <SpellcheckInput
               className="company-form__input"
               value={form.code}
               onChange={(e) => setForm((f) => ({ ...f, code: e.target.value }))}
               placeholder="Optional"
+              maxLength={CODE_LIMIT}
             />
           </label>
           <label className="company-form__field">

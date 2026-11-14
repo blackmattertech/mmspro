@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { useOrg } from '../../hooks/useOrg'
 import { useProfile } from '../../hooks/useProfile'
 import { orgPath } from '../../config/navigation'
+import { formatDisplayDate } from '../../lib/displayDate'
 import { DonutChart, MultiTrendChart } from './DashboardWidgets'
 import '../../pages/admin/AdminDashboard.css'
 import './DashboardBoard.css'
@@ -40,9 +41,7 @@ function timeAgo(value) {
 
 function formatDate(value) {
   if (!value) return '—'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return String(value).slice(0, 10)
-  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+  return formatDisplayDate(value) || '—'
 }
 
 function isToday(value) {

@@ -18,6 +18,7 @@ import TaskAttachmentsSection from './TaskAttachmentsSection'
 import SpellcheckInput from '../shared/SpellcheckInput'
 import FormLabel from '../shared/FormLabel'
 import { useTextFieldLimits } from '../../hooks/useTextFieldLimits'
+import { FIELD_HELP_TEXT } from '../../lib/fieldHelpText'
 
 export const EMPTY_TASK_FORM = {
   task_number: '',
@@ -77,12 +78,13 @@ function FormField({
   fullWidth = false,
   hint,
   maxLength,
+  fieldType,
   children,
 }) {
   return (
     <label className={`company-form__field${fullWidth ? ' company-form__field--full' : ''}`}>
       {label && (
-        <FormLabel limit={maxLength}>
+        <FormLabel fieldType={fieldType} limit={maxLength}>
           {label}
           {required ? ' *' : ''}
         </FormLabel>
@@ -392,34 +394,47 @@ export default function TaskForm({
           )}
 
           <div className="task-form__field-row task-form__field-row--2 company-form__field--full">
-            <FormField label="Task Title" required>
+            <FormField label="Task Title" required fieldType="text" maxLength={maxLength('title')}>
               <SpellcheckInput
                 className="company-form__input"
                 value={values.title}
                 onChange={(e) => setField('title', e.target.value)}
                 required
+                maxLength={maxLength('title')}
               />
             </FormField>
 
-            <FormField label="Short Description" maxLength={maxLength('short_description')}>
+            <FormField
+              label="Short Description"
+              fieldType="text"
+              maxLength={maxLength('short_description')}
+              hint={FIELD_HELP_TEXT.short_description.hint}
+            >
               <SpellcheckInput
                 className="company-form__input"
                 value={values.short_description}
                 onChange={(e) => setField('short_description', e.target.value)}
-                placeholder="Brief summary shown on cards and lists"
+                placeholder={FIELD_HELP_TEXT.short_description.placeholder}
                 maxLength={maxLength('short_description')}
               />
             </FormField>
           </div>
 
-          <FormField label="Detailed Description" required fullWidth maxLength={maxLength('problem_description')}>
+          <FormField
+            label="Detailed Description"
+            required
+            fullWidth
+            fieldType="textarea"
+            maxLength={maxLength('problem_description')}
+            hint={FIELD_HELP_TEXT.problem_description.hint}
+          >
             <SpellcheckInput
               multiline
               className="company-form__input company-form__textarea"
               rows={5}
               value={values.detailed_description}
               onChange={(e) => setField('detailed_description', e.target.value)}
-              placeholder="Full task details, instructions, and context"
+              placeholder={FIELD_HELP_TEXT.problem_description.placeholder}
               required
               maxLength={maxLength('problem_description')}
             />

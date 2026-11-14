@@ -170,6 +170,9 @@ export default defineConfig(({ mode }) => {
     server: {
       host: true,
       port: 5173,
+      fs: {
+        allow: [resolve(__dirname, '..')],
+      },
       // Allow ngrok / tunnel hostnames when testing password-reset emails
       allowedHosts: mode === 'development' ? true : undefined,
       proxy: {

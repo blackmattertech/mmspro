@@ -1,3 +1,5 @@
+import { formatDisplayDate, formatDisplayTime } from './displayDate'
+
 export const DAILY_SNAPSHOT_ACTIVE_STATUSES = new Set([
   'assigned',
   'accepted',
@@ -22,29 +24,11 @@ export function todayDateString(timeZone) {
 }
 
 export function formatDayTabLabel(log) {
-  const datePart = (() => {
-    if (!log?.log_date) return 'Day'
-    try {
-      return new Date(`${log.log_date}T12:00:00`).toLocaleDateString(undefined, {
-        day: 'numeric',
-        month: 'short',
-        year: 'numeric',
-      })
-    } catch {
-      return log.log_date
-    }
-  })()
+  const datePart = formatDisplayDate(log?.log_date) || 'Day'
   const stamp = log?.updated_at || log?.ended_at || log?.started_at
-  if (!stamp) return datePart
-  try {
-    const time = new Date(stamp).toLocaleTimeString(undefined, {
-      hour: '2-digit',
-      minute: '2-digit',
-    })
-    return `${datePart} · ${time}`
-  } catch {
-    return datePart
-  }
+  const time = formatDisplayTime(stamp)
+  if (!time) return datePart
+  return `${datePart} · ${time}`
 }
 
 export function blankExecutionForm() {

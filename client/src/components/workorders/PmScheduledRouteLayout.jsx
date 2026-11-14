@@ -204,7 +204,7 @@ function PmScheduledLayoutInner() {
         type: 'select',
         emptyLabel: 'All Status',
         options: [
-          { value: 'assigned', label: 'Approval Pending / Technician assigned' },
+          { value: 'assigned', label: 'Technician assignment pending / Technician assigned' },
           { value: 'in_progress', label: 'In progress' },
           { value: 'completed', label: 'Completed' },
           { value: 'verified', label: 'Verified' },

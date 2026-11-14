@@ -89,7 +89,7 @@ function WorkRequestChecklistPanel({ detail, readOnly = false }) {
 }
 import { useFormLayout } from '../../hooks/useFormLayout'
 import { useFormFieldValues } from '../../hooks/useFormFieldValues'
-import { resolveFormActors } from '../../lib/formFillership'
+import { canEditFilledBy, resolveFormActors } from '../../lib/formFillership'
 import {
   catalogId,
   parseLayoutId,
@@ -97,6 +97,7 @@ import {
   isAssetPickerLayoutField,
 } from '../../lib/formLayoutIds'
 import { SYSTEM_FIELD_OPTIONS } from '../../lib/systemFieldFallback'
+import { formatDisplayDateTime } from '../../lib/displayDate'
 
 export { isPrimaryAssetPickerField, isAssetPickerLayoutField }
 import '../company/CompanyShared.css'
@@ -106,10 +107,7 @@ import './WorkRequests.css'
 
 function formatDate(value) {
   if (!value) return '—'
-  return new Date(value).toLocaleString(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  })
+  return formatDisplayDateTime(value) || '—'
 }
 
 function hasFilledValue(value) {
@@ -902,7 +900,7 @@ export default function WorkRequestDetailModal({
                     <MetaItem label="Work order">
                       {org?.slug && workOrderId ? (
                         <Link
-                          to={orgPath(org.slug, `work-orders/manual?open=${encodeURIComponent(workOrderId)}`)}
+                          to={orgPath(org.slug, `work-orders/received?open=${encodeURIComponent(workOrderId)}`)}
                           className="company-link"
                         >
                           {detail.linked_work_order?.wo_number
@@ -998,7 +996,10 @@ export default function WorkRequestDetailModal({
                     </section>
                   )}
 
-                <WorkRequestChecklistPanel detail={detail} readOnly={!formActors.isTechnician} />
+                <WorkRequestChecklistPanel
+                  detail={detail}
+                  readOnly={!canEditFilledBy('technician', formActors)}
+                />
 
                 {breakdownFields.length > 0 && (
                   <section className="wo-received-detail__section">
@@ -1033,7 +1034,7 @@ export default function WorkRequestDetailModal({
                     )}
                     <div className="wr-assign-block">
                       <label className="company-form__field company-form__field--full">
-                        <FormLabel limit={remarksLimit}>Your reply</FormLabel>
+                        <FormLabel fieldType="textarea" limit={remarksLimit}>Your reply</FormLabel>
                         <SpellcheckInput
                           multiline
                           className="company-form__input company-form__textarea"
@@ -1126,7 +1127,7 @@ export default function WorkRequestDetailModal({
                     {mode === 'info' && (
                       <div className="wr-assign-block">
                         <label className="company-form__field company-form__field--full">
-                          <FormLabel limit={remarksLimit}>Message to requester</FormLabel>
+                          <FormLabel fieldType="textarea" limit={remarksLimit}>Message to requester</FormLabel>
                           <SpellcheckInput
                             multiline
                             className="company-form__input company-form__textarea"
@@ -1231,7 +1232,7 @@ export default function WorkRequestDetailModal({
                 {detail?.request_number ? ` ${detail.request_number}` : ''}. This cannot be undone.
               </p>
               <label className="company-form__field">
-                <FormLabel limit={remarksLimit}>Rejection reason *</FormLabel>
+                <FormLabel fieldType="textarea" limit={remarksLimit}>Rejection reason *</FormLabel>
                 <SpellcheckInput
                   multiline
                   className="company-form__input company-form__textarea"

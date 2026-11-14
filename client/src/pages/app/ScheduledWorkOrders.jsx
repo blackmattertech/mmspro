@@ -15,7 +15,7 @@ import {
   getPmPlansTemplate,
   bulkUploadPmPlans,
 } from '../../lib/api-pm'
-import { useWorkOrderList } from '../../hooks/useWorkOrderList'
+import { useWorkOrderList, listResponseCacheKey } from '../../hooks/useWorkOrderList'
 import { notifyTabCountsChanged } from '../../lib/tabCountEvents'
 import { useWorkOrderToolbar } from '../../hooks/useWorkOrderToolbar'
 import { usePermissions } from '../../hooks/usePermissions'
@@ -128,7 +128,22 @@ export default function ScheduledWorkOrders() {
     })),
     [debouncedSearch, pagination.pageSize, pagination.offset, columnFilters, fieldFilter, statusFilters, headerSort, sortBy],
   )
-  const { orders, total, loading, error: ordersError, reload: reloadOrders } = useWorkOrderList(fetchOrders)
+  const listCacheKey = useMemo(() => listResponseCacheKey('wo-scheduled', {
+    search: debouncedSearch,
+    limit: pagination.pageSize,
+    offset: pagination.offset,
+    filters: columnFilters,
+    field: fieldFilter?.field || '',
+    value: fieldFilter?.value || '',
+    statuses: statusFilters,
+    sort: headerSort?.id || '',
+    sortDir: headerSort?.dir || '',
+    sort_by: headerSort ? '' : sortBy,
+  }), [debouncedSearch, pagination.pageSize, pagination.offset, columnFilters, fieldFilter, statusFilters, headerSort, sortBy])
+  const { orders, total, loading, error: ordersError, reload: reloadOrders } = useWorkOrderList(fetchOrders, {
+    cacheKey: listCacheKey,
+    onRows: outlet.reportFilterRows || null,
+  })
   useEffect(() => { setListTotal(total) }, [total])
 
   const loadPlans = useCallback(async () => {

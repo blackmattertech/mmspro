@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useDebouncedValue } from '../../hooks/useDebouncedValue'
 import { NavLink, Navigate, Outlet, useLocation } from 'react-router-dom'
 import { useOrg } from '../../hooks/useOrg'
@@ -14,8 +14,8 @@ import {
 } from '../../config/workRequests'
 import { useDepartments } from '../../hooks/useDepartments'
 import { WR_PRIORITY_FILTER_OPTIONS, WR_SORT_OPTIONS, WR_STATUS_FILTER_OPTIONS } from '../../lib/workRequestFilters'
-import { getWorkRequestsTemplate, bulkUploadWorkRequests, exportWorkRequests, getWorkRequestTabCounts, listWorkRequests } from '../../lib/api-work-requests'
-import { uniqueNameOptions } from '../../lib/tableFilters'
+import { getWorkRequestsTemplate, bulkUploadWorkRequests, exportWorkRequests, getWorkRequestTabCounts } from '../../lib/api-work-requests'
+import { buildWorkRequestFilterFields } from '../../lib/listFilterOptions'
 import { peekReferenceData, seedReferenceData } from '../../lib/referenceDataCache'
 import { TAB_COUNTS_EVENT } from '../../lib/tabCountEvents'
 import { downloadBlobFile } from '../../lib/api'
@@ -84,73 +84,16 @@ export default function WorkRequestsLayout() {
 
   const { departments } = useDepartments()
   const [filterRows, setFilterRows] = useState([])
-  useEffect(() => {
-    if (!listFilter) {
-      setFilterRows([])
-      return undefined
-    }
-    let cancelled = false
-    listWorkRequests(listFilter, { limit: 200, offset: 0 })
-      .then((rows) => { if (!cancelled) setFilterRows(Array.isArray(rows) ? rows : []) })
-      .catch(() => { if (!cancelled) setFilterRows([]) })
-    return () => { cancelled = true }
-  }, [listFilter])
-  const requestFilterFields = useMemo(() => ([
-    {
-      id: 'wr_number',
-      label: 'WR #',
-      type: 'select',
-      emptyLabel: 'All WR #',
-      options: uniqueNameOptions(filterRows, (row) => row.request_number || row.wr_number),
-    },
-    {
-      id: 'problem',
-      label: 'Short description',
-      type: 'select',
-      emptyLabel: 'All descriptions',
-      options: uniqueNameOptions(filterRows, (row) => row.short_description || row.problem_description),
-    },
-    {
-      id: 'type',
-      label: 'Type',
-      type: 'select',
-      emptyLabel: 'All Types',
-      options: [
-        { value: 'inter_department', label: 'Inter department' },
-        { value: 'intra_department', label: 'Intra department' },
-        { value: 'user_self', label: 'Self' },
-      ],
-    },
-    {
-      id: 'order_from',
-      label: 'From Department',
-      type: 'select',
-      emptyLabel: 'All Departments',
-      options: (departments || []).map((dept) => ({ value: dept.name, label: dept.name })),
-    },
-    {
-      id: 'order_to',
-      label: 'To Department',
-      type: 'select',
-      emptyLabel: 'All Departments',
-      options: (departments || []).map((dept) => ({ value: dept.name, label: dept.name })),
-    },
-    {
-      id: 'priority',
-      label: 'Priority',
-      type: 'select',
-      emptyLabel: 'All Priorities',
-      options: WR_PRIORITY_FILTER_OPTIONS.filter((option) => option.value !== 'all'),
-    },
-    {
-      id: 'status',
-      label: 'Status',
-      type: 'select',
-      emptyLabel: 'All Status',
-      options: WR_STATUS_FILTER_OPTIONS.filter((option) => option.value !== 'all'),
-    },
-    { id: 'request_date', label: 'Requested Date', type: 'date-range' },
-  ].filter((field) => listFilter !== 'drafts' || field.id !== 'status')), [departments, filterRows, listFilter])
+  const reportFilterRows = useCallback((rows) => {
+    setFilterRows(Array.isArray(rows) ? rows : [])
+  }, [])
+  const requestFilterFields = useMemo(() => buildWorkRequestFilterFields({
+    pageRows: filterRows,
+    departments,
+    priorityOptions: WR_PRIORITY_FILTER_OPTIONS.filter((option) => option.value !== 'all'),
+    statusOptions: WR_STATUS_FILTER_OPTIONS.filter((option) => option.value !== 'all'),
+    includeStatus: listFilter !== 'drafts',
+  }), [departments, filterRows, listFilter])
   const catalogFields = useCatalogFields()
   const requestColumns = useMemo(
     () => mergePickerColumns(WORK_REQUEST_COLUMNS, catalogFields),
@@ -210,7 +153,7 @@ export default function WorkRequestsLayout() {
       cancelled = true
       window.removeEventListener(TAB_COUNTS_EVENT, onChange)
     }
-  }, [bulkReloadToken, org?.id, location.pathname])
+  }, [bulkReloadToken, org?.id])
 
   const outletContext = useMemo(() => ({
     listFilter,
@@ -225,9 +168,11 @@ export default function WorkRequestsLayout() {
     visibleColumnIds,
     columnDefs: requestColumns,
     bulkReloadToken,
+    reportFilterRows,
   }), [
     listFilter, debouncedSearch, sortBy, columnFilters,
     headerSort, statusFilters, visibleColumnIds, requestColumns, bulkReloadToken,
+    reportFilterRows,
   ])
 
   const exportRows = async () => {

@@ -1,46 +1,41 @@
 import { useCalendar } from '../../hooks/useCalendar'
 import CalendarHeader, { CalendarToolbar } from '../../components/calendar/CalendarHeader'
-import { CalendarFilters, CalendarGrid, CalendarTable } from '../../components/calendar/CalendarGrid'
+import { CalendarGrid } from '../../components/calendar/CalendarGrid'
 import { QuickFilters, UpcomingTasksPanel, TaskSummaryPanel } from '../../components/calendar/CalendarSidebar'
 import './Calendar.css'
 
 export default function Calendar() {
   const {
     plants,
-    workCenters,
-    allFilteredTasks,
     tasksByDate,
     upcomingTasks,
     summary,
     quickFilterCounts,
-    priorityLabels,
     year,
     month,
-    monthLabel,
-    todayDay,
+    periodLabel,
+    todayIso,
+    selectedDate,
+    selectDate,
+    weekDays,
     viewMode,
     setViewMode,
     plantFilter,
     setPlantFilter,
     logFilter,
     setLogFilter,
-    workCenterFilter,
-    setWorkCenterFilter,
     quickFilter,
     setQuickFilter,
-    dateFrom,
-    setDateFrom,
-    dateTo,
-    setDateTo,
     goToToday,
-    goToPrevMonth,
-    goToNextMonth,
+    goToPrev,
+    goToNext,
     loading,
     error,
+    tasks,
   } = useCalendar()
 
   const plantOptions = plants || []
-  const workCenterOptions = workCenters || []
+  const dayTasks = selectedDate ? (tasksByDate[selectedDate] || []) : tasks
 
   return (
     <div className="calendar-page">
@@ -48,49 +43,43 @@ export default function Calendar() {
         plants={plantOptions}
         plantFilter={plantFilter}
         onPlantChange={setPlantFilter}
-        dateFrom={dateFrom}
-        dateTo={dateTo}
-        onDateFromChange={setDateFrom}
-        onDateToChange={setDateTo}
       />
 
       <div className="calendar-page__body">
         <div className="calendar-page__main">
           <CalendarToolbar
-            monthLabel={monthLabel}
+            monthLabel={periodLabel}
             viewMode={viewMode}
             onViewModeChange={setViewMode}
             onToday={goToToday}
-            onPrevMonth={goToPrevMonth}
-            onNextMonth={goToNextMonth}
+            onPrevMonth={goToPrev}
+            onNextMonth={goToNext}
+            logFilter={logFilter}
+            onLogFilterChange={setLogFilter}
           />
 
           <div className="calendar-page__card">
-            <CalendarFilters
-              logFilter={logFilter}
-              onLogFilterChange={setLogFilter}
-              plantFilter={plantFilter}
-              onPlantFilterChange={setPlantFilter}
-              workCenterFilter={workCenterFilter}
-              onWorkCenterFilterChange={setWorkCenterFilter}
-              plants={plantOptions}
-              workCenters={workCenterOptions}
-            />
-
             {error && (
               <div className="wo-alert wo-alert--error" role="alert">{error}</div>
             )}
             {loading ? (
               <div className="company-loading">Loading calendar…</div>
-            ) : viewMode === 'calendar' ? (
+            ) : (
               <CalendarGrid
                 year={year}
                 month={month}
                 tasksByDate={tasksByDate}
-                todayDay={todayDay}
+                todayIso={todayIso}
+                selectedDate={selectedDate}
+                onSelectDate={selectDate}
+                onOpenDay={(iso) => {
+                  selectDate(iso)
+                  setViewMode('day')
+                }}
+                viewMode={viewMode}
+                weekDays={weekDays}
+                dayTasks={viewMode === 'day' ? tasks : dayTasks}
               />
-            ) : (
-              <CalendarTable tasks={allFilteredTasks} priorityLabels={priorityLabels} />
             )}
           </div>
         </div>
@@ -101,11 +90,8 @@ export default function Calendar() {
             onChange={setQuickFilter}
             counts={quickFilterCounts}
           />
-          <UpcomingTasksPanel
-            tasks={upcomingTasks}
-            priorityLabels={priorityLabels}
-          />
-          <TaskSummaryPanel summary={summary} />
+          <UpcomingTasksPanel tasks={upcomingTasks} />
+          <TaskSummaryPanel summary={summary} periodLabel={periodLabel} />
         </aside>
       </div>
     </div>

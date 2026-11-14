@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom'
 import { STATUS_COLORS, STATUS_LABELS, PRIORITY_COLORS } from '../../data/dashboardDemo'
 import { useOrg } from '../../hooks/useOrg'
 import { orgPath } from '../../config/navigation'
+import { formatDisplayDateTime } from '../../lib/displayDate'
 
 function finiteNumber(value, fallback = 0) {
   const n = Number(value)
@@ -24,14 +25,7 @@ function humanStatus(status) {
 
 function formatWhen(value) {
   if (!value) return '—'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return String(value).slice(0, 10)
-  return date.toLocaleString(undefined, {
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  })
+  return formatDisplayDateTime(value) || String(value).slice(0, 10)
 }
 
 export function KpiCards({ stats }) {

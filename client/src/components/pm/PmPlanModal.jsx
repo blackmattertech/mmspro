@@ -14,9 +14,11 @@ import { PM_PRIORITIES, PM_SCHEDULE_TYPES, PM_CALENDAR_UNITS, CALENDAR_SCHEDULE_
 import DateField from '../ui/DateField'
 import FilterableSelect from '../ui/FilterableSelect'
 import GooToggle from '../ui/GooToggle'
+import FormLabel from '../shared/FormLabel'
 import SpellcheckInput from '../shared/SpellcheckInput'
 import TechnicianMultiSelect from '../workrequests/TechnicianMultiSelect'
 import PageBack from '../shared/PageBack'
+import { masterFieldLimit } from '../../lib/textFieldLimits'
 import { useFormLayout } from '../../hooks/useFormLayout'
 import { useFormFieldValues } from '../../hooks/useFormFieldValues'
 import CatalogExtrasGrid from '../forms/CatalogExtrasGrid'
@@ -839,8 +841,13 @@ export default function PmPlanModal({ plan, saving, onClose, onSave }) {
                 if (key === 'name') {
                   return (
                     <label key={key} className={className} id="pm-field-name">
-                      <span className="company-form__label">PM plan name</span>
-                      <SpellcheckInput className="company-form__input" value={form.name} onChange={(e) => setField('name', e.target.value)} />
+                      <FormLabel fieldType="text" limit={masterFieldLimit('name')}>PM plan name</FormLabel>
+                      <SpellcheckInput
+                        className="company-form__input"
+                        value={form.name}
+                        onChange={(e) => setField('name', e.target.value)}
+                        maxLength={masterFieldLimit('name')}
+                      />
                     </label>
                   )
                 }
@@ -863,8 +870,13 @@ export default function PmPlanModal({ plan, saving, onClose, onSave }) {
                 if (key === 'work_center') {
                   return (
                     <label key={key} className={className}>
-                      <span className="company-form__label">Work center</span>
-                      <SpellcheckInput className="company-form__input" value={form.work_center} onChange={(e) => setField('work_center', e.target.value)} />
+                      <FormLabel fieldType="text" limit={masterFieldLimit('name')}>Work center</FormLabel>
+                      <SpellcheckInput
+                        className="company-form__input"
+                        value={form.work_center}
+                        onChange={(e) => setField('work_center', e.target.value)}
+                        maxLength={masterFieldLimit('name')}
+                      />
                     </label>
                   )
                 }

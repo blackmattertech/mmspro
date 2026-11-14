@@ -1,5 +1,8 @@
 import TrashIcon from '../ui/TrashIcon'
 import SpellcheckInput from '../shared/SpellcheckInput'
+import FilterableSelect from '../ui/FilterableSelect'
+import { useUoms } from '../../hooks/useUoms'
+import { buildUomSelectOptions, resolveUomValue } from '../../lib/uomOptions'
 
 function emptyRow() {
   return { code: '', description: '', uom: '', qty: '' }
@@ -36,6 +39,11 @@ export default function WorkOrderMaterialRowsTable({
   descriptionMaxLength,
 }) {
   const list = normalizeMaterialRows(rows)
+  const { uoms, loading: uomsLoading, error: uomsError } = useUoms({
+    activeOnly: true,
+    limit: 500,
+    enabled: !readOnly,
+  })
 
   const updateRow = (index, key, value) => {
     const next = list.map((row, i) => (i === index ? { ...row, [key]: value } : row))
@@ -51,6 +59,9 @@ export default function WorkOrderMaterialRowsTable({
 
   return (
     <div className="wo-material-table-wrap">
+      {!readOnly && uomsError && (
+        <p className="company-alert" role="alert">{uomsError}</p>
+      )}
       <table className="wo-material-table">
         <thead>
           <tr>
@@ -63,7 +74,9 @@ export default function WorkOrderMaterialRowsTable({
           </tr>
         </thead>
         <tbody>
-          {list.map((row, index) => (
+          {list.map((row, index) => {
+            const uomOptions = buildUomSelectOptions(uoms, row.uom)
+            return (
             <tr key={index}>
               <td className="wo-material-table__sno">{index + 1}</td>
               <td>
@@ -97,12 +110,18 @@ export default function WorkOrderMaterialRowsTable({
                 {readOnly ? (
                   row.uom || '—'
                 ) : (
-                  <input
-                    className="company-form__input"
-                    value={row.uom}
-                    disabled={disabled}
-                    onChange={(e) => updateRow(index, 'uom', e.target.value)}
+                  <FilterableSelect
+                    value={resolveUomValue(uomOptions, row.uom)}
+                    onChange={(value) => updateRow(index, 'uom', value)}
+                    options={uomOptions}
+                    getOptionValue={(option) => option.value}
+                    getOptionLabel={(option) => option.label}
+                    placeholder={uomsError ? 'Units unavailable' : (uomsLoading ? 'Loading units…' : 'Select UOM')}
+                    disabled={disabled || uomsLoading || Boolean(uomsError)}
+                    allowEmpty
                     aria-label={`UOM ${index + 1}`}
+                    inputClassName="company-form__input"
+                    className="wo-material-table__uom"
                   />
                 )}
               </td>
@@ -151,7 +170,8 @@ export default function WorkOrderMaterialRowsTable({
                 </td>
               )}
             </tr>
-          ))}
+            )
+          })}
         </tbody>
       </table>
     </div>

@@ -103,7 +103,7 @@ function UpcomingItem({ task }) {
 export function UpcomingTasksPanel({ tasks }) {
   return (
     <div className="cal-panel">
-      <h3 className="cal-panel__title">Upcoming</h3>
+      <h3 className="cal-panel__title">Upcoming (Next 7 Days)</h3>
       {!tasks?.length ? (
         <p className="cal-panel__empty">No upcoming items.</p>
       ) : (
@@ -117,7 +117,7 @@ export function UpcomingTasksPanel({ tasks }) {
   )
 }
 
-export function TaskSummaryPanel({ summary }) {
+export function TaskSummaryPanel({ summary, periodLabel }) {
   const radius = 56
   const circumference = 2 * Math.PI * radius
   let offset = 0
@@ -132,7 +132,7 @@ export function TaskSummaryPanel({ summary }) {
 
   return (
     <div className="cal-panel">
-      <h3 className="cal-panel__title">Summary</h3>
+      <h3 className="cal-panel__title">Summary{periodLabel ? ` · ${periodLabel}` : ''}</h3>
       <div className="cal-summary">
         <div className="cal-summary__chart">
           <svg width="140" height="140" viewBox="0 0 140 140">

@@ -17,6 +17,10 @@ import FilterableSelect from '../../components/ui/FilterableSelect'
 import SpellcheckInput from '../../components/shared/SpellcheckInput'
 import FormLabel from '../../components/shared/FormLabel'
 import { firstCharacterLimitMessage } from '../../lib/textFieldLimits'
+import { FIELD_HELP_TEXT } from '../../lib/fieldHelpText'
+
+const SHORT_DESCRIPTION_HELP = FIELD_HELP_TEXT.short_description
+const PROBLEM_DESCRIPTION_HELP = FIELD_HELP_TEXT.problem_description
 import {
   clearBreakdownFieldValues,
   missingRequiredBreakdownFields,
@@ -706,38 +710,34 @@ export default function WorkRequestCreate() {
     if (key === 'short_description') {
       return (
         <label key={key} className={className}>
-          <FormLabel limit={maxLength('short_description')}>Short description</FormLabel>
+          <FormLabel fieldType="text" limit={maxLength('short_description')}>Short description</FormLabel>
           <SpellcheckInput
             className="company-form__input"
             value={shortDescription}
             onChange={(e) => setShortDescription(e.target.value)}
-            placeholder="Brief summary shown in lists and tables"
+            placeholder={SHORT_DESCRIPTION_HELP.placeholder}
             maxLength={maxLength('short_description')}
             required={required}
           />
-          <p className="company-form__hint">
-            One-line summary used in work request lists, tables, and notifications.
-          </p>
+          <p className="company-form__hint">{SHORT_DESCRIPTION_HELP.hint}</p>
         </label>
       )
     }
     if (key === 'problem_description') {
       return (
         <label key={key} className={className}>
-          <FormLabel limit={maxLength('problem_description')}>Problem description</FormLabel>
+          <FormLabel fieldType="textarea" limit={maxLength('problem_description')}>Problem description</FormLabel>
           <SpellcheckInput
             multiline
             className="company-form__input company-form__textarea"
             rows={4}
             value={problem}
             onChange={(e) => setProblem(e.target.value)}
-            placeholder="Describe the issue or maintenance need"
+            placeholder={PROBLEM_DESCRIPTION_HELP.placeholder}
             maxLength={maxLength('problem_description')}
             required={required}
           />
-          <p className="company-form__hint">
-            Full details for reviewers and technicians: symptoms, impact, and any safety notes.
-          </p>
+          <p className="company-form__hint">{PROBLEM_DESCRIPTION_HELP.hint}</p>
         </label>
       )
     }
@@ -804,7 +804,7 @@ export default function WorkRequestCreate() {
     if (key === 'remarks') {
       return (
         <label key={key} className={className}>
-          <FormLabel limit={maxLength('remarks')}>Remarks</FormLabel>
+          <FormLabel fieldType="textarea" limit={maxLength('remarks')}>Remarks</FormLabel>
           <SpellcheckInput
             multiline
             className="company-form__input company-form__textarea"
@@ -972,34 +972,30 @@ export default function WorkRequestCreate() {
               <div className="company-form__grid">
                 {isVisible('short_description') && (
                 <label className={fieldClass('short_description', 'company-form__field--full')}>
-                  <FormLabel limit={maxLength('short_description')}>Short description</FormLabel>
+                  <FormLabel fieldType="text" limit={maxLength('short_description')}>Short description</FormLabel>
                   <SpellcheckInput
                     className="company-form__input"
                     value={shortDescription}
                     onChange={(e) => setShortDescription(e.target.value)}
-                    placeholder="Brief summary shown in lists and tables"
+                    placeholder={SHORT_DESCRIPTION_HELP.placeholder}
                     maxLength={maxLength('short_description')}
                   />
-                  <p className="company-form__hint">
-                    One-line summary used in work request lists, tables, and notifications.
-                  </p>
+                  <p className="company-form__hint">{SHORT_DESCRIPTION_HELP.hint}</p>
                 </label>
                 )}
                 {isVisible('problem_description') && (
                 <label className={fieldClass('problem_description', 'company-form__field--full')}>
-                  <FormLabel limit={maxLength('problem_description')}>Problem description</FormLabel>
+                  <FormLabel fieldType="textarea" limit={maxLength('problem_description')}>Problem description</FormLabel>
                   <SpellcheckInput
                     multiline
                     className="company-form__input company-form__textarea"
                     rows={4}
                     value={problem}
                     onChange={(e) => setProblem(e.target.value)}
-                    placeholder="Describe the issue or maintenance need"
+                    placeholder={PROBLEM_DESCRIPTION_HELP.placeholder}
                     maxLength={maxLength('problem_description')}
                   />
-                  <p className="company-form__hint">
-                    Full details for reviewers and technicians: symptoms, impact, and any safety notes.
-                  </p>
+                  <p className="company-form__hint">{PROBLEM_DESCRIPTION_HELP.hint}</p>
                 </label>
                 )}
                 <div className="wr-form__meta-row">
@@ -1054,7 +1050,7 @@ export default function WorkRequestCreate() {
                 )}
                 {isVisible('remarks') && (
                 <label className={fieldClass('remarks', 'company-form__field--full')}>
-                  <FormLabel limit={maxLength('remarks')}>Remarks</FormLabel>
+                  <FormLabel fieldType="textarea" limit={maxLength('remarks')}>Remarks</FormLabel>
                   <SpellcheckInput
                     multiline
                     className="company-form__input company-form__textarea"

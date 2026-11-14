@@ -50,7 +50,9 @@ export default function TaskKanban({
                 />
                 <span className="tasks-kanban__column-name">{column.status.name}</span>
               </h3>
-              <span className="tasks-kanban__column-count">{column.tasks.length}</span>
+              <span className="tasks-kanban__column-count">
+                {Number(column.total ?? column.tasks.length) || 0}
+              </span>
             </header>
             <div
               className={`tasks-kanban__column-body${dragOverStatusId === column.status.id ? ' tasks-kanban__column-body--over' : ''}`}
@@ -64,6 +66,9 @@ export default function TaskKanban({
               {column.tasks.map((task) => (
                 <TaskKanbanCard key={task.id} task={task} onOpen={onOpenTask} />
               ))}
+              {column.truncated ? (
+                <div className="tasks-kanban__empty">Showing first {column.tasks.length}. Switch to table view for the rest.</div>
+              ) : null}
               {!column.tasks.length && (
                 <div className="tasks-kanban__empty">Drop tasks here</div>
               )}

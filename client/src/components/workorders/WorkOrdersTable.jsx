@@ -20,6 +20,7 @@ import RecordPdfButton from '../shared/RecordPdfButton'
 import { ColumnPickerPortal } from '../shared/ColumnPickerSlot'
 import { VirtualTableBody } from '../shared/VirtualTableBody'
 import TableEmptyRow from '../shared/TableEmptyRow'
+import TruncatedText from '../shared/TruncatedText'
 import '../shared/ListTableChrome.css'
 import { resolveProgressPercent } from '../../lib/statusProgress'
 import { formatWorkOrderStatusLabel } from '../../lib/workOrderStatusLabel'
@@ -110,9 +111,9 @@ function textCell(value) {
   const text = String(value || '').trim()
   if (!text) return '—'
   return (
-    <span className="company-table__name" title={text}>
+    <TruncatedText className="company-table__name" text={text}>
       {text}
-    </span>
+    </TruncatedText>
   )
 }
 
@@ -288,11 +289,11 @@ export default function WorkOrdersTable({
       case 'wo_number':
         return order.wo_number || '—'
       case 'summary': {
-        const text = String(order.short_description || order.summary || '').trim()
+        const text = String(order.short_description || order.summary || '').trim() || '—'
         return (
-          <span className="company-table__name" title={text || undefined}>
-            {text || '—'}
-          </span>
+          <TruncatedText className="company-table__name" text={text}>
+            {text}
+          </TruncatedText>
         )
       }
       case 'assignees':

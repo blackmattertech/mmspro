@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { formatTaskDateTimeDetail, dueStatusClass } from '../../lib/taskDateUtils'
+import { formatDisplayDateTime } from '../../lib/displayDate'
 import {
   DUE_STATUS_LABELS,
   VISIBILITY_OPTIONS,
@@ -103,14 +104,7 @@ function formatFileSize(bytes) {
 
 function formatActivityTime(value) {
   if (!value) return ''
-  const date = new Date(value)
-  return date.toLocaleString(undefined, {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  })
+  return formatDisplayDateTime(value)
 }
 
 function formatActivityAction(actionType) {

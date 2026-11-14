@@ -124,18 +124,45 @@ export function useManualWorkOrderForm({ workOrderId = null, initialEquipmentId 
   const [error, setError] = useState(null)
   const [success, setSuccess] = useState(null)
 
+  const applyEditDetail = useCallback((detail) => {
+    setRecord(detail)
+    setExistingStatus(detail.status || 'draft')
+    setValues(formValuesFromDetail(detail))
+    const assigneeIds = (detail.assignees || []).map((a) => a.id).filter(Boolean)
+    setAssignedEmployeeIds(assigneeIds)
+    const department = detail.assigned_department?.id ? detail.assigned_department : null
+    setAssignedDepartmentId(detail.assigned_department_id || department?.id || null)
+    setAssignedDepartment(department)
+    setAssignedLocationId(detail.assigned_location_id || detail.assigned_location?.id || null)
+    setAssignToDepartment(Boolean(
+      (detail.assigned_department_id || detail.assigned_department?.id)
+      && !assigneeIds.length,
+    ))
+    editHydratedRef.current = true
+    draftHydratedRef.current = true
+  }, [])
+
   const loadForm = useCallback(async ({ silent = false } = {}) => {
     if (!silent) setLoading(true)
     setError(null)
     try {
-      const data = await getManualWorkOrderForm()
-      setSchema(data)
+      if (isEdit && workOrderId && !editHydratedRef.current) {
+        const [data, detail] = await Promise.all([
+          getManualWorkOrderForm(),
+          getManualWorkOrder(workOrderId),
+        ])
+        setSchema(data)
+        applyEditDetail(detail)
+      } else {
+        const data = await getManualWorkOrderForm()
+        setSchema(data)
+      }
     } catch (err) {
       setError(err.message)
     } finally {
       if (!silent) setLoading(false)
     }
-  }, [])
+  }, [isEdit, workOrderId, applyEditDetail])
 
   const loadSettings = useCallback(async () => {
     try {
@@ -151,37 +178,6 @@ export function useManualWorkOrderForm({ workOrderId = null, initialEquipmentId 
   useEffect(() => {
     loadForm()
   }, [loadForm])
-
-  useEffect(() => {
-    if (!isEdit || !workOrderId || loading || editHydratedRef.current) return
-
-    let cancelled = false
-    ;(async () => {
-      try {
-        const detail = await getManualWorkOrder(workOrderId)
-        if (cancelled) return
-        setRecord(detail)
-        setExistingStatus(detail.status || 'draft')
-        setValues(formValuesFromDetail(detail))
-        const assigneeIds = (detail.assignees || []).map((a) => a.id).filter(Boolean)
-        setAssignedEmployeeIds(assigneeIds)
-        const department = detail.assigned_department?.id ? detail.assigned_department : null
-        setAssignedDepartmentId(detail.assigned_department_id || department?.id || null)
-        setAssignedDepartment(department)
-        setAssignedLocationId(detail.assigned_location_id || detail.assigned_location?.id || null)
-        setAssignToDepartment(Boolean(
-          (detail.assigned_department_id || detail.assigned_department?.id)
-          && !assigneeIds.length,
-        ))
-        editHydratedRef.current = true
-        draftHydratedRef.current = true
-      } catch (err) {
-        if (!cancelled) setError(err.message)
-      }
-    })()
-
-    return () => { cancelled = true }
-  }, [isEdit, workOrderId, loading])
 
   useEffect(() => {
     if (isEdit || !draftKey || loading) return

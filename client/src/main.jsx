@@ -6,9 +6,11 @@ import '@fontsource/inter/latin-600.css'
 import { initAnalytics } from './lib/firebase'
 import { initAssetCssVars } from './lib/assets'
 import { installChunkLoadRecovery } from './lib/chunkLoadRecovery'
+import { installCompanyTableAutofit } from './lib/companyTableAutofit'
 import App from './App.jsx'
 
 installChunkLoadRecovery()
+installCompanyTableAutofit()
 
 const scheduleAnalyticsInit = () => {
   if (typeof window === 'undefined') return

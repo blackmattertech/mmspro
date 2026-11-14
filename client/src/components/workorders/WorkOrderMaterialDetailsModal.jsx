@@ -1,28 +1,20 @@
 import { useBackdropClose } from '../../hooks/useBackdropClose'
+import { formatDisplayDate, formatDisplayDateTime } from '../../lib/displayDate'
 import WorkOrderMaterialRowsTable, { normalizeMaterialRows } from './WorkOrderMaterialRowsTable'
 import '../company/CompanyShared.css'
 import './ManualWorkOrder.css'
 
 function formatDayLabel(log) {
   if (!log?.log_date) return '—'
-  try {
-    return new Date(`${log.log_date}T12:00:00`).toLocaleDateString(undefined, {
-      weekday: 'short',
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric',
-    })
-  } catch {
-    return log.log_date
-  }
+  const dateLabel = formatDisplayDate(log.log_date)
+  if (!dateLabel) return log.log_date
+  const weekday = new Date(`${log.log_date}T12:00:00`).toLocaleDateString(undefined, { weekday: 'short' })
+  return `${weekday}, ${dateLabel}`
 }
 
 function formatTime(value) {
   if (!value) return '—'
-  return new Date(value).toLocaleString(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  })
+  return formatDisplayDateTime(value) || '—'
 }
 
 export default function WorkOrderMaterialDetailsModal({ logs = [], onClose }) {
