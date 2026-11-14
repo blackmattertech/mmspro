@@ -144,6 +144,7 @@ test('does not treat a repeated item as a new line on the same purchase', () => 
 test('parses ISO and day-month dates and numeric values', () => {
   assert.equal(parseImportDate('2026-01-15').value, '2026-01-15')
   assert.equal(parseImportDate('15/01/2026').value, '2026-01-15')
+  assert.equal(parseImportDate('15-Jan-2026').value, '2026-01-15')
   assert.equal(parseImportDate('31/02/2026').error, true)
   assert.equal(parseImportDecimal('₹85,000').value, 85000)
   assert.equal(parseImportDecimal('abc').error, true)

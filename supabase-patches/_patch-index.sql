@@ -118,6 +118,9 @@
 --   114-exclude-pm-from-regular-wo-lists.sql       → 114-exclude-pm-from-regular-wo-lists — PM WOs only on Scheduled
 --   115-org-table-column-defaults.sql              → 115-org-table-column-defaults — Saved table column layouts
 --   116-org-checklist-enabled-forms.sql            → 116-org-checklist-enabled-forms — Org forms that may use checklists
+--   120-warranty-status-counts.sql                 → 120-warranty-status-counts — Warranty status bucket RPC
+--   121-wr-location-scope-and-indexes.sql          → 121-wr-location-scope-and-indexes — WR location scope + indexes
+--   122-uom-master.sql                           → 122-uom-master — Unit of measure master
 
 --
 -- OTHER:

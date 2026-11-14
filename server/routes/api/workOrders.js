@@ -20,6 +20,7 @@ import {
   sendCsv,
 } from '../../lib/listQuery.js'
 import { withCatalogColumns } from '../../lib/csvExportColumns.js'
+import { formatDisplayDate } from '../../lib/displayDate.js'
 import { countStatusesViaRpc, parseStatusCountPayload, rpcJson, isMissingRpcError } from '../../lib/statusCounts.js'
 import { resolveProgressPercent } from '../../lib/statusProgress.js'
 import { loadTimelineActors } from '../../lib/timelineActors.js'
@@ -39,6 +40,13 @@ import {
 import { getAllowedNextWorkOrderStatuses } from '../../lib/orgStatusService.js'
 import { assertChecklistSelected, loadOrgProcessSkips, maybePromoteAssignedToAccepted } from '../../lib/formSkips.js'
 import { workOrderFormIdForSource } from '../../lib/workOrderForms.js'
+import {
+  SCHEDULED_WO_SOURCE,
+  MANUAL_WO_SOURCE,
+  isScheduledWorkOrder,
+  excludeScheduledWorkOrders,
+  onlyManualOriginWorkOrders,
+} from '../../lib/workOrderOrigin.js'
 import { actorsFromRequest, loadFillershipRecord } from '../../lib/formFillershipRecord.js'
 import { buildAssetHierarchy, ensureUserSelfCreatorAssigned } from '../../lib/workRequestService.js'
 import {
@@ -94,17 +102,6 @@ function parsePagination(query, { defaultLimit = 50, maxLimit = 200 } = {}) {
     : defaultLimit
   const offset = Number.isFinite(rawOffset) ? Math.max(0, rawOffset) : 0
   return { limit, offset }
-}
-
-/** PM scheduled WOs belong only on Scheduled until converted to a regular source. */
-const SCHEDULED_WO_SOURCE = 'preventive_maintenance'
-
-function isScheduledWorkOrder(row) {
-  return row?.source_type === SCHEDULED_WO_SOURCE
-}
-
-function excludeScheduledWorkOrders(query) {
-  return query.neq('source_type', SCHEDULED_WO_SOURCE)
 }
 
 async function loadOrgWorkOrderFields(orgId) {
@@ -2615,9 +2612,8 @@ function statusPercent(count, total) {
 }
 
 function formatTrendLabel(isoDay) {
-  const day = isoDay instanceof Date ? isoDay : new Date(`${String(isoDay).slice(0, 10)}T00:00:00Z`)
-  if (Number.isNaN(day.getTime())) return ''
-  return day.toLocaleDateString(undefined, { month: 'short', day: 'numeric', timeZone: 'UTC' })
+  const text = isoDay instanceof Date ? isoDay.toISOString().slice(0, 10) : String(isoDay || '').slice(0, 10)
+  return formatDisplayDate(text)
 }
 
 function dashboardDateBounds(dateFrom, dateTo) {
@@ -2820,58 +2816,64 @@ router.get('/dashboard', canReadWorkOrders, async (req, res) => {
   }
 })
 
+export async function countWorkOrderTabs(orgId, profile, orgPermissions, { employee: knownEmployee = null } = {}) {
+  const scopedLocationId = getScopedLocationId(orgPermissions)
+  const employee = knownEmployee || await getEmployeeByProfile(orgId, profile.id, { email: profile.email })
+
+  let manualCountQuery = supabaseAdmin
+    .from('manual_work_orders')
+    .select('id', { count: 'exact', head: true })
+    .eq('org_id', orgId)
+    .neq('status', 'draft')
+  manualCountQuery = onlyManualOriginWorkOrders(manualCountQuery)
+  let scheduledCountQuery = supabaseAdmin
+    .from('manual_work_orders')
+    .select('id', { count: 'exact', head: true })
+    .eq('org_id', orgId)
+    .eq('source_type', SCHEDULED_WO_SOURCE)
+    .neq('status', 'draft')
+  if (scopedLocationId) {
+    manualCountQuery = manualCountQuery.eq('assigned_location_id', scopedLocationId)
+    scheduledCountQuery = scheduledCountQuery.eq('assigned_location_id', scopedLocationId)
+  }
+
+  const [receivedResult, assigned, scheduledResult, manualResult] = await Promise.all([
+    employee
+      ? countVisibleReceivedWorkOrders(
+        orgId,
+        profile,
+        employee,
+        orgPermissions,
+        { status: 'all' },
+      )
+      : 0,
+    countAssignedByMe(orgId, profile),
+    scheduledCountQuery.then(({ count, error }) => {
+      if (error) throw error
+      return count || 0
+    }),
+    manualCountQuery.then(({ count, error }) => {
+      if (error) throw error
+      return count || 0
+    }),
+  ])
+
+  return {
+    received: receivedResult,
+    assigned,
+    scheduled: scheduledResult,
+    manual: manualResult,
+  }
+}
+
 router.get('/counts', canReadWorkOrders, async (req, res) => {
-  const orgId = req.userProfile.org_id
-  const profileId = req.userProfile.id
-  const scopedLocationId = getScopedLocationId(req.orgPermissions)
-
   try {
-    const employee = await getEmployeeByProfile(orgId, profileId, { email: req.userProfile.email })
-
-    let manualCountQuery = supabaseAdmin
-      .from('manual_work_orders')
-      .select('id', { count: 'exact', head: true })
-      .eq('org_id', orgId)
-      .neq('status', 'draft')
-    manualCountQuery = excludeScheduledWorkOrders(manualCountQuery)
-    let scheduledCountQuery = supabaseAdmin
-      .from('manual_work_orders')
-      .select('id', { count: 'exact', head: true })
-      .eq('org_id', orgId)
-      .eq('source_type', SCHEDULED_WO_SOURCE)
-      .neq('status', 'draft')
-    if (scopedLocationId) {
-      manualCountQuery = manualCountQuery.eq('assigned_location_id', scopedLocationId)
-      scheduledCountQuery = scheduledCountQuery.eq('assigned_location_id', scopedLocationId)
-    }
-
-    const [receivedResult, assigned, scheduledResult, manualResult] = await Promise.all([
-      employee
-        ? countVisibleReceivedWorkOrders(
-          orgId,
-          req.userProfile,
-          employee,
-          req.orgPermissions,
-          { status: 'all' },
-        )
-        : 0,
-      countAssignedByMe(orgId, req.userProfile),
-      scheduledCountQuery.then(({ count, error }) => {
-        if (error) throw error
-        return count || 0
-      }),
-      manualCountQuery.then(({ count, error }) => {
-        if (error) throw error
-        return count || 0
-      }),
-    ])
-
-    res.json({
-      received: receivedResult,
-      assigned,
-      scheduled: scheduledResult,
-      manual: manualResult,
-    })
+    const counts = await countWorkOrderTabs(
+      req.userProfile.org_id,
+      req.userProfile,
+      req.orgPermissions,
+    )
+    res.json(counts)
   } catch (err) {
     res.status(500).json({ error: err.message })
   }
@@ -2891,7 +2893,7 @@ router.get('/manual/orders', canReadWorkOrders, async (req, res) => {
       .from('manual_work_orders')
       .select(WO_LIST_SELECT, { count: 'exact' })
       .eq('org_id', orgId)
-    query = excludeScheduledWorkOrders(query)
+    query = onlyManualOriginWorkOrders(query)
 
     if (scopedLocationId) query = query.eq('assigned_location_id', scopedLocationId)
     query = applyIlikeSearch(query, req.query.search, searchColumns)
@@ -2906,7 +2908,7 @@ router.get('/manual/orders', canReadWorkOrders, async (req, res) => {
           p_org_id: orgId,
           p_location_id: scopedLocationId || null,
           p_profile_id: null,
-          p_source_type: null,
+          p_source_type: MANUAL_WO_SOURCE,
           p_search: req.query.search ? String(req.query.search).trim() || null : null,
         },
         () => [],

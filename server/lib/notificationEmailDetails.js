@@ -1,5 +1,6 @@
 import { supabaseAdmin } from '../services/supabase.js'
 import { loadTimelineActors } from './timelineActors.js'
+import { formatCalendarDate } from './displayDate.js'
 
 function prettyLabel(value) {
   return String(value || '')
@@ -223,8 +224,8 @@ async function loadTaskDetails(orgId, taskId) {
   pushDetail(rows, 'Status', statusRow?.data?.name)
   pushDetail(rows, 'Priority', priorityRow?.data?.name)
   pushDetail(rows, 'Created by', createdBy)
-  pushDetail(rows, 'Start', task.start_date)
-  pushDetail(rows, 'Due', task.due_date)
+  pushDetail(rows, 'Start', formatCalendarDate(task.start_date))
+  pushDetail(rows, 'Due', formatCalendarDate(task.due_date))
   pushDetail(rows, 'Short description', task.short_description)
   return rows
 }
@@ -249,7 +250,7 @@ async function loadPmPlanDetails(orgId, planId) {
   pushDetail(rows, 'Status', prettyLabel(plan.status))
   pushDetail(rows, 'Created by', createdBy)
   pushDetail(rows, 'Frequency', prettyLabel(plan.frequency))
-  pushDetail(rows, 'Next due', plan.next_due_at)
+  pushDetail(rows, 'Next due', formatCalendarDate(plan.next_due_at))
   pushDetail(rows, 'Asset', asset)
   return rows
 }

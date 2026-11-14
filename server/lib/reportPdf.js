@@ -1,5 +1,6 @@
 import PDFDocument from 'pdfkit'
 import { UNIFIED_COLUMNS, columnsForReport, formatReportValue } from './reportConstants.js'
+import { formatDisplayDate } from './displayDate.js'
 
 const MARGIN = 32
 const HEADER_COLOR = '#111827'
@@ -319,8 +320,8 @@ export function buildActivityFilterValues(query = {}, options = {}) {
     return hit?.label || hit?.name || text
   }
   return {
-    fromDate: query.date_from || 'All',
-    toDate: query.date_to || 'All',
+    fromDate: query.date_from ? (formatDisplayDate(query.date_from) || query.date_from) : 'All',
+    toDate: query.date_to ? (formatDisplayDate(query.date_to) || query.date_to) : 'All',
     orderFrom: pick(options.departments, query.order_from),
     orderTo: pick(options.departments, query.order_to),
     orderType: pick(options.order_types, query.order_type),
@@ -559,5 +560,7 @@ export function buildReportPdfBuffer({
 
 export function reportPdfFilename(title, dateFrom, dateTo) {
   const slug = String(title || 'report').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
-  return `${slug}-${dateFrom || 'from'}-to-${dateTo || 'to'}.pdf`
+  const from = formatDisplayDate(dateFrom) || 'from'
+  const to = formatDisplayDate(dateTo) || 'to'
+  return `${slug}-${from}-to-${to}.pdf`
 }

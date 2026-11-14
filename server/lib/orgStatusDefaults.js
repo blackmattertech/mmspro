@@ -33,7 +33,7 @@ export const DEFAULT_ORG_STATUSES = {
   ],
   work_order: [
     { key: 'draft', name: 'Draft', color: '#94A3B8', sort_order: 0, is_terminal: false, description: 'Draft work order' },
-    { key: 'assigned', name: 'Approval Pending', color: '#3B82F6', sort_order: 1, is_terminal: false, description: 'Awaiting approval or technician assignment' },
+    { key: 'assigned', name: 'Technician assignment pending', color: '#3B82F6', sort_order: 1, is_terminal: false, description: 'Awaiting technician assignment' },
     { key: 'accepted', name: 'Accepted', color: '#06B6D4', sort_order: 2, is_terminal: false, description: 'Accepted by technician' },
     { key: 'started', name: 'Started', color: '#6366F1', sort_order: 3, is_terminal: false, description: 'Work started' },
     { key: 'in_progress', name: 'In progress', color: '#8B5CF6', sort_order: 4, is_terminal: false, description: 'Work in progress' },

@@ -1,4 +1,5 @@
 import { columnsForReport, formatReportValue } from './reportConstants.js'
+import { formatDisplayDate } from './displayDate.js'
 
 function csvCell(value) {
   const text = String(value ?? '')
@@ -26,5 +27,7 @@ export function buildReportCsv({ kind, columns = [], rows = [] }) {
 
 export function reportCsvFilename(title, dateFrom, dateTo) {
   const slug = String(title || 'report').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
-  return `${slug}-${dateFrom || 'from'}-to-${dateTo || 'to'}.csv`
+  const from = formatDisplayDate(dateFrom) || 'from'
+  const to = formatDisplayDate(dateTo) || 'to'
+  return `${slug}-${from}-to-${to}.csv`
 }

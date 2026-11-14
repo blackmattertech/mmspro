@@ -7,9 +7,12 @@ import {
   findDepartmentForLocation,
   scopePlacementOptions,
 } from './bulkMasterMatch.js'
+import {
+  TEMPLATE_SHEET,
+  VALID_VALUES_SHEET,
+  applyTemplateDropdowns,
+} from './excelTemplate.js'
 
-const TEMPLATE_SHEET = 'Template'
-const VALID_VALUES_SHEET = 'Valid values'
 const PLACEMENT_COLUMNS = ['Location', 'Department', 'Area']
 const NATIVE_COLUMNS = ['Reading required', 'Active']
 const YES_NO_VALUES = ['Yes', 'No']
@@ -138,6 +141,8 @@ export async function buildEquipmentTemplate(orgId, { locationId } = {}) {
   validSheet.columns = validColumns.map((c) => ({
     width: Math.max(18, Math.min(48, c.header.length + 10)),
   }))
+
+  applyTemplateDropdowns(templateSheet, headers, validColumns)
 
   const buffer = await workbook.xlsx.writeBuffer()
   return Buffer.from(buffer)

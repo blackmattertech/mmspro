@@ -153,8 +153,16 @@ export async function buildTasksTemplate(orgId) {
     { header: 'Recurrence Unit', values: CUSTOM_UNITS.map((row) => row.label) },
     { header: 'Recurrence Weekdays', values: WEEKDAYS.map((row) => row.label) },
     { header: 'Never Ends', values: YES_NO.map((row) => row.label) },
-    { header: 'Reminder Type', values: REMINDER_TYPES.map((row) => row.label) },
-    { header: 'Reference Type', values: REFERENCE_TYPES.map((row) => row.label) },
+    {
+      header: 'Reminder Type',
+      values: REMINDER_TYPES.map((row) => row.label),
+      appliesTo: ['Reminder 1 Type', 'Reminder 2 Type'],
+    },
+    {
+      header: 'Reference Type',
+      values: REFERENCE_TYPES.map((row) => row.label),
+      appliesTo: ['Reference 1 Type', 'Reference 2 Type'],
+    },
     { header: 'Category', values: masters.taskCategories.map((row) => row.name) },
     { header: 'Priority', values: masters.taskPriorities.map((row) => row.name) },
     { header: 'Status', values: masters.taskStatuses.map((row) => row.name) },

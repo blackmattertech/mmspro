@@ -2,6 +2,7 @@ import { supabaseAdmin } from '../services/supabase.js'
 import { applyIlikeSearch, listEnvelope } from './listQuery.js'
 import { hierarchyParentFields } from './equipmentService.js'
 import { loadTimelineActors } from './timelineActors.js'
+import { formatDisplayDate, formatDisplayDateTime } from './displayDate.js'
 
 const LIST_CAP = 5000
 
@@ -313,6 +314,8 @@ function dateText(value) {
   if (Number.isNaN(date.getTime())) return ''
   const options = { month: 'short', day: 'numeric', year: 'numeric' }
   return [
+    formatDisplayDate(value),
+    formatDisplayDateTime(value),
     date.toLocaleDateString(undefined, options),
     date.toLocaleDateString('en-IN', options),
     date.toLocaleDateString('en-US', options),

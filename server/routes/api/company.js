@@ -52,7 +52,12 @@ import {
   buildEmployeesTemplate,
   bulkImportEmployees,
 } from '../../lib/companyMasterBulkService.js'
+import {
+  buildWorkCentersTemplate,
+  bulkImportWorkCenters,
+} from '../../lib/workCenterBulkService.js'
 import { attachFailedFileToResult } from '../../lib/importErrorWorkbook.js'
+import uomRoutes from './uoms.js'
 
 const router = Router()
 
@@ -2428,6 +2433,41 @@ const WORK_CENTER_SELECT = `
   org_locations!location_id ( id, name, code )
 `
 
+router.get('/work-centers/template', canCreateWorkCenters, async (req, res) => {
+  try {
+    const buffer = await buildWorkCentersTemplate(req.userProfile.org_id, {
+      locationId: resolveLocationFilter(req.orgPermissions, null),
+    })
+    res.json({
+      filename: 'work-centers-template.xlsx',
+      contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      data: buffer.toString('base64'),
+    })
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message })
+  }
+})
+
+router.post('/work-centers/bulk', canCreateWorkCenters, async (req, res) => {
+  try {
+    const raw = req.body?.data
+    if (!raw || typeof raw !== 'string') {
+      return res.status(400).json({ error: 'File data is required' })
+    }
+    const base64 = raw.includes(',') ? raw.split(',').pop() : raw
+    const buffer = Buffer.from(base64, 'base64')
+    if (!buffer.length) {
+      return res.status(400).json({ error: 'File data is invalid' })
+    }
+    const locationId = resolveLocationFilter(req.orgPermissions, null)
+    const result = await bulkImportWorkCenters(req.userProfile.org_id, buffer, { locationId })
+    const payload = await attachFailedFileToResult(result, buffer, 'work-centers-import-failed-rows.xlsx')
+    res.json(payload)
+  } catch (err) {
+    res.status(err.status || 400).json({ error: err.message })
+  }
+})
+
 router.get('/work-centers', canReadWorkCenters, async (req, res) => {
   const { limit, offset } = parsePagination(req.query, { defaultLimit: 50, maxLimit: 200 })
   const controls = parseListControls(req.query)
@@ -2616,5 +2656,7 @@ router.delete('/work-centers/:id', canDeleteWorkCenters, assertOrgOwnership('wor
   }
   res.json({ id: req.params.id, deleted: true })
 })
+
+router.use('/uoms', uomRoutes)
 
 export default router

@@ -7,9 +7,11 @@ import {
   updateAssetFieldActive,
   parseDependsOnOptions,
 } from './assetFieldService.js'
-
-const TEMPLATE_SHEET = 'Template'
-const VALID_VALUES_SHEET = 'Valid values'
+import {
+  TEMPLATE_SHEET,
+  VALID_VALUES_SHEET,
+  applyTemplateDropdowns,
+} from './excelTemplate.js'
 
 const SECTION_COLUMNS = ['Name', 'Order', 'Active']
 const PARENT_COLUMNS = [
@@ -131,6 +133,8 @@ async function buildWorkbook(templateColumns, rows, validColumns) {
   validSheet.columns = validColumns.map((column) => ({
     width: Math.max(18, Math.min(48, column.header.length + 10)),
   }))
+
+  applyTemplateDropdowns(templateSheet, templateColumns, validColumns)
 
   const buffer = await workbook.xlsx.writeBuffer()
   return Buffer.from(buffer)

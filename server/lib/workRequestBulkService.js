@@ -70,7 +70,18 @@ export async function buildWorkRequestsTemplate(orgId) {
     resolveJobNatureChoiceList(orgId),
   ])
   const extraColumns = [...STATIC_EXTRA_COLUMNS, ...mapped.map((row) => row.column)]
-  const jobNatures = jobNatureChoices.map((row) => row.label || row.value)
+  const jobNatures = jobNatureChoices
+    .map((row) => String(row.label || row.value || '').trim())
+    .filter(Boolean)
+  const firstDepartment = masters.departments[0]
+  const departmentLabel = firstDepartment
+    ? (firstDepartment.code ? `${firstDepartment.name} (${firstDepartment.code})` : firstDepartment.name)
+    : ''
+  const firstAsset = masters.equipment[0]
+  const assetLabel = firstAsset
+    ? (firstAsset.code ? `${firstAsset.code} — ${firstAsset.name}` : firstAsset.name)
+    : ''
+
   return buildWorkbook([...CORE_COLUMNS, ...extraColumns], [
     { header: 'Request Type', values: REQUEST_TYPES.map((row) => row.label) },
     { header: 'Priority', values: PRIORITIES.map((row) => row.label) },
@@ -81,10 +92,13 @@ export async function buildWorkRequestsTemplate(orgId) {
   ], {
     sampleRow: {
       'Request Type': 'Inter-department',
+      'Order From Department': departmentLabel,
+      'Order To Department': departmentLabel,
+      Asset: assetLabel,
       'Short Description': 'Motor vibration',
       'Problem Description': 'Unusual vibration on pump motor during start-up',
       Priority: 'Medium',
-      'Job Nature': 'Breakdown',
+      'Job Nature': jobNatures[0] || '',
       Remarks: 'Observed during morning round',
       'Save As': 'Submit',
       ...sampleMappedRow(mapped),

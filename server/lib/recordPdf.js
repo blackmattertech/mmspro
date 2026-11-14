@@ -6,6 +6,7 @@ import { listWorkOrderDailyLogs, sanitizeDailyLogMaterials } from './workOrderDa
 import { loadOrgLetterhead } from './reportService.js'
 import { resolveProgressPercent } from './statusProgress.js'
 import { listOrgStatuses } from './orgStatusService.js'
+import { formatDisplayDate, formatDisplayDateTime } from './displayDate.js'
 
 const COMPLETED_STATUSES = new Set(['completed', 'verified', 'closed'])
 
@@ -68,12 +69,10 @@ function isIsoDate(value) {
 
 function formatWhen(value) {
   if (!value) return ''
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return String(value)
   if (typeof value === 'string' && value.length <= 10) {
-    return date.toLocaleDateString('en-IN', { dateStyle: 'medium' })
+    return formatDisplayDate(value) || String(value)
   }
-  return date.toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })
+  return formatDisplayDateTime(value) || String(value)
 }
 
 function personName(person) {

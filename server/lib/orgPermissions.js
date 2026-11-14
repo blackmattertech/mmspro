@@ -94,6 +94,11 @@ export function isDepartmentHeadRoleName(name) {
   return String(name || '').trim().toLowerCase().includes('department head')
 }
 
+/** Access role named "Admin" gets the same module powers as company admin. */
+export function isOrgAdminAccessRoleName(name) {
+  return String(name || '').trim().toLowerCase() === 'admin'
+}
+
 async function loadHeadFlags(orgId, employee, accessRole) {
   const roleName = accessRole?.name || ''
   const is_department_head = isDepartmentHeadRoleName(roleName)
@@ -154,7 +159,7 @@ function withDepartmentHeadDefaults(permissions) {
 
 /**
  * Resolve the current user's full access-role matrix for an org.
- * Org admins (account admin / super_admin) get full permissions.
+ * Org admins (account admin / super_admin) and access role "Admin" get full permissions.
  * Results are cached briefly to avoid repeating 2–4 DB queries on every API call.
  */
 export async function resolveSessionPermissions(profile) {
@@ -179,7 +184,7 @@ export async function resolveSessionPermissions(profile) {
     }
   }
 
-  const orgAdmin = canManageOrg(profile?.role)
+  const accountOrgAdmin = canManageOrg(profile?.role)
   const [{ data: orgRow, error: orgError }, employee] = await Promise.all([
     supabaseAdmin
       .from('organizations')
@@ -193,12 +198,13 @@ export async function resolveSessionPermissions(profile) {
   const locationId = employee?.location_id || null
   const departmentId = employee?.department_id || null
 
-  const [accessRole, permissions] = await Promise.all([
-    employee?.access_role_id ? getAccessRoleMeta(employee.access_role_id) : Promise.resolve(null),
-    orgAdmin
-      ? Promise.resolve(null)
-      : getPermissionsForRole(employee?.access_role_id),
-  ])
+  const accessRole = employee?.access_role_id
+    ? await getAccessRoleMeta(employee.access_role_id)
+    : null
+  const orgAdmin = accountOrgAdmin || isOrgAdminAccessRoleName(accessRole?.name)
+  const permissions = orgAdmin
+    ? null
+    : await getPermissionsForRole(employee?.access_role_id)
 
   const headFlags = await loadHeadFlags(orgId, employee, accessRole)
 
@@ -307,8 +313,7 @@ export function canViewAssociatedWorkRecord(session) {
  */
 export function getScopedLocationId(session) {
   if (!session || session.is_org_admin) return null
-  const roleName = session.access_role?.name?.trim().toLowerCase() || ''
-  if (roleName === 'admin') return null
+  if (isOrgAdminAccessRoleName(session.access_role?.name)) return null
   return session.location_id || null
 }
 

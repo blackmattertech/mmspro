@@ -2,6 +2,7 @@
  * Chart-ready dashboard payload: headline KPIs, status mixes, and short trends.
  */
 import { supabaseAdmin } from '../services/supabase.js'
+import { formatDisplayDate } from './displayDate.js'
 
 const PALETTE = ['#E63946', '#FFB020', '#3B82F6', '#22C55E', '#8B5CF6', '#14B8A6', '#F97316', '#64748B']
 
@@ -80,11 +81,7 @@ function eachDay(from, to) {
 }
 
 function dayLabel(day) {
-  return new Date(`${day}T00:00:00Z`).toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    timeZone: 'UTC',
-  })
+  return formatDisplayDate(String(day).slice(0, 10)) || String(day)
 }
 
 function resolveWindow(dateFrom, dateTo) {
