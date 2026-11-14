@@ -1,4 +1,5 @@
 import { normalizeName } from './excelTemplate.js'
+import { parseToIsoDate } from './displayDate.js'
 
 export const WARRANTY_IMPORT_COLUMNS = [
   'Vendor',
@@ -47,33 +48,9 @@ function text(value) {
 export function parseImportDate(raw) {
   const value = text(raw)
   if (!value) return { value: null }
-  const iso = value.match(/^(\d{4})-(\d{2})-(\d{2})$/)
-  const dmy = value.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/)
-  let year
-  let month
-  let day
-  if (iso) {
-    year = Number(iso[1])
-    month = Number(iso[2])
-    day = Number(iso[3])
-  } else if (dmy) {
-    day = Number(dmy[1])
-    month = Number(dmy[2])
-    year = Number(dmy[3])
-  } else {
-    return { error: true }
-  }
-  const date = new Date(Date.UTC(year, month - 1, day))
-  if (
-    date.getUTCFullYear() !== year
-    || date.getUTCMonth() !== month - 1
-    || date.getUTCDate() !== day
-  ) {
-    return { error: true }
-  }
-  return {
-    value: `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`,
-  }
+  const iso = parseToIsoDate(value)
+  if (!iso) return { error: true }
+  return { value: iso }
 }
 
 export function parseImportDecimal(raw) {
@@ -230,7 +207,7 @@ export function planWarrantyImport(rows, matchVendor) {
           rowNumber,
           label,
           `"${text(rowValues[label])}" is not a valid date.`,
-          'Use YYYY-MM-DD or DD/MM/YYYY, for example 2026-01-15.',
+          'Use DD-MMM-YYYY, for example 15-Jan-2026. YYYY-MM-DD and DD/MM/YYYY are also accepted.',
         ))
         dates[key] = null
       } else {

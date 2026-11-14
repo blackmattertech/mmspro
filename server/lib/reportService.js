@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { supabaseAdmin } from '../services/supabase.js'
 import { sanitizeDailyLogMaterials, rollupMaterialsFromLogs } from './workOrderDailyLogService.js'
 import { displayWorkOrderNumber } from './workOrderService.js'
@@ -176,11 +177,19 @@ function matchesSearch(haystack, search) {
   return String(haystack || '').toLowerCase().includes(search)
 }
 
-async function fetchAllPages(buildQuery, { pageSize = 1000, maxRows = 10000 } = {}) {
+/** Interactive UI reports use a lower cap; export/PDF paths set for_export. */
+const reportFetchContext = new AsyncLocalStorage()
+const REPORT_UI_MAX_ROWS = 500
+const REPORT_EXPORT_MAX_ROWS = 10000
+
+async function fetchAllPages(buildQuery, { pageSize = 1000, maxRows } = {}) {
+  const capped = maxRows
+    ?? reportFetchContext.getStore()?.maxRows
+    ?? REPORT_UI_MAX_ROWS
   const rows = []
   let from = 0
-  while (from < maxRows) {
-    const to = Math.min(from + pageSize - 1, maxRows - 1)
+  while (from < capped) {
+    const to = Math.min(from + pageSize - 1, capped - 1)
     const { data, error } = await buildQuery().range(from, to)
     if (error) throw error
     const chunk = data || []
@@ -1821,57 +1830,69 @@ export async function getReportData(orgId, session, reportKey, query = {}, now =
   const catalog = getReportCatalog(reportKey)
   if (!catalog) throw httpError('Unknown report', 404)
 
-  const filters = resolveFilters(session, query)
-  const orgName = await loadOrgName(orgId)
-  const locations = await loadLocations(orgId, resolveLocationFilter(session, null))
+  const forExport = Boolean(query.for_export)
+  const maxRows = forExport
+    ? Math.min(Math.max(Number(query.max_rows) || REPORT_EXPORT_MAX_ROWS, 1), REPORT_EXPORT_MAX_ROWS)
+    : Math.min(Math.max(Number(query.max_rows) || REPORT_UI_MAX_ROWS, 1), REPORT_UI_MAX_ROWS)
 
-  let payload
-  if (catalog.kind === 'plant') {
-    payload = await buildPlantReport(orgId, filters, now)
-  } else if (catalog.kind === 'overdue') {
-    payload = await buildOverdueReport(orgId, filters, now)
-  } else if (catalog.kind === 'unified') {
-    payload = await buildUnifiedReport(orgId, filters, now)
-  } else if (catalog.kind === 'work_request') {
-    payload = await buildWorkRequestReport(orgId, filters)
-  } else if (catalog.kind === 'pm_plan') {
-    payload = await buildPmPlanReport(orgId, filters, now)
-  } else if (catalog.kind === 'meter_reading') {
-    payload = await buildMeterReadingReport(orgId, filters)
-  } else if (catalog.kind === 'task') {
-    payload = await buildTaskReport(orgId, filters)
-  } else if (catalog.kind === 'warranty') {
-    payload = await buildWarrantyReport(orgId, filters, now)
-  } else if (catalog.kind === 'equipment') {
-    payload = await buildEquipmentReport(orgId, filters)
-  } else {
-    payload = await buildLogReport(orgId, catalog, filters, now)
-  }
+  return reportFetchContext.run({ maxRows }, async () => {
+    const filters = resolveFilters(session, query)
+    const orgName = await loadOrgName(orgId)
+    const locations = await loadLocations(orgId, resolveLocationFilter(session, null))
 
-  const locationName = filters.locationId
-    ? (locations.find((loc) => loc.id === filters.locationId)?.name || null)
-    : null
+    let payload
+    if (catalog.kind === 'plant') {
+      payload = await buildPlantReport(orgId, filters, now)
+    } else if (catalog.kind === 'overdue') {
+      payload = await buildOverdueReport(orgId, filters, now)
+    } else if (catalog.kind === 'unified') {
+      payload = await buildUnifiedReport(orgId, filters, now)
+    } else if (catalog.kind === 'work_request') {
+      payload = await buildWorkRequestReport(orgId, filters)
+    } else if (catalog.kind === 'pm_plan') {
+      payload = await buildPmPlanReport(orgId, filters, now)
+    } else if (catalog.kind === 'meter_reading') {
+      payload = await buildMeterReadingReport(orgId, filters)
+    } else if (catalog.kind === 'task') {
+      payload = await buildTaskReport(orgId, filters)
+    } else if (catalog.kind === 'warranty') {
+      payload = await buildWarrantyReport(orgId, filters, now)
+    } else if (catalog.kind === 'equipment') {
+      payload = await buildEquipmentReport(orgId, filters)
+    } else {
+      payload = await buildLogReport(orgId, catalog, filters, now)
+    }
 
-  return {
-    key: catalog.key,
-    title: catalog.title,
-    kind: catalog.kind,
-    org_name: orgName,
-    generated_at: now.toISOString(),
-    columns: columnsForReport(catalog.kind),
-    filters: {
-      date_from: filters.dateFrom,
-      date_to: filters.dateTo,
-      location_id: filters.locationId,
-      location_name: locationName,
-      search: query.search || '',
-      can_select_location: !resolveLocationFilter(session, null),
-    },
-    locations: locations.map((loc) => ({ id: loc.id, name: loc.name })),
-    kpis: payload.kpis,
-    rows: payload.rows,
-    status_counts: payload.status_counts || [],
-    comparison_period: payload.comparison_period || null,
-    total: payload.rows.length,
-  }
+    const locationName = filters.locationId
+      ? (locations.find((loc) => loc.id === filters.locationId)?.name || null)
+      : null
+
+    const rows = payload.rows || []
+    const truncated = !forExport && rows.length >= maxRows
+
+    return {
+      key: catalog.key,
+      title: catalog.title,
+      kind: catalog.kind,
+      org_name: orgName,
+      generated_at: now.toISOString(),
+      columns: columnsForReport(catalog.kind),
+      filters: {
+        date_from: filters.dateFrom,
+        date_to: filters.dateTo,
+        location_id: filters.locationId,
+        location_name: locationName,
+        search: query.search || '',
+        can_select_location: !resolveLocationFilter(session, null),
+      },
+      locations: locations.map((loc) => ({ id: loc.id, name: loc.name })),
+      kpis: payload.kpis,
+      rows,
+      status_counts: payload.status_counts || [],
+      comparison_period: payload.comparison_period || null,
+      total: rows.length,
+      truncated,
+      max_rows: maxRows,
+    }
+  })
 }

@@ -793,11 +793,20 @@ export async function getWorkRequestFormContext(orgId, profileId, email, { isOrg
 
   if (fromDeptResult.error) throw fromDeptResult.error
 
-  const orgFields = await loadOrgFields(orgId)
+  const [
+    orgFields,
+    maintenanceFormSchema,
+    jobNatureField,
+    jobNatureChoices,
+    priorities,
+  ] = await Promise.all([
+    loadOrgFields(orgId),
+    buildManualWorkOrderFormSchema(orgId),
+    resolveJobNatureField(orgId),
+    resolveJobNatureChoiceList(orgId),
+    loadWorkRequestPriorityOptions(orgId),
+  ])
   const assetSections = buildAssetFieldSections(orgFields)
-  const maintenanceFormSchema = await buildManualWorkOrderFormSchema(orgId)
-  const jobNatureField = await resolveJobNatureField(orgId)
-  const jobNatureChoices = await resolveJobNatureChoiceList(orgId)
 
   return {
     employee: employee
@@ -823,7 +832,7 @@ export async function getWorkRequestFormContext(orgId, profileId, email, { isOrg
       : null,
     job_natures: jobNatureChoices,
     request_types: REQUEST_TYPE_OPTIONS,
-    priorities: await loadWorkRequestPriorityOptions(orgId),
+    priorities,
   }
 }
 
@@ -1825,7 +1834,7 @@ export async function requestMoreInfo(orgId, profileId, workRequestId, message) 
   return enrichWorkRequest(updated)
 }
 
-export async function replyToWorkRequest(orgId, profileId, workRequestId, body) {
+export async function replyToWorkRequest(orgId, profileId, workRequestId, body, { isOrgAdmin = false } = {}) {
   const text = String(body?.message || '').trim()
   if (!text) {
     const err = new Error('Reply message is required.')
@@ -1853,7 +1862,7 @@ export async function replyToWorkRequest(orgId, profileId, workRequestId, body) 
     throw err
   }
 
-  if (wr.requested_by !== profileId) {
+  if (!isOrgAdmin && wr.requested_by !== profileId) {
     const err = new Error('Only the requester can reply to this information request.')
     err.status = 403
     throw err
@@ -1972,8 +1981,39 @@ async function loadWorkRequestLocationIds(orgId, locationId) {
   return value
 }
 
+let wrLocationIdsRpcAvailable = true
+
+async function loadWorkRequestIdsForLocationViaRpc(orgId, locationId) {
+  if (!wrLocationIdsRpcAvailable) return null
+  try {
+    const { data, error } = await supabaseAdmin.rpc('org_work_request_ids_for_location', {
+      p_org_id: orgId,
+      p_location_id: locationId,
+    })
+    if (error) throw error
+    if (!Array.isArray(data)) return null
+    return data.filter(Boolean)
+  } catch (err) {
+    const message = String(err?.message || err?.code || '')
+    if (/could not find the function|PGRST202|does not exist/i.test(message)) {
+      wrLocationIdsRpcAvailable = false
+    }
+    console.error('[workRequestService] location scope RPC', err.message)
+    return null
+  }
+}
+
 async function applyWorkRequestLocationScope(query, orgId, locationId) {
   if (!locationId) return { query }
+
+  const scopedIds = await loadWorkRequestIdsForLocationViaRpc(orgId, locationId)
+  if (Array.isArray(scopedIds)) {
+    if (!scopedIds.length) return { query: query.eq('id', EMPTY_UUID) }
+    // PostgREST URL size stays safe for typical plants; fall back if enormous.
+    if (scopedIds.length <= 2000) {
+      return { query: query.in('id', scopedIds) }
+    }
+  }
 
   const { departmentIds, equipmentIds } = await loadWorkRequestLocationIds(orgId, locationId)
   const parts = []

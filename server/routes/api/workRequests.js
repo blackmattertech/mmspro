@@ -318,7 +318,10 @@ router.get('/:id', requireWorkRecordView, async (req, res) => {
     const assignmentOptions = await loadWorkRequestAssignmentOptions(req.userProfile.org_id)
     res.json({
       ...row,
-      can_reply: row.status === 'need_info' && row.requested_by === req.userProfile.id,
+      can_reply: row.status === 'need_info' && (
+        row.requested_by === req.userProfile.id
+        || Boolean(req.orgPermissions?.is_org_admin)
+      ),
       work_center_options: assignmentOptions.work_centers,
       priority_options: assignmentOptions.priorities,
     })
@@ -384,6 +387,7 @@ router.post('/:id/reply', canReadAny, async (req, res) => {
       req.userProfile.id,
       req.params.id,
       req.body,
+      { isOrgAdmin: Boolean(req.orgPermissions?.is_org_admin) },
     )
     res.json({
       ...result,

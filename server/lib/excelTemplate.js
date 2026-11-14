@@ -1,11 +1,76 @@
 import ExcelJS from 'exceljs'
+import { parseToIsoDate } from './displayDate.js'
 
 export const TEMPLATE_SHEET = 'Template'
 export const VALID_VALUES_SHEET = 'Valid values'
 const XLSX_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+const DEFAULT_DROPDOWN_ROWS = 1000
 
 export function normalizeName(value) {
   return String(value ?? '').trim().toLowerCase()
+}
+
+/** 1-based column index → Excel column letters (1 → A, 27 → AA). */
+export function excelColumnLetter(index) {
+  let n = Number(index)
+  if (!Number.isFinite(n) || n < 1) return 'A'
+  let out = ''
+  while (n > 0) {
+    const rem = (n - 1) % 26
+    out = String.fromCharCode(65 + rem) + out
+    n = Math.floor((n - 1) / 26)
+  }
+  return out
+}
+
+function quoteSheetName(name) {
+  return `'${String(name).replace(/'/g, "''")}'`
+}
+
+/**
+ * Attach Excel list validations on Template columns that have matching Valid values.
+ * Safe to call from shared and custom workbook builders.
+ */
+export function applyTemplateDropdowns(templateSheet, templateColumns, validColumns, { dataRows = DEFAULT_DROPDOWN_ROWS } = {}) {
+  if (!templateSheet || !templateColumns?.length || !validColumns?.length) return
+
+  const templateColByHeader = new Map(
+    templateColumns.map((header, index) => [normalizeName(header), index + 1]),
+  )
+  const endRow = Math.max(2, Number(dataRows) || DEFAULT_DROPDOWN_ROWS)
+
+  validColumns.forEach((column, validIndex) => {
+    const values = (column.values || [])
+      .map((value) => String(value ?? '').trim())
+      .filter(Boolean)
+    if (!values.length) return
+
+    const targets = (column.appliesTo?.length ? column.appliesTo : [column.header])
+      .map((header) => String(header || '').trim())
+      .filter(Boolean)
+    if (!targets.length) return
+
+    const validColLetter = excelColumnLetter(validIndex + 1)
+    const formula = `${quoteSheetName(VALID_VALUES_SHEET)}!$${validColLetter}$2:$${validColLetter}$${values.length + 1}`
+
+    for (const target of targets) {
+      const templateColNum = templateColByHeader.get(normalizeName(target))
+      if (!templateColNum) continue
+      const templateColLetter = excelColumnLetter(templateColNum)
+      templateSheet.dataValidations.add(`${templateColLetter}2:${templateColLetter}${endRow}`, {
+        type: 'list',
+        allowBlank: true,
+        formulae: [formula],
+        showErrorMessage: true,
+        showInputMessage: true,
+        promptTitle: target,
+        prompt: 'Select a value from the list',
+        errorTitle: 'Invalid value',
+        error: `Please select a valid ${target} from the dropdown.`,
+        errorStyle: 'warning',
+      })
+    }
+  })
 }
 
 export function cellToString(value) {
@@ -29,8 +94,7 @@ export function cellToString(value) {
 export function cellToDate(value) {
   const text = cellToString(value)
   if (!text) return null
-  if (/^\d{4}-\d{2}-\d{2}/.test(text)) return text.slice(0, 10)
-  return null
+  return parseToIsoDate(text)
 }
 
 export function parseList(value) {
@@ -61,7 +125,11 @@ export function findByNameOrCode(rows, value, fields = ['name', 'code']) {
     || null
 }
 
-export async function buildWorkbook(templateColumns, validColumns = [], { sampleRow = null, sampleRows = null } = {}) {
+export async function buildWorkbook(templateColumns, validColumns = [], {
+  sampleRow = null,
+  sampleRows = null,
+  dataRows = DEFAULT_DROPDOWN_ROWS,
+} = {}) {
   const workbook = new ExcelJS.Workbook()
   workbook.creator = 'MMS Pro'
   workbook.created = new Date()
@@ -92,6 +160,8 @@ export async function buildWorkbook(templateColumns, validColumns = [], { sample
   validSheet.columns = columns.map((col) => ({
     width: Math.max(18, Math.min(56, col.header.length + 10)),
   }))
+
+  applyTemplateDropdowns(templateSheet, templateColumns, columns, { dataRows })
 
   const buffer = await workbook.xlsx.writeBuffer()
   return Buffer.from(buffer)

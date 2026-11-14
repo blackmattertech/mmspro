@@ -9,6 +9,10 @@ import {
   loadDashboardAggregates,
   loadDashboardChartLists,
 } from './dashboardCharts.js'
+import { createTtlCache } from './ttlCache.js'
+
+const dashboardSummaryCache = createTtlCache({ ttlMs: 45_000, maxEntries: 200 })
+let warrantyStatusRpcAvailable = true
 
 const WR_STATUSES = [
   'draft',
@@ -392,7 +396,35 @@ function warrantyBucket(row, now = new Date()) {
   return 'in_warranty'
 }
 
+async function countWarrantyStatusesViaRpc(orgId) {
+  if (!warrantyStatusRpcAvailable) return null
+  try {
+    const { data, error } = await supabaseAdmin.rpc('org_warranty_status_counts', {
+      p_org_id: orgId,
+    })
+    if (error) throw error
+    const payload = typeof data === 'string' ? JSON.parse(data) : data
+    if (!payload || typeof payload !== 'object') return null
+    return {
+      in_warranty: Number(payload.in_warranty) || 0,
+      out_of_warranty: Number(payload.out_of_warranty) || 0,
+      expiring_soon: Number(payload.expiring_soon) || 0,
+      expired: Number(payload.expired) || 0,
+    }
+  } catch (err) {
+    const message = String(err?.message || err?.code || '')
+    if (/could not find the function|PGRST202|does not exist/i.test(message)) {
+      warrantyStatusRpcAvailable = false
+    }
+    console.error('[dashboardSummary] warranty RPC', err.message)
+    return null
+  }
+}
+
 async function countWarrantyStatusesLite(orgId) {
+  const viaRpc = await countWarrantyStatusesViaRpc(orgId)
+  if (viaRpc) return viaRpc
+
   const totals = { in_warranty: 0, out_of_warranty: 0, expiring_soon: 0, expired: 0 }
   const now = new Date()
   const pageSize = 1000
@@ -690,6 +722,16 @@ export async function buildDashboardSummary({
 }) {
   const scoped = getScopedLocationId(session)
   const effectiveLocationId = scoped || (locationId && locationId !== 'all' ? locationId : null)
+  const cacheKey = [
+    orgId,
+    userProfile?.id || authUserId || '',
+    effectiveLocationId || 'all',
+    dateFrom || '',
+    dateTo || '',
+  ].join('|')
+  const cached = dashboardSummaryCache.get(cacheKey)
+  if (cached) return cached
+
   const createdDates = dateBounds(dateFrom, dateTo, 'created_at')
   const pmDates = dateBounds(dateFrom, dateTo, 'next_due_at')
   const calendar = calendarWindow()
@@ -807,7 +849,7 @@ export async function buildDashboardSummary({
       kpi(`${mod.id}.${item.key}`, item.label, item.value, { module: mod.id, limit: item.limit })
     )))
 
-  return {
+  const summary = {
     generated_at: new Date().toISOString(),
     scoped_location_id: scoped,
     location_id: effectiveLocationId,
@@ -816,4 +858,6 @@ export async function buildDashboardSummary({
     modules,
     charts,
   }
+  dashboardSummaryCache.set(cacheKey, summary)
+  return summary
 }

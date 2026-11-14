@@ -95,11 +95,44 @@ export function equipmentLabel(row) {
 
 export function validValueColumns(masters, extras = []) {
   return [
-    { header: 'Location', values: masters.locations.map((row) => row.name) },
-    { header: 'Department', values: masters.departments.map((row) => row.code ? `${row.name} (${row.code})` : row.name) },
-    { header: 'Area', values: masters.areas.map((row) => row.name) },
-    { header: 'Asset', values: masters.equipment.map(equipmentLabel) },
-    { header: 'Employees', values: masters.employees.map((row) => row.emp_id ? `${row.name} (${row.emp_id})` : row.name) },
+    {
+      header: 'Location',
+      values: masters.locations.map((row) => row.name),
+      appliesTo: ['Location', 'Facility'],
+    },
+    {
+      header: 'Department',
+      values: masters.departments.map((row) => (row.code ? `${row.name} (${row.code})` : row.name)),
+      appliesTo: [
+        'Department',
+        'Order From Department',
+        'Order To Department',
+        'From Department',
+        'To Department',
+      ],
+    },
+    {
+      header: 'Area',
+      values: masters.areas.map((row) => row.name),
+      appliesTo: ['Area'],
+    },
+    {
+      header: 'Asset',
+      values: masters.equipment.map(equipmentLabel),
+      appliesTo: ['Asset', 'Equipment'],
+    },
+    {
+      header: 'Employees',
+      values: masters.employees.map((row) => (row.emp_id ? `${row.name} (${row.emp_id})` : row.name)),
+      appliesTo: [
+        'Employees',
+        'Technician',
+        'Technicians',
+        'Assignees',
+        'Assigned To',
+        'Created By',
+      ],
+    },
     ...extras,
   ]
 }

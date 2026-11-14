@@ -1,3 +1,5 @@
+import { formatDisplayDateValue } from './displayDate.js'
+
 export function listEnvelope(items, extras = {}) {
   const { total, limit, offset, ...rest } = extras
   return {
@@ -113,7 +115,7 @@ export function sendCsv(res, filename, rows, columns) {
   const header = columns.map((col) => csvEscape(col.label)).join(',')
   const lines = (rows || []).map((row) => columns.map((col) => {
     const value = typeof col.value === 'function' ? col.value(row) : row?.[col.id]
-    return csvEscape(value)
+    return csvEscape(formatDisplayDateValue(value, { utc: true }))
   }).join(','))
   res.setHeader('Content-Type', 'text/csv; charset=utf-8')
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`)

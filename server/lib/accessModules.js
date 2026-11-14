@@ -96,6 +96,7 @@ export const ACCESS_MODULE_GROUPS = [
     label: 'Masters',
     modules: [
       { key: 'work_centers', label: 'Work Center', actions: ['create', 'read', 'update', 'delete'] },
+      { key: 'uoms', label: 'UOM', actions: ['create', 'read', 'update', 'delete'] },
       { key: 'vendors', label: 'Vendors', actions: ['create', 'read', 'update', 'delete'] },
       { key: 'others', label: 'Checklists', actions: ['create', 'read', 'update', 'delete'] },
       { key: 'assets', label: 'Forms Master', actions: ['create', 'read', 'update', 'delete'] },

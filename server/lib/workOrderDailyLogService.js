@@ -1,6 +1,7 @@
 import { supabaseAdmin } from '../services/supabase.js'
 import { addWorkOrderTimelineEvent } from './workOrderService.js'
 import { clipMaterialDescriptions, clipTrimmedToLimit, getTextFieldLimitsMap } from './textFieldLimits.js'
+import { canonicalizeStoredMaterials } from './uomMaster.js'
 
 export const DAILY_LOG_ACTIVE_STATUSES = new Set([
   'assigned',
@@ -368,15 +369,22 @@ export async function upsertWorkOrderDaySnapshot(
   }
 
   const fieldLimits = await getTextFieldLimitsMap(orgId)
-  const snapshot = normalizeFieldSnapshot(
+  const draft = normalizeFieldSnapshot(
     rawSnapshot || buildFieldSnapshotFromLifecycle(body || {}, workOrder, body?.process_extras || {}),
     { fieldLimits },
   )
-  const legacy = legacyColumnsFromSnapshot(snapshot)
   const logDate = todayDateString(timeZone)
   const now = new Date().toISOString()
   const { logs } = await listWorkOrderDailyLogs(orgId, workOrderId)
   const existingToday = logs.find((row) => row.log_date === logDate)
+  const previousRows = existingToday
+    ? sanitizeDailyLogMaterials(existingToday.field_snapshot?.material_rows ?? existingToday.materials)
+    : []
+  const snapshot = {
+    ...draft,
+    material_rows: await canonicalizeStoredMaterials(orgId, draft.material_rows, previousRows),
+  }
+  const legacy = legacyColumnsFromSnapshot(snapshot)
 
   // Close any prior open days so calendar rollover does not leave stale "open" rows.
   const priorOpen = logs.filter((row) => row.day_status === 'open' && row.log_date !== logDate)
@@ -529,7 +537,7 @@ export async function updateWorkOrderDailyLog(orgId, profileId, workOrderId, log
     labour_count: existing.labour_count,
     material_rows: existing.materials,
   })
-  const nextSnap = normalizeFieldSnapshot({
+  const nextDraft = normalizeFieldSnapshot({
     ...prevSnap,
     ...(body.field_snapshot && typeof body.field_snapshot === 'object' ? body.field_snapshot : {}),
     work_done: body.work_done !== undefined ? body.work_done : prevSnap.work_done,
@@ -537,6 +545,10 @@ export async function updateWorkOrderDailyLog(orgId, profileId, workOrderId, log
     labour_count: body.labour_count !== undefined ? body.labour_count : prevSnap.labour_count,
     material_rows: body.materials !== undefined ? body.materials : prevSnap.material_rows,
   }, { fieldLimits })
+  const nextSnap = {
+    ...nextDraft,
+    material_rows: await canonicalizeStoredMaterials(orgId, nextDraft.material_rows, prevSnap.material_rows),
+  }
   const legacy = legacyColumnsFromSnapshot(nextSnap)
 
   const { data, error } = await supabaseAdmin

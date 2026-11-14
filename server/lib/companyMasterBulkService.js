@@ -7,9 +7,7 @@ import {
 } from './contactValidation.js'
 import { ensureLocationMaintenanceDepartment } from './locationDefaults.js'
 import { assertBulkCreatesAllowed } from './orgLimits.js'
-
-const TEMPLATE_SHEET = 'Template'
-const VALID_VALUES_SHEET = 'Valid values'
+import { buildWorkbook as createImportWorkbook, TEMPLATE_SHEET } from './excelTemplate.js'
 
 const LOCATION_COLUMNS = [
   'Name', 'Code', 'Address Line 1', 'Address Line 2',
@@ -116,32 +114,7 @@ function parseYesNo(value, fieldLabel) {
 }
 
 async function buildWorkbook(templateColumns, validColumns) {
-  const workbook = new ExcelJS.Workbook()
-  workbook.creator = 'MMS Pro'
-  workbook.created = new Date()
-
-  const templateSheet = workbook.addWorksheet(TEMPLATE_SHEET)
-  templateSheet.addRow(templateColumns)
-  templateSheet.getRow(1).font = { bold: true }
-  templateSheet.views = [{ state: 'frozen', ySplit: 1 }]
-  templateSheet.columns = templateColumns.map((header) => ({
-    width: Math.max(16, Math.min(40, header.length + 6)),
-  }))
-
-  const validSheet = workbook.addWorksheet(VALID_VALUES_SHEET)
-  validSheet.addRow(validColumns.map((c) => c.header))
-  validSheet.getRow(1).font = { bold: true }
-  validSheet.views = [{ state: 'frozen', ySplit: 1 }]
-  const maxRows = Math.max(0, ...validColumns.map((c) => c.values.length))
-  for (let i = 0; i < maxRows; i++) {
-    validSheet.addRow(validColumns.map((c) => c.values[i] ?? ''))
-  }
-  validSheet.columns = validColumns.map((c) => ({
-    width: Math.max(18, Math.min(48, c.header.length + 10)),
-  }))
-
-  const buffer = await workbook.xlsx.writeBuffer()
-  return Buffer.from(buffer)
+  return createImportWorkbook(templateColumns, validColumns)
 }
 
 function readTemplateRows(workbook, expectedColumns) {

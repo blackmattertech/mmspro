@@ -52,6 +52,7 @@ export const PRODUCT_MODULE_GROUPS = [
         'employees',
       ] },
       { id: 'work_centers', label: 'Work Center', permissionKeys: ['work_centers'] },
+      { id: 'uoms', label: 'UOM', permissionKeys: ['uoms'] },
       { id: 'assets', label: 'Forms Master', permissionKeys: ['assets'] },
       { id: 'vendors', label: 'Vendors', permissionKeys: ['vendors'] },
       { id: 'others', label: 'Others', permissionKeys: ['others'] },

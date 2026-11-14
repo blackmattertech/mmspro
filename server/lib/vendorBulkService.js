@@ -1,9 +1,11 @@
 import ExcelJS from 'exceljs'
 import { CITIES_BY_STATE, getAllIndianCities, getStateForCity, parseCityName } from './indiaLocations.js'
 import { createVendor } from './vendorService.js'
-
-const TEMPLATE_SHEET = 'Template'
-const VALID_VALUES_SHEET = 'Valid values'
+import {
+  TEMPLATE_SHEET,
+  VALID_VALUES_SHEET,
+  applyTemplateDropdowns,
+} from './excelTemplate.js'
 
 const TEMPLATE_COLUMNS = [
   'Vendor ID',
@@ -120,6 +122,9 @@ export async function buildVendorsTemplate() {
   validSheet.columns = validColumns.map((col) => ({
     width: Math.max(18, Math.min(52, col.header.length + 10)),
   }))
+
+  // City/State are selectable; format helper columns stay free text.
+  applyTemplateDropdowns(templateSheet, TEMPLATE_COLUMNS, validColumns)
 
   const buffer = await workbook.xlsx.writeBuffer()
   return Buffer.from(buffer)

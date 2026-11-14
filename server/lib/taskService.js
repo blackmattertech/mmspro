@@ -1310,7 +1310,7 @@ export async function getKanbanBoard(orgId, profileId, filters = {}, options = {
   const tasks = preloadedTasks ?? await listTasks(
     orgId,
     profileId,
-    { ...filters, limit: 200 },
+    { ...filters, limit: Math.min(Number(filters.limit) || 100, 100) },
     { lean: true, skipEnsure },
   )
 
@@ -1350,10 +1350,16 @@ async function buildKanbanFromTasks(orgId, activeStatuses, tasks) {
   }
   statuses.sort((a, b) => (a.sort_order - b.sort_order) || a.name.localeCompare(b.name))
 
-  const columns = statuses.map((status) => ({
-    status,
-    tasks: tasks.filter((task) => task.status_id === status.id),
-  }))
+  const KANBAN_COLUMN_CAP = 50
+  const columns = statuses.map((status) => {
+    const all = tasks.filter((task) => task.status_id === status.id)
+    return {
+      status,
+      tasks: all.slice(0, KANBAN_COLUMN_CAP),
+      total: all.length,
+      truncated: all.length > KANBAN_COLUMN_CAP,
+    }
+  })
 
   const unknownTasks = tasks.filter((task) => !task.status_id || !statusById.has(task.status_id))
   if (unknownTasks.length) {
@@ -1366,7 +1372,9 @@ async function buildKanbanFromTasks(orgId, activeStatuses, tasks) {
         is_active: true,
         is_terminal: false,
       },
-      tasks: unknownTasks,
+      tasks: unknownTasks.slice(0, KANBAN_COLUMN_CAP),
+      total: unknownTasks.length,
+      truncated: unknownTasks.length > KANBAN_COLUMN_CAP,
     })
   }
 
@@ -1386,13 +1394,13 @@ export async function getTasksBootstrap(orgId, profileId, filters = {}, { view =
 
   const [meta, tasks] = await Promise.all([
     queryActiveTaskMeta(orgId),
-    listTasks(orgId, profileId, { ...filters, limit: 200 }, { lean: true, skipEnsure: true }),
+    listTasks(orgId, profileId, { ...filters, limit: 100 }, { lean: true, skipEnsure: true }),
   ])
 
   const board = await buildKanbanFromTasks(orgId, meta.statuses, tasks)
   const status_counts = (board.columns || []).map((column) => ({
     status: column.status?.id,
-    count: (column.tasks || []).length,
+    count: Number(column.total ?? column.tasks?.length) || 0,
     label: column.status?.name,
     color: column.status?.color,
   }))

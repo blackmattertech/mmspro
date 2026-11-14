@@ -9,6 +9,7 @@ import { loadOrgCatalogFields } from '../../lib/orgFormLayouts.js'
 import { listOrgStatuses } from '../../lib/orgStatusService.js'
 import { ORG_STATUS_ENTITY_TYPES } from '../../lib/orgStatusDefaults.js'
 import { countWorkRequestTabs, getEmployeeByProfile } from '../../lib/workRequestService.js'
+import { countWorkOrderTabs } from './workOrders.js'
 
 const router = Router()
 
@@ -132,11 +133,14 @@ router.get('/bootstrap', verifyAuth, requireOrgAccess, async (req, res) => {
     if (departments.error) throw departments.error
     if (workCenters.error) throw workCenters.error
 
-    const wrTabs = await countWorkRequestTabs(orgId, {
-      profileId: req.userProfile.id,
-      departmentId: employee?.department_id || null,
-      locationId,
-    }).catch(() => ({}))
+    const [wrTabs, woTabs] = await Promise.all([
+      countWorkRequestTabs(orgId, {
+        profileId: req.userProfile.id,
+        departmentId: employee?.department_id || null,
+        locationId,
+      }).catch(() => ({})),
+      countWorkOrderTabs(orgId, req.userProfile, session, { employee }).catch(() => ({})),
+    ])
 
     const catalog_fields = (catalog || [])
       .filter((row) => row.kind === 'parent' && row.is_active !== false)
@@ -153,7 +157,7 @@ router.get('/bootstrap', verifyAuth, requireOrgAccess, async (req, res) => {
       work_centers: workCenters.data || [],
       catalog_fields,
       org_statuses: Object.fromEntries(statusEntries),
-      tab_counts: { work_requests: wrTabs },
+      tab_counts: { work_requests: wrTabs, work_orders: woTabs },
     })
   } catch (err) {
     console.error('[bootstrap] failed:', err.message)

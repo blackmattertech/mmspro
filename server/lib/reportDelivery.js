@@ -5,17 +5,20 @@ import { buildReportCsv, reportCsvFilename } from './reportCsv.js'
 import { columnsForReport, filterReportColumns, getReportCatalog, resolveDateWindow, UNIFIED_REPORT_KEY } from './reportConstants.js'
 import { getCustomReport } from './reportCustomService.js'
 import { buildReportEmailContent } from './reportEmail.js'
+import { formatDisplayDate, formatDisplayDateTime } from './displayDate.js'
 
 function periodLabel(from, to) {
-  if (from && to && from === to) return from
-  if (from && to) return `${from} to ${to}`
+  const start = formatDisplayDate(from) || from
+  const end = formatDisplayDate(to) || to
+  if (start && end && start === end) return start
+  if (start && end) return `${start} to ${end}`
   return 'Selected period'
 }
 
 function formatGeneratedAt(iso) {
-  const date = new Date(iso)
-  if (Number.isNaN(date.getTime())) return String(iso || '')
-  return `${date.toISOString().replace('T', ' ').slice(0, 16)} UTC`
+  const label = formatDisplayDateTime(iso, { utc: true })
+  if (!label) return String(iso || '')
+  return `${label} UTC`
 }
 
 export async function buildReportExport({
@@ -58,6 +61,8 @@ export async function buildReportExport({
       location_id: resolvedLocation,
       ...filters,
       facility_id: filters.facility_id || resolvedLocation,
+      for_export: true,
+      max_rows: 10000,
     }, now),
     loadOrgLetterhead(orgId),
     catalog.kind === 'unified' ? getReportFilterOptions(orgId, session) : Promise.resolve({}),

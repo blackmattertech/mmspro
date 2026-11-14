@@ -23,15 +23,6 @@ function shortDescription(item) {
   return text
 }
 
-function shortDescription(item) {
-  const text = String(item?.data?.short_description || '').replace(/\s+/g, ' ').trim()
-  if (!text) return ''
-  const body = String(item?.body || '').trim().toLowerCase()
-  const sample = text.slice(0, Math.min(40, text.length)).toLowerCase()
-  if (sample && body.includes(sample)) return ''
-  return text
-}
-
 export default function NotificationPanel({ open, onClose, anchorRef }) {
   const panelRef = useRef(null)
   const navigate = useNavigate()

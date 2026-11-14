@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { supabaseAdmin } from '../services/supabase.js'
 import { loadOrgFields } from './equipmentFieldService.js'
-import { getSignedUrl } from './signedUrlCache.js'
+import { getSignedUrl, getSignedUrls } from './signedUrlCache.js'
 import { applyIlikeSearch, ilikePattern, listEnvelope } from './listQuery.js'
 import { getPublicAppUrl } from './appUrl.js'
 import { parseLayoutId } from './formLayoutIds.js'
@@ -374,14 +374,31 @@ async function attachFieldValues(orgId, rows) {
     .in('equipment_id', rows.map((row) => row.id))
     .in('field_id', ids)
   if (error) throw error
+
+  const imagePaths = []
+  for (const item of data || []) {
+    if (!imageIds.has(item.field_id)) continue
+    const text = String(item.value_text || '').trim()
+    if (!text || /^(https?:|data:image\/)/i.test(text)) continue
+    imagePaths.push(text)
+  }
+  const signedByPath = imagePaths.length
+    ? await getSignedUrls(ORG_ASSETS_BUCKET, imagePaths)
+    : new Map()
+
   const byEquipment = new Map()
   for (const item of data || []) {
     const list = byEquipment.get(item.equipment_id) || []
+    let valueText = item.value_text
+    if (imageIds.has(item.field_id)) {
+      const text = String(item.value_text || '').trim()
+      if (text && !/^(https?:|data:image\/)/i.test(text)) {
+        valueText = signedByPath.get(text) || text
+      }
+    }
     list.push({
       ...item,
-      value_text: imageIds.has(item.field_id)
-        ? await displayImageValue(item.value_text)
-        : item.value_text,
+      value_text: valueText,
     })
     byEquipment.set(item.equipment_id, list)
   }
