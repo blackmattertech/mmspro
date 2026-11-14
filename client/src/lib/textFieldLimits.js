@@ -82,60 +82,6 @@ export function findVisibleCharacterLimitError(root) {
   return labelText ? `${labelText}: character exceeds` : 'Character exceeds'
 }
 
-export const TEXT_FIELD_LIMIT_LABELS = {
-  short_description: 'Short description',
-  problem_description: 'Detailed description',
-  remarks: 'Remarks',
-  job_description: 'Description of the issue',
-  root_cause: 'Root cause',
-  action_taken: 'Action taken',
-  material_consumed: 'Material consumed',
-  dos_and_donts: "Do's and Don'ts",
-  lessons_learned: 'Lesson learned',
-}
-
-export function characterLimitError(value, maxLength) {
-  const limit = Number(maxLength)
-  if (!Number.isFinite(limit) || limit <= 0) return null
-  if (String(value ?? '').length <= limit) return null
-  return 'Character exceeds'
-}
-
-export function characterLimitMessage(label, value, maxLength) {
-  if (!characterLimitError(value, maxLength)) return null
-  const name = String(label || '').trim() || 'Field'
-  return `${name}: character exceeds`
-}
-
-/**
- * @param {Array<{ label?: string, key?: string, value: unknown, limit?: number }>} entries
- * @param {(key: string) => number | undefined} [maxLengthFn]
- */
-export function firstCharacterLimitMessage(entries, maxLengthFn) {
-  for (const entry of entries || []) {
-    const key = entry?.key ? resolveLimitKey(entry.key) : null
-    const limit = entry?.limit ?? (key && maxLengthFn ? maxLengthFn(key) : undefined)
-    const label = entry?.label || (key && TEXT_FIELD_LIMIT_LABELS[key]) || key || 'Field'
-    const message = characterLimitMessage(label, entry?.value, limit)
-    if (message) return message
-  }
-  return null
-}
-
-/** Detects visible SpellcheckInput exceed state for button-triggered saves. */
-export function findVisibleCharacterLimitError(root) {
-  const scope = root && typeof root.querySelector === 'function' ? root : document
-  const errorNode = scope.querySelector('.spellcheck-field__error')
-  if (!errorNode) return null
-  const field = errorNode.closest('label, .company-form__field, .task-form__field, tr, div')
-  const labelText = field
-    ?.querySelector('.company-form__label-text, .company-form__label, .task-form__label')
-    ?.textContent
-    ?.replace(/\*/g, '')
-    ?.trim()
-  return labelText ? `${labelText}: character exceeds` : 'Character exceeds'
-}
-
 const REMARKS_ALIASES = new Set([
   'remarks',
   'execution_remarks',
