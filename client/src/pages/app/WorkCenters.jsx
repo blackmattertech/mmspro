@@ -29,7 +29,7 @@ export default function WorkCenters() {
         <MastersBack />
         <h1 className="company-page__title">Work Center</h1>
         <p className="company-page__subtitle">
-          Manage workshops, plants, and crews used across work orders and PM.
+          Create and manage work centers. Active items appear in Work Request, Work Order, and PM form dropdowns.
         </p>
       </header>
 

@@ -3,8 +3,9 @@ import { Link, useLocation } from 'react-router-dom'
 import { useOrg } from '../../hooks/useOrg'
 import { orgPath } from '../../config/navigation'
 import { listWorkRequests, getWorkRequest } from '../../lib/api-work-requests'
+import { formatDisplayDateTime } from '../../lib/displayDate'
 import { notifyTabCountsChanged } from '../../lib/tabCountEvents'
-import { useWorkOrderList } from '../../hooks/useWorkOrderList'
+import { useWorkOrderList, listResponseCacheKey } from '../../hooks/useWorkOrderList'
 import { usePermissions } from '../../hooks/usePermissions'
 import { useOpenQueryId } from '../../hooks/useOpenQueryId'
 import { useOrgStatusOptions } from '../../hooks/useOrgStatusOptions'
@@ -23,13 +24,11 @@ import './WorkRequests.css'
 import '../company/CompanyShared.css'
 import { VirtualTableBody } from '../shared/VirtualTableBody'
 import TableEmptyRow from '../shared/TableEmptyRow'
+import TruncatedText from '../shared/TruncatedText'
 
 function formatDate(value) {
   if (!value) return '—'
-  return new Date(value).toLocaleString(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  })
+  return formatDisplayDateTime(value) || '—'
 }
 
 function typeLabel(value) {
@@ -189,18 +188,18 @@ function cellClassName(columnId) {
 function showText(value) {
   const text = value && value !== '—' ? value : '—'
   return (
-    <span className="wr-table__full" title={text !== '—' ? text : undefined}>
+    <TruncatedText className="wr-table__full" text={text}>
       {text}
-    </span>
+    </TruncatedText>
   )
 }
 
 function clampText(value, className = 'wr-table__clamp') {
   const text = value && value !== '—' ? value : '—'
   return (
-    <span className={className} title={text !== '—' ? text : undefined}>
+    <TruncatedText className={className} text={text}>
       {text}
-    </span>
+    </TruncatedText>
   )
 }
 
@@ -250,7 +249,7 @@ function renderCell(row, columnId, statusLabels = null, orgSlug = '', column = n
       const number = row.linked_work_order?.wo_number
       if (!orderId) return '—'
       const href = orgSlug
-        ? orgPath(orgSlug, `work-orders/manual?open=${encodeURIComponent(orderId)}`)
+        ? orgPath(orgSlug, `work-orders/received?open=${encodeURIComponent(orderId)}`)
         : '#'
       return (
         <Link
@@ -299,6 +298,7 @@ export default function WorkRequestsTable({
   visibleColumnIds = DEFAULT_VISIBLE,
   columnDefs = WORK_REQUEST_COLUMNS,
   bulkReloadToken = 0,
+  reportFilterRows = null,
 }) {
   const location = useLocation()
   const { org } = useOrg()
@@ -353,7 +353,32 @@ export default function WorkRequestsTable({
       sortBy,
     ],
   )
-  const { orders: requests, total, loading, error, reload } = useWorkOrderList(fetchList)
+  const listCacheKey = useMemo(() => listResponseCacheKey(`wr-${filter || 'all'}`, {
+    search: debouncedSearch,
+    limit: pagination.pageSize,
+    offset: pagination.offset,
+    filters: listFilters,
+    statuses: draftOnly ? ['draft'] : statusFilters,
+    sort: headerSort?.id || '',
+    sortDir: headerSort?.dir || '',
+    sortBy: headerSort ? '' : sortBy,
+    bulk: bulkReloadToken,
+  }), [
+    filter,
+    debouncedSearch,
+    pagination.pageSize,
+    pagination.offset,
+    listFilters,
+    draftOnly,
+    statusFilters,
+    headerSort,
+    sortBy,
+    bulkReloadToken,
+  ])
+  const { orders: requests, total, loading, error, reload } = useWorkOrderList(fetchList, {
+    cacheKey: listCacheKey,
+    onRows: reportFilterRows,
+  })
   useEffect(() => { setListTotal(total) }, [total])
   useEffect(() => {
     if (loading) return undefined

@@ -78,6 +78,7 @@ export default function TaskFormPage() {
   const prefillShortDescription = searchParams.get('short_description') || ''
   const prefillLocationId = searchParams.get('location_id') || ''
   const prefillDepartmentId = searchParams.get('department_id') || ''
+  const prefillStartDate = searchParams.get('start_date') || ''
   const isEdit = Boolean(taskId)
   const navigate = useNavigate()
   const { org } = useOrg()
@@ -196,6 +197,15 @@ export default function TaskFormPage() {
       .catch(() => {})
     return () => { cancelled = true }
   }, [isEdit, prefillEquipmentId, prefillWorkOrderId])
+
+  useEffect(() => {
+    if (isEdit || !prefillStartDate) return undefined
+    setValues((prev) => ({
+      ...prev,
+      start_date: prev.start_date || prefillStartDate,
+    }))
+    return undefined
+  }, [isEdit, prefillStartDate])
 
   const currentEmployee = useMemo(() => {
     const fromList = employees.find((e) => e.profile_id === user?.id)

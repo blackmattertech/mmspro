@@ -1,3 +1,5 @@
+import { formatCalendarDate, formatDisplayDateTime } from './displayDate'
+
 const LABEL_ALIASES = {
   workcenters: 'workcenter',
   jobpriority: 'priority',
@@ -120,8 +122,12 @@ export function formatPickerValue(row, column) {
   if (typeof raw === 'boolean') return raw ? 'Yes' : 'No'
   if (typeof raw === 'object') return raw.name || raw.label || '—'
   if (/_at$/.test(column.id)) {
-    const date = new Date(raw)
-    if (!Number.isNaN(date.getTime())) return date.toLocaleString()
+    const formatted = formatDisplayDateTime(raw)
+    if (formatted) return formatted
+  }
+  if (/(^|_)date$/.test(column.id)) {
+    const formatted = formatCalendarDate(raw)
+    if (formatted) return formatted
   }
   return String(raw)
 }

@@ -1,6 +1,6 @@
 const FALLBACK_STATUS_LABELS = {
   draft: 'Draft',
-  assigned: 'Approval Pending',
+  assigned: 'Technician assignment pending',
   accepted: 'Accepted',
   started: 'Started',
   in_progress: 'In Progress',
@@ -32,8 +32,12 @@ export function formatWorkOrderStatusLabel(orderOrStatus, labelByKey = null) {
   const status = String(order?.status || '').trim()
   if (!status) return '—'
 
+  // `assigned` means the WO is in the receiving queue — not department-head approval.
+  // When approval modules are off, this is the next real step users see.
   if (status === 'assigned') {
-    return hasAssignedTechnicians(order) ? 'Technician assigned' : 'Approval Pending'
+    return hasAssignedTechnicians(order)
+      ? 'Technician assigned'
+      : 'Technician assignment pending'
   }
 
   if (labelByKey?.[status]) return labelByKey[status]

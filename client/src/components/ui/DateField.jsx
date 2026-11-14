@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { formatDisplayDate } from '../../lib/displayDate'
 import './DateField.css'
 
 const TimeField = lazy(() => import('./TimeField'))
@@ -66,7 +67,7 @@ function buildCalendarCells(viewYear, viewMonth) {
 
 /**
  * Custom date (and optional time) picker with brand-red styling.
- * Value format matches native inputs: `YYYY-MM-DD` or `YYYY-MM-DDTHH:mm`.
+ * Stored value is `YYYY-MM-DD` or `YYYY-MM-DDTHH:mm`. The field shows `DD-MMM-YYYY`.
  * Popover is portaled to document.body so overflow:hidden parents cannot clip it.
  */
 export default function DateField({
@@ -190,7 +191,7 @@ export default function DateField({
   }
 
   const label = parsed
-    ? `${pad(parsed.d)}/${pad(parsed.m + 1)}/${parsed.y}${withTime && parsed.time ? ` ${formatClock(parsed.time)}` : ''}`
+    ? `${formatDisplayDate(`${parsed.y}-${pad(parsed.m + 1)}-${pad(parsed.d)}`)}${withTime && parsed.time ? ` ${formatClock(parsed.time)}` : ''}`
     : ''
 
   const isToday = (cell) => (
@@ -286,7 +287,7 @@ export default function DateField({
         readOnly
         className={`${className} date-field__input`}
         value={label}
-        placeholder={placeholder || (withTime ? 'dd/mm/yyyy --:--' : 'dd/mm/yyyy')}
+        placeholder={placeholder || (withTime ? 'DD-MMM-YYYY --:--' : 'DD-MMM-YYYY')}
         onClick={togglePopover}
         onKeyDown={(e) => {
           if (e.key === 'Enter' || e.key === ' ') {

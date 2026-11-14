@@ -1,4 +1,5 @@
 import { combineDateTime } from './taskDateUtils'
+import { formatDisplayDate, formatDisplayTime } from './displayDate'
 import { getVoicePeriodSpeechLabel } from './taskVoiceDateUtils'
 
 function getTimeGreeting(date = new Date()) {
@@ -21,10 +22,7 @@ function formatSpeechDue(task, referenceDate = new Date()) {
   const startOfDayAfter = new Date(startOfTomorrow)
   startOfDayAfter.setDate(startOfDayAfter.getDate() + 1)
 
-  const timeLabel = due.toLocaleTimeString(undefined, {
-    hour: 'numeric',
-    minute: '2-digit',
-  })
+  const timeLabel = formatDisplayTime(due)
 
   if (due >= startOfToday && due < startOfTomorrow) {
     return task.due_time ? `Due today at ${timeLabel}.` : 'Due today.'
@@ -33,11 +31,7 @@ function formatSpeechDue(task, referenceDate = new Date()) {
     return task.due_time ? `Due tomorrow at ${timeLabel}.` : 'Due tomorrow.'
   }
 
-  const dateLabel = due.toLocaleDateString(undefined, {
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-  })
+  const dateLabel = formatDisplayDate(due)
   return task.due_time ? `Due on ${dateLabel} at ${timeLabel}.` : `Due on ${dateLabel}.`
 }
 

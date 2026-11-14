@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import DateField from '../ui/DateField'
 import FilterableSelect from '../ui/FilterableSelect'
+import ColumnReorderPanel from '../shared/ColumnReorderPanel'
 import { EMPTY_REPORT_FILTERS } from '../../lib/reportColumns'
 import '../company/CompanyShared.css'
 import './ReportsFilters.css'
@@ -92,13 +93,15 @@ export default function ReportsFilters({
   reportKind = 'unified',
   columnDefs = [],
   selectedColumnIds = [],
+  columnOrder,
   onToggleColumn,
-  onSelectAllColumns,
   onResetColumns,
+  onReorderColumns,
+  onMoveColumn,
+  onSaveColumns,
+  onMakeDefaultColumns,
+  makingDefaultColumns = false,
 }) {
-  const selectedSet = useMemo(() => new Set(selectedColumnIds), [selectedColumnIds])
-  const allSelected = columnDefs.length > 0 && columnDefs.every((col) => selectedSet.has(col.id))
-
   const showOrderType = reportKind === 'unified'
   const showOrderDepts = reportKind === 'unified' || reportKind === 'work_request'
   const showJobNature = reportKind === 'unified' || reportKind === 'work_request'
@@ -464,35 +467,23 @@ export default function ReportsFilters({
             <section className="reports-filters__group">
               <div className="reports-filters__group-heading">
                 <h3 className="reports-filters__group-title">Columns</h3>
-                <div className="reports-filters__group-actions">
-                  <button
-                    type="button"
-                    className="reports-filters__clear-link"
-                    onClick={() => (allSelected ? onResetColumns?.() : onSelectAllColumns?.())}
-                  >
-                    {allSelected ? 'Reset' : 'Select all'}
-                  </button>
-                </div>
               </div>
               <p className="reports-filters__hint">
                 {selectedColumnIds.length} of {columnDefs.length} selected
               </p>
-              <div className="reports-columns-grid" role="group" aria-label="Report columns">
-                {columnDefs.map((col) => {
-                  const checked = selectedSet.has(col.id)
-                  return (
-                    <label key={col.id} className="reports-columns-grid__item">
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        disabled={checked && selectedColumnIds.length <= 1}
-                        onChange={() => onToggleColumn?.(col.id)}
-                      />
-                      <span>{col.label}</span>
-                    </label>
-                  )
-                })}
-              </div>
+              <ColumnReorderPanel
+                className="table-column-picker__panel--inline"
+                columnDefs={columnDefs}
+                visibleColumnIds={selectedColumnIds}
+                columnOrder={columnOrder}
+                onToggle={onToggleColumn}
+                onReset={onResetColumns}
+                onReorder={onReorderColumns}
+                onMove={onMoveColumn}
+                onSave={onSaveColumns}
+                onMakeDefault={onMakeDefaultColumns}
+                makingDefault={makingDefaultColumns}
+              />
             </section>
           )}
         </div>

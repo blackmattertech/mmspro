@@ -1,7 +1,7 @@
 import { useState, useCallback, useMemo, useEffect } from 'react'
 import { useOutletContext } from 'react-router-dom'
 import { getReceivedWorkOrders, getReceivedWorkOrder, getWorkOrderDetail, updateWorkOrderLifecycle } from '../../lib/api-work-orders'
-import { useWorkOrderList } from '../../hooks/useWorkOrderList'
+import { useWorkOrderList, listResponseCacheKey } from '../../hooks/useWorkOrderList'
 import { useDebouncedValue } from '../../hooks/useDebouncedValue'
 import { useTablePagination } from '../../hooks/useTablePagination'
 import { useOpenQueryId } from '../../hooks/useOpenQueryId'
@@ -22,6 +22,7 @@ export default function ReceivedWorkOrders() {
     search, locationFilter, sortBy, advancedRules, fieldFilter, locations,
     columnFilters = {}, setColumnFilter, headerSort = null, setHeaderSort,
     statusFilters = [],
+    reportFilterRows = null,
   } = useOutletContext()
   const { canUpdate, isOrgAdmin } = usePermissions()
   const canUpdateReceived = isOrgAdmin
@@ -53,7 +54,20 @@ export default function ReceivedWorkOrders() {
     }),
     [debouncedSearch, pagination.pageSize, pagination.offset, listFilters, statusFilters, headerSort, sortBy],
   )
-  const { orders, total, loading, error, reload } = useWorkOrderList(fetchOrders)
+  const listCacheKey = useMemo(() => listResponseCacheKey('wo-received', {
+    search: debouncedSearch,
+    limit: pagination.pageSize,
+    offset: pagination.offset,
+    filters: listFilters,
+    statuses: statusFilters,
+    sort: headerSort?.id || '',
+    sortDir: headerSort?.dir || '',
+    sort_by: headerSort ? '' : sortBy,
+  }), [debouncedSearch, pagination.pageSize, pagination.offset, listFilters, statusFilters, headerSort, sortBy])
+  const { orders, total, loading, error, reload } = useWorkOrderList(fetchOrders, {
+    cacheKey: listCacheKey,
+    onRows: reportFilterRows,
+  })
   useEffect(() => { setListTotal(total) }, [total])
 
   const filtered = useMemo(

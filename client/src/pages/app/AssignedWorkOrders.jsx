@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useMemo } from 'react'
 import { useOutletContext } from 'react-router-dom'
 import { getAssignedWorkOrders, getAssignedWorkOrder, getWorkOrderDetail } from '../../lib/api-work-orders'
-import { useWorkOrderList } from '../../hooks/useWorkOrderList'
+import { useWorkOrderList, listResponseCacheKey } from '../../hooks/useWorkOrderList'
 import { useDebouncedValue } from '../../hooks/useDebouncedValue'
 import { useTablePagination } from '../../hooks/useTablePagination'
 import { useOpenQueryId } from '../../hooks/useOpenQueryId'
@@ -20,6 +20,7 @@ export default function AssignedWorkOrders() {
     search, locationFilter, sortBy, advancedRules, fieldFilter, locations,
     columnFilters = {}, setColumnFilter, headerSort = null, setHeaderSort,
     statusFilters = [],
+    reportFilterRows = null,
   } = useOutletContext()
   const debouncedSearch = useDebouncedValue(search)
   const [listTotal, setListTotal] = useState(0)
@@ -43,7 +44,20 @@ export default function AssignedWorkOrders() {
     })),
     [debouncedSearch, pagination.pageSize, pagination.offset, columnFilters, fieldFilter, statusFilters, headerSort, sortBy],
   )
-  const { orders, total, loading, error, reload } = useWorkOrderList(fetchOrders)
+  const listCacheKey = useMemo(() => listResponseCacheKey('wo-assigned', {
+    search: debouncedSearch,
+    limit: pagination.pageSize,
+    offset: pagination.offset,
+    filters: listFilters,
+    statuses: statusFilters,
+    sort: headerSort?.id || '',
+    sortDir: headerSort?.dir || '',
+    sort_by: headerSort ? '' : sortBy,
+  }), [debouncedSearch, pagination.pageSize, pagination.offset, listFilters, statusFilters, headerSort, sortBy])
+  const { orders, total, loading, error, reload } = useWorkOrderList(fetchOrders, {
+    cacheKey: listCacheKey,
+    onRows: reportFilterRows,
+  })
   useEffect(() => { setListTotal(total) }, [total])
 
   if (loading) {

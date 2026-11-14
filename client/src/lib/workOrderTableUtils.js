@@ -1,9 +1,8 @@
+import { formatDisplayDateTime } from './displayDate'
+
 export function formatWorkOrderDate(value) {
   if (!value) return '—'
-  return new Date(value).toLocaleString(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  })
+  return formatDisplayDateTime(value) || '—'
 }
 
 export function formatAssignees(assignees, assignedDepartment = null, assignedLocation = null) {

@@ -1,8 +1,10 @@
 import { useMemo } from 'react'
 import FilterableSelect from '../ui/FilterableSelect'
+import FormLabel from '../shared/FormLabel'
 import SpellcheckInput from '../shared/SpellcheckInput'
 import { getAllIndianCities, getStateForCity, formatCityDisplay } from '../../lib/indiaLocations'
 import { panFromGstin } from '../../lib/vendorValidation'
+import { masterFieldLimit } from '../../lib/textFieldLimits'
 import './Vendors.css'
 
 export const EMPTY_VENDOR_FORM = {
@@ -66,14 +68,23 @@ function Field({
   required = false,
   error,
   className = '',
+  fieldType,
+  maxLength,
   children,
 }) {
   return (
     <label className={`company-form__field ${className}`.trim()}>
-      <span className="company-form__label">
-        {label}
-        {required ? ' *' : ''}
-      </span>
+      {fieldType || maxLength ? (
+        <FormLabel fieldType={fieldType} limit={maxLength}>
+          {label}
+          {required ? ' *' : ''}
+        </FormLabel>
+      ) : (
+        <span className="company-form__label">
+          {label}
+          {required ? ' *' : ''}
+        </span>
+      )}
       {children}
       {error && <span className="vendor-form__field-error" role="alert">{error}</span>}
     </label>
@@ -120,20 +131,33 @@ export default function VendorForm({
           )}
         </Field>
 
-        <Field label="Vendor Name" required error={errors.name}>
+        <Field
+          label="Vendor Name"
+          required
+          error={errors.name}
+          fieldType="text"
+          maxLength={masterFieldLimit('name')}
+        >
           <SpellcheckInput
             className="company-form__input"
             value={form.name}
             onChange={(e) => setField('name', e.target.value)}
             required
+            maxLength={masterFieldLimit('name')}
           />
         </Field>
 
-        <Field label="Contact Person" error={errors.contact_person}>
+        <Field
+          label="Contact Person"
+          error={errors.contact_person}
+          fieldType="text"
+          maxLength={masterFieldLimit('name')}
+        >
           <SpellcheckInput
             className="company-form__input"
             value={form.contact_person}
             onChange={(e) => setField('contact_person', e.target.value)}
+            maxLength={masterFieldLimit('name')}
           />
         </Field>
 
@@ -158,23 +182,37 @@ export default function VendorForm({
       </Section>
 
       <Section title="Address">
-        <Field label="Address Line 1" className="company-form__field--full" error={errors.address_line1}>
+        <Field
+          label="Address Line 1"
+          className="company-form__field--full"
+          error={errors.address_line1}
+          fieldType="textarea"
+          maxLength={masterFieldLimit('address_line1')}
+        >
           <SpellcheckInput
             multiline
             className="company-form__input company-form__textarea"
             rows={2}
             value={form.address_line1}
             onChange={(e) => setField('address_line1', e.target.value)}
+            maxLength={masterFieldLimit('address_line1')}
           />
         </Field>
 
-        <Field label="Address Line 2" className="company-form__field--full" error={errors.address_line2}>
+        <Field
+          label="Address Line 2"
+          className="company-form__field--full"
+          error={errors.address_line2}
+          fieldType="textarea"
+          maxLength={masterFieldLimit('address_line2')}
+        >
           <SpellcheckInput
             multiline
             className="company-form__input company-form__textarea"
             rows={2}
             value={form.address_line2}
             onChange={(e) => setField('address_line2', e.target.value)}
+            maxLength={masterFieldLimit('address_line2')}
           />
         </Field>
 
@@ -247,19 +285,31 @@ export default function VendorForm({
           />
         </Field>
 
-        <Field label="Bank Name" error={errors.bank_name}>
+        <Field
+          label="Bank Name"
+          error={errors.bank_name}
+          fieldType="text"
+          maxLength={masterFieldLimit('name')}
+        >
           <SpellcheckInput
             className="company-form__input"
             value={form.bank_name}
             onChange={(e) => setField('bank_name', e.target.value)}
+            maxLength={masterFieldLimit('name')}
           />
         </Field>
 
-        <Field label="Account Name" error={errors.account_name}>
+        <Field
+          label="Account Name"
+          error={errors.account_name}
+          fieldType="text"
+          maxLength={masterFieldLimit('name')}
+        >
           <SpellcheckInput
             className="company-form__input"
             value={form.account_name}
             onChange={(e) => setField('account_name', e.target.value)}
+            maxLength={masterFieldLimit('name')}
           />
         </Field>
 

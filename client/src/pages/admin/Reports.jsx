@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { getAdminReport } from '../../lib/api'
 import { downloadClientCsv } from '../../lib/clientCsv'
+import { formatDisplayDate } from '../../lib/displayDate'
 import { ExportCsvButton } from '../../components/shared/ListTableChrome'
 import './AdminPage.css'
 import './Reports.css'
@@ -22,9 +23,7 @@ const FALLBACK_TYPES = [
 
 function formatDate(value) {
   if (!value) return '—'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return '—'
-  return date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+  return formatDisplayDate(value) || '—'
 }
 
 function formatMoney(amount, currency = 'INR') {

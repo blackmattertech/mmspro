@@ -13,10 +13,11 @@ import EditIcon from '../ui/EditIcon'
 import TrashIcon from '../ui/TrashIcon'
 import { PM_PLAN_COLUMNS, PM_PLAN_DEFAULT_COLUMN_IDS } from './pmPlanColumns'
 import { readCatalogText } from '../../lib/pickerFields'
+import { formatCalendarDate } from '../../lib/displayDate'
 
 function formatDate(value) {
   if (!value) return '—'
-  return String(value).slice(0, 10)
+  return formatCalendarDate(value) || '—'
 }
 
 function formatNumber(value) {

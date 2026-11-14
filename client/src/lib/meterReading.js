@@ -1,4 +1,5 @@
 import { orderedHierarchyFields } from './assetHierarchy'
+import { formatDisplayDate, formatDisplayDateTime, formatDisplayTime } from './displayDate'
 import { canonicalLabel, formatPickerValue } from './pickerFields'
 
 const MEDIA_FIELD_TYPES = new Set(['image', 'file'])
@@ -65,12 +66,6 @@ export function meterAssetLabel(row, assetFields) {
   return [row?.name, row?.code].map((part) => String(part || '').trim()).filter(Boolean).join(' · ')
 }
 
-function parseStamp(value) {
-  if (!value) return null
-  const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? null : date
-}
-
 export function formatMeterValue(value) {
   if (value == null || value === '') return '—'
   const reading = Number(value)
@@ -79,25 +74,11 @@ export function formatMeterValue(value) {
 }
 
 export function formatMeterStamp(value) {
-  const date = parseStamp(value)
-  if (!date) return ''
-  return date.toLocaleString(undefined, {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  })
+  return formatDisplayDateTime(value)
 }
 
 export function formatMeterDate(value) {
-  const date = parseStamp(value)
-  if (!date) return '—'
-  return date.toLocaleDateString(undefined, {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  })
+  return formatDisplayDate(value) || '—'
 }
 
 export function formatMeterLogger(row) {
@@ -109,10 +90,5 @@ export function formatMeterLogger(row) {
 }
 
 export function formatMeterTime(value) {
-  const date = parseStamp(value)
-  if (!date) return '—'
-  return date.toLocaleTimeString(undefined, {
-    hour: 'numeric',
-    minute: '2-digit',
-  })
+  return formatDisplayTime(value) || '—'
 }

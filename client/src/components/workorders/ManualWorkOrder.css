@@ -711,8 +711,10 @@
 }
 
 .wo-field-type-hint {
+  font-size: 12px;
   font-weight: 400;
   color: var(--color-gray-blue);
+  white-space: nowrap;
 }
 
 .wo-settings-modal {
@@ -2080,10 +2082,19 @@
 }
 
 .wo-material-table td:nth-child(4),
-.wo-material-table th:nth-child(4),
+.wo-material-table th:nth-child(4) {
+  width: 168px;
+  min-width: 140px;
+}
+
 .wo-material-table td:nth-child(5),
 .wo-material-table th:nth-child(5) {
   width: 88px;
+}
+
+.wo-material-table .company-form__input--select,
+.wo-material-table .wo-material-table__uom {
+  min-width: 0;
 }
 
 .wo-material-table .company-form__input {

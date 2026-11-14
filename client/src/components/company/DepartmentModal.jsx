@@ -7,8 +7,14 @@ import {
 } from '../../lib/departmentLocation'
 import LocationModal from './LocationModal'
 import FilterableSelect from '../ui/FilterableSelect'
+import FormLabel from '../shared/FormLabel'
 import SpellcheckInput from '../shared/SpellcheckInput'
+import { masterFieldLimit } from '../../lib/textFieldLimits'
 import './CompanyShared.css'
+
+const NAME_LIMIT = masterFieldLimit('name')
+const CODE_LIMIT = masterFieldLimit('code')
+const DESC_LIMIT = masterFieldLimit('description')
 
 const EMPTY = {
   name: '',
@@ -171,28 +177,36 @@ export default function DepartmentModal({
           <form className="company-modal__form" onSubmit={handleSubmit}>
             <div className="company-form__grid company-form__grid--2">
               <label className="company-form__field">
-                <span className="company-form__label">Name *</span>
-                <SpellcheckInput className="company-form__input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
+                <FormLabel fieldType="text" limit={NAME_LIMIT}>Name *</FormLabel>
+                <SpellcheckInput
+                  className="company-form__input"
+                  value={form.name}
+                  onChange={(e) => setForm({ ...form, name: e.target.value })}
+                  required
+                  maxLength={NAME_LIMIT}
+                />
               </label>
               <label className="company-form__field">
-                <span className="company-form__label">Code *</span>
-                <input
+                <FormLabel fieldType="text" limit={CODE_LIMIT}>Code *</FormLabel>
+                <SpellcheckInput
                   className="company-form__input"
                   value={form.code}
                   onChange={(e) => setForm({ ...form, code: e.target.value.toUpperCase() })}
                   required
                   placeholder="e.g. MNT"
+                  maxLength={CODE_LIMIT}
                 />
               </label>
             </div>
             <label className="company-form__field">
-              <span className="company-form__label">Description</span>
+              <FormLabel fieldType="textarea" limit={DESC_LIMIT}>Description</FormLabel>
               <SpellcheckInput
                 multiline
                 className="company-form__input company-form__textarea"
                 rows={3}
                 value={form.description}
                 onChange={(e) => setForm({ ...form, description: e.target.value })}
+                maxLength={DESC_LIMIT}
               />
             </label>
             <label className="company-form__field">

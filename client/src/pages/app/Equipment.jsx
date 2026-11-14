@@ -410,6 +410,20 @@ export default function Equipment() {
                           }
                         }}
                       />
+                      {canManage && (
+                      <MasterBulkActions
+                        onDownload={handleDownloadTemplate}
+                        bulkBusy={bulkBusy}
+                        bulkInputRef={bulkInputRef}
+                        onFileChange={handleBulkFile}
+                        addLabel="+ Add Asset"
+                        onAdd={openCreate}
+                        title="Import assets"
+                        bulkError={bulkError}
+                        bulkResult={bulkResult}
+                        noun="asset"
+                      />
+                      )}
                       <button
                         type="button"
                         className="company-btn company-btn--secondary"
@@ -423,9 +437,7 @@ export default function Equipment() {
                         </svg>
                         <span className="equipment-bulk-btn__label">Export QR</span>
                       </button>
-                      {canManage && (
-                      <>
-                      {selected.size > 0 && (
+                      {canManage && selected.size > 0 && (
                       <button
                         type="button"
                         className="company-btn company-btn--danger"
@@ -437,20 +449,6 @@ export default function Equipment() {
                         <TrashIcon />
                         {bulkDeleting ? 'Deleting...' : `Delete (${selected.size})`}
                       </button>
-                      )}
-                      <MasterBulkActions
-                        onDownload={handleDownloadTemplate}
-                        bulkBusy={bulkBusy}
-                        bulkInputRef={bulkInputRef}
-                        onFileChange={handleBulkFile}
-                        addLabel="+ Add Asset"
-                        onAdd={openCreate}
-                        title="Import assets"
-                        bulkError={bulkError}
-                        bulkResult={bulkResult}
-                        noun="asset"
-                      />
-                      </>
                       )}
                     </>
                   )}

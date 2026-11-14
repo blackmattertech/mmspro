@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { getAdminStats } from '../../lib/api'
 import { downloadClientCsv } from '../../lib/clientCsv'
+import { formatDisplayDate } from '../../lib/displayDate'
 import { ExportCsvButton } from '../../components/shared/ListTableChrome'
 import { useAuth } from '../../hooks/useAuth'
 import { useProfile } from '../../hooks/useProfile'
@@ -48,16 +49,12 @@ function formatRange(days) {
   const end = new Date()
   const start = new Date()
   start.setDate(end.getDate() - (days - 1))
-  const startLabel = start.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-  const endLabel = end.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-  return `${startLabel} – ${endLabel}`
+  return `${formatDisplayDate(start)} – ${formatDisplayDate(end)}`
 }
 
 function formatDay(value) {
   if (!value) return '—'
-  const date = new Date(value)
-  if (!Number.isFinite(date.getTime())) return '—'
-  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+  return formatDisplayDate(value) || '—'
 }
 
 function formatMoney(amount, currency = 'INR') {

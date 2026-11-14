@@ -4,14 +4,12 @@ import ImageLightbox from './ImageLightbox'
 import { downloadFromUrl } from '../../lib/fileDownload'
 import { getWorkOrderFileSignedUrl } from '../../lib/workOrderAssets'
 import { getWorkOrderFiles, isImageFileItem } from '../../lib/workOrderFileValues'
+import { formatDisplayDateTime } from '../../lib/displayDate'
 import '../workrequests/WorkRequests.css'
 
 function formatTimelineDate(value) {
   if (!value) return '—'
-  return new Date(value).toLocaleString(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  })
+  return formatDisplayDateTime(value) || '—'
 }
 
 function filesFromMetadata(meta) {

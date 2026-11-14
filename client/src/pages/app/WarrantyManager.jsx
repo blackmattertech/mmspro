@@ -4,6 +4,7 @@ import { useOrg } from '../../hooks/useOrg'
 import { usePermissions } from '../../hooks/usePermissions'
 import { useWarranties } from '../../hooks/useWarranties'
 import { useDebouncedValue } from '../../hooks/useDebouncedValue'
+import { formatCalendarDate, formatDisplayDateTime } from '../../lib/displayDate'
 import { orgPath } from '../../config/navigation'
 import {
   WARRANTY_TABS,
@@ -81,19 +82,12 @@ const WARRANTY_COLUMNS = [
 
 function formatDate(value) {
   if (!value) return '—'
-  const date = new Date(`${String(value).slice(0, 10)}T00:00:00`)
-  if (Number.isNaN(date.getTime())) return value
-  return date.toLocaleDateString()
+  return formatCalendarDate(value) || String(value)
 }
 
 function formatDateTime(value) {
   if (!value) return '—'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return value
-  return date.toLocaleString(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  })
+  return formatDisplayDateTime(value) || String(value)
 }
 
 function warrantyLineItems(row) {

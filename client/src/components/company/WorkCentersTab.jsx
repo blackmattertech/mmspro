@@ -3,7 +3,13 @@ import { usePermissions } from '../../hooks/usePermissions'
 import { useWorkCenters } from '../../hooks/useWorkCenters'
 import { useLocations } from '../../hooks/useLocations'
 import { useDebouncedValue } from '../../hooks/useDebouncedValue'
-import { deleteWorkCenter, exportWorkCenters, downloadBlobFile } from '../../lib/api'
+import {
+  deleteWorkCenter,
+  exportWorkCenters,
+  downloadBlobFile,
+  getWorkCentersTemplate,
+  bulkUploadWorkCenters,
+} from '../../lib/api'
 import { ExportCsvButton } from '../shared/ListTableChrome'
 import '../shared/ListTableChrome.css'
 import { invalidateReferenceCache } from '../../lib/referenceDataCache'
@@ -11,6 +17,11 @@ import GooToggle from '../ui/GooToggle'
 import TrashIcon from '../ui/TrashIcon'
 import EditIcon from '../ui/EditIcon'
 import WorkCenterModal from './WorkCenterModal'
+import {
+  useMasterBulkUpload,
+  MasterBulkActions,
+  MasterBulkResult,
+} from './MasterBulkUpload'
 import TablePagination from '../shared/TablePagination'
 import TableEmptyRow from '../shared/TableEmptyRow'
 import TableColumnPicker from '../shared/TableColumnPicker'
@@ -84,6 +95,22 @@ export default function WorkCentersTab({ canManage }) {
   const [exporting, setExporting] = useState(false)
   const [deleteError, setDeleteError] = useState(null)
   const selectAllRef = useRef(null)
+  const {
+    bulkInputRef,
+    bulkBusy,
+    bulkError,
+    bulkResult,
+    handleDownloadTemplate,
+    handleBulkFile,
+  } = useMasterBulkUpload({
+    downloadTemplate: getWorkCentersTemplate,
+    upload: bulkUploadWorkCenters,
+    onSuccess: async () => {
+      invalidateReferenceCache('work-centers')
+      await reload({ silent: true, force: true })
+    },
+    defaultFilename: 'work-centers-template.xlsx',
+  })
 
   const filteredWorkCenters = useMemo(() => applyTableFilters(workCenters, {
     sortBy,
@@ -268,13 +295,18 @@ export default function WorkCentersTab({ canManage }) {
                 </button>
               )}
               {canManage && (
-              <button
-                type="button"
-                className="company-btn company-btn--primary"
-                onClick={openCreate}
-              >
-                + Add Work Center
-              </button>
+              <MasterBulkActions
+                onDownload={handleDownloadTemplate}
+                bulkBusy={bulkBusy}
+                bulkInputRef={bulkInputRef}
+                onFileChange={handleBulkFile}
+                addLabel="+ Add Work Center"
+                onAdd={openCreate}
+                title="Import work centers"
+                bulkError={bulkError}
+                bulkResult={bulkResult}
+                noun="work center"
+              />
               )}
             </>
           )}
@@ -297,6 +329,8 @@ export default function WorkCentersTab({ canManage }) {
 
       {error && <div className="company-alert">{error}</div>}
       {deleteError && <div className="company-alert">{deleteError}</div>}
+      {bulkError && <div className="company-error">{bulkError}</div>}
+      <MasterBulkResult result={bulkResult} noun="work center" />
 
       {loading ? (
         <div className="company-loading">Loading work centers…</div>

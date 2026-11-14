@@ -478,6 +478,13 @@
   flex-shrink: 0;
 }
 
+.company-form__type-hint {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--color-gray-blue, #64748b);
+  white-space: nowrap;
+}
+
 .company-form__char-limit {
   font-size: 12px;
   font-weight: 650;
@@ -643,6 +650,11 @@ textarea.company-form__input {
   overflow: hidden;
 }
 
+.company-page--fill .company-panel > .table-filter-toolbar,
+.company-page--fill .company-panel > .company-panel__toolbar {
+  flex: 0 0 auto;
+}
+
 .company-table-wrap--freeze {
   flex: 1 1 auto;
   min-height: 0;
@@ -806,6 +818,50 @@ textarea.company-form__input {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.company-table:not(.company-table--no-autofit) tbody td {
+  max-width: 14rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.company-table:not(.company-table--no-autofit) tbody td.is-expanded {
+  max-width: min(36rem, 70vw);
+  overflow: visible;
+  white-space: normal;
+  word-break: break-word;
+}
+
+.company-table:not(.company-table--no-autofit) tbody td.company-table__cell--check,
+.company-table:not(.company-table--no-autofit) tbody td.company-table__cell--actions,
+.company-table:not(.company-table--no-autofit) tbody td:has(.wo-progress),
+.company-table:not(.company-table--no-autofit) tbody td:has(.company-btn),
+.company-table:not(.company-table--no-autofit) tbody td:has(input[type="checkbox"]) {
+  max-width: none;
+  overflow: visible;
+  text-overflow: unset;
+  white-space: nowrap;
+}
+
+.company-table__truncated {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.company-table__truncated--expanded {
+  white-space: normal;
+  overflow: visible;
+  word-break: break-word;
+}
+
+.company-table__truncated--toggle {
+  cursor: pointer;
 }
 
 .company-table__name {
@@ -1929,5 +1985,6 @@ textarea.company-form__input {
 .company-form__hint {
   margin: 0;
   font-size: 12px;
+  line-height: 1.35;
   color: var(--color-gray-blue, #6b7a90);
 }

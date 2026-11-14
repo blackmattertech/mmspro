@@ -1,6 +1,20 @@
 export const TEXT_FIELD_LIMIT_MIN = 10
 export const TEXT_FIELD_LIMIT_MAX = 20000
 
+/** Defaults for master / free-text fields outside Forms Master limits. */
+export const MASTER_TEXT_FIELD_LIMITS = {
+  name: 100,
+  title: 100,
+  code: 40,
+  description: 500,
+  address_line1: 200,
+  address_line2: 200,
+  city: 100,
+  state: 100,
+  country: 100,
+  postal_code: 20,
+}
+
 export const DEFAULT_TEXT_FIELD_LIMITS = {
   short_description: 200,
   problem_description: 2000,
@@ -11,6 +25,7 @@ export const DEFAULT_TEXT_FIELD_LIMITS = {
   material_consumed: 500,
   dos_and_donts: 2000,
   lessons_learned: 2000,
+  ...MASTER_TEXT_FIELD_LIMITS,
 }
 
 export const TEXT_FIELD_LIMIT_LABELS = {
@@ -82,6 +97,12 @@ export function resolveLimitKey(fieldKey) {
   return fieldKey
 }
 
+/** Resolve a master free-text limit (name/code/description/address…). */
+export function masterFieldLimit(key) {
+  const resolved = resolveLimitKey(key)
+  return MASTER_TEXT_FIELD_LIMITS[resolved] ?? DEFAULT_TEXT_FIELD_LIMITS[resolved]
+}
+
 const KNOWN_LIMIT_KEYS = new Set(Object.keys(DEFAULT_TEXT_FIELD_LIMITS))
 
 const LABEL_LIMIT_RULES = [
@@ -97,6 +118,16 @@ const LABEL_LIMIT_RULES = [
   [/detailed description/, 'problem_description'],
   [/\bremarks\b/, 'remarks'],
   [/\bdo s\b|\bdonts\b|\bdon ts\b/, 'dos_and_donts'],
+  [/^address line 1$/, 'address_line1'],
+  [/^address line 2$/, 'address_line2'],
+  [/^postal code$|^zip$/, 'postal_code'],
+  [/^city$/, 'city'],
+  [/^state$/, 'state'],
+  [/^country$/, 'country'],
+  [/^title$/, 'title'],
+  [/^name$/, 'name'],
+  [/^code$/, 'code'],
+  [/^description$/, 'description'],
 ]
 
 function normalizeLimitText(name) {

@@ -12,6 +12,7 @@ import EmployeeAvatar from '../company/EmployeeAvatar'
 import PersonChip from '../shared/PersonChip'
 import WorkOrderAssignmentActions from './WorkOrderAssignmentActions'
 import WorkOrderLifecyclePanel, { formatStatus } from './WorkOrderLifecyclePanel'
+import { formatDisplayDateTime } from '../../lib/displayDate'
 import WorkRequestFormSections from './WorkRequestFormSections'
 import { requestTypeLabel } from '../workrequests/WorkRequestDetailModal'
 import '../shared/RecordDetailLayout.css'
@@ -22,10 +23,7 @@ import './ManualWorkOrder.css'
 
 function formatDate(value) {
   if (!value) return '—'
-  return new Date(value).toLocaleString(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  })
+  return formatDisplayDateTime(value) || '—'
 }
 
 function MetaItem({ label, children, wide = false }) {

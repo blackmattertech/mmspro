@@ -10,6 +10,7 @@ import OrderedFormLayout from '../forms/OrderedFormLayout'
 import { isAllowedImageFile, resolveImageMime } from '../../lib/imageFiles'
 import { readFileAsDataUrl } from '../../config/warrantyDocuments'
 import { formatMeterStamp, formatMeterValue } from '../../lib/meterReading'
+import { formatCalendarDate, formatDisplayDateTime } from '../../lib/displayDate'
 import PersonChip from '../shared/PersonChip'
 import './EquipmentDetail.css'
 
@@ -33,11 +34,10 @@ function fieldText(row) {
   return String(row.value_text || '').trim()
 }
 
-function formatDate(value) {
+function formatDate(value, withTime = false) {
   if (!value) return ''
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return String(value)
-  return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+  const formatted = withTime ? formatDisplayDateTime(value) : formatCalendarDate(value)
+  return formatted || String(value)
 }
 
 function PinIcon() {
@@ -124,7 +124,7 @@ function detailFacts(equipment) {
     const dated = field.field_type === 'date' || field.field_type === 'datetime'
     facts.push({
       label: field.field_name,
-      value: dated ? (formatDate(raw) || raw) : raw,
+      value: dated ? (formatDate(raw, field.field_type === 'datetime') || raw) : raw,
       icon: dated ? 'date' : null,
     })
   }

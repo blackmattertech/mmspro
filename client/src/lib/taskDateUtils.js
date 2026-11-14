@@ -1,3 +1,5 @@
+import { formatDisplayDate, formatDisplayDateTime, formatDisplayTime } from './displayDate'
+
 function combineDateTime(date, time) {
   if (!date) return null
   const timePart = time ? String(time).slice(0, 8) : '00:00:00'
@@ -6,19 +8,13 @@ function combineDateTime(date, time) {
 }
 
 function formatTime(date) {
-  return date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+  return formatDisplayTime(date)
 }
 
 export function formatTaskDateTimeDetail(date, time) {
   const dt = combineDateTime(date, time)
   if (!dt) return '—'
-  return dt.toLocaleString(undefined, {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  })
+  return formatDisplayDateTime(dt)
 }
 
 export function formatTaskDateTime(date, time) {
@@ -42,18 +38,13 @@ export function formatTaskDateTime(date, time) {
     return `Tomorrow • ${timeLabel}`
   }
 
-  const dateLabel = dt.toLocaleDateString(undefined, {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-  })
-  return `${dateLabel} • ${timeLabel}`
+  return `${formatDisplayDate(dt)} • ${timeLabel}`
 }
 
 export function formatTaskDueShort(date, time) {
   const dt = combineDateTime(date, time)
   if (!dt) return null
-  return dt.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+  return formatDisplayDate(dt)
 }
 
 export function dueStatusClass(status) {

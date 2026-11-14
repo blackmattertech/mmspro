@@ -13,6 +13,7 @@ import TablePagination from '../../components/shared/TablePagination'
 import TableFilterToolbar from '../../components/shared/TableFilterToolbar'
 import TableColumnPicker from '../../components/shared/TableColumnPicker'
 import { DynamicPickerCells, DynamicPickerHeaders } from '../../components/shared/DynamicPickerCells'
+import { formatDisplayDate } from '../../lib/displayDate'
 import { ExportCsvButton, TableColumnHead } from '../../components/shared/ListTableChrome'
 import { useTableColumnPrefs } from '../../hooks/useTableColumnPrefs'
 import { downloadClientCsv } from '../../lib/clientCsv'
@@ -541,7 +542,7 @@ export default function Organizations() {
                             />
                           </td>
                           )}
-                          {visibleColumnIds.includes('created') && <td>{new Date(org.created_at).toLocaleDateString()}</td>}
+                          {visibleColumnIds.includes('created') && <td>{formatDisplayDate(org.created_at) || '—'}</td>}
                           {visibleColumnIds.includes('enabled') && (
                           <td>
                             <GooToggle

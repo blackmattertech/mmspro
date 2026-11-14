@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useCallback } from 'react'
 import { useLocations } from './useLocations'
 import { getCalendarEvents } from '../lib/api-calendar'
 import { SOURCE_LABELS } from '../data/calendarDemo'
+import { formatDisplayDate } from '../lib/displayDate'
 
 const PRIORITY_LABELS = {
   high: 'High',
@@ -21,6 +22,28 @@ function pad(n) {
   return String(n).padStart(2, '0')
 }
 
+function toIsoDate(date) {
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
+}
+
+function parseIsoDate(value) {
+  return new Date(`${String(value).slice(0, 10)}T12:00:00`)
+}
+
+function startOfWeek(date) {
+  const d = new Date(date)
+  d.setHours(12, 0, 0, 0)
+  const weekday = (d.getDay() + 6) % 7
+  d.setDate(d.getDate() - weekday)
+  return d
+}
+
+function addDays(date, days) {
+  const d = new Date(date)
+  d.setDate(d.getDate() + days)
+  return d
+}
+
 function monthRange(year, month) {
   const from = `${year}-${pad(month + 1)}-01`
   const lastDay = new Date(year, month + 1, 0).getDate()
@@ -28,10 +51,17 @@ function monthRange(year, month) {
   return { from, to }
 }
 
+function weekRange(anchor) {
+  const start = startOfWeek(anchor)
+  const end = addDays(start, 6)
+  return { from: toIsoDate(start), to: toIsoDate(end), start }
+}
+
 export function useCalendar() {
   const today = startOfToday()
-  const [viewDate, setViewDate] = useState(() => new Date(today.getFullYear(), today.getMonth(), 1))
-  const [viewMode, setViewMode] = useState('calendar')
+  const [viewDate, setViewDate] = useState(() => new Date(today.getFullYear(), today.getMonth(), today.getDate()))
+  const [viewMode, setViewMode] = useState('month')
+  const [selectedDate, setSelectedDate] = useState(() => toIsoDate(today))
   const [plantFilter, setPlantFilter] = useState('all')
   const [logFilter, setLogFilter] = useState('all')
   const [workCenterFilter, setWorkCenterFilter] = useState('all')
@@ -52,12 +82,23 @@ export function useCalendar() {
   const month = viewDate.getMonth()
 
   const loadRange = useMemo(() => {
-    const monthBounds = monthRange(year, month)
-    return {
-      from: dateFrom || monthBounds.from,
-      to: dateTo || monthBounds.to,
+    if (dateFrom || dateTo) {
+      const monthBounds = monthRange(year, month)
+      return {
+        from: dateFrom || monthBounds.from,
+        to: dateTo || monthBounds.to,
+      }
     }
-  }, [year, month, dateFrom, dateTo])
+    if (viewMode === 'day') {
+      const iso = toIsoDate(viewDate)
+      return { from: iso, to: iso }
+    }
+    if (viewMode === 'week') {
+      const { from, to } = weekRange(viewDate)
+      return { from, to }
+    }
+    return monthRange(year, month)
+  }, [year, month, dateFrom, dateTo, viewMode, viewDate])
 
   const reload = useCallback(async () => {
     setLoading(true)
@@ -108,23 +149,33 @@ export function useCalendar() {
     return tasks
   }, [events, logFilter, quickFilter, dateFrom, dateTo])
 
-  const monthTasks = useMemo(
-    () => filteredTasks.filter((t) => {
-      const d = new Date(`${String(t.date).slice(0, 10)}T12:00:00`)
+  const periodTasks = useMemo(() => {
+    if (viewMode === 'day') {
+      const iso = toIsoDate(viewDate)
+      return filteredTasks.filter((t) => String(t.date).slice(0, 10) === iso)
+    }
+    if (viewMode === 'week') {
+      const { from, to } = weekRange(viewDate)
+      return filteredTasks.filter((t) => {
+        const d = String(t.date).slice(0, 10)
+        return d >= from && d <= to
+      })
+    }
+    return filteredTasks.filter((t) => {
+      const d = parseIsoDate(t.date)
       return d.getFullYear() === year && d.getMonth() === month
-    }),
-    [filteredTasks, year, month],
-  )
+    })
+  }, [filteredTasks, viewMode, viewDate, year, month])
 
   const tasksByDate = useMemo(() => {
     const map = {}
-    monthTasks.forEach((task) => {
-      const day = new Date(`${String(task.date).slice(0, 10)}T12:00:00`).getDate()
-      if (!map[day]) map[day] = []
-      map[day].push(task)
+    periodTasks.forEach((task) => {
+      const key = String(task.date).slice(0, 10)
+      if (!map[key]) map[key] = []
+      map[key].push(task)
     })
     return map
-  }, [monthTasks])
+  }, [periodTasks])
 
   const summary = useMemo(() => {
     const counts = {
@@ -134,11 +185,11 @@ export function useCalendar() {
       pm_plan: 0,
       warranty: 0,
     }
-    filteredTasks.forEach((t) => {
+    periodTasks.forEach((t) => {
       const key = t.source || t.type
       if (key in counts) counts[key] += 1
     })
-    const total = filteredTasks.length
+    const total = periodTasks.length
     const segments = [
       { priority: 'task', count: counts.task, percent: total ? Math.round((counts.task / total) * 100) : 0, label: 'Tasks' },
       { priority: 'work_order', count: counts.work_order, percent: total ? Math.round((counts.work_order / total) * 100) : 0, label: 'Work orders' },
@@ -147,7 +198,7 @@ export function useCalendar() {
       { priority: 'warranty', count: counts.warranty, percent: total ? Math.round((counts.warranty / total) * 100) : 0, label: 'Warranties' },
     ]
     return { total, segments }
-  }, [filteredTasks])
+  }, [periodTasks])
 
   const quickFilterCounts = useMemo(() => ({
     all: filteredTasks.length,
@@ -160,36 +211,88 @@ export function useCalendar() {
 
   const upcomingTasks = useMemo(() => {
     const now = startOfToday()
+    const until = addDays(now, 7)
     return filteredTasks
-      .filter((t) => new Date(`${String(t.date).slice(0, 10)}T12:00:00`) >= now)
+      .filter((t) => {
+        const d = parseIsoDate(t.date)
+        return d >= now && d <= until
+      })
       .sort((a, b) => String(a.date).localeCompare(String(b.date)))
       .slice(0, 8)
       .map((t) => ({
         ...t,
-        date: new Date(`${String(t.date).slice(0, 10)}T12:00:00`).toLocaleDateString(undefined, {
-          month: 'short',
-          day: 'numeric',
-          year: 'numeric',
-        }),
+        date: formatDisplayDate(t.date),
       }))
   }, [filteredTasks])
 
   const goToToday = () => {
     const d = startOfToday()
-    setViewDate(new Date(d.getFullYear(), d.getMonth(), 1))
+    setViewDate(new Date(d.getFullYear(), d.getMonth(), d.getDate()))
+    setSelectedDate(toIsoDate(d))
   }
-  const goToPrevMonth = () => setViewDate(new Date(year, month - 1, 1))
-  const goToNextMonth = () => setViewDate(new Date(year, month + 1, 1))
 
-  const monthLabel = viewDate.toLocaleString('default', { month: 'long', year: 'numeric' })
-  const todayDay = (
-    year === today.getFullYear() && month === today.getMonth()
-  ) ? today.getDate() : null
+  const goToPrev = () => {
+    if (viewMode === 'day') {
+      setViewDate((prev) => addDays(prev, -1))
+      return
+    }
+    if (viewMode === 'week') {
+      setViewDate((prev) => addDays(prev, -7))
+      return
+    }
+    setViewDate(new Date(year, month - 1, 1))
+  }
+
+  const goToNext = () => {
+    if (viewMode === 'day') {
+      setViewDate((prev) => addDays(prev, 1))
+      return
+    }
+    if (viewMode === 'week') {
+      setViewDate((prev) => addDays(prev, 7))
+      return
+    }
+    setViewDate(new Date(year, month + 1, 1))
+  }
+
+  const selectDate = useCallback((isoDate) => {
+    if (!isoDate) return
+    setSelectedDate(isoDate)
+    setViewDate(parseIsoDate(isoDate))
+  }, [])
+
+  const periodLabel = useMemo(() => {
+    if (viewMode === 'day') {
+      const weekday = viewDate.toLocaleDateString(undefined, { weekday: 'long' })
+      return `${weekday}, ${formatDisplayDate(viewDate)}`
+    }
+    if (viewMode === 'week') {
+      const { start } = weekRange(viewDate)
+      const end = addDays(start, 6)
+      return `${formatDisplayDate(start)} – ${formatDisplayDate(end)}`
+    }
+    return viewDate.toLocaleString('default', { month: 'long', year: 'numeric' })
+  }, [viewMode, viewDate])
+
+  const todayIso = toIsoDate(today)
+  const weekDays = useMemo(() => {
+    const start = startOfWeek(viewDate)
+    return Array.from({ length: 7 }, (_, i) => {
+      const d = addDays(start, i)
+      return {
+        date: d,
+        iso: toIsoDate(d),
+        day: d.getDate(),
+        weekday: d.toLocaleDateString(undefined, { weekday: 'short' }),
+        currentMonth: d.getMonth() === month,
+      }
+    })
+  }, [viewDate, month])
 
   return {
     plants: locationOptions,
     workCenters: [],
-    tasks: monthTasks,
+    tasks: periodTasks,
     allFilteredTasks: filteredTasks,
     tasksByDate,
     upcomingTasks,
@@ -202,8 +305,13 @@ export function useCalendar() {
     viewDate,
     year,
     month,
-    monthLabel,
-    todayDay,
+    monthLabel: periodLabel,
+    periodLabel,
+    todayDay: today.getDate(),
+    todayIso,
+    selectedDate,
+    selectDate,
+    weekDays,
     viewMode,
     setViewMode,
     plantFilter,
@@ -219,8 +327,10 @@ export function useCalendar() {
     dateTo,
     setDateTo,
     goToToday,
-    goToPrevMonth,
-    goToNextMonth,
+    goToPrevMonth: goToPrev,
+    goToNextMonth: goToNext,
+    goToPrev,
+    goToNext,
   }
 }
 
@@ -232,17 +342,38 @@ export function buildCalendarGrid(year, month) {
   const cells = []
 
   for (let i = firstWeekday - 1; i >= 0; i--) {
-    cells.push({ day: prevMonthDays - i, currentMonth: false })
+    const day = prevMonthDays - i
+    const date = new Date(year, month - 1, day)
+    cells.push({
+      day,
+      currentMonth: false,
+      iso: toIsoDate(date),
+      date,
+    })
   }
 
   for (let d = 1; d <= daysInMonth; d++) {
-    cells.push({ day: d, currentMonth: true })
+    const date = new Date(year, month, d)
+    cells.push({
+      day: d,
+      currentMonth: true,
+      iso: toIsoDate(date),
+      date,
+    })
   }
 
   const remaining = 42 - cells.length
   for (let d = 1; d <= remaining; d++) {
-    cells.push({ day: d, currentMonth: false })
+    const date = new Date(year, month + 1, d)
+    cells.push({
+      day: d,
+      currentMonth: false,
+      iso: toIsoDate(date),
+      date,
+    })
   }
 
   return cells
 }
+
+export { toIsoDate, parseIsoDate, startOfWeek, addDays }

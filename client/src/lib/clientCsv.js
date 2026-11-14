@@ -1,4 +1,5 @@
 import { downloadBlobFile } from './api'
+import { formatDisplayDateValue } from './displayDate'
 
 function csvEscape(value) {
   const text = value == null ? '' : String(value)
@@ -10,7 +11,7 @@ export function downloadClientCsv(filename, rows, columns) {
   const header = columns.map((col) => csvEscape(col.label)).join(',')
   const lines = (rows || []).map((row) => columns.map((col) => {
     const value = typeof col.value === 'function' ? col.value(row) : row?.[col.id]
-    return csvEscape(value)
+    return csvEscape(formatDisplayDateValue(value))
   }).join(','))
   const blob = new Blob([`\uFEFF${[header, ...lines].join('\n')}`], { type: 'text/csv;charset=utf-8' })
   downloadBlobFile({ blob, filename })

@@ -61,6 +61,31 @@
   width: min(380px, 92vw);
 }
 
+.table-column-picker__panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
+}
+
+.table-column-picker__panel--inline {
+  max-height: min(420px, 55vh);
+  margin: 0 -4px;
+  border: 1px solid var(--color-light-gray-1);
+  border-radius: var(--radius-md);
+  background: var(--color-white);
+  overflow: hidden;
+}
+
+.table-column-picker__panel--inline .table-column-picker__menu-head {
+  padding-top: 10px;
+}
+
+.table-column-picker__panel--inline .table-column-picker__list {
+  padding-bottom: 8px;
+}
+
 .table-column-picker__menu-head {
   display: flex;
   align-items: center;

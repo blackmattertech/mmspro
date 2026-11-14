@@ -5,12 +5,11 @@ import {
   DetailField,
 } from '../shared/DetailView'
 import { warrantyDocumentLabelText } from '../../config/warrantyDocuments'
+import { formatCalendarDate } from '../../lib/displayDate'
 
 function formatDate(value) {
   if (!value) return '—'
-  const date = new Date(`${String(value).slice(0, 10)}T00:00:00`)
-  if (Number.isNaN(date.getTime())) return value
-  return date.toLocaleDateString()
+  return formatCalendarDate(value) || String(value)
 }
 
 function formatPeriodMonths(value) {

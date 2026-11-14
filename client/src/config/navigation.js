@@ -30,16 +30,24 @@ export const MASTERS_HUB_ITEMS = [
     icon: 'buildings',
     altModuleKeys: ['locations', 'departments', 'employees'],
   },
-  // Hidden for now — work centers are form dropdown values only; re-enable when Masters CRUD is needed.
-  // {
-  //   id: 'work_centers',
-  //   label: 'Work Center',
-  //   title: 'Work Center',
-  //   description: 'Workshops, plants, and crews for work orders and PM.',
-  //   segment: 'masters/work-centers',
-  //   moduleKey: 'work_centers',
-  //   icon: 'washer',
-  // },
+  {
+    id: 'work_centers',
+    label: 'Work Center',
+    title: 'Work Center',
+    description: 'Create work centers used in work orders, work requests, and PM forms.',
+    segment: 'masters/work-centers',
+    moduleKey: 'work_centers',
+    icon: 'washer',
+  },
+  {
+    id: 'uoms',
+    label: 'UOM',
+    title: 'UOM',
+    description: 'Units of measure used wherever a quantity is recorded.',
+    segment: 'masters/uoms',
+    moduleKey: 'uoms',
+    icon: 'addItem',
+  },
   {
     id: 'vendors',
     label: 'Vendors',
@@ -71,7 +79,8 @@ export const MASTERS_HUB_ITEMS = [
 
 export const MASTER_HUB_MODULE_KEYS = [
   ...COMPANY_PAGE_MODULE_KEYS,
-  // 'work_centers', // hidden — form dropdown source only
+  'work_centers',
+  'uoms',
   'assets',
   'vendors',
   'others',
@@ -211,6 +220,7 @@ export function moduleKeyForPath(pathname, orgSlug) {
   if (rest.startsWith('masters/forms')) return 'assets'
   if (rest.startsWith('masters/company')) return 'company'
   if (rest.startsWith('masters/work-centers')) return 'work_centers'
+  if (rest.startsWith('masters/uoms')) return 'uoms'
   if (rest.startsWith('masters/equipment')) return 'equipment'
   if (rest.startsWith('masters/vendors')) return 'vendors'
   if (rest.startsWith('masters/others') || rest.startsWith('masters/checklists')) return 'others'

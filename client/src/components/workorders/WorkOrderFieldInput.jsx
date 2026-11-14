@@ -1,7 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import DateField from '../ui/DateField'
 import FilterableSelect from '../ui/FilterableSelect'
-import { fieldTypeLabel } from '../../lib/assetFieldTypes'
 import { getWorkOrderFileSignedUrl, validateWorkOrderFile } from '../../lib/workOrderAssets'
 import {
   createLocalFileItem,
@@ -16,6 +15,7 @@ import ImageLightbox from '../shared/ImageLightbox'
 import SpellcheckInput from '../shared/SpellcheckInput'
 import FormLabel from '../shared/FormLabel'
 import { useTextFieldLimits } from '../../hooks/useTextFieldLimits'
+import { fieldHelpFor } from '../../lib/fieldHelpText'
 import { formFieldClassName, normalizeColSpan } from '../../lib/formLayoutIds'
 
 function useSignedPreviewMap(files) {
@@ -128,10 +128,9 @@ function ImageFieldPreview({ field, value, onChange, disabled }) {
       className={wrapClass(field, 'wo-field-upload wo-field-upload--image')}
       style={{ '--wo-image-tile-size': `${IMAGE_TILE_SIZE}px` }}
     >
-      <label className="company-form__label" htmlFor={id}>
+      <FormLabel htmlFor={id} fieldType="image">
         {field.is_required ? `${field.name} *` : field.name}
-        <span className="wo-field-type-hint"> ({fieldTypeLabel('image')})</span>
-      </label>
+      </FormLabel>
 
       <div className="wo-field-upload__tiles">
         {files.map((item) => {
@@ -317,10 +316,9 @@ function FileFieldPreview({ field, value, onChange, disabled }) {
 
   return (
     <div className={wrapClass(field, 'wo-field-upload')}>
-      <label className="company-form__label" htmlFor={id}>
+      <FormLabel htmlFor={id} fieldType={type}>
         {field.is_required ? `${field.name} *` : field.name}
-        <span className="wo-field-type-hint"> ({fieldTypeLabel(type)})</span>
-      </label>
+      </FormLabel>
 
       <div className="wo-field-upload__zone">
         <input
@@ -459,11 +457,12 @@ export default function WorkOrderFieldInput({ field, value, onChange, disabled }
   const optionValues = field.dropdown_options || []
   const { maxLengthForField } = useTextFieldLimits()
   const limit = maxLengthForField(field)
+  const help = fieldHelpFor(field)
 
   if (type === 'textarea') {
     return (
       <div className={wrapClass(field, 'company-form__field--full')}>
-        <FormLabel htmlFor={id} limit={limit}>{label}</FormLabel>
+        <FormLabel htmlFor={id} fieldType="textarea" limit={limit}>{label}</FormLabel>
         <SpellcheckInput
           multiline
           id={id}
@@ -473,7 +472,9 @@ export default function WorkOrderFieldInput({ field, value, onChange, disabled }
           onChange={(e) => onChange(e.target.value)}
           disabled={disabled}
           maxLength={limit}
+          placeholder={help?.placeholder}
         />
+        {help?.hint ? <p className="company-form__hint">{help.hint}</p> : null}
       </div>
     )
   }
@@ -639,7 +640,7 @@ export default function WorkOrderFieldInput({ field, value, onChange, disabled }
 
   return (
     <div className={wrapClass(field)}>
-      <FormLabel htmlFor={id} limit={limit}>{label}</FormLabel>
+      <FormLabel htmlFor={id} fieldType="text" limit={limit || undefined}>{label}</FormLabel>
       <SpellcheckInput
         id={id}
         className="company-form__input"
@@ -647,7 +648,9 @@ export default function WorkOrderFieldInput({ field, value, onChange, disabled }
         onChange={(e) => onChange(e.target.value)}
         disabled={disabled}
         maxLength={limit}
+        placeholder={help?.placeholder}
       />
+      {help?.hint ? <p className="company-form__hint">{help.hint}</p> : null}
     </div>
   )
 }

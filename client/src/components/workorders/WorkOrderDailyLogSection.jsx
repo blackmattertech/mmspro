@@ -9,28 +9,20 @@ import { findVisibleCharacterLimitError, firstCharacterLimitMessage } from '../.
 import WorkOrderMaterialRowsTable, { normalizeMaterialRows } from './WorkOrderMaterialRowsTable'
 import SpellcheckInput from '../shared/SpellcheckInput'
 import FormLabel from '../shared/FormLabel'
+import { formatDisplayDate, formatDisplayDateTime } from '../../lib/displayDate'
 import './ManualWorkOrder.css'
 
 function formatDayLabel(logDate) {
   if (!logDate) return '—'
-  try {
-    return new Date(`${logDate}T12:00:00`).toLocaleDateString(undefined, {
-      weekday: 'short',
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric',
-    })
-  } catch {
-    return logDate
-  }
+  const dateLabel = formatDisplayDate(logDate)
+  if (!dateLabel) return logDate
+  const weekday = new Date(`${logDate}T12:00:00`).toLocaleDateString(undefined, { weekday: 'short' })
+  return `${weekday}, ${dateLabel}`
 }
 
 function formatStamp(value) {
   if (!value) return '—'
-  return new Date(value).toLocaleString(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  })
+  return formatDisplayDateTime(value) || '—'
 }
 
 function materialCount(materials) {
@@ -220,7 +212,7 @@ export default function WorkOrderDailyLogSection({ detail, onUpdated, canEdit: c
                   />
                 </label>
                 <label className="company-form__field">
-                  <FormLabel limit={maxLength('remarks')}>Remarks</FormLabel>
+                  <FormLabel fieldType="textarea" limit={maxLength('remarks')}>Remarks</FormLabel>
                   <SpellcheckInput
                     className="company-form__input"
                     value={draft.remarks}

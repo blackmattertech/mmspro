@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { formatDisplayDate } from '../../lib/displayDate'
 import './DateRangeField.css'
 
 const WEEKDAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
@@ -27,9 +28,7 @@ function cellTimestamp(cell) {
 }
 
 function formatDisplay(value) {
-  const parsed = parseValue(value)
-  if (!parsed) return ''
-  return `${pad(parsed.d)}/${pad(parsed.m + 1)}/${parsed.y}`
+  return formatDisplayDate(value)
 }
 
 function buildCalendarCells(viewYear, viewMonth) {
@@ -77,7 +76,7 @@ function getRangeClasses(cell, from, to) {
 
 /**
  * Date range picker with a single trigger and calendar dialog.
- * Values use `YYYY-MM-DD`. Selected range is highlighted in brand red.
+ * Stored values use `YYYY-MM-DD`. The field shows `DD-MMM-YYYY`. Selected range is highlighted in brand red.
  */
 export default function DateRangeField({
   from = '',
