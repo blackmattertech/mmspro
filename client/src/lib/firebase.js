@@ -97,9 +97,12 @@ let remoteConfig = null
 let remotePromise = null
 
 function apiOrigin() {
-  if (import.meta.env.VITE_API_URL) return import.meta.env.VITE_API_URL
+  const configured = String(import.meta.env.VITE_API_URL || '').trim().replace(/\/$/, '')
+  if (configured) return configured
+  // Dev: Vite proxies /api. Production builds require VITE_API_URL (enforced in vite.config).
+  if (import.meta.env.DEV && typeof window !== 'undefined') return window.location.origin
   if (typeof window !== 'undefined') return window.location.origin
-  return 'http://localhost:5050'
+  return ''
 }
 
 export function ensureFirebaseConfig() {

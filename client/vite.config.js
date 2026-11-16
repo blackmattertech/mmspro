@@ -55,6 +55,13 @@ function buildFirebaseServiceWorker(env) {
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
   const serviceWorkerContent = buildFirebaseServiceWorker(env)
+  const apiUrl = String(env.VITE_API_URL || '').trim()
+
+  if (mode === 'production' && !apiUrl) {
+    throw new Error(
+      'VITE_API_URL is required for production builds. Set it to your deployed API URL (no trailing slash) in client env / Vercel, then rebuild.',
+    )
+  }
 
   return {
     plugins: [

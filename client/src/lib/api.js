@@ -2,26 +2,44 @@ import { supabase } from './supabase'
 import { listQueryParams, asListArray } from './listResponse'
 
 function resolveApiUrl() {
-  if (import.meta.env.VITE_API_URL) return import.meta.env.VITE_API_URL
+  const configured = String(import.meta.env.VITE_API_URL || '').trim().replace(/\/$/, '')
+  if (configured) return configured
 
   // Dev: same-origin requests go through Vite proxy (no CORS, works on LAN IP too)
   if (import.meta.env.DEV && typeof window !== 'undefined') {
     return window.location.origin
   }
 
+  // Production must bake VITE_API_URL at build time — never guess :5050 (causes NetworkError).
+  const message =
+    '[MMSPro] VITE_API_URL is not set. Set it to your deployed API URL in Vercel (no trailing slash) and rebuild the client.'
   if (typeof window !== 'undefined') {
-    console.error(
-      '[MMSPro] VITE_API_URL is not set. API calls will fail in production. ' +
-      'Set VITE_API_URL to your deployed server URL in Vercel environment variables and rebuild.'
-    )
-    const { protocol, hostname } = window.location
-    return `${protocol}//${hostname}:5050`
+    console.error(message)
+    window.__MMSPRO_API_URL_MISSING__ = true
   }
-
-  return 'http://localhost:5050'
+  throw new Error(message)
 }
 
-const API_URL = resolveApiUrl()
+let API_URL
+try {
+  API_URL = resolveApiUrl()
+} catch (err) {
+  API_URL = ''
+  if (import.meta.env.PROD) {
+    // Keep module loadable so the UI can show a config error instead of a white screen.
+    console.error(err?.message || err)
+  } else {
+    throw err
+  }
+}
+
+export function getApiBaseUrl() {
+  return API_URL
+}
+
+export function isApiConfigured() {
+  return Boolean(API_URL)
+}
 let cachedAccessToken = null
 let cachedTokenExpiresAt = 0
 
@@ -64,18 +82,52 @@ async function getAccessToken({ forceRefresh = false } = {}) {
   return cachedAccessToken
 }
 
+function blobFromBase64Payload(data, fallbackType = 'application/octet-stream') {
+  if (!data?.data) {
+    throw new Error('Download response was missing file data')
+  }
+  const bytes = Uint8Array.from(atob(data.data), (c) => c.charCodeAt(0))
+  return {
+    blob: new Blob([bytes], { type: data.contentType || fallbackType }),
+    filename: data.filename || 'export.bin',
+  }
+}
+
+function filenameFromDisposition(disposition) {
+  const value = disposition || ''
+  const match = value.match(/filename="([^"]+)"/)
+    || value.match(/filename\*=UTF-8''([^;]+)/i)
+  return match?.[1] ? decodeURIComponent(match[1]) : ''
+}
+
 export async function apiFetchBlob(path, options = {}) {
+  if (!API_URL) {
+    throw new Error(
+      'API URL is not configured. Set VITE_API_URL to your deployed server URL and rebuild.',
+    )
+  }
   const { _retried, ...fetchOptions } = options
   const token = await getAccessToken({ forceRefresh: Boolean(_retried) })
   const url = `${API_URL}${path}`
-  const res = await fetch(url, {
-    ...fetchOptions,
-    headers: {
-      ...(token && { Authorization: `Bearer ${token}` }),
-      ...ngrokSkipHeaders(url),
-      ...fetchOptions.headers,
-    },
-  })
+  let res
+  try {
+    res = await fetch(url, {
+      ...fetchOptions,
+      headers: {
+        ...(token && { Authorization: `Bearer ${token}` }),
+        ...ngrokSkipHeaders(url),
+        ...fetchOptions.headers,
+      },
+    })
+  } catch (err) {
+    const networkErr = new Error(
+      err?.message && /NetworkError|Failed to fetch|Load failed|network/i.test(err.message)
+        ? 'Network error while downloading file. Confirm the API is reachable and try again.'
+        : (err?.message || 'Network error while downloading file'),
+    )
+    networkErr.cause = err
+    throw networkErr
+  }
   if (!res.ok) {
     const data = await res.json().catch(() => ({}))
     if (res.status === 401 && !_retried && token) {
@@ -86,10 +138,17 @@ export async function apiFetchBlob(path, options = {}) {
     err.status = res.status
     throw err
   }
+
+  const contentType = res.headers.get('Content-Type') || ''
+  // Mixed deploy safety: old servers still return base64 JSON.
+  if (/application\/json/i.test(contentType)) {
+    const data = await res.json()
+    return blobFromBase64Payload(data)
+  }
+
   const blob = await res.blob()
-  const disposition = res.headers.get('Content-Disposition') || ''
-  const match = disposition.match(/filename="([^"]+)"/)
-  return { blob, filename: match?.[1] || 'export.csv' }
+  const filename = filenameFromDisposition(res.headers.get('Content-Disposition'))
+  return { blob, filename: filename || 'export.bin' }
 }
 
 export function downloadBlobFile({ blob, filename }) {
@@ -104,6 +163,11 @@ export function downloadBlobFile({ blob, filename }) {
 }
 
 export async function apiFetch(path, options = {}) {
+  if (!API_URL) {
+    throw new Error(
+      'API URL is not configured. Set VITE_API_URL to your deployed server URL and rebuild.',
+    )
+  }
   const { _retried, ...fetchOptions } = options
   const token = await getAccessToken({ forceRefresh: Boolean(_retried) })
 
