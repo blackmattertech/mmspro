@@ -97,7 +97,15 @@ app.use(
       }
     },
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'ngrok-skip-browser-warning'],
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'Accept',
+      'ngrok-skip-browser-warning',
+      'X-MMS-Response',
+    ],
+    // Needed so cross-origin blob downloads can read the suggested filename.
+    exposedHeaders: ['Content-Disposition', 'Content-Type'],
   })
 )
 app.use(express.json({ limit: '4mb' }))

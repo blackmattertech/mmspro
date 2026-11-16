@@ -13,7 +13,9 @@
     "test:unit": "node --test lib/pmSchedule.test.js lib/formSkips.test.js lib/userSelfAssignment.test.js lib/warrantyBulkGroup.test.js lib/ttlCache.test.js lib/excelTemplate.test.js lib/workOrderOrigin.test.js lib/uomMaster.test.js lib/uomBulk.test.js lib/orgPermissions.accessAdmin.test.js ../shared/displayDate.test.js",
     "wipe": "node scripts/wipe-all.js",
     "wipe:keep-admin": "node scripts/wipe-keep-admin.js",
-    "delete:org": "node scripts/delete-organization.js"
+    "delete:org": "node scripts/delete-organization.js",
+    "test": "node --test lib/*.test.js",
+    "smoke:export": "node scripts/smoke-export-compat.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.39.0",

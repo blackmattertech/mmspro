@@ -65,7 +65,7 @@ export async function buildReportExport({
       max_rows: 10000,
     }, now),
     loadOrgLetterhead(orgId),
-    catalog.kind === 'unified' ? getReportFilterOptions(orgId, session) : Promise.resolve({}),
+    getReportFilterOptions(orgId, session).catch(() => ({})),
   ])
 
   const period = periodLabel(report.filters.date_from, report.filters.date_to)

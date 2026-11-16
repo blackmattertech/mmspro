@@ -34,6 +34,7 @@ import {
   updateReportSchedule,
 } from '../../lib/reportScheduleService.js'
 import { normalizeEmailBodyText } from '../../lib/reportEmail.js'
+import { sendBase64Export, sendBlobExport, wantsBlobExport } from '../../lib/exportResponse.js'
 
 const router = Router()
 
@@ -247,14 +248,24 @@ router.post('/:key/custom', requireReportRead, requireOrgAdmin, async (req, res)
   }
 })
 
+function attachmentFilename(name, fallback) {
+  const safe = String(name || fallback || 'download')
+    .replace(/["\r\n]/g, '')
+    .trim() || fallback || 'download'
+  return safe
+}
+
 router.post('/:key/pdf', requireReportRead, async (req, res) => {
   try {
     const bundle = await exportFromRequest(req, req.body || {})
-    res.json({
-      filename: bundle.pdfFilename,
+    const filename = attachmentFilename(bundle.pdfFilename, 'report.pdf')
+    const payload = {
+      buffer: bundle.pdf,
+      filename,
       contentType: 'application/pdf',
-      data: bundle.pdf.toString('base64'),
-    })
+    }
+    if (wantsBlobExport(req)) sendBlobExport(res, payload)
+    else sendBase64Export(res, payload)
   } catch (err) {
     sendError(res, err)
   }
@@ -263,11 +274,14 @@ router.post('/:key/pdf', requireReportRead, async (req, res) => {
 router.post('/:key/csv', requireReportRead, async (req, res) => {
   try {
     const bundle = await exportFromRequest(req, req.body || {})
-    res.json({
-      filename: bundle.csvFilename,
+    const filename = attachmentFilename(bundle.csvFilename, 'report.csv')
+    const payload = {
+      buffer: Buffer.from(bundle.csv, 'utf8'),
+      filename,
       contentType: 'text/csv; charset=utf-8',
-      data: Buffer.from(bundle.csv, 'utf8').toString('base64'),
-    })
+    }
+    if (wantsBlobExport(req)) sendBlobExport(res, payload)
+    else sendBase64Export(res, payload)
   } catch (err) {
     sendError(res, err)
   }

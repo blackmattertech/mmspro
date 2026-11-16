@@ -3,10 +3,6 @@ import { UNIFIED_COLUMNS, columnsForReport, formatReportValue } from './reportCo
 import { formatDisplayDate } from './displayDate.js'
 
 const MARGIN = 32
-const HEADER_COLOR = '#111827'
-const MUTED = '#6B7280'
-const RULE = '#E5E7EB'
-const ACCENT = '#E63946'
 const INK = '#000000'
 const HEADER_FILL = '#D9D9D9'
 
@@ -69,11 +65,17 @@ function departmentBanner(name) {
   return text.includes('DEPARTMENT') ? text : `${text} DEPARTMENT`
 }
 
+function reportTitleBanner(title) {
+  const text = String(title || 'REPORT').trim().toUpperCase() || 'REPORT'
+  return text
+}
+
 function drawLetterhead(doc, {
   orgName,
   address,
   department,
   logo,
+  title,
 }, pageWidth, margin) {
   const top = margin
   const contentWidth = pageWidth - margin * 2
@@ -122,7 +124,7 @@ function drawLetterhead(doc, {
   const titleY = top + headerH
   const titleH = 20
   strokeRect(doc, margin, titleY, contentWidth, titleH, HEADER_FILL)
-  textInCell(doc, 'ACTIVITY REPORT', margin, titleY, contentWidth, titleH, {
+  textInCell(doc, reportTitleBanner(title), margin, titleY, contentWidth, titleH, {
     bold: true,
     size: 10,
     align: 'center',
@@ -335,22 +337,25 @@ export function buildActivityFilterValues(query = {}, options = {}) {
   }
 }
 
-function buildActivityPdfBuffer({
+function buildTabularReportPdfBuffer({
   orgName,
   address,
   department,
   logo,
+  title,
   filters,
   rows = [],
   columns = [],
+  kind = 'unified',
 }) {
   return new Promise((resolve, reject) => {
+    const reportTitle = reportTitleBanner(title)
     const doc = new PDFDocument({
       size: 'A4',
       layout: 'landscape',
       margin: MARGIN,
       bufferPages: true,
-      info: { Title: 'ACTIVITY REPORT', Author: orgName || 'MMS PRO' },
+      info: { Title: reportTitle, Author: orgName || 'MMS PRO' },
     })
     const chunks = []
     doc.on('data', (chunk) => chunks.push(chunk))
@@ -360,9 +365,13 @@ function buildActivityPdfBuffer({
     const pageWidth = doc.page.width
     const pageHeight = doc.page.height
     const contentWidth = pageWidth - MARGIN * 2
-    const letterhead = { orgName, address, department, logo }
+    const letterhead = { orgName, address, department, logo, title: reportTitle }
     const bottom = pageHeight - 36
-    const colGroups = chunkReportColumns(resolveExportColumns('unified', columns))
+    const resolvedColumns = resolveExportColumns(kind, columns)
+    const colGroups = chunkReportColumns(resolvedColumns)
+    const fallbackColumns = resolvedColumns.length
+      ? resolvedColumns
+      : (kind === 'unified' ? UNIFIED_COLUMNS : columnsForReport(kind))
 
     const startPage = (includeFilters, groupColumns, groupWidths) => {
       drawPageFrame(doc, pageWidth, pageHeight, MARGIN)
@@ -375,7 +384,7 @@ function buildActivityPdfBuffer({
     }
 
     if (!rows.length) {
-      const group = colGroups[0] || UNIFIED_COLUMNS
+      const group = colGroups[0] || fallbackColumns
       const widths = activityColWidths(group, contentWidth)
       const y = startPage(true, group, widths)
       textInCell(doc, 'No rows for this period.', MARGIN, y, contentWidth, 24, {
@@ -412,9 +421,7 @@ export function buildReportPdfBuffer({
   orgName,
   title,
   periodLabel,
-  generatedAt,
   locationLabel,
-  kpis = [],
   columns = [],
   rows = [],
   kind,
@@ -423,138 +430,22 @@ export function buildReportPdfBuffer({
   logo,
   activityFilters,
 }) {
-  if (kind === 'unified') {
-    return buildActivityPdfBuffer({
-      orgName,
-      address,
-      department,
-      logo,
-      filters: activityFilters || {},
-      rows,
-      columns,
-    })
+  const filters = {
+    ...(activityFilters || {}),
   }
+  if (!filters.fromDate && periodLabel) filters.fromDate = periodLabel
+  if (!filters.facility && locationLabel) filters.facility = locationLabel
 
-  const selected = columns.length
-    ? columns
-    : columnsForReport(kind).map((col) => col.id)
-  const colDefs = columnsForReport(kind).filter((col) => selected.includes(col.id))
-  const ordered = selected
-    .map((id) => colDefs.find((col) => col.id === id))
-    .filter(Boolean)
-
-  return new Promise((resolve, reject) => {
-    const doc = new PDFDocument({
-      size: 'A4',
-      layout: 'landscape',
-      margin: MARGIN,
-      bufferPages: true,
-      info: { Title: title, Author: orgName || 'MMS PRO' },
-    })
-    const chunks = []
-    doc.on('data', (chunk) => chunks.push(chunk))
-    doc.on('end', () => resolve(Buffer.concat(chunks)))
-    doc.on('error', reject)
-
-    const pageWidth = doc.page.width
-    const pageHeight = doc.page.height
-    const contentWidth = pageWidth - MARGIN * 2
-
-    const drawChrome = () => {
-      doc.save()
-      doc.rect(0, 0, pageWidth, 8).fill(ACCENT)
-      doc.restore()
-    }
-
-    drawChrome()
-    doc.fillColor(HEADER_COLOR).font('Helvetica-Bold').fontSize(16).text(orgName || 'MMS PRO', MARGIN, MARGIN)
-    doc.font('Helvetica-Bold').fontSize(13).fillColor(HEADER_COLOR).text(title, { align: 'left' })
-    doc.moveDown(0.3)
-    doc.font('Helvetica').fontSize(9).fillColor(MUTED)
-    doc.text(`Period: ${periodLabel || '—'}`)
-    doc.text(`Plant: ${locationLabel || 'All plants'}`)
-    doc.text(`Generated: ${generatedAt || ''}`)
-    doc.moveDown(0.6)
-
-    if (kpis.length) {
-      const colW = contentWidth / Math.min(kpis.length, 6)
-      const startY = doc.y
-      kpis.slice(0, 6).forEach((kpi, index) => {
-        const x = MARGIN + (index * colW)
-        doc.font('Helvetica').fontSize(8).fillColor(MUTED).text(kpi.label, x, startY, { width: colW - 8 })
-        doc.font('Helvetica-Bold').fontSize(12).fillColor(HEADER_COLOR)
-          .text(String(kpi.value ?? '0'), x, startY + 12, { width: colW - 8 })
-      })
-      doc.y = startY + 36
-    }
-
-    const tableTop = Math.max(doc.y + 8, 130)
-    const widths = ordered.map((col) => {
-      const wide = ['short_description', 'problem_description', 'work_done', 'materials', 'remarks', 'assignees', 'equipment', 'order_from', 'order_to', 'job_nature', 'created_by', 'reported_by', 'job_description', 'root_cause', 'action_taken', 'material_consumed', 'execution_remarks'].includes(col.id)
-      return wide ? 1.6 : 1
-    })
-    const totalWeight = widths.reduce((sum, w) => sum + w, 0) || 1
-    const colWidths = widths.map((w) => (w / totalWeight) * contentWidth)
-
-    const drawTableHeader = (y) => {
-      doc.save()
-      doc.rect(MARGIN, y, contentWidth, 20).fill('#F8FAFC')
-      doc.restore()
-      doc.font('Helvetica-Bold').fontSize(7).fillColor(HEADER_COLOR)
-      let x = MARGIN
-      ordered.forEach((col, index) => {
-        doc.text(col.label, x + 4, y + 6, { width: colWidths[index] - 8, ellipsis: true })
-        x += colWidths[index]
-      })
-      doc.moveTo(MARGIN, y + 20).lineTo(MARGIN + contentWidth, y + 20).strokeColor(RULE).stroke()
-      return y + 22
-    }
-
-    let y = drawTableHeader(tableTop)
-    const bottom = pageHeight - MARGIN
-
-    rows.forEach((row) => {
-      const lineSets = ordered.map((col, index) => (
-        wrapText(doc.font('Helvetica').fontSize(7), cellText(col.id, row[col.id]), colWidths[index] - 8, 4)
-      ))
-      const lineCount = Math.max(1, ...lineSets.map((lines) => lines.length))
-      const rowHeight = Math.max(16, lineCount * 10 + 6)
-      if (y + rowHeight > bottom) {
-        doc.addPage()
-        drawChrome()
-        y = drawTableHeader(MARGIN)
-      }
-      let x = MARGIN
-      doc.font('Helvetica').fontSize(7).fillColor('#1F2937')
-      ordered.forEach((col, index) => {
-        doc.text(lineSets[index].join('\n'), x + 4, y + 3, {
-          width: colWidths[index] - 8,
-          height: rowHeight - 4,
-        })
-        x += colWidths[index]
-      })
-      y += rowHeight
-      doc.moveTo(MARGIN, y).lineTo(MARGIN + contentWidth, y).strokeColor('#F1F5F9').stroke()
-    })
-
-    if (!rows.length) {
-      doc.font('Helvetica').fontSize(10).fillColor(MUTED)
-        .text('No rows for this period.', MARGIN, y + 12)
-    }
-
-    doc.fontSize(8).fillColor(MUTED)
-    const range = doc.bufferedPageRange()
-    for (let i = 0; i < range.count; i += 1) {
-      doc.switchToPage(range.start + i)
-      doc.text(
-        `Page ${i + 1} of ${range.count}`,
-        MARGIN,
-        pageHeight - 24,
-        { width: contentWidth, align: 'right' },
-      )
-    }
-
-    doc.end()
+  return buildTabularReportPdfBuffer({
+    orgName,
+    address,
+    department,
+    logo,
+    title: title || (kind === 'unified' ? 'ACTIVITY REPORT' : 'REPORT'),
+    filters,
+    rows,
+    columns,
+    kind: kind || 'unified',
   })
 }
 
