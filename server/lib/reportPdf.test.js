@@ -132,3 +132,58 @@ test('buildReportPdfBuffer reuses one logo XObject across multi-page column grou
   assert.ok(images <= 4, `expected reused logo, got ${images} image XObjects`)
   assert.ok(pdf.length < 250_000, `expected compact PDF, got ${pdf.length} bytes`)
 })
+
+function pdfPageCount(pdf) {
+  const match = pdf.toString('latin1').match(/\/Type\s*\/Pages[\s\S]*?\/Count\s+(\d+)/)
+  return Number(match?.[1] || 0)
+}
+
+test('buildReportPdfBuffer does not create blank pages from footer text overflow', async () => {
+  const columns = columnsForReport('unified').slice(0, 18).map((col) => col.id)
+  const rows = Array.from({ length: 20 }, (_, i) => (
+    Object.fromEntries(columns.map((id) => [id, `value-${i}-${id}`]))
+  ))
+
+  const pdf = await buildReportPdfBuffer({
+    orgName: 'Footer Org',
+    address: '2 Test Road',
+    department: 'MAINTENANCE',
+    logo: TINY_PNG,
+    title: 'Activity Report',
+    kind: 'unified',
+    columns,
+    rows,
+    activityFilters: { fromDate: '01-Jan-2026', toDate: '31-Jan-2026' },
+  })
+
+  const pages = pdfPageCount(pdf)
+  // 18 columns → about 2 column groups; 20 rows fit on a few pages each. Far below the
+  // old footer bug (2 blank pages per content page → often 3× expected).
+  assert.ok(pages >= 2, `expected multiple content pages, got ${pages}`)
+  assert.ok(pages <= 12, `expected no footer blank pages, got ${pages}`)
+})
+
+test('buildReportPdfBuffer finishes a dense 33-row export in under 2 seconds', async () => {
+  const columns = columnsForReport('unified').slice(0, 50).map((col) => col.id)
+  const rows = Array.from({ length: 33 }, (_, i) => (
+    Object.fromEntries(columns.map((id) => [id, `${id} sample text ${i}`.repeat(id.includes('description') ? 3 : 1)]))
+  ))
+
+  const started = Date.now()
+  const pdf = await buildReportPdfBuffer({
+    orgName: 'Speed Org',
+    address: '3 Industrial Road, City - State',
+    department: 'MAINTENANCE',
+    logo: TINY_PNG,
+    title: 'Activity Report',
+    kind: 'unified',
+    columns,
+    rows,
+    activityFilters: { fromDate: '10-Nov-2026', toDate: '16-Nov-2026' },
+  })
+  const elapsed = Date.now() - started
+
+  assert.equal(pdf.subarray(0, 4).toString('latin1'), '%PDF')
+  assert.ok(elapsed < 2000, `PDF build took ${elapsed}ms, expected <2000ms`)
+  assert.ok(pdfPageCount(pdf) <= 20, `unexpected page count ${pdfPageCount(pdf)}`)
+})

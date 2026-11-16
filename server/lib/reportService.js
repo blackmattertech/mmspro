@@ -28,6 +28,7 @@ import {
   workOrderDueAt,
 } from './reportConstants.js'
 import { resolveProgressPercent } from './statusProgress.js'
+import { preparePdfLogo } from './pdfLogo.js'
 import { tallyStatusCounts } from './statusCounts.js'
 
 const LOG_SELECT = 'id, org_id, work_order_id, log_date, started_at, ended_at, day_status, work_done, remarks, labour_count, materials, field_snapshot, updated_at'
@@ -302,7 +303,11 @@ export async function loadOrgLetterhead(orgId) {
         if (Buffer.isBuffer(raw)) logo = raw
         else if (typeof raw.arrayBuffer === 'function') logo = Buffer.from(await raw.arrayBuffer())
         else logo = Buffer.from(raw)
-        if (!logo.length || !isPdfSafeImageBuffer(logo)) logo = null
+        if (!logo.length || !isPdfSafeImageBuffer(logo)) {
+          logo = null
+        } else {
+          logo = await preparePdfLogo(logo)
+        }
       }
     } catch {
       logo = null

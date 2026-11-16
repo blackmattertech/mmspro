@@ -42,20 +42,23 @@ function strokeRect(doc, x, y, w, h, fill) {
 function textInCell(doc, text, x, y, w, h, { bold = false, size = 8, align = 'left', valign = 'top' } = {}) {
   const padX = 4
   const padY = 3
+  const maxHeight = Math.max(1, h - padY * 2)
   doc.save()
   doc.font(bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(size).fillColor(INK)
-  const lines = wrapText(doc, text, w - padX * 2, Math.max(1, Math.floor((h - padY * 2) / (size + 2))))
+  const lines = wrapText(doc, text, w - padX * 2, Math.max(1, Math.floor(maxHeight / (size + 2))))
   const lineHeight = size + 2
   const blockHeight = lines.length * lineHeight
   let textY = y + padY
   if (valign === 'center') {
     textY = y + Math.max(padY, (h - blockHeight) / 2)
   }
+  // height + ellipsis keeps PDFKit from calling continueOnNewPage (blank pages).
   doc.text(lines.join('\n'), x + padX, textY, {
     width: w - padX * 2,
-    height: h - padY * 2,
+    height: maxHeight,
     align,
     lineGap: 1,
+    ellipsis: true,
   })
   doc.restore()
 }
@@ -284,8 +287,8 @@ function activityRowHeight(lineSets) {
   return Math.max(16, lineCount * 9 + 5)
 }
 
-function drawActivityRow(doc, columns, row, x, y, widths) {
-  const lineSets = activityLineSets(doc, columns, row, widths)
+function drawActivityRow(doc, columns, row, x, y, widths, precomputedLineSets = null) {
+  const lineSets = precomputedLineSets || activityLineSets(doc, columns, row, widths)
   const h = activityRowHeight(lineSets)
   let cursor = x
   columns.forEach((col, index) => {
@@ -300,16 +303,28 @@ function drawActivityRow(doc, columns, row, x, y, widths) {
 }
 
 function drawFooter(doc, orgName, pageWidth, pageHeight, margin, page, pages) {
-  const y = pageHeight - 22
-  doc.save()
-  doc.lineWidth(0.7).strokeColor(INK)
-    .moveTo(margin, y - 6)
-    .lineTo(pageWidth - margin, y - 6)
-    .stroke()
-  doc.font('Helvetica').fontSize(8).fillColor(INK)
-  doc.text(orgName || '', margin, y, { width: 300 })
-  doc.text(`Page ${page} of ${pages}`, pageWidth - margin - 120, y, { width: 120, align: 'right' })
-  doc.restore()
+  // Keep footer inside the printable band. Drawing below page.margins.bottom makes
+  // PDFKit continueOnNewPage() and leaves trailing blank pages in the file.
+  const y = pageHeight - 18
+  const previousBottom = doc.page.margins.bottom
+  doc.page.margins.bottom = 0
+  try {
+    doc.save()
+    doc.lineWidth(0.7).strokeColor(INK)
+      .moveTo(margin, y - 6)
+      .lineTo(pageWidth - margin, y - 6)
+      .stroke()
+    doc.font('Helvetica').fontSize(8).fillColor(INK)
+    doc.text(orgName || '', margin, y, { width: 300, lineBreak: false })
+    doc.text(`Page ${page} of ${pages}`, pageWidth - margin - 120, y, {
+      width: 120,
+      align: 'right',
+      lineBreak: false,
+    })
+    doc.restore()
+  } finally {
+    doc.page.margins.bottom = previousBottom
+  }
 }
 
 function drawPageFrame(doc, pageWidth, pageHeight, margin) {
@@ -376,7 +391,8 @@ function buildTabularReportPdfBuffer({
       }
     }
     const letterhead = { orgName, address, department, logo: logoImage, title: reportTitle }
-    const bottom = pageHeight - 36
+    // Leave room for the footer band; stay above PDFKit's bottom margin to avoid auto page breaks.
+    const bottom = pageHeight - Math.max(MARGIN + 8, 40)
     const resolvedColumns = resolveExportColumns(kind, columns)
     const colGroups = chunkReportColumns(resolvedColumns)
     const fallbackColumns = resolvedColumns.length
@@ -407,12 +423,13 @@ function buildTabularReportPdfBuffer({
         if (groupIndex > 0) doc.addPage()
         let y = startPage(groupIndex === 0, group, widths)
         rows.forEach((row) => {
-          const rowHeight = activityRowHeight(activityLineSets(doc, group, row, widths))
+          const lineSets = activityLineSets(doc, group, row, widths)
+          const rowHeight = activityRowHeight(lineSets)
           if (y + rowHeight > bottom) {
             doc.addPage()
             y = startPage(false, group, widths)
           }
-          y += drawActivityRow(doc, group, row, MARGIN, y, widths)
+          y += drawActivityRow(doc, group, row, MARGIN, y, widths, lineSets)
         })
       })
     }

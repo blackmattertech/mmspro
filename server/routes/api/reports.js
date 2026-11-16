@@ -106,7 +106,7 @@ function reportQueryFrom(source = {}) {
   }
 }
 
-async function exportFromRequest(req, body = {}) {
+async function exportFromRequest(req, body = {}, formats = ['pdf', 'csv']) {
   return buildReportExport({
     orgId: req.userProfile.org_id,
     session: req.orgPermissions,
@@ -118,6 +118,7 @@ async function exportFromRequest(req, body = {}) {
     locationId: body.location_id || body.facility_id,
     filters: reportQueryFrom(body),
     columns: body.columns,
+    formats,
   })
 }
 
@@ -257,7 +258,7 @@ function attachmentFilename(name, fallback) {
 
 router.post('/:key/pdf', requireReportRead, async (req, res) => {
   try {
-    const bundle = await exportFromRequest(req, req.body || {})
+    const bundle = await exportFromRequest(req, req.body || {}, ['pdf'])
     const filename = attachmentFilename(bundle.pdfFilename, 'report.pdf')
     const payload = {
       buffer: bundle.pdf,
@@ -273,7 +274,7 @@ router.post('/:key/pdf', requireReportRead, async (req, res) => {
 
 router.post('/:key/csv', requireReportRead, async (req, res) => {
   try {
-    const bundle = await exportFromRequest(req, req.body || {})
+    const bundle = await exportFromRequest(req, req.body || {}, ['csv'])
     const filename = attachmentFilename(bundle.csvFilename, 'report.csv')
     const payload = {
       buffer: Buffer.from(bundle.csv, 'utf8'),
