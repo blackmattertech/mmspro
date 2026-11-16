@@ -96,3 +96,39 @@ test('buildReportPdfBuffer still renders empty-state letterhead pages', async ()
   assert.ok(pdfContainsLiteral(pdf, 'EMPTY REPORT'))
   assert.ok(pdfContainsLiteral(pdf, 'Empty Org'))
 })
+
+/** 1×1 PNG — enough to prove logo XObjects are reused across pages. */
+const TINY_PNG = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+  'base64',
+)
+
+function countPdfImages(pdf) {
+  return (pdf.toString('latin1').match(/\/Subtype \/Image/g) || []).length
+}
+
+test('buildReportPdfBuffer reuses one logo XObject across multi-page column groups', async () => {
+  // Many wide text columns force several landscape page groups → letterhead redraws.
+  const columns = columnsForReport('unified').slice(0, 24).map((col) => col.id)
+  const rows = Array.from({ length: 12 }, (_, i) => (
+    Object.fromEntries(columns.map((id) => [id, `row-${i}-${id}`]))
+  ))
+
+  const pdf = await buildReportPdfBuffer({
+    orgName: 'Logo Org',
+    address: '1 Test Road',
+    department: 'MAINTENANCE',
+    logo: TINY_PNG,
+    title: 'Activity Report',
+    kind: 'unified',
+    columns,
+    rows,
+    activityFilters: { fromDate: '01-Jan-2026', toDate: '31-Jan-2026' },
+  })
+
+  assert.equal(pdf.subarray(0, 4).toString('latin1'), '%PDF')
+  const images = countPdfImages(pdf)
+  // Without openImage reuse this would grow ~2 images per page (often 10+).
+  assert.ok(images <= 4, `expected reused logo, got ${images} image XObjects`)
+  assert.ok(pdf.length < 250_000, `expected compact PDF, got ${pdf.length} bytes`)
+})

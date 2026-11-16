@@ -498,13 +498,21 @@ function drawLetterhead(doc, letterhead) {
   const width = doc.page.width - margin * 2
   const top = doc.y
   const logoSize = 58
-  const hasLogo = Boolean(letterhead?.logo)
+  let logoImage = null
+  if (letterhead?.logo) {
+    try {
+      logoImage = doc.openImage(letterhead.logo)
+    } catch {
+      logoImage = null
+    }
+  }
+  const hasLogo = Boolean(logoImage)
   const textX = margin + (hasLogo ? logoSize + 14 : 0)
   const textW = width - (textX - margin)
 
   if (hasLogo) {
     try {
-      doc.image(letterhead.logo, margin, top, {
+      doc.image(logoImage, margin, top, {
         fit: [logoSize, logoSize],
         align: 'center',
         valign: 'center',

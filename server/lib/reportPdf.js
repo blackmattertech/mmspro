@@ -86,6 +86,8 @@ function drawLetterhead(doc, {
   const bandH = headerH / 3
 
   strokeRect(doc, margin, top, logoW, headerH)
+  // `logo` must be a PDFKit Image from doc.openImage(...) so multi-page
+  // reports reuse one XObject instead of re-embedding the file on every page.
   if (logo) {
     try {
       doc.image(logo, margin + 8, top + 10, {
@@ -365,7 +367,15 @@ function buildTabularReportPdfBuffer({
     const pageWidth = doc.page.width
     const pageHeight = doc.page.height
     const contentWidth = pageWidth - MARGIN * 2
-    const letterhead = { orgName, address, department, logo, title: reportTitle }
+    let logoImage = null
+    if (logo) {
+      try {
+        logoImage = doc.openImage(logo)
+      } catch {
+        logoImage = null
+      }
+    }
+    const letterhead = { orgName, address, department, logo: logoImage, title: reportTitle }
     const bottom = pageHeight - 36
     const resolvedColumns = resolveExportColumns(kind, columns)
     const colGroups = chunkReportColumns(resolvedColumns)
