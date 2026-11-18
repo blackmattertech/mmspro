@@ -14,6 +14,7 @@ import ErrorFallback from '../components/shared/ErrorFallback'
 import { lookupEquipment } from '../lib/api-equipment'
 import { parseEquipmentScan } from '../lib/equipmentQr'
 import { orgPath } from '../config/navigation'
+import { startApiKeepWarm } from '../lib/apiKeepWarm'
 import './AppShell.css'
 
 const EquipmentScanner = lazy(() => import('../components/equipment/EquipmentScanner'))
@@ -43,6 +44,8 @@ export default function AppLayout() {
       // ignore storage errors
     }
   }, [collapsed])
+
+  useEffect(() => startApiKeepWarm(), [])
 
   useEffect(() => {
     setMobileNavOpen(false)
