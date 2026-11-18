@@ -1,0 +1,93 @@
+.status-phase-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0 0 14px;
+}
+
+.status-phase-bar .status-count-bar__item {
+  border: 1px solid var(--color-primary);
+  background: var(--color-white);
+}
+
+.status-phase-bar .status-count-bar__item--button:hover {
+  border-color: var(--color-primary);
+  background: var(--color-light-pink-1, #fff5f5);
+}
+
+.status-phase-bar .status-count-bar__item--button:focus,
+.status-phase-bar .status-count-bar__item--button:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+.status-phase-bar .status-count-bar__item--active {
+  color: var(--color-white);
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  box-shadow: none;
+}
+
+.status-phase-bar .status-count-bar__item--active:hover {
+  color: var(--color-white);
+  background: #d42f3c;
+  border-color: #d42f3c;
+}
+
+.status-phase-bar .status-count-bar__item--active .status-count-bar__label,
+.status-phase-bar .status-count-bar__item--active .status-count-bar__count {
+  color: var(--color-white);
+}
+
+.status-phase-bar__phases {
+  margin: 0;
+  align-items: center;
+}
+
+.status-phase-bar__phase {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.status-phase-bar__chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--color-gray-blue);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  border-radius: 6px;
+}
+
+.status-phase-bar__chevron:hover {
+  background: var(--color-off-white);
+  color: var(--color-dark-navy);
+}
+
+.status-phase-bar__chevron--open {
+  transform: rotate(180deg);
+  color: var(--color-dark-navy);
+}
+
+.status-phase-bar__item--muted {
+  opacity: 0.45;
+}
+
+.status-phase-bar__fines {
+  margin: 0;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  padding-bottom: 2px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.status-phase-bar__fines .status-count-bar__item {
+  white-space: nowrap;
+}

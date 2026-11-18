@@ -11,6 +11,7 @@ import {
 } from '../lib/api-work-orders'
 import { uploadWorkOrderFile, validateWorkOrderFile } from '../lib/workOrderAssets'
 import {
+  createLocalFileItem,
   getWorkOrderFiles,
   revokeWorkOrderFilePreviews,
   workOrderFilesValue,
@@ -28,8 +29,11 @@ import {
   writeFormDraft,
 } from '../lib/formDraftStorage'
 import { getEquipment } from '../lib/api-equipment'
+import { formatMandatoryFieldsAlert } from '../lib/mandatoryFields'
 import { prefillValuesForFields } from '../lib/equipmentLayoutFields'
 import { seedDateFieldDefaults } from '../lib/dateInputDefaults'
+import { applyRecordTemplate } from '../lib/api-record-templates'
+import { filesFromTemplateAttachments } from '../lib/recordTemplates'
 
 const FILE_FIELD_TYPES = new Set(['file', 'image'])
 
@@ -66,7 +70,7 @@ function findMissingRequiredFields(schema, values) {
   for (const section of schema?.sections || []) {
     for (const field of filterVisibleFields(section.fields, values)) {
       if (field.is_required && isFieldValueEmpty(field, values[field.id])) {
-        missing.push(field.name)
+        missing.push({ id: field.id, label: field.name })
       }
     }
   }
@@ -95,9 +99,17 @@ function formValuesFromDetail(detail) {
   return next
 }
 
-export function useManualWorkOrderForm({ workOrderId = null, initialEquipmentId = '' } = {}) {
+export function useManualWorkOrderForm({
+  workOrderId = null,
+  initialEquipmentId = '',
+  cloneFromId = '',
+  templateFromId = '',
+} = {}) {
   const { org } = useOrg()
   const isEdit = Boolean(workOrderId)
+  // Duplicate → prefilled create: seed from an existing work order but save as a new one.
+  const isClone = Boolean(cloneFromId) && !isEdit
+  const isTemplate = Boolean(templateFromId) && !isEdit && !isClone
   const [schema, setSchema] = useState({ sections: [] })
   const [settings, setSettings] = useState({ sections: [] })
   const [values, setValues] = useState({})
@@ -114,9 +126,12 @@ export function useManualWorkOrderForm({ workOrderId = null, initialEquipmentId 
   const draftHydratedRef = useRef(false)
   const dateDefaultsSeededRef = useRef(false)
   const editHydratedRef = useRef(false)
+  const cloneHydratedRef = useRef(false)
+  const templateHydratedRef = useRef(false)
   valuesRef.current = values
 
-  const draftKey = !isEdit ? manualWorkOrderDraftKey(org?.id) : null
+  // Clones/templates never read or write the shared "new work order" local draft.
+  const draftKey = !isEdit && !isClone && !isTemplate ? manualWorkOrderDraftKey(org?.id) : null
 
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -142,6 +157,61 @@ export function useManualWorkOrderForm({ workOrderId = null, initialEquipmentId 
     draftHydratedRef.current = true
   }, [])
 
+  /**
+   * Seed a new work order from an existing one. `record` keeps the source (so the
+   * wizard can load its form values and the page can run the clone check), but
+   * status / WO number are never carried over — the server assigns them on create.
+   */
+  const applyCloneDetail = useCallback((detail) => {
+    setRecord(detail)
+    setExistingStatus(null)
+    setValues(formValuesFromDetail(detail))
+    const assigneeIds = (detail.assignees || []).map((a) => a.id).filter(Boolean)
+    setAssignedEmployeeIds(assigneeIds)
+    const department = detail.assigned_department?.id ? detail.assigned_department : null
+    setAssignedDepartmentId(detail.assigned_department_id || department?.id || null)
+    setAssignedDepartment(department)
+    setAssignedLocationId(detail.assigned_location_id || detail.assigned_location?.id || null)
+    setAssignToDepartment(Boolean(
+      (detail.assigned_department_id || detail.assigned_department?.id)
+      && !assigneeIds.length,
+    ))
+    cloneHydratedRef.current = true
+    draftHydratedRef.current = true
+  }, [])
+
+  const applyTemplatePayload = useCallback(async (applied) => {
+    const payload = applied?.payload || {}
+    const nextValues = { ...(payload.form_values || {}) }
+    const downloaded = await filesFromTemplateAttachments(applied.attachments || [])
+    for (const item of downloaded) {
+      const fieldId = item.field_id
+      if (!fieldId) continue
+      const local = createLocalFileItem(item.file, item.kind === 'image' ? 'image' : 'file')
+      const existing = getWorkOrderFiles(nextValues[fieldId])
+      nextValues[fieldId] = workOrderFilesValue([...existing, local])
+    }
+    setRecord({
+      id: null,
+      ...payload,
+      assignees: (payload.assigned_employee_ids || []).map((id) => ({ id })),
+      assigned_department: payload.assigned_department_id
+        ? { id: payload.assigned_department_id }
+        : null,
+    })
+    setExistingStatus(null)
+    setValues(nextValues)
+    setAssignedEmployeeIds(payload.assigned_employee_ids || [])
+    setAssignedDepartmentId(payload.assigned_department_id || null)
+    setAssignedDepartment(
+      payload.assigned_department_id ? { id: payload.assigned_department_id } : null,
+    )
+    setAssignedLocationId(payload.assigned_location_id || null)
+    setAssignToDepartment(Boolean(payload.assign_to_department))
+    templateHydratedRef.current = true
+    draftHydratedRef.current = true
+  }, [])
+
   const loadForm = useCallback(async ({ silent = false } = {}) => {
     if (!silent) setLoading(true)
     setError(null)
@@ -153,6 +223,20 @@ export function useManualWorkOrderForm({ workOrderId = null, initialEquipmentId 
         ])
         setSchema(data)
         applyEditDetail(detail)
+      } else if (isClone && cloneFromId && !cloneHydratedRef.current) {
+        const [data, detail] = await Promise.all([
+          getManualWorkOrderForm(),
+          getManualWorkOrder(cloneFromId),
+        ])
+        setSchema(data)
+        applyCloneDetail(detail)
+      } else if (isTemplate && templateFromId && !templateHydratedRef.current) {
+        const [data, applied] = await Promise.all([
+          getManualWorkOrderForm(),
+          applyRecordTemplate(templateFromId),
+        ])
+        setSchema(data)
+        await applyTemplatePayload(applied)
       } else {
         const data = await getManualWorkOrderForm()
         setSchema(data)
@@ -162,7 +246,17 @@ export function useManualWorkOrderForm({ workOrderId = null, initialEquipmentId 
     } finally {
       if (!silent) setLoading(false)
     }
-  }, [isEdit, workOrderId, applyEditDetail])
+  }, [
+    isEdit,
+    workOrderId,
+    applyEditDetail,
+    isClone,
+    cloneFromId,
+    applyCloneDetail,
+    isTemplate,
+    templateFromId,
+    applyTemplatePayload,
+  ])
 
   const loadSettings = useCallback(async () => {
     try {
@@ -341,7 +435,8 @@ export function useManualWorkOrderForm({ workOrderId = null, initialEquipmentId 
     if (status === 'created' && !extras.skipSchemaValidation) {
       const missing = findMissingRequiredFields(schema, values)
       if (missing.length) {
-        setError(`Fill the mandatory field${missing.length === 1 ? '' : 's'}: ${missing.join(', ')}`)
+        const alert = formatMandatoryFieldsAlert(missing.map((field) => field.label))
+        setError(`${alert.message} ${alert.details.join(', ')}`)
         return
       }
     }
@@ -413,6 +508,7 @@ export function useManualWorkOrderForm({ workOrderId = null, initialEquipmentId 
         permitNumber: extras.permitNumber,
         permitIssueAt: extras.permitIssueAt,
         permitExpiryAt: extras.permitExpiryAt,
+        cloneOfId: !isEdit && isClone ? cloneFromId : undefined,
       }
 
       const workOrder = isEdit
@@ -479,6 +575,7 @@ export function useManualWorkOrderForm({ workOrderId = null, initialEquipmentId 
     formOpen,
     setFormOpen,
     isEdit,
+    isClone,
     existingStatus,
     loading,
     saving,

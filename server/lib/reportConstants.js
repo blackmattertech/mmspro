@@ -288,6 +288,7 @@ export const WORK_REQUEST_COLUMNS = [
   { id: 'order_to', label: 'Order To' },
   { id: 'area', label: 'Area' },
   { id: 'plant', label: 'Plant / Facility' },
+  // Optional — dynamic Equipment Location / Equipment name come from catalog field:* columns.
   { id: 'equipment', label: 'Asset' },
   { id: 'equipment_type', label: 'Asset Type' },
   { id: 'equipment_capacity', label: 'Asset Capacity' },
@@ -327,6 +328,8 @@ export const PM_PLAN_COLUMNS = [
 export const METER_READING_COLUMNS = [
   { id: 'reading_at', label: 'Reading time' },
   { id: 'reading', label: 'Reading' },
+  { id: 'cumulative_reading', label: 'Cumm. Reading' },
+  { id: 'is_reset', label: 'Reset' },
   { id: 'equipment', label: 'Asset' },
   { id: 'equipment_code', label: 'Asset code' },
   { id: 'area', label: 'Area' },
@@ -380,6 +383,7 @@ export const EQUIPMENT_COLUMNS = [
   { id: 'equipment_tag', label: 'Asset Tag' },
   { id: 'reading_required', label: 'Meter required' },
   { id: 'last_meter_reading', label: 'Last reading' },
+  { id: 'cumulative_reading', label: 'Cumm. Reading' },
   { id: 'last_meter_reading_at', label: 'Last reading at' },
   { id: 'is_active', label: 'Active' },
   { id: 'created_at', label: 'Created' },
@@ -435,13 +439,19 @@ export function isInteractiveReportKey(key) {
   return INTERACTIVE_REPORT_KEYS.includes(key)
 }
 
+export function isDynamicReportColumnId(id) {
+  return /^field:[0-9a-f-]{36}$/i.test(String(id || '').trim())
+}
+
 export function filterReportColumns(kind, requested) {
   const allowed = new Set(columnsForReport(kind).map((col) => col.id))
   const seen = new Set()
   const list = []
   for (const raw of Array.isArray(requested) ? requested : []) {
     const id = String(raw || '').trim()
-    if (!id || !allowed.has(id) || seen.has(id)) continue
+    if (!id || seen.has(id)) continue
+    // Catalog / form parent fields (Equipment Location, Equipment name, …) travel as field:<uuid>.
+    if (!allowed.has(id) && !isDynamicReportColumnId(id)) continue
     seen.add(id)
     list.push(id)
   }
@@ -454,7 +464,7 @@ export function isMissingReportTable(error) {
   return (
     code === '42P01'
     || code === 'PGRST205'
-    || /report_custom_reports|report_schedules/i.test(message)
+    || /report_custom_reports|report_schedules|report_ready_reports/i.test(message)
   )
 }
 

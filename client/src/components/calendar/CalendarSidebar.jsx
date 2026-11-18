@@ -3,6 +3,7 @@ import { QUICK_FILTERS, EVENT_SOURCE_COLORS, SOURCE_LABELS, eventColorKey } from
 import { useOrg } from '../../hooks/useOrg'
 import { usePermissions } from '../../hooks/usePermissions'
 import { calendarEventPath } from '../../lib/calendarEventPath'
+import { calendarEventLabel, calendarEventTooltipLines } from '../../lib/calendarEventLabel'
 
 const FILTER_ICONS = {
   list: (
@@ -69,11 +70,13 @@ function UpcomingItem({ task }) {
   const { canRead } = usePermissions()
   const to = calendarEventPath(org?.slug, task, canRead)
   const colorKey = eventColorKey(task)
+  const label = calendarEventLabel(task)
+  const tip = calendarEventTooltipLines(task).join('\n')
   const body = (
     <>
       <div className="cal-upcoming__content">
         <span className="cal-upcoming__date">{task.date}</span>
-        <span className="cal-upcoming__title">{task.title}</span>
+        <span className="cal-upcoming__title" title={tip || label}>{label}</span>
         <span className="cal-upcoming__plant">{task.plant}</span>
       </div>
       <span

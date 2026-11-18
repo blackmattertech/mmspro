@@ -24,7 +24,8 @@ import { useFormFieldValues } from '../../hooks/useFormFieldValues'
 import CatalogExtrasGrid from '../forms/CatalogExtrasGrid'
 import OrderedFormLayout from '../forms/OrderedFormLayout'
 import ChecklistOptIn from '../forms/ChecklistOptIn'
-import { missingRequiredLayoutValues, splitBoundValues } from '../../lib/formFieldSources'
+import { listMissingRequiredLayoutFields, splitBoundValues } from '../../lib/formFieldSources'
+import { useMandatoryFieldAlert } from '../../hooks/useMandatoryFieldAlert'
 import { layoutRequiresChecklist } from '../../lib/formSkips'
 import {
   masterId,
@@ -114,6 +115,13 @@ function formFromPlan(plan) {
 }
 
 export default function PmPlanModal({ plan, saving, onClose, onSave }) {
+  const {
+    invalidFieldIds,
+    showMissing,
+    clearInvalidField,
+    clearAll: clearMandatoryHighlight,
+    alertModal,
+  } = useMandatoryFieldAlert()
   const [form, setForm] = useState(() => formFromPlan(plan))
   const [step, setStep] = useState(1)
   const [error, setError] = useState(null)
@@ -370,6 +378,13 @@ export default function PmPlanModal({ plan, saving, onClose, onSave }) {
     return (
       <p className="pm-section__hint">
         Latest meter reading: <strong>{formatMeterValue(latestReading.reading)}</strong>
+        {latestReading.cumulative_reading != null
+          && Number(latestReading.cumulative_reading) !== Number(latestReading.reading) && (
+          <>
+            {' · Cumm. reading: '}
+            <strong>{formatMeterValue(latestReading.cumulative_reading)}</strong>
+          </>
+        )}
         {latestReading.reading_at ? ` · ${formatMeterStamp(latestReading.reading_at)}` : ''}
         {(latestReading.logged_by_person?.name || latestReading.logged_by_name) ? (
           <>
@@ -404,7 +419,7 @@ export default function PmPlanModal({ plan, saving, onClose, onSave }) {
   const validateDetails = (layoutOverride = null) => {
     if (hasLayout) {
       const targetLayout = layoutOverride || displayLayout
-      const missing = missingRequiredLayoutValues(targetLayout, {
+      const missing = listMissingRequiredLayoutFields(targetLayout, {
         systemValues: {
           ...form,
           asset_picker: form.equipment_id,
@@ -414,7 +429,7 @@ export default function PmPlanModal({ plan, saving, onClose, onSave }) {
         catalogValues: extras.values,
       })
       if (missing.length) {
-        setError(`Please fill in: ${missing.join(', ')}`)
+        setError(showMissing(missing))
         return false
       }
       const groupErrors = validateRepeatableGroups(targetLayout, extras.values, { actors: formActors })
@@ -422,6 +437,7 @@ export default function PmPlanModal({ plan, saving, onClose, onSave }) {
         setError(groupErrors[0])
         return false
       }
+      clearMandatoryHighlight()
       return true
     }
     const requiredChecks = [
@@ -436,15 +452,13 @@ export default function PmPlanModal({ plan, saving, onClose, onSave }) {
       { ok: !usesReading || Boolean(form.reading_interval), id: 'pm-field-reading-interval', label: 'Reading value' },
       { ok: form.generate_before_days !== '' && form.generate_before_days != null, id: 'pm-field-generate-before', label: 'Generate before due' },
     ]
-    const missing = requiredChecks.find((row) => !row.ok)
-    if (!missing) return true
-    setError(`Please fill in ${missing.label}.`)
+    const missingRows = requiredChecks.filter((row) => !row.ok)
+    if (!missingRows.length) {
+      clearMandatoryHighlight()
+      return true
+    }
+    setError(showMissing(missingRows))
     setStep(1)
-    requestAnimationFrame(() => {
-      const el = document.getElementById(missing.id)
-      el?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-      el?.querySelector('input:not([disabled]), textarea, button')?.focus()
-    })
     return false
   }
 
@@ -797,9 +811,14 @@ export default function PmPlanModal({ plan, saving, onClose, onSave }) {
               layout={stepLayout}
               catalogLookup={catalogFields}
               catalogValues={extras.values}
-              onCatalogChange={extras.setFieldValue}
+              onCatalogChange={(id, value) => {
+                clearInvalidField(id)
+                extras.setFieldValue(id, value)
+              }}
               masterValues={extras.values}
+              invalidFieldIds={invalidFieldIds}
               onMasterChange={(id, value) => {
+                clearInvalidField(id)
                 extras.setFieldValue(id, value)
                 const parsed = parseLayoutId(id)
                 if (parsed.kind === 'master' && parsed.value === 'locations') setField('location_id', value || '')
@@ -1139,6 +1158,7 @@ export default function PmPlanModal({ plan, saving, onClose, onSave }) {
           </div>
         </form>
       </div>
+      {alertModal}
     </div>
   )
 }

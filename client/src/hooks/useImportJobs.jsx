@@ -6,12 +6,14 @@ import {
   useState,
 } from 'react'
 import { invalidateReferenceCache } from '../lib/referenceDataCache'
+import { resolveBulkUploadResponse } from '../lib/resolveBulkUpload'
 
 /** @typedef {'running' | 'success' | 'partial' | 'failed' | 'error'} ImportJobStatus */
 
 /**
  * @typedef {Object} ImportJob
  * @property {string} id
+ * @property {string} [serverJobId]
  * @property {string} templateId
  * @property {string} templateLabel
  * @property {string} fileName
@@ -21,6 +23,9 @@ import { invalidateReferenceCache } from '../lib/referenceDataCache'
  * @property {import('../config/importTemplates').ImportResult} [result]
  * @property {string} [error]
  * @property {{ filename: string, contentType: string, data: string }} [failedFile]
+ * @property {number} [progressDone]
+ * @property {number} [progressTotal]
+ * @property {number|null} [progressPercent]
  * @property {boolean} [bannerDismissed]
  */
 
@@ -55,7 +60,28 @@ export function ImportJobsProvider({ children }) {
     ])
 
     try {
-      const result = await upload()
+      const raw = await upload()
+      if (raw?.jobId) {
+        setJobs((prev) => prev.map((job) => (
+          job.id === id ? { ...job, serverJobId: raw.jobId } : job
+        )))
+      }
+      const result = await resolveBulkUploadResponse(raw, {
+        pollMs: 1000,
+        onStatus: (serverJob) => {
+          setJobs((prev) => prev.map((job) => (
+            job.id === id
+              ? {
+                ...job,
+                serverJobId: serverJob.id || job.serverJobId,
+                progressDone: serverJob.progress_done ?? job.progressDone,
+                progressTotal: serverJob.progress_total ?? job.progressTotal,
+                progressPercent: serverJob.progress_percent ?? job.progressPercent,
+              }
+              : job
+          )))
+        },
+      })
       if (templateId === 'equipment' || templateId === 'areas') {
         invalidateReferenceCache('areas')
       }

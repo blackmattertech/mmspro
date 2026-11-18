@@ -10,11 +10,17 @@ import {
   createPmPlan,
   updatePmPlan,
   deletePmPlan,
-  duplicatePmPlan,
   generatePmWorkOrder,
   getPmPlansTemplate,
   bulkUploadPmPlans,
 } from '../../lib/api-pm'
+import {
+  assertCloneChanged,
+  buildPmPlanCloneDraft,
+  CLONE_UNCHANGED_MESSAGE,
+  PM_PLAN_CLONE_COMPARE_KEYS,
+  PM_PLAN_CLONE_UNIQUE_KEYS,
+} from '../../lib/recordClone'
 import { useWorkOrderList, listResponseCacheKey } from '../../hooks/useWorkOrderList'
 import { notifyTabCountsChanged } from '../../lib/tabCountEvents'
 import { useWorkOrderToolbar } from '../../hooks/useWorkOrderToolbar'
@@ -31,6 +37,9 @@ import WorkOrdersTable from '../../components/workorders/WorkOrdersTable'
 import { getEquipment } from '../../lib/api-equipment'
 import PmPlansTable from '../../components/pm/PmPlansTable'
 import PmPlanModal from '../../components/pm/PmPlanModal'
+import PmPlanDetailModal from '../../components/pm/PmPlanDetailModal'
+import TemplatesButton from '../../components/templates/TemplatesButton'
+import { applyRecordTemplate } from '../../lib/api-record-templates'
 import {
   useMasterBulkUpload,
   MasterBulkActions,
@@ -59,6 +68,7 @@ export default function ScheduledWorkOrders() {
     headerSort = null,
     setHeaderSort,
     statusFilters = [],
+    reportStatusCounts = null,
   } = outlet
   const { setToolbar, clearToolbar } = useWorkOrderToolbar()
   const { canCreate, canUpdate, canDelete } = usePermissions()
@@ -71,6 +81,7 @@ export default function ScheduledWorkOrders() {
   const [error, setError] = useState(null)
   const [saving, setSaving] = useState(false)
   const [planModal, setPlanModal] = useState(null)
+  const [detailPlan, setDetailPlan] = useState(null)
   const [duplicatingId, setDuplicatingId] = useState(null)
   const [selectedId, setSelectedId, closeSelected] = useOpenQueryId()
   const [params, setParams] = useSearchParams()
@@ -140,11 +151,12 @@ export default function ScheduledWorkOrders() {
     sortDir: headerSort?.dir || '',
     sort_by: headerSort ? '' : sortBy,
   }), [debouncedSearch, pagination.pageSize, pagination.offset, columnFilters, fieldFilter, statusFilters, headerSort, sortBy])
-  const { orders, total, loading, error: ordersError, reload: reloadOrders } = useWorkOrderList(fetchOrders, {
+  const { orders, total, statusCounts, loading, error: ordersError, reload: reloadOrders } = useWorkOrderList(fetchOrders, {
     cacheKey: listCacheKey,
     onRows: outlet.reportFilterRows || null,
   })
   useEffect(() => { setListTotal(total) }, [total])
+  useEffect(() => { reportStatusCounts?.(statusCounts) }, [statusCounts, reportStatusCounts])
 
   const loadPlans = useCallback(async () => {
     const field = fieldFilter?.field
@@ -167,7 +179,7 @@ export default function ScheduledWorkOrders() {
     setView?.('plans')
     getPmPlan(planId)
       .then((plan) => {
-        if (!cancelled && plan) setPlanModal(plan)
+        if (!cancelled && plan) setDetailPlan(plan)
       })
       .catch((err) => {
         if (!cancelled) setError(err.message)
@@ -177,9 +189,21 @@ export default function ScheduledWorkOrders() {
 
   const closePlanModal = () => {
     setPlanModal(null)
+  }
+
+  const closeDetailPlan = () => {
+    setDetailPlan(null)
     if (!params.has('plan')) return
     const next = new URLSearchParams(params)
     next.delete('plan')
+    setParams(next, { replace: true })
+  }
+
+  const openDetailPlan = (plan) => {
+    if (!plan?.id) return
+    setDetailPlan(plan)
+    const next = new URLSearchParams(params)
+    next.set('plan', plan.id)
     setParams(next, { replace: true })
   }
 
@@ -198,6 +222,7 @@ export default function ScheduledWorkOrders() {
   const {
     bulkInputRef,
     bulkBusy,
+    bulkProgress,
     bulkError,
     bulkResult,
     handleDownloadTemplate,
@@ -215,54 +240,113 @@ export default function ScheduledWorkOrders() {
     reloadMeta()
   }, [reloadMeta])
 
+  const handleApplyTemplate = useCallback(async (row) => {
+    if (!row?.id) return
+    setError(null)
+    try {
+      const applied = await applyRecordTemplate(row.id)
+      setView?.('plans')
+      setPlanModal({
+        ...(applied?.payload || {}),
+        __template: true,
+      })
+    } catch (err) {
+      setError(err.message || 'Could not apply template')
+    }
+  }, [setView])
+
   useEffect(() => {
     const actions = (
       <>
         {canAdd && view === 'plans' && (
-          <MasterBulkActions
-            onDownload={() => bulkActionsRef.current.handleDownloadTemplate()}
-            bulkBusy={bulkBusy}
-            bulkInputRef={bulkInputRef}
-            onFileChange={(event) => bulkActionsRef.current.handleBulkFile(event)}
-            addLabel="+ PM Plan"
-            onAdd={() => setPlanModal({})}
-            title="Import PM plans"
-            noun="PM plan"
-            bulkError={bulkError}
-            bulkResult={bulkResult}
-          />
+          <>
+            <TemplatesButton
+              moduleKey="work_orders_scheduled"
+              disabled={saving || Boolean(duplicatingId)}
+              onSelect={handleApplyTemplate}
+            />
+            <MasterBulkActions
+              onDownload={() => bulkActionsRef.current.handleDownloadTemplate()}
+              bulkBusy={bulkBusy}
+              bulkProgress={bulkProgress}
+              bulkInputRef={bulkInputRef}
+              onFileChange={(event) => bulkActionsRef.current.handleBulkFile(event)}
+              addLabel="+ PM Plan"
+              onAdd={() => setPlanModal({})}
+              title="Import PM plans"
+              noun="PM plan"
+              bulkError={bulkError}
+              bulkResult={bulkResult}
+            />
+          </>
         )}
       </>
     )
     setToolbar(null, actions)
     return () => clearToolbar()
-  }, [view, canAdd, setToolbar, clearToolbar, bulkBusy, bulkError, bulkResult])
+  }, [
+    view,
+    canAdd,
+    setToolbar,
+    clearToolbar,
+    bulkBusy,
+    bulkError,
+    bulkResult,
+    bulkProgress,
+    saving,
+    duplicatingId,
+    handleApplyTemplate,
+  ])
 
   const filteredOrders = useMemo(
     () => applyWorkOrderFilters(orders, { search: '', locationFilter, advancedRules, locations }),
     [orders, locationFilter, sortBy, advancedRules, fieldFilter, locations],
   )
 
-  const filteredPlans = useMemo(
-    () => applyPmPlanFilters(plans, {
+  const filteredPlans = useMemo(() => {
+    const rows = applyPmPlanFilters(plans, {
       search,
       locationFilter,
       sortBy,
       advancedRules,
       locations,
-    }),
-    [plans, search, locationFilter, sortBy, advancedRules, locations],
-  )
+    })
+    if (!statusFilters.length) return rows
+    const selected = new Set(statusFilters)
+    return rows.filter((plan) => selected.has(String(plan.status || '')))
+  }, [plans, search, locationFilter, sortBy, advancedRules, locations, statusFilters])
 
   const handleSavePlan = async (payload) => {
     setSaving(true)
+    setError(null)
     try {
-      if (planModal?.id) await updatePmPlan(planModal.id, payload)
-      else await createPmPlan(payload)
+      if (planModal?.id) {
+        await updatePmPlan(planModal.id, payload)
+      } else {
+        if (planModal?.clone_of_id) {
+          const check = assertCloneChanged({
+            source: planModal,
+            next: payload,
+            uniqueKeys: PM_PLAN_CLONE_UNIQUE_KEYS,
+            compareKeys: PM_PLAN_CLONE_COMPARE_KEYS,
+          })
+          if (!check.ok) {
+            throw new Error(check.message || CLONE_UNCHANGED_MESSAGE)
+          }
+        }
+        const createBody = {
+          ...payload,
+          ...(planModal?.clone_of_id ? { clone_of_id: planModal.clone_of_id } : {}),
+        }
+        await createPmPlan(createBody)
+      }
       notifyTabCountsChanged('pm')
       notifyTabCountsChanged('work_orders')
       setPlanModal(null)
       await loadPlans()
+    } catch (err) {
+      setError(err.message)
+      throw err
     } finally {
       setSaving(false)
     }
@@ -300,9 +384,10 @@ export default function ScheduledWorkOrders() {
     setError(null)
     setDuplicatingId(plan.id)
     try {
-      await duplicatePmPlan(plan.id)
-      notifyTabCountsChanged('pm')
-      await loadPlans()
+      // Prefer a fresh full plan so technicians / schedule fields are complete.
+      const full = plan?.id ? await getPmPlan(plan.id).catch(() => plan) : plan
+      setView?.('plans')
+      setPlanModal(buildPmPlanCloneDraft(full || plan))
     } catch (err) {
       setError(err.message)
     } finally {
@@ -327,9 +412,11 @@ export default function ScheduledWorkOrders() {
             canAdd={canAdd}
             canEdit={canEdit}
             canRemove={canRemove}
+            canSaveTemplate={canAdd}
             duplicatingId={duplicatingId}
             onGenerate={handleGenerate}
             onDuplicate={handleDuplicatePlan}
+            onOpen={openDetailPlan}
             onEdit={setPlanModal}
             onDelete={handleDeletePlan}
           />
@@ -368,9 +455,26 @@ export default function ScheduledWorkOrders() {
         />
       )}
 
+      {detailPlan && (
+        <PmPlanDetailModal
+          planId={detailPlan.id}
+          plan={detailPlan}
+          onClose={closeDetailPlan}
+          canSaveTemplate={canAdd}
+        />
+      )}
+
       {planModal && (
         <PmPlanModal
-          plan={planModal.id || planModal.equipment_id ? planModal : null}
+          plan={
+            planModal.id
+            || planModal.equipment_id
+            || planModal.clone_of_id
+            || planModal.__clone
+            || planModal.__template
+              ? planModal
+              : null
+          }
           saving={saving}
           onClose={closePlanModal}
           onSave={handleSavePlan}

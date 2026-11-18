@@ -33,6 +33,12 @@ import {
   parseEmails,
   updateReportSchedule,
 } from '../../lib/reportScheduleService.js'
+import {
+  createReadyReport,
+  deleteReadyReport,
+  downloadReadyReport,
+  listReadyReports,
+} from '../../lib/reportReadyService.js'
 import { normalizeEmailBodyText } from '../../lib/reportEmail.js'
 import { sendBase64Export, sendBlobExport, wantsBlobExport } from '../../lib/exportResponse.js'
 
@@ -217,6 +223,50 @@ router.get('/schedules', requireAnyModulePermission(
   }
 })
 
+router.get('/ready', requireAnyModulePermission(
+  REPORT_MODULE_KEYS.map((key) => [key, 'read']),
+), async (req, res) => {
+  try {
+    const items = await listReadyReports(req.userProfile.org_id, {
+      profileId: req.userProfile.id,
+      isOrgAdmin: Boolean(req.orgPermissions?.is_org_admin),
+      reportKey: req.query.report_key || null,
+    })
+    res.json({ items })
+  } catch (err) {
+    sendError(res, err)
+  }
+})
+
+router.get('/ready/:id/download', requireAnyModulePermission(
+  REPORT_MODULE_KEYS.map((key) => [key, 'read']),
+), async (req, res) => {
+  try {
+    const file = await downloadReadyReport(
+      req.userProfile.org_id,
+      req.params.id,
+      req.query.format || 'pdf',
+    )
+    res.json(file)
+  } catch (err) {
+    sendError(res, err)
+  }
+})
+
+router.delete('/ready/:id', requireAnyModulePermission(
+  REPORT_MODULE_KEYS.map((key) => [key, 'read']),
+), async (req, res) => {
+  try {
+    const result = await deleteReadyReport(req.userProfile.org_id, req.params.id, {
+      profileId: req.userProfile.id,
+      isOrgAdmin: Boolean(req.orgPermissions?.is_org_admin),
+    })
+    res.json(result)
+  } catch (err) {
+    sendError(res, err)
+  }
+})
+
 router.get('/:key', requireReportRead, async (req, res) => {
   try {
     const data = await getReportData(
@@ -283,6 +333,21 @@ router.post('/:key/csv', requireReportRead, async (req, res) => {
     }
     if (wantsBlobExport(req)) sendBlobExport(res, payload)
     else sendBase64Export(res, payload)
+  } catch (err) {
+    sendError(res, err)
+  }
+})
+
+router.post('/:key/ready', requireReportRead, async (req, res) => {
+  try {
+    const row = await createReadyReport({
+      orgId: req.userProfile.org_id,
+      profileId: req.userProfile.id,
+      session: req.orgPermissions,
+      reportKey: req.reportCatalog.key,
+      body: req.body || {},
+    })
+    res.status(201).json(row)
   } catch (err) {
     sendError(res, err)
   }

@@ -1,7 +1,11 @@
 import { memo, useCallback, useEffect, useMemo, useState } from 'react'
-import { Link, useLocation } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useOrg } from '../../hooks/useOrg'
 import { orgPath } from '../../config/navigation'
+import { stopTableRowClick } from '../../lib/clickableTableRow'
+import { cloneNavState } from '../../lib/workRecordClone'
+import DuplicateRowButton from '../ui/DuplicateRowButton'
+import SaveAsTemplateButton from '../templates/SaveAsTemplateButton'
 import { listWorkRequests, getWorkRequest } from '../../lib/api-work-requests'
 import { formatDisplayDateTime } from '../../lib/displayDate'
 import { notifyTabCountsChanged } from '../../lib/tabCountEvents'
@@ -135,8 +139,11 @@ const WorkRequestTableRow = memo(function WorkRequestTableRow({
   statusLabels,
   workOrderLabels,
   orgSlug,
+  filter,
   selected,
   onSelect,
+  onDuplicate,
+  canSaveTemplate = false,
 }) {
   return (
     <tr
@@ -154,9 +161,34 @@ const WorkRequestTableRow = memo(function WorkRequestTableRow({
     >
       {columns.map((columnId) => (
         <td key={columnId} className={cellClassName(columnId)}>
-          {renderCell(row, columnId, statusLabels, orgSlug, columnById?.get(columnId), workOrderLabels)}
+          {renderCell(row, columnId, statusLabels, orgSlug, columnById?.get(columnId), workOrderLabels, filter)}
         </td>
       ))}
+      {(onDuplicate || canSaveTemplate) && (
+        <td
+          className="wr-table__cell wr-table__cell--actions"
+          onClick={stopTableRowClick}
+          onKeyDown={(event) => event.stopPropagation()}
+        >
+          <div className="company-table__actions">
+            {onDuplicate ? (
+              <DuplicateRowButton
+                onClick={() => onDuplicate(row)}
+                label={`Duplicate work request ${wrNumberLabel(row)}`}
+              />
+            ) : null}
+            {canSaveTemplate ? (
+              <SaveAsTemplateButton
+                moduleKey="work_request"
+                sourceRecordId={row.id}
+                defaultName={row.short_description || wrNumberLabel(row)}
+                className="company-btn company-btn--secondary company-btn--compact"
+                label="Template"
+              />
+            ) : null}
+          </div>
+        </td>
+      )}
     </tr>
   )
 })
@@ -203,7 +235,7 @@ function clampText(value, className = 'wr-table__clamp') {
   )
 }
 
-function renderCell(row, columnId, statusLabels = null, orgSlug = '', column = null, workOrderLabels = null) {
+function renderCell(row, columnId, statusLabels = null, orgSlug = '', column = null, workOrderLabels = null, filter = '') {
   switch (columnId) {
     case 'wr_number':
       return (
@@ -248,8 +280,12 @@ function renderCell(row, columnId, statusLabels = null, orgSlug = '', column = n
       const orderId = row.manual_work_order_id || row.linked_work_order?.id
       const number = row.linked_work_order?.wo_number
       if (!orderId) return '—'
+      // Order From (my / outgoing) tracks via the work request — no WO page deep link.
+      if (filter === 'my' || filter === 'outgoing' || filter === 'drafts') {
+        return clampText(number || 'Linked', 'wr-table__ellipsis')
+      }
       const href = orgSlug
-        ? orgPath(orgSlug, `work-orders/received?open=${encodeURIComponent(orderId)}`)
+        ? orgPath(orgSlug, `work-orders/all?open=${encodeURIComponent(orderId)}`)
         : '#'
       return (
         <Link
@@ -280,6 +316,8 @@ function renderCell(row, columnId, statusLabels = null, orgSlug = '', column = n
   }
 }
 
+const DUPLICATE_FILTERS = new Set(['my', 'outgoing', 'all', 'drafts'])
+
 const DEFAULT_VISIBLE = WORK_REQUEST_COLUMNS
   .filter((col) => col.defaultVisible !== false)
   .map((col) => col.id)
@@ -299,11 +337,21 @@ export default function WorkRequestsTable({
   columnDefs = WORK_REQUEST_COLUMNS,
   bulkReloadToken = 0,
   reportFilterRows = null,
+  reportStatusCounts = null,
 }) {
   const location = useLocation()
+  const navigate = useNavigate()
   const { org } = useOrg()
   const [selectedId, setSelectedId, closeSelected] = useOpenQueryId()
-  const { canUpdate, isProductEnabled } = usePermissions()
+  const { canCreate, canUpdate, isProductEnabled } = usePermissions()
+  // Incoming requests belong to another department's queue, so only requester-side lists duplicate.
+  const canCreateRequest = canCreate('work_request_create') || canCreate('work_request')
+  const canDuplicate = DUPLICATE_FILTERS.has(filter) && canCreateRequest
+  const canSaveTemplate = canCreateRequest
+  const handleDuplicate = useCallback((row) => {
+    if (!org?.slug || !row?.id) return
+    navigate(orgPath(org.slug, 'work-request/create'), { state: cloneNavState(row.id) })
+  }, [navigate, org?.slug])
   const { labelByKey: statusLabels } = useOrgStatusOptions('work_request', { includeInactive: true })
   const { labelByKey: workOrderLabels } = useOrgStatusOptions('work_order', { includeInactive: true })
   const canApprove = filter === 'incoming' && isProductEnabled('work_orders') && (
@@ -375,11 +423,12 @@ export default function WorkRequestsTable({
     sortBy,
     bulkReloadToken,
   ])
-  const { orders: requests, total, loading, error, reload } = useWorkOrderList(fetchList, {
+  const { orders: requests, total, statusCounts, loading, error, reload } = useWorkOrderList(fetchList, {
     cacheKey: listCacheKey,
     onRows: reportFilterRows,
   })
   useEffect(() => { setListTotal(total) }, [total])
+  useEffect(() => { reportStatusCounts?.(statusCounts) }, [statusCounts, reportStatusCounts])
   useEffect(() => {
     if (loading) return undefined
     notifyTabCountsChanged('work_requests')
@@ -390,7 +439,7 @@ export default function WorkRequestsTable({
   const pagedRows = requests
   const filtered = requests
 
-  const columns = visibleColumnIds?.length ? visibleColumnIds : DEFAULT_VISIBLE
+  const columns = Array.isArray(visibleColumnIds) ? visibleColumnIds : DEFAULT_VISIBLE
   const columnById = useMemo(
     () => new Map((columnDefs?.length ? columnDefs : WORK_REQUEST_COLUMNS).map((col) => [col.id, col])),
     [columnDefs],
@@ -427,11 +476,14 @@ export default function WorkRequestsTable({
                     />
                   )
                 })}
+                {(canDuplicate || canSaveTemplate) && (
+                  <th className="wr-table__cell wr-table__cell--actions">Actions</th>
+                )}
               </tr>
             </thead>
             {pagedRows.length === 0 ? (
               <tbody>
-                <TableEmptyRow colSpan={columns.length}>
+                <TableEmptyRow colSpan={columns.length + ((canDuplicate || canSaveTemplate) ? 1 : 0)}>
                   {(debouncedSearch || Object.keys(mergedFilters).length || statusFilters.length)
                     ? 'No work requests match your search or filters.'
                     : (emptyHint || 'No work requests yet.')}
@@ -449,8 +501,11 @@ export default function WorkRequestsTable({
                     statusLabels={statusLabels}
                     workOrderLabels={workOrderLabels}
                     orgSlug={org?.slug}
+                    filter={filter}
                     selected={selectedId === row.id}
                     onSelect={setSelectedId}
+                    onDuplicate={canDuplicate ? handleDuplicate : null}
+                    canSaveTemplate={canSaveTemplate}
                   />
                 )}
               />

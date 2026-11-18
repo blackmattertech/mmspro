@@ -1,0 +1,221 @@
+.rich-text-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  border: 1px solid var(--border, #d8dde6);
+  border-radius: 10px;
+  background: var(--surface, #fff);
+  overflow: hidden;
+  /* Beat .company-form__input { height: 40px } when that class is also applied. */
+  height: auto !important;
+  min-height: 0 !important;
+  padding: 0 !important;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.rich-text-editor--disabled {
+  opacity: 0.65;
+  pointer-events: none;
+}
+
+.rich-text-editor--exceeded {
+  border-color: #c62828;
+}
+
+.rich-text-editor__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border, #e6e9ef);
+  background: #f5f6f8;
+}
+
+.rich-text-editor__group {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.rich-text-editor__sep {
+  width: 1px;
+  height: 18px;
+  margin: 0 4px;
+  background: #d0d5de;
+}
+
+.rich-text-editor__btn,
+.rich-text-editor__select {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: #3a4250;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 6px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1;
+}
+
+.rich-text-editor__btn:hover,
+.rich-text-editor__select:hover {
+  background: #e8ebf0;
+}
+
+.rich-text-editor__btn.is-active {
+  background: var(--color-primary, #e53935);
+  color: #fff;
+}
+
+.rich-text-editor__btn.is-active:hover {
+  background: var(--color-primary-dark, #c62828);
+  color: #fff;
+}
+
+.rich-text-editor__btn:disabled,
+.rich-text-editor__select:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.rich-text-editor__btn--bold {
+  font-weight: 800;
+}
+
+.rich-text-editor__btn--italic {
+  font-style: italic;
+}
+
+.rich-text-editor__btn--underline {
+  text-decoration: underline;
+}
+
+.rich-text-editor__select {
+  min-width: 72px;
+  padding: 0 8px;
+  background: #fff;
+  border: 1px solid #d8dde6;
+}
+
+.rich-text-editor__content {
+  min-height: 96px;
+  max-height: 320px;
+  overflow: auto;
+  padding: 10px 12px;
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.45;
+  color: inherit;
+}
+
+.rich-text-editor--compact .rich-text-editor__content {
+  min-height: 42px;
+  max-height: 160px;
+  padding: 8px 10px;
+}
+
+.rich-text-editor__content .ProseMirror {
+  outline: none;
+  min-height: 76px;
+}
+
+.rich-text-editor__content .ProseMirror ::selection,
+.rich-text-editor__content .ProseMirror *::selection {
+  background: color-mix(in srgb, var(--color-primary, #e53935) 35%, white);
+  color: inherit;
+}
+
+.rich-text-editor--compact .rich-text-editor__content .ProseMirror {
+  min-height: 26px;
+}
+
+.rich-text-editor__content .ProseMirror p {
+  margin: 0 0 0.55em;
+}
+
+.rich-text-editor__content .ProseMirror p:last-child {
+  margin-bottom: 0;
+}
+
+.rich-text-editor__content .ProseMirror ul,
+.rich-text-editor__content .ProseMirror ol {
+  margin: 0.35em 0 0.55em;
+  padding-left: 1.35em;
+}
+
+.rich-text-editor__content .ProseMirror a {
+  color: #1a5fb4;
+  text-decoration: underline;
+}
+
+.rich-text-editor__content .ProseMirror mark {
+  background: #ffe566;
+  border-radius: 2px;
+  padding: 0 0.1em;
+}
+
+.rich-text-editor__content .ProseMirror p.is-editor-empty:first-child::before {
+  color: #98a0ae;
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  pointer-events: none;
+}
+
+.rich-text-editor__footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 10px 6px;
+  border-top: 1px solid var(--border, #e6e9ef);
+  background: #fafbfc;
+  font-size: 12px;
+  color: #6b7380;
+}
+
+.rich-text-editor__error {
+  color: #c62828;
+}
+
+.rich-text-display {
+  font: inherit;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.rich-text-display p {
+  margin: 0 0 0.45em;
+}
+
+.rich-text-display p:last-child {
+  margin-bottom: 0;
+}
+
+.rich-text-display ul,
+.rich-text-display ol {
+  margin: 0.25em 0 0.45em;
+  padding-left: 1.25em;
+}
+
+.rich-text-display a {
+  color: #1a5fb4;
+  text-decoration: underline;
+}
+
+.rich-text-display mark {
+  background: #ffe566;
+  border-radius: 2px;
+  padding: 0 0.1em;
+}
+
+.rich-text-display--plain {
+  white-space: pre-wrap;
+}

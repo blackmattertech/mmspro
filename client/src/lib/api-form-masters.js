@@ -20,10 +20,11 @@ export function getFormMasterField(formId, fieldId) {
   return formMastersFetch(`/${encodeFormMasterSegment(formId)}/${encodeFormMasterSegment(fieldId)}`)
 }
 
-export function saveFormMasterOptions(formId, fieldId, options) {
+/** `clones` marks options created through Duplicate: [{ clone_of_id, label }] (server re-checks). */
+export function saveFormMasterOptions(formId, fieldId, options, { clones } = {}) {
   return formMastersFetch(`/${encodeFormMasterSegment(formId)}/${encodeFormMasterSegment(fieldId)}`, {
     method: 'PUT',
-    body: JSON.stringify({ options }),
+    body: JSON.stringify({ options, ...(clones?.length ? { clones } : {}) }),
   })
 }
 

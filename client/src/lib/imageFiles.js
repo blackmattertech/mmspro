@@ -1,6 +1,4 @@
-export const IMAGE_ACCEPT = 'image/jpeg,image/png,image/webp,image/gif,image/svg+xml,.svg'
-
-const RASTER_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif'])
+export const IMAGE_ACCEPT = 'image/*,.svg,.jpg,.jpeg,.png,.gif,.webp,.bmp,.avif,.ico,.heic,.heif'
 
 export function resolveImageMime(file) {
   const type = String(file?.type || '').toLowerCase()
@@ -17,5 +15,6 @@ export function isSvgFile(file) {
 
 export function isAllowedImageFile(file) {
   const type = resolveImageMime(file)
-  return RASTER_TYPES.has(type) || type === 'image/svg+xml'
+  if (type.startsWith('image/')) return true
+  return /\.(jpe?g|png|gif|webp|bmp|svg|avif|ico|heic|heif)$/i.test(String(file?.name || ''))
 }

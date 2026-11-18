@@ -1,4 +1,5 @@
-import { useId, useMemo, useRef, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
+import { columnsSetAll } from '../../lib/tableColumnPrefs'
 import './TableColumnPicker.css'
 
 function orderedToggleable(columnDefs, visibleColumnIds, columnOrder) {
@@ -78,6 +79,14 @@ export default function ColumnReorderPanel({
     [columnDefs, visibleColumnIds, columnOrder],
   )
   columnsRef.current = columns
+  const selectAllRef = useRef(null)
+  const selectedCount = columns.filter((col) => visibleColumnIds.includes(col.id)).length
+  const allSelected = columns.length > 0 && selectedCount === columns.length
+  const someSelected = selectedCount > 0 && !allSelected
+
+  useEffect(() => {
+    if (selectAllRef.current) selectAllRef.current.indeterminate = someSelected
+  }, [someSelected])
 
   if (!columns.length) return null
 
@@ -149,6 +158,19 @@ export default function ColumnReorderPanel({
           Drag to reorder, or send a column to the top or bottom
         </p>
       ) : null}
+      <div className="table-column-picker__select-all">
+        {canDrag ? <span className="table-column-picker__grip table-column-picker__grip--spacer" aria-hidden="true" /> : null}
+        <label className="table-column-picker__option">
+          <input
+            ref={selectAllRef}
+            type="checkbox"
+            checked={allSelected}
+            onChange={() => onToggle?.(columnsSetAll(!allSelected))}
+            aria-label={allSelected ? 'Deselect all columns' : 'Select all columns'}
+          />
+          <span>All</span>
+        </label>
+      </div>
       <ul className={`table-column-picker__list ${listClassName}`.trim()}>
         {columns.map((col) => {
           const checked = visibleColumnIds.includes(col.id)

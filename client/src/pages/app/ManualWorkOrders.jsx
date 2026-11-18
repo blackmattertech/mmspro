@@ -15,6 +15,7 @@ import { useOpenQueryId } from '../../hooks/useOpenQueryId'
 import { applyWorkOrderFilters } from '../../lib/workOrderFilters'
 import { buildServerListParams } from '../../lib/serverListParams'
 import { orgPath } from '../../config/navigation'
+import { cloneNavState } from '../../lib/workRecordClone'
 import ReceivedWorkOrderDetailModal from '../../components/workorders/ReceivedWorkOrderDetailModal'
 import WorkOrdersTable from '../../components/workorders/WorkOrdersTable'
 import '../../components/company/CompanyShared.css'
@@ -29,8 +30,9 @@ export default function ManualWorkOrders() {
   const location = useLocation()
   const navigate = useNavigate()
   const { org } = useOrg()
-  const { canUpdate, canDelete } = usePermissions()
+  const { canCreate, canUpdate, canDelete } = usePermissions()
   const canEdit = canUpdate('work_orders_manual') || canUpdate('work_orders')
+  const canDuplicate = canCreate('work_orders_manual') || canCreate('work_orders')
   const canRemove = canDelete('work_orders_manual') || canDelete('work_orders')
   const [selectedId, setSelectedId, closeSelected] = useOpenQueryId()
   const [actionError, setActionError] = useState(null)
@@ -39,6 +41,7 @@ export default function ManualWorkOrders() {
     columnFilters = {}, setColumnFilter, headerSort = null, setHeaderSort,
     statusFilters = [],
     reportFilterRows = null,
+    reportStatusCounts = null,
   } = useOutletContext()
   const debouncedSearch = useDebouncedValue(search)
   const [listTotal, setListTotal] = useState(0)
@@ -72,11 +75,12 @@ export default function ManualWorkOrders() {
     sort_by: headerSort ? '' : sortBy,
     bulk: bulkReloadToken,
   }), [debouncedSearch, pagination.pageSize, pagination.offset, columnFilters, fieldFilter, statusFilters, headerSort, sortBy, bulkReloadToken])
-  const { orders, total, loading, error, reload } = useWorkOrderList(fetchManualOrders, {
+  const { orders, total, statusCounts, loading, error, reload } = useWorkOrderList(fetchManualOrders, {
     cacheKey: listCacheKey,
     onRows: reportFilterRows,
   })
   useEffect(() => { setListTotal(total) }, [total])
+  useEffect(() => { reportStatusCounts?.(statusCounts) }, [statusCounts, reportStatusCounts])
   useEffect(() => {
     if (bulkReloadToken) invalidateListResponseCache('wo-manual')
   }, [bulkReloadToken])
@@ -92,6 +96,11 @@ export default function ManualWorkOrders() {
   const handleEdit = useCallback((order) => {
     if (!org?.slug || !order?.id) return
     navigate(orgPath(org.slug, `work-orders/manual/${order.id}/edit`))
+  }, [navigate, org?.slug])
+
+  const handleDuplicate = useCallback((order) => {
+    if (!org?.slug || !order?.id) return
+    navigate(orgPath(org.slug, 'work-orders/manual/create'), { state: cloneNavState(order.id) })
   }, [navigate, org?.slug])
 
   const handleDelete = useCallback(async (order) => {
@@ -131,11 +140,15 @@ export default function ManualWorkOrders() {
         columns={MANUAL_COLUMNS}
         tableId="work-orders-manual"
         emptyTitle="No manual work orders yet."
-        emptyHint="Click + Add Work Order to create a manual work order."
+        emptyHint="Manual work orders you created and that are assigned to you appear here."
         onView={setSelectedId}
         onEdit={handleEdit}
+        onDuplicate={handleDuplicate}
         onDelete={handleDelete}
         canEdit={canEdit}
+        canDuplicate={canDuplicate}
+        canSaveTemplate={canDuplicate}
+        templateModuleKey="work_orders_manual"
         canDelete={canRemove}
         paginationResetKey={`${search}|${locationFilter}|${fieldFilter?.field}|${fieldFilter?.value}|${sortBy}`}
         headerSort={headerSort}
@@ -151,6 +164,8 @@ export default function ManualWorkOrders() {
           onClose={closeSelected}
           onEdit={canEdit ? handleEdit : undefined}
           onAssignmentUpdated={() => reload({ silent: true })}
+          canSaveTemplate={canDuplicate}
+          templateModuleKey="work_orders_manual"
         />
       )}
       {deleteModal}

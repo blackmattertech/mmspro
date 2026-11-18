@@ -27,6 +27,7 @@ import {
 } from '../../lib/moduleApprovals.js'
 import { getSignedUrl, getSignedUrls } from '../../lib/signedUrlCache.js'
 import { ensureLocationMaintenanceDepartment } from '../../lib/locationDefaults.js'
+import { mapDepartmentsWithParents } from '../../lib/departmentParent.js'
 import {
   applyIlikeSearch,
   applyMappedFilters,
@@ -43,21 +44,33 @@ import {
   NO_MATCH_ID,
   restrictToIds,
 } from '../../lib/relationFilters.js'
-import { buildAreasTemplate, bulkImportAreas } from '../../lib/areaBulkService.js'
+import { buildAreasTemplate } from '../../lib/areaBulkService.js'
 import {
   buildLocationsTemplate,
-  bulkImportLocations,
   buildDepartmentsTemplate,
-  bulkImportDepartments,
   buildEmployeesTemplate,
-  bulkImportEmployees,
 } from '../../lib/companyMasterBulkService.js'
+import { buildWorkCentersTemplate } from '../../lib/workCenterBulkService.js'
+import { bufferFromBase64Upload } from '../../lib/excelTemplate.js'
+import { enqueueOrRunBulkImport, sendBulkImportResponse, wantsSyncImport } from '../../lib/bulkImportEnqueue.js'
 import {
-  buildWorkCentersTemplate,
-  bulkImportWorkCenters,
-} from '../../lib/workCenterBulkService.js'
-import { attachFailedFileToResult } from '../../lib/importErrorWorkbook.js'
+  listOrgResetTargets,
+  createOrgResetOtp,
+  consumeOrgResetOtp,
+  resetOrgModuleData,
+  ORG_RESET_OTP,
+} from '../../lib/orgDataReset.js'
+import { isEmailConfigured, sendOrgDataResetOtpEmail } from '../../services/email.js'
+import { enforceMasterCloneOnCreate } from '../../lib/masterClone.js'
 import uomRoutes from './uoms.js'
+import supportTicketRoutes from './supportTickets.js'
+
+function requireOrgAdmin(req, res, next) {
+  if (!req.orgPermissions?.is_org_admin) {
+    return res.status(403).json({ error: 'Only company admins can reset module data' })
+  }
+  return next()
+}
 
 const router = Router()
 
@@ -366,6 +379,117 @@ router.patch('/settings', canUpdateSettings, async (req, res) => {
   })))
 })
 
+router.get('/reset-targets', requireOrgAdmin, async (req, res) => {
+  try {
+    const targets = await listOrgResetTargets(req.userProfile.org_id)
+    const { data: org } = await supabaseAdmin
+      .from('organizations')
+      .select('id, name, slug')
+      .eq('id', req.userProfile.org_id)
+      .maybeSingle()
+    res.json({
+      organization: org || { id: req.userProfile.org_id, name: '' },
+      targets,
+    })
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message || 'Failed to load reset targets' })
+  }
+})
+
+router.post('/reset-module/request-otp', requireOrgAdmin, async (req, res) => {
+  try {
+    if (!(await isEmailConfigured())) {
+      return res.status(503).json({
+        error: 'Email is not configured. Ask a Super Admin to configure Mailjet before resetting data.',
+      })
+    }
+
+    const orgId = req.userProfile.org_id
+    const targetId = req.body?.targetId || req.body?.target_id
+    const email = String(req.user?.email || req.userProfile?.email || '').trim().toLowerCase()
+    if (!email) {
+      return res.status(400).json({ error: 'Your account has no email address for verification' })
+    }
+
+    const { data: org, error: orgError } = await supabaseAdmin
+      .from('organizations')
+      .select('id, name, slug')
+      .eq('id', orgId)
+      .maybeSingle()
+    if (orgError) throw orgError
+    if (!org) return res.status(404).json({ error: 'Organization not found' })
+
+    const otp = await createOrgResetOtp({
+      orgId,
+      targetId,
+      requestedBy: req.userProfile.id,
+      email,
+    })
+
+    const sent = await sendOrgDataResetOtpEmail(email, {
+      orgName: org.name,
+      moduleLabel: otp.target.label,
+      code: otp.code,
+      expiresMinutes: Math.round(ORG_RESET_OTP.TTL_MS / 60000),
+    })
+    if (!sent) {
+      return res.status(503).json({
+        error: 'Could not send the verification email. Check Mailjet configuration and try again.',
+      })
+    }
+
+    res.json({
+      success: true,
+      email,
+      targetId: otp.target.id,
+      targetLabel: otp.target.label,
+      expiresAt: otp.expiresAt,
+      organization: org,
+    })
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message || 'Failed to send verification code' })
+  }
+})
+
+router.post('/reset-module/confirm', requireOrgAdmin, async (req, res) => {
+  try {
+    const orgId = req.userProfile.org_id
+    const targetId = req.body?.targetId || req.body?.target_id
+    const otp = req.body?.otp || req.body?.code
+    const confirmName = String(req.body?.confirmName || req.body?.confirm_name || '').trim()
+
+    const { data: org, error: orgError } = await supabaseAdmin
+      .from('organizations')
+      .select('id, name, slug')
+      .eq('id', orgId)
+      .maybeSingle()
+    if (orgError) throw orgError
+    if (!org) return res.status(404).json({ error: 'Organization not found' })
+
+    if (confirmName !== String(org.name || '').trim()) {
+      return res.status(400).json({ error: 'Type the exact company name to confirm.' })
+    }
+
+    await consumeOrgResetOtp({
+      orgId,
+      targetId,
+      requestedBy: req.userProfile.id,
+      code: otp,
+    })
+
+    const result = await resetOrgModuleData(orgId, targetId, {
+      actor: {
+        id: req.userProfile.id,
+        role: req.userProfile.role || 'admin',
+      },
+    })
+
+    res.json({ success: true, ...result })
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message || 'Failed to reset module data' })
+  }
+})
+
 router.patch('/', canUpdateCompany, async (req, res) => {
   const allowed = [
     'name', 'email', 'phone', 'website',
@@ -587,6 +711,15 @@ router.get('/locations', canReadLocations, async (req, res) => {
 router.post('/locations', canCreateLocations, async (req, res) => {
   const { name, code, address_line1, address_line2, city, state, postal_code, country, is_primary } = req.body
 
+  if (!(await enforceMasterCloneOnCreate({
+    res,
+    orgId: req.userProfile.org_id,
+    body: req.body,
+    kind: 'location',
+    table: 'org_locations',
+    authorizeSource: (source) => assertLocationAccess(req.orgPermissions, source.id),
+  }))) return
+
   if (!name?.trim() || !code?.trim()) {
     return res.status(400).json({ error: 'Name and code are required' })
   }
@@ -772,11 +905,30 @@ router.delete('/locations/:id', canDeleteLocations, assertOrgOwnership('org_loca
 
 // ── Departments ──
 
+// Note: do not embed parent via PostgREST self-join (`parent:departments!parent_id`).
+// On self-referential FKs that hint resolves as children (one-to-many array), not the parent row.
 const DEPARTMENT_SELECT = `
   id, org_id, name, code, description, location_id, parent_id, all_locations, is_active, created_at, updated_at,
-  org_locations!location_id ( id, name, code ),
-  parent:departments!parent_id ( id, name, code )
+  org_locations!location_id ( id, name, code )
 `
+
+async function attachDepartmentParents(departments) {
+  const list = (Array.isArray(departments) ? departments : [departments]).filter(Boolean)
+  if (!list.length) return departments
+
+  const parentIds = [...new Set(list.map((row) => row.parent_id).filter(Boolean))]
+  let parents = []
+  if (parentIds.length) {
+    const { data, error } = await supabaseAdmin
+      .from('departments')
+      .select('id, name, code')
+      .in('id', parentIds)
+    if (error) throw error
+    parents = data || []
+  }
+
+  return mapDepartmentsWithParents(departments, parents)
+}
 
 async function attachDepartmentHeadcounts(orgId, departments) {
   const list = (Array.isArray(departments) ? departments : [departments]).filter(Boolean)
@@ -801,6 +953,10 @@ async function attachDepartmentHeadcounts(orgId, departments) {
     headcount: counts.get(dept.id) || 0,
   }))
   return Array.isArray(departments) ? enriched : enriched[0]
+}
+
+async function enrichDepartments(orgId, departments) {
+  return attachDepartmentHeadcounts(orgId, await attachDepartmentParents(departments))
 }
 
 async function departmentIdsMatchingHeadcount(orgId, value, locationFilter) {
@@ -961,9 +1117,9 @@ router.get('/departments', canReadDepartments, async (req, res) => {
 
   if (error) return res.status(500).json({ error: error.message })
   try {
-    const withHeadcounts = await attachDepartmentHeadcounts(req.userProfile.org_id, data || [])
+    const enriched = await enrichDepartments(req.userProfile.org_id, data || [])
     if (controls.exportCsv) {
-      sendCsv(res, 'departments.csv', withHeadcounts, [
+      sendCsv(res, 'departments.csv', enriched, [
         { label: 'Code', value: (row) => row.code },
         { label: 'Name', value: (row) => row.name },
         { label: 'Parent', value: (row) => row.parent?.name || '' },
@@ -977,7 +1133,7 @@ router.get('/departments', canReadDepartments, async (req, res) => {
       ])
       return
     }
-    res.json(listEnvelope(withHeadcounts, { total: count || 0, limit, offset }))
+    res.json(listEnvelope(enriched, { total: count || 0, limit, offset }))
   } catch (err) {
     return res.status(500).json({ error: err.message })
   }
@@ -987,6 +1143,17 @@ router.post('/departments', canCreateDepartments, async (req, res) => {
   const {
     name, code, description, location_id, parent_id, all_locations,
   } = req.body
+
+  if (!(await enforceMasterCloneOnCreate({
+    res,
+    orgId: req.userProfile.org_id,
+    body: req.body,
+    kind: 'department',
+    table: 'departments',
+    authorizeSource: (source) => {
+      if (source.location_id) assertLocationAccess(req.orgPermissions, source.location_id)
+    },
+  }))) return
 
   if (!name?.trim()) {
     return res.status(400).json({ error: 'Name is required' })
@@ -1045,7 +1212,12 @@ router.post('/departments', canCreateDepartments, async (req, res) => {
     return res.status(500).json({ error: error.message })
   }
 
-  res.status(201).json({ ...data, headcount: 0 })
+  try {
+    const withParent = await attachDepartmentParents(data)
+    res.status(201).json({ ...withParent, headcount: 0 })
+  } catch (err) {
+    return res.status(500).json({ error: err.message })
+  }
 })
 
 router.patch('/departments/:id', canUpdateDepartments, assertOrgOwnership('departments'), async (req, res) => {
@@ -1137,7 +1309,7 @@ router.patch('/departments/:id', canUpdateDepartments, assertOrgOwnership('depar
   }
 
   try {
-    res.json(await attachDepartmentHeadcounts(orgId, data))
+    res.json(await enrichDepartments(orgId, data))
   } catch (err) {
     return res.status(500).json({ error: err.message })
   }
@@ -1683,6 +1855,18 @@ router.post('/employees', canCreateEmployees, async (req, res) => {
     access_role_id,
   } = req.body
 
+  if (!(await enforceMasterCloneOnCreate({
+    res,
+    orgId: req.userProfile.org_id,
+    body: req.body,
+    kind: 'employee',
+    table: 'org_employees',
+    select: '*, org_employee_emails ( id, email )',
+    authorizeSource: (source) => {
+      if (source.location_id) assertLocationAccess(req.orgPermissions, source.location_id)
+    },
+  }))) return
+
   if (!emp_id?.trim() || !name?.trim()) {
     return res.status(400).json({ error: 'Employee ID and name are required' })
   }
@@ -2138,19 +2322,18 @@ router.get('/areas/template', canCreateAreas, async (req, res) => {
 
 router.post('/areas/bulk', canCreateAreas, async (req, res) => {
   try {
-    const raw = req.body?.data
-    if (!raw || typeof raw !== 'string') {
-      return res.status(400).json({ error: 'File data is required' })
-    }
-    const base64 = raw.includes(',') ? raw.split(',').pop() : raw
-    const buffer = Buffer.from(base64, 'base64')
-    if (!buffer.length) {
-      return res.status(400).json({ error: 'File data is invalid' })
-    }
+    const buffer = bufferFromBase64Upload(req.body?.data)
     const locationId = resolveLocationFilter(req.orgPermissions, null)
-    const result = await bulkImportAreas(req.userProfile.org_id, buffer, { locationId })
-    const payload = await attachFailedFileToResult(result, buffer, 'areas-import-failed-rows.xlsx')
-    res.json(payload)
+    const outcome = await enqueueOrRunBulkImport({
+      orgId: req.userProfile.org_id,
+      userId: req.userProfile.id,
+      templateKey: 'areas',
+      fileName: 'areas.xlsx',
+      buffer,
+      context: { locationId },
+      forceSync: wantsSyncImport(req),
+    })
+    sendBulkImportResponse(res, outcome)
   } catch (err) {
     res.status(err.status || 400).json({ error: err.message })
   }
@@ -2171,18 +2354,16 @@ router.get('/locations/template', canCreateLocations, async (req, res) => {
 
 router.post('/locations/bulk', canCreateLocations, async (req, res) => {
   try {
-    const raw = req.body?.data
-    if (!raw || typeof raw !== 'string') {
-      return res.status(400).json({ error: 'File data is required' })
-    }
-    const base64 = raw.includes(',') ? raw.split(',').pop() : raw
-    const buffer = Buffer.from(base64, 'base64')
-    if (!buffer.length) {
-      return res.status(400).json({ error: 'File data is invalid' })
-    }
-    const result = await bulkImportLocations(req.userProfile.org_id, buffer)
-    const payload = await attachFailedFileToResult(result, buffer, 'locations-import-failed-rows.xlsx')
-    res.json(payload)
+    const buffer = bufferFromBase64Upload(req.body?.data)
+    const outcome = await enqueueOrRunBulkImport({
+      orgId: req.userProfile.org_id,
+      userId: req.userProfile.id,
+      templateKey: 'locations',
+      fileName: 'locations.xlsx',
+      buffer,
+      forceSync: wantsSyncImport(req),
+    })
+    sendBulkImportResponse(res, outcome)
   } catch (err) {
     res.status(err.status || 400).json(httpErrorBody(err))
   }
@@ -2203,18 +2384,16 @@ router.get('/departments/template', canCreateDepartments, async (req, res) => {
 
 router.post('/departments/bulk', canCreateDepartments, async (req, res) => {
   try {
-    const raw = req.body?.data
-    if (!raw || typeof raw !== 'string') {
-      return res.status(400).json({ error: 'File data is required' })
-    }
-    const base64 = raw.includes(',') ? raw.split(',').pop() : raw
-    const buffer = Buffer.from(base64, 'base64')
-    if (!buffer.length) {
-      return res.status(400).json({ error: 'File data is invalid' })
-    }
-    const result = await bulkImportDepartments(req.userProfile.org_id, buffer)
-    const payload = await attachFailedFileToResult(result, buffer, 'departments-import-failed-rows.xlsx')
-    res.json(payload)
+    const buffer = bufferFromBase64Upload(req.body?.data)
+    const outcome = await enqueueOrRunBulkImport({
+      orgId: req.userProfile.org_id,
+      userId: req.userProfile.id,
+      templateKey: 'departments',
+      fileName: 'departments.xlsx',
+      buffer,
+      forceSync: wantsSyncImport(req),
+    })
+    sendBulkImportResponse(res, outcome)
   } catch (err) {
     res.status(err.status || 400).json(httpErrorBody(err))
   }
@@ -2235,18 +2414,16 @@ router.get('/employees/template', canCreateEmployees, async (req, res) => {
 
 router.post('/employees/bulk', canCreateEmployees, async (req, res) => {
   try {
-    const raw = req.body?.data
-    if (!raw || typeof raw !== 'string') {
-      return res.status(400).json({ error: 'File data is required' })
-    }
-    const base64 = raw.includes(',') ? raw.split(',').pop() : raw
-    const buffer = Buffer.from(base64, 'base64')
-    if (!buffer.length) {
-      return res.status(400).json({ error: 'File data is invalid' })
-    }
-    const result = await bulkImportEmployees(req.userProfile.org_id, buffer)
-    const payload = await attachFailedFileToResult(result, buffer, 'employees-import-failed-rows.xlsx')
-    res.json(payload)
+    const buffer = bufferFromBase64Upload(req.body?.data)
+    const outcome = await enqueueOrRunBulkImport({
+      orgId: req.userProfile.org_id,
+      userId: req.userProfile.id,
+      templateKey: 'employees',
+      fileName: 'employees.xlsx',
+      buffer,
+      forceSync: wantsSyncImport(req),
+    })
+    sendBulkImportResponse(res, outcome)
   } catch (err) {
     res.status(err.status || 400).json(httpErrorBody(err))
   }
@@ -2254,6 +2431,18 @@ router.post('/employees/bulk', canCreateEmployees, async (req, res) => {
 
 router.post('/areas', canCreateAreas, async (req, res) => {
   const { name, code, department_id, is_active } = req.body
+
+  if (!(await enforceMasterCloneOnCreate({
+    res,
+    orgId: req.userProfile.org_id,
+    body: req.body,
+    kind: 'area',
+    table: 'areas',
+    authorizeSource: (source) => {
+      if (source.location_id) assertLocationAccess(req.orgPermissions, source.location_id)
+    },
+  }))) return
+
   if (!name?.trim()) return res.status(400).json({ error: 'Name is required' })
   let location_id
   try {
@@ -2450,19 +2639,18 @@ router.get('/work-centers/template', canCreateWorkCenters, async (req, res) => {
 
 router.post('/work-centers/bulk', canCreateWorkCenters, async (req, res) => {
   try {
-    const raw = req.body?.data
-    if (!raw || typeof raw !== 'string') {
-      return res.status(400).json({ error: 'File data is required' })
-    }
-    const base64 = raw.includes(',') ? raw.split(',').pop() : raw
-    const buffer = Buffer.from(base64, 'base64')
-    if (!buffer.length) {
-      return res.status(400).json({ error: 'File data is invalid' })
-    }
+    const buffer = bufferFromBase64Upload(req.body?.data)
     const locationId = resolveLocationFilter(req.orgPermissions, null)
-    const result = await bulkImportWorkCenters(req.userProfile.org_id, buffer, { locationId })
-    const payload = await attachFailedFileToResult(result, buffer, 'work-centers-import-failed-rows.xlsx')
-    res.json(payload)
+    const outcome = await enqueueOrRunBulkImport({
+      orgId: req.userProfile.org_id,
+      userId: req.userProfile.id,
+      templateKey: 'work_centers',
+      fileName: 'work-centers.xlsx',
+      buffer,
+      context: { locationId },
+      forceSync: wantsSyncImport(req),
+    })
+    sendBulkImportResponse(res, outcome)
   } catch (err) {
     res.status(err.status || 400).json({ error: err.message })
   }
@@ -2516,6 +2704,18 @@ router.get('/work-centers', canReadWorkCenters, async (req, res) => {
 
 router.post('/work-centers', canCreateWorkCenters, async (req, res) => {
   const { name, code, description, location_id } = req.body
+
+  if (!(await enforceMasterCloneOnCreate({
+    res,
+    orgId: req.userProfile.org_id,
+    body: req.body,
+    kind: 'work_center',
+    table: 'work_centers',
+    authorizeSource: (source) => {
+      if (source.location_id) assertLocationAccess(req.orgPermissions, source.location_id)
+    },
+  }))) return
+
   if (!name?.trim()) return res.status(400).json({ error: 'Name is required' })
 
   const orgId = req.userProfile.org_id
@@ -2658,5 +2858,6 @@ router.delete('/work-centers/:id', canDeleteWorkCenters, assertOrgOwnership('wor
 })
 
 router.use('/uoms', uomRoutes)
+router.use('/support', supportTicketRoutes)
 
 export default router

@@ -19,7 +19,10 @@ import {
   deleteEquipment,
   findEquipmentByScan,
   listEquipmentColumnValues,
+  deriveEquipmentIdentity,
 } from '../../lib/equipmentService.js'
+import { loadOrgFields } from '../../lib/equipmentFieldService.js'
+import { enforceEquipmentCloneOnCreate } from '../../lib/masterClone.js'
 import {
   buildEquipmentQrLabels,
   createLabelSize,
@@ -29,12 +32,11 @@ import {
   queryEquipmentLabels,
   resolveLabelPaper,
 } from '../../lib/equipmentLabelService.js'
-import {
-  buildEquipmentTemplate,
-  bulkImportEquipment,
-} from '../../lib/equipmentBulkService.js'
-import { attachFailedFileToResult } from '../../lib/importErrorWorkbook.js'
+import { buildEquipmentTemplate } from '../../lib/equipmentBulkService.js'
+import { bufferFromBase64Upload } from '../../lib/excelTemplate.js'
+import { enqueueOrRunBulkImport, sendBulkImportResponse, wantsSyncImport } from '../../lib/bulkImportEnqueue.js'
 import { parseListControls, sendCsv } from '../../lib/listQuery.js'
+import { cumulativeFromOffset } from '../../../shared/meterCycle.js'
 import { listEquipmentPickerCatalog } from '../../lib/workRequestService.js'
 
 const router = Router()
@@ -120,6 +122,14 @@ router.get('/', canReadPicker, async (req, res) => {
         { label: 'Area', value: (row) => row.areas?.name || row.area_name || '' },
         { label: 'Reading required', value: (row) => (row.reading_required ? 'Yes' : 'No') },
         { label: 'Last reading', value: (row) => row.last_meter_reading },
+        {
+          label: 'Cumm. Reading',
+          value: (row) => (
+            row.last_meter_reading == null
+              ? ''
+              : cumulativeFromOffset(row.meter_reading_offset, row.last_meter_reading)
+          ),
+        },
         { label: 'Created', value: (row) => row.created_at },
         { label: 'Updated', value: (row) => row.updated_at },
         { label: 'Status', value: (row) => (row.is_active === false ? 'Inactive' : 'Active') },
@@ -149,19 +159,18 @@ router.get('/template', canCreate, async (req, res) => {
 
 router.post('/bulk', canCreate, async (req, res) => {
   try {
-    const raw = req.body?.data
-    if (!raw || typeof raw !== 'string') {
-      return res.status(400).json({ error: 'File data is required' })
-    }
-    const base64 = raw.includes(',') ? raw.split(',').pop() : raw
-    const buffer = Buffer.from(base64, 'base64')
-    if (!buffer.length) {
-      return res.status(400).json({ error: 'File data is invalid' })
-    }
+    const buffer = bufferFromBase64Upload(req.body?.data)
     const locationId = resolveLocationFilter(req.orgPermissions, null)
-    const result = await bulkImportEquipment(req.userProfile.org_id, buffer, { locationId })
-    const payload = await attachFailedFileToResult(result, buffer, 'assets-import-failed-rows.xlsx')
-    res.json(payload)
+    const outcome = await enqueueOrRunBulkImport({
+      orgId: req.userProfile.org_id,
+      userId: req.userProfile.id,
+      templateKey: 'equipment',
+      fileName: 'assets.xlsx',
+      buffer,
+      context: { locationId },
+      forceSync: wantsSyncImport(req),
+    })
+    sendBulkImportResponse(res, outcome)
   } catch (err) {
     res.status(err.status || 400).json({ error: err.message })
   }
@@ -275,6 +284,28 @@ router.get('/:id', canRead, assertOrgOwnership('equipment'), async (req, res) =>
 })
 
 router.post('/', canCreate, async (req, res) => {
+  if (req.body?.clone_of_id) {
+    const orgId = req.userProfile.org_id
+    let fields
+    try {
+      fields = await loadOrgFields(orgId)
+    } catch (err) {
+      return res.status(err.status || 500).json({ error: err.message })
+    }
+    const proceed = await enforceEquipmentCloneOnCreate({
+      res,
+      body: req.body,
+      loadSource: (id) => getEquipmentDetail(orgId, id),
+      deriveCode: (body) => (
+        (typeof body.code === 'string' ? body.code.trim() : '')
+        || deriveEquipmentIdentity(fields, body.values).code
+        || ''
+      ),
+      authorizeSource: (source) => assertLocationAccess(req.orgPermissions, source.location_id),
+    })
+    if (!proceed) return
+  }
+
   try {
     const location_id = coerceScopedLocationId(req.orgPermissions, req.body?.location_id)
     const row = await createEquipment(req.userProfile.org_id, { ...req.body, location_id })

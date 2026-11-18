@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useOrg } from '../../hooks/useOrg'
 import { usePermissions } from '../../hooks/usePermissions'
 import { useAuth } from '../../hooks/useAuth'
@@ -7,7 +7,9 @@ import { useTextFieldLimits } from '../../hooks/useTextFieldLimits'
 import { orgPath } from '../../config/navigation'
 import {
   getWorkRequestFormContext,
+  getWorkRequest,
   createWorkRequest,
+  updateWorkRequestDraft,
 } from '../../lib/api-work-requests'
 import { notifyTabCountsChanged } from '../../lib/tabCountEvents'
 import WorkRequestSectionHead from '../../components/workrequests/WorkRequestSectionHead'
@@ -27,7 +29,7 @@ import {
 } from '../../lib/workRequestBreakdownFields'
 import { departmentsForEmployeeLocation } from '../../lib/departmentLocation'
 import { uploadWorkOrderFile } from '../../lib/workOrderAssets'
-import { persistFormFileValues, revokeWorkOrderFilePreviews } from '../../lib/workOrderFileValues'
+import { createLocalFileItem, persistFormFileValues, revokeWorkOrderFilePreviews } from '../../lib/workOrderFileValues'
 import { createId } from '../../lib/id'
 import '../../components/company/CompanyShared.css'
 import '../../components/assets/AssetsFields.css'
@@ -40,7 +42,8 @@ import OrderedFormLayout from '../../components/forms/OrderedFormLayout'
 import AssetPickerField from '../../components/forms/AssetPickerField'
 import ChecklistOptIn from '../../components/forms/ChecklistOptIn'
 import { findLayoutField, layoutHasSection, shouldRequire, systemId, parseLayoutId } from '../../lib/formLayoutIds'
-import { missingRequiredLayoutValues, splitBoundValues } from '../../lib/formFieldSources'
+import { listMissingRequiredLayoutFields, splitBoundValues } from '../../lib/formFieldSources'
+import { useMandatoryFieldAlert } from '../../hooks/useMandatoryFieldAlert'
 import { readFieldValue } from '../../lib/manualWorkOrderWizard'
 import { layoutHasOptionRules, isInterDepartmentRequestType, isSameDepartmentRequestType } from '../../lib/formOptionRules'
 import { REQUEST_TYPE_OPTIONS } from '../../lib/systemFieldFallback'
@@ -48,6 +51,20 @@ import { layoutRequiresChecklist } from '../../lib/formSkips'
 import { resolveFormActors, validateRepeatableGroups } from '../../lib/formFillership'
 import { isEquipmentMasterField } from '../../lib/equipmentLayoutFields'
 import { getEquipment } from '../../lib/api-equipment'
+import {
+  checkCloneChanged,
+  readCloneFromId,
+  toWorkRequestCloneComparable,
+  WORK_REQUEST_CLONE_COMPARE_KEYS,
+  WORK_REQUEST_CLONE_UNIQUE_KEYS,
+} from '../../lib/workRecordClone'
+import { applyRecordTemplate } from '../../lib/api-record-templates'
+import {
+  filesFromTemplateAttachments,
+  readTemplateFromId,
+  templateNavState,
+} from '../../lib/recordTemplates'
+import TemplatesButton from '../../components/templates/TemplatesButton'
 
 function selectedLayoutPriority(layout, values, fallback) {
   for (const field of layout?.fields || []) {
@@ -96,6 +113,7 @@ function WorkRequestFormActions({
   canSubmitAssets,
   onCancel,
   onSaveDraft,
+  isEdit = false,
   formId = 'wr-create-form',
   className = '',
 }) {
@@ -115,7 +133,7 @@ function WorkRequestFormActions({
         onClick={onSaveDraft}
         disabled={saving || !canSaveDraft}
       >
-        {saving && saveMode === 'draft' ? 'Saving…' : 'Save as Draft'}
+        {saving && saveMode === 'draft' ? 'Saving…' : (isEdit ? 'Save draft' : 'Save as Draft')}
       </button>
       <button
         type="submit"
@@ -123,7 +141,7 @@ function WorkRequestFormActions({
         className="company-btn company-btn--primary"
         disabled={saving || !canSubmitAssets}
       >
-        {saving && saveMode === 'submit' ? 'Submitting…' : 'Submit'}
+        {saving && saveMode === 'submit' ? 'Submitting…' : (isEdit ? 'Submit work request' : 'Submit')}
       </button>
     </div>
   )
@@ -131,8 +149,15 @@ function WorkRequestFormActions({
 
 export default function WorkRequestCreate() {
   const navigate = useNavigate()
+  const { requestId: editRequestId } = useParams()
+  const isEdit = Boolean(editRequestId)
+  const location = useLocation()
+  // Set by the Duplicate action on a work request list.
+  const cloneFromId = isEdit ? '' : readCloneFromId(location)
+  const templateFromId = isEdit ? '' : readTemplateFromId(location)
+  const [cloneSource, setCloneSource] = useState(null)
   const [searchParams] = useSearchParams()
-  const prefillEquipmentId = searchParams.get('equipment_id') || ''
+  const prefillEquipmentId = (cloneFromId || templateFromId) ? '' : (searchParams.get('equipment_id') || '')
   const { org } = useOrg()
   const { user } = useAuth()
   const { isOrgAdmin, session, canUpdate } = usePermissions()
@@ -141,7 +166,7 @@ export default function WorkRequestCreate() {
     fallbackToDefault: true,
   })
   const checklistRequired = layoutRequiresChecklist(layout)
-  const extras = useFormFieldValues('work_request.create', null)
+  const extras = useFormFieldValues('work_request.create', editRequestId || cloneFromId || null)
   const formActors = useMemo(() => resolveFormActors({
     formId: 'work_request.create',
     isOrgAdmin,
@@ -150,14 +175,21 @@ export default function WorkRequestCreate() {
     isDepartmentHead: session?.is_department_head,
     employeeDepartmentId: session?.department_id,
     canApproveIncoming: canUpdate('work_request_approve') || canUpdate('work_request_incoming'),
-    isCreate: true,
-  }), [isOrgAdmin, user?.id, session?.employee_id, session?.is_department_head, session?.department_id, canUpdate])
+    isCreate: !isEdit,
+  }), [isOrgAdmin, user?.id, session?.employee_id, session?.is_department_head, session?.department_id, canUpdate, isEdit])
   const showSection = (key) => !layout || layoutHasSection(layout, systemId(key))
   const [ctx, setCtx] = useState(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [saveMode, setSaveMode] = useState(null)
   const [error, setError] = useState(null)
+  const {
+    invalidFieldIds,
+    showMissing,
+    clearInvalidField,
+    clearAll: clearMandatoryHighlight,
+    alertModal,
+  } = useMandatoryFieldAlert()
 
   const [requestType, setRequestType] = useState('inter_department')
   const [checklistOn, setChecklistOn] = useState(false)
@@ -192,9 +224,9 @@ export default function WorkRequestCreate() {
 
   const goBack = useCallback(() => {
     if (org?.slug) {
-      navigate(orgPath(org.slug, 'work-request/my'))
+      navigate(orgPath(org.slug, isEdit ? 'work-request/drafts' : 'work-request/my'))
     }
-  }, [navigate, org?.slug])
+  }, [navigate, org?.slug, isEdit])
 
   useEffect(() => {
     let cancelled = false
@@ -205,11 +237,125 @@ export default function WorkRequestCreate() {
         const data = await getWorkRequestFormContext()
         if (cancelled) return
         setCtx(data)
-        const fromId = data.order_from_department?.id || data.employee?.department_id || ''
-        setOrderFromId(fromId)
-        if (!prefillEquipmentId) {
-          setOrderToId('')
-          setRequestType('inter_department')
+
+        if (editRequestId) {
+          const draft = await getWorkRequest(editRequestId)
+          if (cancelled) return
+          if (draft?.status !== 'draft') {
+            throw new Error('Only draft work requests can be edited.')
+          }
+          if (!draft.can_edit_draft) {
+            throw new Error('You do not have permission to edit this draft.')
+          }
+          setRequestType(draft.request_type || 'inter_department')
+          setOrderFromId(draft.order_from_department_id || draft.order_from?.id || '')
+          setOrderToId(draft.order_to_department_id || draft.order_to?.id || '')
+          setEquipmentId(draft.equipment_id || draft.equipment?.id || '')
+          setShortDescription(draft.short_description || '')
+          setProblem(draft.problem_description || '')
+          setJobNature(draft.job_nature || '')
+          setPriority(draft.priority || 'medium')
+          setRemarks(draft.remarks || '')
+          setMaintenanceFieldValues(
+            draft.form_field_values && typeof draft.form_field_values === 'object'
+              ? draft.form_field_values
+              : {},
+          )
+          setChecklistId(draft.checklist_template_id || '')
+          setChecklistOn(Boolean(draft.checklist_template_id))
+          setAttachmentFiles(Array.isArray(draft.attachments) ? draft.attachments : [])
+        } else if (cloneFromId) {
+          // Duplicate: seed from the source request but never carry over its number,
+          // status, approvals, requester, or attachments.
+          const source = await getWorkRequest(cloneFromId)
+          if (cancelled) return
+          setCloneSource(source)
+          const defaultFromId = data.order_from_department?.id || data.employee?.department_id || ''
+          setOrderFromId(
+            data.order_from_selectable
+              ? (source.order_from_department_id || source.order_from?.id || defaultFromId)
+              : defaultFromId,
+          )
+          setRequestType(source.request_type || 'inter_department')
+          setOrderToId(source.order_to_department_id || source.order_to?.id || '')
+          setAssetFieldValues({})
+          setPinnedEquipment(null)
+          setEquipmentId(source.equipment_id || source.equipment?.id || '')
+          setShortDescription(source.short_description || '')
+          setProblem(source.problem_description || '')
+          setJobNature(source.job_nature || '')
+          setPriority(source.priority || 'medium')
+          setRemarks(source.remarks || '')
+          setMaintenanceFieldValues(
+            source.form_field_values && typeof source.form_field_values === 'object'
+              ? { ...source.form_field_values }
+              : {},
+          )
+          setChecklistId(source.checklist_template_id || '')
+          setChecklistOn(Boolean(source.checklist_template_id))
+          setAttachmentFiles([])
+        } else if (templateFromId) {
+          const applied = await applyRecordTemplate(templateFromId)
+          if (cancelled) return
+          const payload = applied.payload || {}
+          const defaultFromId = data.order_from_department?.id || data.employee?.department_id || ''
+          setCloneSource(null)
+          setOrderFromId(
+            data.order_from_selectable
+              ? (payload.order_from_department_id || defaultFromId)
+              : defaultFromId,
+          )
+          setRequestType(payload.request_type || 'inter_department')
+          setOrderToId(payload.order_to_department_id || '')
+          // Clear hierarchy so AssetPicker reseeds Equipment Location / name from equipment_id.
+          setAssetFieldValues({})
+          setPinnedEquipment(null)
+          setEquipmentId(payload.equipment_id || '')
+          setShortDescription(payload.short_description || '')
+          setProblem(payload.problem_description || '')
+          setJobNature(payload.job_nature || '')
+          setPriority(payload.priority || 'medium')
+          setRemarks(payload.remarks || '')
+          const breakdownValues = payload.form_field_values && typeof payload.form_field_values === 'object'
+            ? { ...payload.form_field_values }
+            : {}
+          setMaintenanceFieldValues(breakdownValues)
+          const layoutValues = payload.form_values && typeof payload.form_values === 'object'
+            ? { ...payload.form_values }
+            : {}
+          // Layout extras (Equipment Location / catalog) are separate from breakdown JSON.
+          extras.setValues(Object.keys(layoutValues).length ? layoutValues : breakdownValues)
+          setChecklistId(payload.checklist_template_id || '')
+          setChecklistOn(Boolean(payload.checklist_template_id))
+          const downloaded = await filesFromTemplateAttachments(applied.attachments || [])
+          if (cancelled) return
+          const pendingByField = new Map()
+          const topLevelFiles = []
+          for (const item of downloaded) {
+            const local = createLocalFileItem(item.file, item.kind === 'image' ? 'image' : 'file')
+            if (item.field_id) {
+              const prev = pendingByField.get(item.field_id) || []
+              prev.push(local)
+              pendingByField.set(item.field_id, prev)
+            } else {
+              topLevelFiles.push(local)
+            }
+          }
+          if (pendingByField.size) {
+            const withFiles = { ...layoutValues }
+            for (const [fieldId, files] of pendingByField) {
+              withFiles[fieldId] = { files }
+            }
+            extras.setValues(withFiles)
+          }
+          setAttachmentFiles(topLevelFiles)
+        } else {
+          const fromId = data.order_from_department?.id || data.employee?.department_id || ''
+          setOrderFromId(fromId)
+          if (!prefillEquipmentId) {
+            setOrderToId('')
+            setRequestType('inter_department')
+          }
         }
       } catch (err) {
         if (!cancelled) setError(err.message)
@@ -218,11 +364,12 @@ export default function WorkRequestCreate() {
       }
     })()
     return () => { cancelled = true }
-  }, [prefillEquipmentId])
+  }, [prefillEquipmentId, editRequestId, cloneFromId, templateFromId])
 
   const allDepartments = ctx?.departments || []
   const scopeLocationId = ctx?.employee?.location_id || null
-  const orderFromSelectable = Boolean(ctx?.order_from_selectable)
+  // Server flag + client isOrgAdmin: only company/org admins may change Order From.
+  const orderFromSelectable = Boolean(ctx?.order_from_selectable) || isOrgAdmin
   const orderFrom = ctx?.order_from_department
 
   const orderFromOptions = useMemo(() => {
@@ -426,7 +573,7 @@ export default function WorkRequestCreate() {
           return
         }
         if (hasLayout) {
-          const missing = missingRequiredLayoutValues(effectiveLayout || layout, {
+          const missing = listMissingRequiredLayoutFields(effectiveLayout || layout, {
             systemValues: {
               request_type: requestType,
               order_from_department_id: fromId,
@@ -444,7 +591,8 @@ export default function WorkRequestCreate() {
             catalogValues: extras.values,
           })
           if (missing.length) {
-            setError(`Please fill in: ${missing.join(', ')}`)
+            const message = showMissing(missing)
+            setError(message)
             return
           }
           const groupErrors = validateRepeatableGroups(effectiveLayout || layout, extras.values, {
@@ -455,20 +603,14 @@ export default function WorkRequestCreate() {
             return
           }
         } else {
-          if (!shortDescription.trim()) {
-            setError('Short description is required.')
-            return
-          }
-          if (!problem.trim()) {
-            setError('Problem description is required.')
-            return
-          }
-          if (jobNatureOptions.length && !jobNature) {
-            setError('Job nature is required.')
-            return
-          }
-          if (!equipmentId) {
-            setError('Select an asset before submitting.')
+          const fallbackMissing = []
+          if (!shortDescription.trim()) fallbackMissing.push({ id: 'short_description', label: 'Short description' })
+          if (!problem.trim()) fallbackMissing.push({ id: 'problem_description', label: 'Detailed description' })
+          if (jobNatureOptions.length && !jobNature) fallbackMissing.push({ id: 'job_nature', label: 'Job nature' })
+          if (!equipmentId) fallbackMissing.push({ id: 'asset_picker', label: 'Asset' })
+          if (fallbackMissing.length) {
+            const message = showMissing(fallbackMissing)
+            setError(message)
             return
           }
         }
@@ -482,17 +624,54 @@ export default function WorkRequestCreate() {
           maintenanceFieldValues,
         )
         if ((!hasLayout || isVisible('breakdown')) && missingBreakdown.length) {
-          setError(`Complete breakdown fields: ${missingBreakdown.join(', ')}`)
+          const message = showMissing(
+            missingBreakdown.map((label) => ({ id: label, label: `Breakdown: ${label}` })),
+          )
+          setError(message)
           return
         }
       }
       if (!hasLayout) {
         if (!orderToId) {
-          setError('Select an Order to department before saving.')
+          const message = showMissing([{ id: 'order_to_department_id', label: 'Order to' }])
+          setError(message)
           return
         }
         if (!effectiveOrderFromId) {
-          setError('Select an Order from department before saving.')
+          const message = showMissing([{ id: 'order_from_department_id', label: 'Order from' }])
+          setError(message)
+          return
+        }
+      }
+      clearMandatoryHighlight()
+      if (cloneSource) {
+        const cloneLayout = effectiveLayout || layout
+        const cloneCheck = checkCloneChanged({
+          source: cloneSource,
+          next: {
+            short_description: String(shortDescription || readFieldValue(cloneLayout, extras.values, [
+              'short_description',
+              'shortdescription',
+            ]) || '').trim(),
+            problem_description: String(problem || readFieldValue(cloneLayout, extras.values, [
+              'problem_description',
+              'detaileddescription',
+              'problemdetaileddescription',
+            ]) || '').trim(),
+            request_type: requestType || native.request_type || 'inter_department',
+            order_to_department_id: toId,
+            equipment_id: equipmentId || native.equipment_id || null,
+            job_nature: jobNature,
+            priority: selectedLayoutPriority(cloneLayout, extras.values, priority),
+            remarks,
+            checklist_template_id: (checklistRequired || checklistOn) ? (checklistId || null) : null,
+          },
+          toComparable: toWorkRequestCloneComparable,
+          uniqueKeys: WORK_REQUEST_CLONE_UNIQUE_KEYS,
+          compareKeys: WORK_REQUEST_CLONE_COMPARE_KEYS,
+        })
+        if (!cloneCheck.ok) {
+          setError(cloneCheck.message)
           return
         }
       }
@@ -500,13 +679,17 @@ export default function WorkRequestCreate() {
       setSaveMode(saveAs)
       setError(null)
       try {
-        const draftKey = createId()
+        const storageKey = editRequestId || createId()
         const uploaded = []
         for (const item of attachmentFiles) {
+          if (item?.path && !(item?.file instanceof File)) {
+            uploaded.push(item)
+            continue
+          }
           const file = item?.file instanceof File ? item.file : item
           const meta = await uploadWorkOrderFile(
             org.id,
-            `work-requests/${draftKey}`,
+            `work-requests/${storageKey}`,
             'attachments',
             file,
             'file',
@@ -523,7 +706,7 @@ export default function WorkRequestCreate() {
           'detaileddescription',
           'problemdetaileddescription',
         ]) || '').trim()
-        const created = await createWorkRequest({
+        const payload = {
           ...buildPayload(saveAs, uploaded),
           short_description: String(shortDescription || layoutShort).trim(),
           problem_description: String(problem || layoutProblem).trim(),
@@ -533,10 +716,14 @@ export default function WorkRequestCreate() {
           order_to_department_id: toId,
           request_type: requestType || native.request_type || 'inter_department',
           checklist_template_id: (checklistRequired || checklistOn) ? (checklistId || null) : null,
-        })
-        if (created?.id) {
-          const uploadedExtras = await persistFormFileValues(org.id, created.id, extraValues, 'work-requests')
-          await extras.save(created.id, {
+          ...(cloneSource?.id ? { clone_of_id: cloneSource.id } : {}),
+        }
+        const saved = isEdit
+          ? await updateWorkRequestDraft(editRequestId, payload)
+          : await createWorkRequest(payload)
+        if (saved?.id) {
+          const uploadedExtras = await persistFormFileValues(org.id, saved.id, extraValues, 'work-requests')
+          await extras.save(saved.id, {
             ...uploadedExtras,
             ...routingFieldValues(effectiveLayout || layout, {
               requestType: requestType || native.request_type,
@@ -547,9 +734,10 @@ export default function WorkRequestCreate() {
         }
         if (org?.slug) {
           const message = saveAs === 'draft'
-            ? 'Work request saved as draft.'
+            ? (isEdit ? 'Draft updated.' : 'Work request saved as draft.')
             : 'Work request submitted successfully.'
           notifyTabCountsChanged('work_requests')
+          if (saveAs === 'submit') notifyTabCountsChanged('work_orders')
           const segment = saveAs === 'draft' ? 'work-request/drafts' : 'work-request/my'
           navigate(orgPath(org.slug, segment), { state: { success: message } })
         }
@@ -566,12 +754,15 @@ export default function WorkRequestCreate() {
       checklistOn,
       checklistRequired,
       buildPayload,
+      cloneSource,
+      editRequestId,
       effectiveOrderFromId,
       equipmentId,
       extras,
       formActors,
       hasLayout,
       isBreakdown,
+      isEdit,
       isVisible,
       jobNature,
       jobNatureOptions.length,
@@ -589,6 +780,8 @@ export default function WorkRequestCreate() {
       remarks,
       requestType,
       shortDescription,
+      showMissing,
+      clearMandatoryHighlight,
     ],
   )
 
@@ -621,7 +814,11 @@ export default function WorkRequestCreate() {
       catalogSource="work_request"
       searchEnabled
       equipmentId={equipmentId}
-      onEquipmentIdChange={setEquipmentId}
+      onEquipmentIdChange={(id) => {
+        clearInvalidField(field?.id || 'asset_picker')
+        clearInvalidField('asset_picker')
+        setEquipmentId(id)
+      }}
       fieldValues={assetFieldValues}
       onFieldValuesChange={setAssetFieldValues}
       disabled={saving}
@@ -633,9 +830,10 @@ export default function WorkRequestCreate() {
   const renderWrField = (key, meta = {}) => {
     const className = meta.className || fieldClass(key)
     const required = Boolean(meta.required)
+    const fieldId = meta.field?.id || systemId(key)
     if (key === 'request_type') {
       return (
-        <label key={key} className={className}>
+        <label key={key} className={className} data-field-id={fieldId}>
           <span className="company-form__label">Request type</span>
           <FilterableSelect
             value={requestType}
@@ -660,30 +858,34 @@ export default function WorkRequestCreate() {
     }
     if (key === 'order_from_department_id') {
       return (
-        <label key={key} className={className}>
+        <label key={key} className={className} data-field-id={fieldId}>
           <span className="company-form__label">Order from</span>
-          <FilterableSelect
-            value={orderFromId}
-            onChange={(id) => {
-              setOrderFromId(id)
-              if (lockOrderTo) setOrderToId(id)
-              else setOrderToId('')
-            }}
-            options={orderFromOptions}
-            getOptionValue={(d) => d.id}
-            getOptionLabel={(d) => d.name}
-            getOptionSearchLabel={departmentSearchLabel}
-            placeholder="Select Department"
-            required={required}
-            allowEmpty={!required}
-            className="company-form__input--select"
-          />
+          {orderFromSelectable ? (
+            <FilterableSelect
+              value={orderFromId}
+              onChange={(id) => {
+                setOrderFromId(id)
+                if (lockOrderTo) setOrderToId(id)
+                else setOrderToId('')
+              }}
+              options={orderFromOptions}
+              getOptionValue={(d) => d.id}
+              getOptionLabel={(d) => d.name}
+              getOptionSearchLabel={departmentSearchLabel}
+              placeholder="Select Department"
+              required={required}
+              allowEmpty={!required}
+              className="company-form__input--select"
+            />
+          ) : (
+            <div className="wr-form__input-readonly">{effectiveOrderFromName || '—'}</div>
+          )}
         </label>
       )
     }
     if (key === 'order_to_department_id') {
       return (
-        <label key={key} className={className}>
+        <label key={key} className={className} data-field-id={fieldId}>
           <span className="company-form__label">Order to</span>
           {lockOrderTo ? (
             <div className="wr-form__input-readonly">{effectiveOrderFromName}</div>
@@ -709,7 +911,7 @@ export default function WorkRequestCreate() {
     }
     if (key === 'short_description') {
       return (
-        <label key={key} className={className}>
+        <label key={key} className={className} data-field-id={fieldId}>
           <FormLabel fieldType="text" limit={maxLength('short_description')}>Short description</FormLabel>
           <SpellcheckInput
             className="company-form__input"
@@ -724,10 +926,12 @@ export default function WorkRequestCreate() {
       )
     }
     if (key === 'problem_description') {
+      const label = meta.field?.label || 'Detailed description'
       return (
-        <label key={key} className={className}>
-          <FormLabel fieldType="textarea" limit={maxLength('problem_description')}>Problem description</FormLabel>
+        <div key={key} className={className} data-field-id={fieldId}>
+          <FormLabel fieldType="textarea" limit={maxLength('problem_description')}>{label}</FormLabel>
           <SpellcheckInput
+            richText
             multiline
             className="company-form__input company-form__textarea"
             rows={4}
@@ -738,12 +942,12 @@ export default function WorkRequestCreate() {
             required={required}
           />
           <p className="company-form__hint">{PROBLEM_DESCRIPTION_HELP.hint}</p>
-        </label>
+        </div>
       )
     }
     if (key === 'job_nature') {
       return (
-        <label key={key} className={className}>
+        <label key={key} className={className} data-field-id={fieldId}>
           <span className="company-form__label">Job nature</span>
           <FilterableSelect
             value={jobNature}
@@ -763,7 +967,7 @@ export default function WorkRequestCreate() {
     }
     if (key === 'priority') {
       return (
-        <label key={key} className={className}>
+        <label key={key} className={className} data-field-id={fieldId}>
           <span className="company-form__label">Priority</span>
           <FilterableSelect
             value={priority}
@@ -802,10 +1006,12 @@ export default function WorkRequestCreate() {
       )
     }
     if (key === 'remarks') {
+      const label = meta.field?.label || 'Remarks'
       return (
-        <label key={key} className={className}>
-          <FormLabel fieldType="textarea" limit={maxLength('remarks')}>Remarks</FormLabel>
+        <div key={key} className={className} data-field-id={fieldId}>
+          <FormLabel fieldType="textarea" limit={maxLength('remarks')}>{label}</FormLabel>
           <SpellcheckInput
+            richText
             multiline
             className="company-form__input company-form__textarea"
             rows={3}
@@ -814,7 +1020,7 @@ export default function WorkRequestCreate() {
             placeholder="Optional additional notes"
             maxLength={maxLength('remarks')}
           />
-        </label>
+        </div>
       )
     }
     return null
@@ -831,12 +1037,23 @@ export default function WorkRequestCreate() {
               layout={effectiveLayout}
               catalogLookup={catalogFields}
               catalogValues={extras.values}
-              onCatalogChange={extras.setFieldValue}
-              masterValues={layoutMasterValues}
-              onMasterChange={(id, value) => {
+              onCatalogChange={(id, value) => {
+                clearInvalidField(id)
                 extras.setFieldValue(id, value)
+              }}
+              masterValues={layoutMasterValues}
+              invalidFieldIds={invalidFieldIds}
+              onMasterChange={(id, value) => {
+                clearInvalidField(id)
                 const field = findLayoutField(effectiveLayout, id)
-                if (field?.bindKey === 'order_from_department_id') setOrderFromId(value || '')
+                if (field?.bindKey === 'order_from_department_id' && !orderFromSelectable) return
+                extras.setFieldValue(id, value)
+                if (field?.bindKey === 'order_from_department_id') {
+                  setOrderFromId(value || '')
+                  if (lockOrderTo) setOrderToId(value || '')
+                  else setOrderToId('')
+                  return
+                }
                 if (field?.bindKey === 'order_to_department_id') setOrderToId(value || '')
                 if (field?.bindKey === 'equipment_id' || isEquipmentMasterField(field)) {
                   setEquipmentId(value || '')
@@ -905,22 +1122,26 @@ export default function WorkRequestCreate() {
                 {isVisible('order_from_department_id') && (
                 <label className={fieldClass('order_from_department_id')}>
                   <span className="company-form__label">Order from</span>
-                  <FilterableSelect
-                    value={orderFromId}
-                    onChange={(id) => {
-                      setOrderFromId(id)
-                      if (lockOrderTo) setOrderToId(id)
-                      else setOrderToId('')
-                    }}
-                    options={orderFromOptions}
-                    getOptionValue={(d) => d.id}
-                    getOptionLabel={(d) => d.name}
-                    getOptionSearchLabel={departmentSearchLabel}
-                    placeholder="Select Department"
-                    required
-                    allowEmpty={false}
-                    className="company-form__input--select"
-                  />
+                  {orderFromSelectable ? (
+                    <FilterableSelect
+                      value={orderFromId}
+                      onChange={(id) => {
+                        setOrderFromId(id)
+                        if (lockOrderTo) setOrderToId(id)
+                        else setOrderToId('')
+                      }}
+                      options={orderFromOptions}
+                      getOptionValue={(d) => d.id}
+                      getOptionLabel={(d) => d.name}
+                      getOptionSearchLabel={departmentSearchLabel}
+                      placeholder="Select Department"
+                      required
+                      allowEmpty={false}
+                      className="company-form__input--select"
+                    />
+                  ) : (
+                    <div className="wr-form__input-readonly">{effectiveOrderFromName || '—'}</div>
+                  )}
                 </label>
                 )}
                 {isVisible('order_to_department_id') && (
@@ -984,9 +1205,10 @@ export default function WorkRequestCreate() {
                 </label>
                 )}
                 {isVisible('problem_description') && (
-                <label className={fieldClass('problem_description', 'company-form__field--full')}>
-                  <FormLabel fieldType="textarea" limit={maxLength('problem_description')}>Problem description</FormLabel>
+                <div className={fieldClass('problem_description', 'company-form__field--full')}>
+                  <FormLabel fieldType="textarea" limit={maxLength('problem_description')}>Detailed description</FormLabel>
                   <SpellcheckInput
+                    richText
                     multiline
                     className="company-form__input company-form__textarea"
                     rows={4}
@@ -996,7 +1218,7 @@ export default function WorkRequestCreate() {
                     maxLength={maxLength('problem_description')}
                   />
                   <p className="company-form__hint">{PROBLEM_DESCRIPTION_HELP.hint}</p>
-                </label>
+                </div>
                 )}
                 <div className="wr-form__meta-row">
                   {isVisible('job_nature') && (
@@ -1049,9 +1271,10 @@ export default function WorkRequestCreate() {
                 />
                 )}
                 {isVisible('remarks') && (
-                <label className={fieldClass('remarks', 'company-form__field--full')}>
+                <div className={fieldClass('remarks', 'company-form__field--full')}>
                   <FormLabel fieldType="textarea" limit={maxLength('remarks')}>Remarks</FormLabel>
                   <SpellcheckInput
+                    richText
                     multiline
                     className="company-form__input company-form__textarea"
                     rows={3}
@@ -1060,7 +1283,7 @@ export default function WorkRequestCreate() {
                     placeholder="Optional additional notes"
                     maxLength={maxLength('remarks')}
                   />
-                </label>
+                </div>
                 )}
               </div>
             </div>
@@ -1083,11 +1306,13 @@ export default function WorkRequestCreate() {
             saveMode={saveMode}
             canSaveDraft={canSaveDraft}
             canSubmitAssets={canSubmitAssets}
+            isEdit={isEdit}
             onCancel={goBack}
             onSaveDraft={handleSaveDraft}
             className="wr-form__actions--in-form"
           />
         </form>
+      {alertModal}
     </>
   )
 }

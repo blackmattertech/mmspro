@@ -136,3 +136,17 @@ export function replyToWorkRequest(id, { message, attachments = [] }) {
     body: JSON.stringify({ message, attachments }),
   })
 }
+
+export function updateWorkRequestDraft(id, body) {
+  return workRequestsFetch(`/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(body || {}),
+  })
+}
+
+export function submitWorkRequestDraft(id) {
+  return workRequestsFetch(`/${id}/submit`, {
+    method: 'POST',
+    body: JSON.stringify({}),
+  })
+}

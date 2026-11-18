@@ -334,7 +334,7 @@ function timeAgo(dateStr) {
 
 export function RecentWorkOrders({ orders }) {
   const { org } = useOrg()
-  const viewAllPath = org ? orgPath(org.slug, 'work-orders/received') : '#'
+  const viewAllPath = org ? orgPath(org.slug, 'work-orders/all') : '#'
 
   return (
     <div className="dash-card">

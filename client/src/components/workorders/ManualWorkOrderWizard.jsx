@@ -5,7 +5,8 @@ import { useEmployees } from '../../hooks/useEmployees'
 import { useOrg } from '../../hooks/useOrg'
 import { usePermissions } from '../../hooks/usePermissions'
 import { getWorkRequestFormContext } from '../../lib/api-work-requests'
-import { missingRequiredLayoutValues } from '../../lib/formFieldSources'
+import { listMissingRequiredLayoutFields } from '../../lib/formFieldSources'
+import { useMandatoryFieldAlert } from '../../hooks/useMandatoryFieldAlert'
 import { layoutRequiresChecklist } from '../../lib/formSkips'
 import { validateRepeatableGroups } from '../../lib/formFillership'
 import { persistFormFileValues } from '../../lib/workOrderFileValues'
@@ -14,6 +15,8 @@ import {
   canonicalPriority,
   findLayoutFieldByHint,
   isAssetPickerLayoutField,
+  layoutForSections,
+  manualWorkOrderPages,
   prepareManualLayout,
   readFieldValue,
 } from '../../lib/manualWorkOrderWizard'
@@ -25,6 +28,7 @@ import WorkOrderMaterialRowsTable, { normalizeMaterialRows } from './WorkOrderMa
 import TechnicianMultiSelect from '../workrequests/TechnicianMultiSelect'
 import FilterableSelect from '../ui/FilterableSelect'
 import DateField from '../ui/DateField'
+import { firstFutureDateMessage } from '../../lib/dateConstraints'
 import '../workrequests/WorkRequests.css'
 
 const PERMIT_LABELS = {
@@ -111,6 +115,13 @@ export default function ManualWorkOrderWizard({
   const { session } = usePermissions()
   const form = useFormLayout('work_orders.manual', { fallbackToDefault: true })
   const extras = useFormFieldValues('work_orders.manual', record?.id || null)
+  const {
+    invalidFieldIds,
+    showMissing,
+    clearInvalidField,
+    clearAll: clearMandatoryHighlight,
+    alertModal,
+  } = useMandatoryFieldAlert()
 
   const [ctx, setCtx] = useState(null)
   const [equipmentId, setEquipmentId] = useState(initialEquipmentId || record?.equipment_id || '')
@@ -128,15 +139,42 @@ export default function ManualWorkOrderWizard({
   const [checklistId, setChecklistId] = useState(record?.checklist_template_id || '')
   const [workStartAt, setWorkStartAt] = useState(record?.work_start_at || '')
   const [workEndAt, setWorkEndAt] = useState(record?.work_end_at || '')
+  const [step, setStep] = useState(1)
+  const [stepError, setStepError] = useState(null)
   const seededRef = useRef(false)
+  const formTopRef = useRef(null)
 
   const displayLayout = useMemo(() => {
     const prepared = prepareManualLayout(form.layout)
     return withPriorityOptions(withJobNatureOptions(prepared, ctx?.job_natures || []))
   }, [form.layout, form.catalogFields, ctx?.job_natures])
 
+  const wizardSteps = useMemo(
+    () => manualWorkOrderPages(displayLayout, { sectionsPerPage: 2 }),
+    [displayLayout],
+  )
+  const lastStepId = wizardSteps[wizardSteps.length - 1]?.id || 1
+  const currentStep = wizardSteps.find((row) => row.id === step) || wizardSteps[0]
+  const stepLayout = useMemo(() => {
+    if (!displayLayout || !currentStep?.sectionIds?.length) return displayLayout
+    return layoutForSections(displayLayout, currentStep.sectionIds)
+  }, [currentStep, displayLayout])
+
   const hasOrderToField = layoutHasSystemKey(displayLayout, 'order_to_department_id')
   const checklistRequired = layoutRequiresChecklist(displayLayout)
+
+  const goToStep = useCallback((nextStep) => {
+    setStepError(null)
+    setStep(nextStep)
+    formTopRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })
+  }, [])
+
+  useEffect(() => {
+    if (!wizardSteps.length) return
+    if (!wizardSteps.some((row) => row.id === step)) {
+      setStep(wizardSteps[0].id)
+    }
+  }, [step, wizardSteps])
 
   useEffect(() => {
     let cancelled = false
@@ -271,53 +309,154 @@ export default function ManualWorkOrderWizard({
     workStartAt,
   ])
 
-  const validate = useCallback((status) => {
-    if (status === 'draft') return null
-    if (!departmentIdForAssets) return 'Select the Order to / attending department.'
-    if (!equipmentId) {
-      const assetRequired = (displayLayout?.fields || []).some((field) => (
-        isAssetPickerLayoutField(field) && field.required
-      ))
-      if (assetRequired) return 'Select an asset.'
-    }
-    const missing = missingRequiredLayoutValues(displayLayout, {
-      systemValues: {
-        asset_picker: equipmentId,
-        equipment_id: equipmentId,
-        assignment: departmentIdForAssets,
-        order_to_department_id: departmentIdForAssets,
-        work_stamps: workStartAt || workEndAt || 'ok',
-        material_consumed: serializeMaterialConsumed(materialRows) || 'ok',
-        permit_details: permitRequired ? 'ok' : 'skip',
-      },
-      masterValues: extras.values,
-      catalogValues: extras.values,
-    })
-    if (missing.length) {
-      const labels = missing.map((key) => {
-        if (key === 'asset_picker' || key === 'equipment_id') return 'Asset'
-        if (key === 'assignment') return 'Order to department'
-        if (key === 'work_stamps') return 'Work start / end'
-        return key
-      })
-      return `Fill the mandatory fields: ${[...new Set(labels)].join(', ')}`
-    }
-    const groupErrors = validateRepeatableGroups(displayLayout, extras.values)
-    if (groupErrors.length) return groupErrors[0]
-    if (checklistRequired && !checklistId) return 'Select a checklist.'
-    return null
-  }, [
-    checklistId,
-    checklistRequired,
+  const systemValuesForLayout = useCallback(() => ({
+    asset_picker: equipmentId,
+    equipment_id: equipmentId,
+    assignment: departmentIdForAssets,
+    order_to_department_id: departmentIdForAssets,
+    work_stamps: workStartAt || workEndAt || 'ok',
+    material_consumed: serializeMaterialConsumed(materialRows) || 'ok',
+    permit_details: permitRequired ? 'ok' : 'skip',
+  }), [
     departmentIdForAssets,
-    displayLayout,
     equipmentId,
-    extras.values,
     materialRows,
     permitRequired,
     workEndAt,
     workStartAt,
   ])
+
+  const mapMissingLabels = useCallback((fields) => fields.map((field) => {
+    if (field.key === 'asset_picker' || field.key === 'equipment_id') {
+      return { ...field, label: 'Asset' }
+    }
+    if (field.key === 'assignment') {
+      return { ...field, label: 'Order to department' }
+    }
+    if (field.key === 'work_stamps') {
+      return { ...field, label: 'Work start / end' }
+    }
+    return field
+  }), [])
+
+  const validateLayout = useCallback((targetLayout, { includeChecklist = false } = {}) => {
+    if (!targetLayout) return null
+    const layoutFieldKeys = new Set(
+      (targetLayout.fields || []).map((field) => {
+        const parsed = parseLayoutId(field.id)
+        return field.bindKey || (parsed.kind === 'system' ? parsed.value : '') || field.id
+      }),
+    )
+    const needsDepartment = (targetLayout.fields || []).some((field) => {
+      const parsed = parseLayoutId(field.id)
+      const key = field.bindKey || (parsed.kind === 'system' ? parsed.value : '')
+      return key === 'order_to_department_id' || key === 'assignment'
+    })
+    if (needsDepartment && !departmentIdForAssets) {
+      return showMissing([{ id: 'assignment', label: 'Order to / attending department' }])
+    }
+    if (!equipmentId) {
+      const assetRequired = (targetLayout.fields || []).some((field) => (
+        isAssetPickerLayoutField(field) && field.required
+      ))
+      if (assetRequired) {
+        return showMissing([{ id: 'asset_picker', label: 'Asset' }])
+      }
+    }
+    const missing = mapMissingLabels(listMissingRequiredLayoutFields(targetLayout, {
+      systemValues: systemValuesForLayout(),
+      masterValues: extras.values,
+      catalogValues: extras.values,
+    }))
+    if (missing.length) return showMissing(missing)
+    const groupErrors = validateRepeatableGroups(targetLayout, extras.values)
+    if (groupErrors.length) return groupErrors[0]
+
+    const checksWorkStamps = layoutFieldKeys.has('work_stamps')
+      || (targetLayout.fields || []).some((field) => /work\s*start|work\s*end/i.test(field.label || ''))
+    const checksPermit = layoutFieldKeys.has('permit_details')
+    if (checksWorkStamps || checksPermit) {
+      const futureDateError = firstFutureDateMessage([
+        ...(checksWorkStamps
+          ? [
+            { label: 'Work start', value: workStartAt },
+            { label: 'Work end', value: workEndAt },
+          ]
+          : []),
+        ...(checksPermit && permitRequired
+          ? permitRows.flatMap((row, index) => ([
+            { label: `Permit ${index + 1} issue date`, value: row.issue_at },
+          ]))
+          : []),
+      ])
+      if (futureDateError) return futureDateError
+    }
+
+    if (includeChecklist && checklistRequired && !checklistId) {
+      return showMissing([{ id: 'checklist', label: 'Checklist' }])
+    }
+    clearMandatoryHighlight()
+    return null
+  }, [
+    checklistId,
+    checklistRequired,
+    clearMandatoryHighlight,
+    departmentIdForAssets,
+    equipmentId,
+    extras.values,
+    mapMissingLabels,
+    permitRequired,
+    permitRows,
+    showMissing,
+    systemValuesForLayout,
+    workEndAt,
+    workStartAt,
+  ])
+
+  const jumpToFirstInvalidStep = useCallback(() => {
+    for (const page of wizardSteps) {
+      const pageLayout = layoutForSections(displayLayout, page.sectionIds)
+      const problem = validateLayout(pageLayout, {
+        includeChecklist: page.id === lastStepId,
+      })
+      if (problem) {
+        setStep(page.id)
+        return problem
+      }
+    }
+    return null
+  }, [displayLayout, lastStepId, validateLayout, wizardSteps])
+
+  const validate = useCallback((status) => {
+    if (status === 'draft') {
+      clearMandatoryHighlight()
+      setStepError(null)
+      return null
+    }
+    const problem = validateLayout(displayLayout, { includeChecklist: true })
+    if (problem) {
+      // Move the user onto the page that still needs input; parent surfaces the alert.
+      jumpToFirstInvalidStep()
+      setStepError(null)
+      return problem
+    }
+    setStepError(null)
+    return null
+  }, [
+    clearMandatoryHighlight,
+    displayLayout,
+    jumpToFirstInvalidStep,
+    validateLayout,
+  ])
+
+  const handleNext = useCallback(() => {
+    const problem = validateLayout(stepLayout, { includeChecklist: false })
+    if (problem) {
+      setStepError(problem)
+      return
+    }
+    if (step < lastStepId) goToStep(step + 1)
+  }, [goToStep, lastStepId, step, stepLayout, validateLayout])
 
   const saveExtras = useCallback(async (recordId) => {
     if (!recordId || !org?.id) return
@@ -405,19 +544,6 @@ export default function ManualWorkOrderWizard({
             />
           )}
         </div>
-        {onSaveCompleted ? (
-          <div className="company-form__field company-form__field--full" style={{ marginTop: 16 }}>
-            <button
-              type="button"
-              className="company-btn company-btn--primary"
-              onClick={() => onSaveCompleted()}
-              disabled={saving}
-            >
-              {saving ? 'Saving…' : 'Save'}
-            </button>
-            <p className="company-form__hint">Saves this manual work order as completed.</p>
-          </div>
-        ) : null}
       </div>
     )
   }
@@ -447,6 +573,7 @@ export default function ManualWorkOrderWizard({
                 value={workStartAt}
                 onChange={setWorkStartAt}
                 withTime
+                disableFuture
                 disabled={saving}
               />
             </label>
@@ -456,6 +583,7 @@ export default function ManualWorkOrderWizard({
                 value={workEndAt}
                 onChange={setWorkEndAt}
                 withTime
+                disableFuture
                 disabled={saving}
               />
             </label>
@@ -523,6 +651,7 @@ export default function ManualWorkOrderWizard({
                               i === index ? { ...item, issue_at: value } : item
                             )))}
                             withTime
+                            disableFuture
                             disabled={saving}
                           />
                         </label>
@@ -571,15 +700,54 @@ export default function ManualWorkOrderWizard({
   }
 
   return (
-    <div className="wo-form wr-create-form wo-manual-form">
+    <div className="wo-form wr-create-form wo-manual-form" ref={formTopRef}>
+      {wizardSteps.length > 1 ? (
+        <nav className="wo-assignment__steps wo-manual-form__steps" aria-label="Manual work order steps">
+          {wizardSteps.flatMap((item, index) => [
+            index > 0 ? (
+              <span key={`div-${item.id}`} className="wo-assignment__step-divider" aria-hidden="true" />
+            ) : null,
+            <button
+              key={item.id}
+              type="button"
+              className={[
+                'wo-assignment__step',
+                'wo-manual-form__step',
+                step === item.id ? 'wo-assignment__step--active' : '',
+                step > item.id ? 'wo-assignment__step--complete' : '',
+              ].filter(Boolean).join(' ')}
+              aria-current={step === item.id ? 'step' : undefined}
+              onClick={() => {
+                if (item.id > step) {
+                  const problem = validateLayout(stepLayout, { includeChecklist: false })
+                  if (problem) {
+                    setStepError(problem)
+                    return
+                  }
+                }
+                goToStep(item.id)
+              }}
+            >
+              <span className="wo-assignment__step-num">{item.id}</span>
+              <span className="wo-assignment__step-label">{item.label}</span>
+            </button>,
+          ])}
+        </nav>
+      ) : null}
+
       <OrderedFormLayout
         formId="work_orders.manual"
-        layout={displayLayout}
+        layout={stepLayout}
         catalogLookup={form.catalogFields}
         catalogValues={extras.values}
-        onCatalogChange={extras.setFieldValue}
+        onCatalogChange={(id, value) => {
+          clearInvalidField(id)
+          extras.setFieldValue(id, value)
+        }}
         masterValues={extras.values}
+        invalidFieldIds={invalidFieldIds}
         onMasterChange={(id, value) => {
+          clearInvalidField(id)
           extras.setFieldValue(id, value)
           const field = (displayLayout?.fields || []).find((row) => row.id === id)
           const label = String(field?.label || '').toLowerCase()
@@ -614,16 +782,57 @@ export default function ManualWorkOrderWizard({
         }}
       />
 
-      <ChecklistOptIn
-        formId="work_orders.manual"
-        moduleKey="work_order"
-        required={checklistRequired}
-        enabled={checklistRequired || checklistOn}
-        onEnabledChange={setChecklistOn}
-        templateId={checklistId}
-        onTemplateChange={setChecklistId}
-        disabled={saving}
-      />
+      {step >= lastStepId ? (
+        <ChecklistOptIn
+          formId="work_orders.manual"
+          moduleKey="work_order"
+          required={checklistRequired}
+          enabled={checklistRequired || checklistOn}
+          onEnabledChange={setChecklistOn}
+          templateId={checklistId}
+          onTemplateChange={setChecklistId}
+          disabled={saving}
+        />
+      ) : null}
+
+      {stepError ? <p className="company-alert" role="alert">{stepError}</p> : null}
+
+      {wizardSteps.length > 1 ? (
+        <div className="wo-manual-form__actions company-modal__actions">
+          {step > 1 ? (
+            <button
+              type="button"
+              className="company-btn company-btn--secondary"
+              onClick={() => goToStep(step - 1)}
+              disabled={saving}
+            >
+              Back
+            </button>
+          ) : (
+            <span />
+          )}
+          {step < lastStepId ? (
+            <button
+              type="button"
+              className="company-btn company-btn--primary"
+              onClick={handleNext}
+              disabled={saving}
+            >
+              Next
+            </button>
+          ) : onSaveCompleted ? (
+            <button
+              type="button"
+              className="company-btn company-btn--primary"
+              onClick={() => onSaveCompleted()}
+              disabled={saving}
+            >
+              {saving ? 'Saving…' : 'Save Work Order'}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+      {alertModal}
     </div>
   )
 }

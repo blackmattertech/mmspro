@@ -73,11 +73,42 @@
   color: var(--color-dark-navy);
 }
 
+.import-jobs-banner__content {
+  min-width: 0;
+  flex: 1;
+}
+
 .import-jobs-banner__hint {
   margin: 4px 0 0;
   font-size: 12px;
   color: var(--color-gray-blue);
   font-weight: 400;
+}
+
+.import-jobs-banner__progress {
+  margin-top: 8px;
+  height: 6px;
+  width: min(100%, 360px);
+  border-radius: 999px;
+  background: #e2e8f0;
+  overflow: hidden;
+}
+
+.import-jobs-banner__progress-bar {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--color-primary);
+  transition: width 0.35s ease;
+}
+
+.import-jobs-banner__progress-bar--indeterminate {
+  width: 40%;
+  animation: import-jobs-progress-slide 1.2s ease-in-out infinite;
+}
+
+@keyframes import-jobs-progress-slide {
+  0% { transform: translateX(-120%); }
+  100% { transform: translateX(320%); }
 }
 
 .import-jobs-banner__actions {

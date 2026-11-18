@@ -8,15 +8,24 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test:unit": "node --test src/lib/formLayoutIds.asset.test.js src/lib/listFilterOptions.test.js src/lib/listResponseCache.test.js src/lib/workOrderStatusLabel.test.js src/lib/fieldHelpText.test.js src/lib/uomOptions.test.js ../shared/displayDate.test.js"
+    "test:unit": "node --test src/lib/formLayoutIds.asset.test.js src/lib/listFilterOptions.test.js src/lib/listResponseCache.test.js src/lib/workOrderStatusLabel.test.js src/lib/fieldHelpText.test.js src/lib/uomOptions.test.js src/lib/mandatoryFields.test.js src/lib/formFieldSources.mandatory.test.js src/lib/tableColumnPrefs.test.js src/lib/dateConstraints.test.js src/lib/richText.test.js src/lib/calendarEventLabel.test.js src/lib/manualWorkOrderWizard.test.js ../shared/recordClone.test.js ../shared/displayDate.test.js"
   },
   "type": "module",
   "dependencies": {
     "@fontsource/inter": "^5.3.0",
     "@lottiefiles/dotlottie-react": "^0.19.13",
     "@supabase/supabase-js": "^2.39.0",
+    "@tiptap/extension-highlight": "^3.34.0",
+    "@tiptap/extension-link": "^3.34.0",
+    "@tiptap/extension-placeholder": "^3.34.0",
+    "@tiptap/extension-text-style": "^3.34.0",
+    "@tiptap/extension-underline": "^3.34.0",
+    "@tiptap/pm": "^3.34.0",
+    "@tiptap/react": "^3.34.0",
+    "@tiptap/starter-kit": "^3.34.0",
     "@zxing/browser": "^0.2.1",
     "dictionary-en": "^4.0.0",
+    "dompurify": "^3.4.18",
     "firebase": "^10.7.1",
     "nspell": "^2.1.5",
     "qrcode": "^1.5.4",
@@ -25,6 +34,7 @@
     "react-router-dom": "^6.21.0"
   },
   "devDependencies": {
+    "@types/dompurify": "^3.0.5",
     "@vitejs/plugin-react": "^4.2.1",
     "vite": "^5.0.8",
     "vite-plugin-pwa": "^0.17.4"

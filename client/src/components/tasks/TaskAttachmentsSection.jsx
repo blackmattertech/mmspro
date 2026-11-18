@@ -1,32 +1,56 @@
-import { useRef } from 'react'
 import {
   inferWarrantyDocumentContentType,
   isWarrantyImageDocument,
   readFileAsDataUrl,
 } from '../../config/warrantyDocuments'
 import { TASK_ATTACHMENT_ACCEPT } from '../../config/taskAttachments'
+import { downloadFromUrl } from '../../lib/fileDownload'
+import AttachmentsEvidence, {
+  normalizeAttachmentItem,
+} from '../shared/AttachmentsEvidence'
+import { IMAGE_ACCEPT } from '../../lib/imageFiles'
 
 function makePendingId() {
   return `pending-${crypto.randomUUID()}`
 }
+
+const TASK_IMAGE_HINT = 'JPG, PNG, WebP, GIF, SVG · Max 25 MB each'
+const TASK_DOCUMENT_HINT = 'PDF, DOC, DOCX, XLS, XLSX, PPT, ZIP, video · Max 25 MB each'
 
 export default function TaskAttachmentsSection({
   attachments = [],
   removedAttachmentIds = [],
   onChange,
   disabled = false,
+  showHeader = true,
 }) {
-  const fileInputRef = useRef(null)
-
   const updateAttachments = (nextAttachments, nextRemoved = removedAttachmentIds) => {
     onChange({ attachments: nextAttachments, removedAttachmentIds: nextRemoved })
   }
 
-  const handlePickFiles = async (event) => {
-    const files = Array.from(event.target.files || [])
-    event.target.value = ''
-    if (!files.length) return
+  const items = attachments.map((file, index) => {
+    const typed = {
+      ...file,
+      name: file.file_name,
+      type: file.content_type,
+      size: file.file_size,
+      previewUrl: file.preview_url || (
+        isWarrantyImageDocument(file.content_type) ? file.signed_url : null
+      ),
+      signed_url: file.signed_url,
+      url: file.signed_url,
+    }
+    const normalized = normalizeAttachmentItem(typed, index)
+    if (!normalized) return null
+    return {
+      ...normalized,
+      index,
+      raw: file,
+    }
+  }).filter(Boolean)
 
+  const handlePickFiles = async (files) => {
+    if (!files.length) return
     const next = [...attachments]
     for (const file of files) {
       const data = await readFileAsDataUrl(file)
@@ -35,6 +59,7 @@ export default function TaskAttachmentsSection({
         id: makePendingId(),
         file_name: file.name,
         content_type,
+        file_size: file.size,
         data,
         preview_url: isWarrantyImageDocument(content_type) ? data : null,
         isPending: true,
@@ -43,7 +68,8 @@ export default function TaskAttachmentsSection({
     updateAttachments(next)
   }
 
-  const removeAttachment = (index) => {
+  const removeItem = (item) => {
+    const index = item.index
     const file = attachments[index]
     const next = attachments.filter((_, i) => i !== index)
     const nextRemoved = file?.id && !file.isPending
@@ -53,80 +79,34 @@ export default function TaskAttachmentsSection({
   }
 
   return (
-    <div className="task-attachments">
-      <div className="task-attachments__header">
-        <h3 className="task-attachments__title">Attachments</h3>
-        <input
-          ref={fileInputRef}
-          type="file"
-          className="task-attachments__file-input"
-          accept={TASK_ATTACHMENT_ACCEPT}
-          multiple
-          onChange={handlePickFiles}
-          disabled={disabled}
-        />
-      </div>
-
-      <div className="task-attachments__grid">
-        {attachments.map((file, index) => {
-          const previewUrl = file.preview_url || (
-            isWarrantyImageDocument(file.content_type) ? file.signed_url : null
-          )
-
-          return (
-            <div key={file.id || index} className="task-attachments__card">
-              <div className="task-attachments__preview">
-                {previewUrl ? (
-                  <img src={previewUrl} alt="" className="task-attachments__image" />
-                ) : (
-                  <div className="task-attachments__file">
-                    <span className="task-attachments__ext">
-                      {(file.file_name || '').split('.').pop()?.toUpperCase() || 'FILE'}
-                    </span>
-                  </div>
-                )}
-              </div>
-
-              <div className="task-attachments__meta">
-                <div className="task-attachments__name" title={file.file_name}>
-                  {file.file_name}
-                </div>
-
-                {!file.isPending && file.signed_url && (
-                  <a
-                    href={file.signed_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="task-attachments__link"
-                  >
-                    View file
-                  </a>
-                )}
-
-                <button
-                  type="button"
-                  className="task-attachments__remove"
-                  onClick={() => removeAttachment(index)}
-                  disabled={disabled}
-                >
-                  Remove
-                </button>
-              </div>
-            </div>
-          )
-        })}
-
-        <button
-          type="button"
-          className="task-attachments__add"
-          onClick={() => fileInputRef.current?.click()}
-          disabled={disabled}
-          aria-label="Upload attachment"
-          title="Upload attachment"
-        >
-          <span className="task-attachments__add-icon" aria-hidden="true">+</span>
-        </button>
-      </div>
-    </div>
+    <AttachmentsEvidence
+      className="task-attachments"
+      title="Attachments & Evidence"
+      description="Upload photos, PDFs, documents, or videos related to this task."
+      badge="Optional"
+      showHeader={showHeader}
+      items={items}
+      disabled={disabled}
+      imageAccept={IMAGE_ACCEPT}
+      documentAccept={TASK_ATTACHMENT_ACCEPT}
+      imageHint={TASK_IMAGE_HINT}
+      documentHint={TASK_DOCUMENT_HINT}
+      onPickFiles={handlePickFiles}
+      onRemove={removeItem}
+      onDownload={async (item) => {
+        const src = item.openUrl || item.previewSrc || item.raw?.signed_url
+        if (!src) return
+        if (String(src).startsWith('data:')) {
+          const link = document.createElement('a')
+          link.href = src
+          link.download = item.name
+          document.body.appendChild(link)
+          link.click()
+          link.remove()
+          return
+        }
+        await downloadFromUrl(src, item.name)
+      }}
+    />
   )
 }

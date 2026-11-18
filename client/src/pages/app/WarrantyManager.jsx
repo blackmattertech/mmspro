@@ -14,6 +14,8 @@ import {
 import NavIcon from '../../components/layout/NavIcon'
 import PageBreadcrumbs from '../../components/shared/PageBreadcrumbs'
 import EditIcon from '../../components/ui/EditIcon'
+import DuplicateRowButton from '../../components/ui/DuplicateRowButton'
+import { cloneNavState } from '../../lib/workRecordClone'
 import TrashIcon from '../../components/ui/TrashIcon'
 import SettingsIcon from '../../components/ui/SettingsIcon'
 import TablePagination from '../../components/shared/TablePagination'
@@ -251,6 +253,7 @@ export default function WarrantyManager() {
   const {
     bulkInputRef,
     bulkBusy,
+    bulkProgress,
     bulkError,
     bulkResult,
     bulkPreview,
@@ -316,6 +319,11 @@ export default function WarrantyManager() {
   const openEdit = (row) => {
     if (!org?.slug || !row?.id) return
     navigate(orgPath(org.slug, `warranty-manager/${row.id}/edit`))
+  }
+
+  const openDuplicate = (row) => {
+    if (!org?.slug || !row?.id) return
+    navigate(orgPath(org.slug, 'warranty-manager/create'), { state: cloneNavState(row.id) })
   }
 
   const handleDelete = async (row) => {
@@ -446,6 +454,7 @@ export default function WarrantyManager() {
                   <MasterBulkActions
                     onDownload={handleDownloadTemplate}
                     bulkBusy={bulkBusy}
+                    bulkProgress={bulkProgress}
                     bulkInputRef={bulkInputRef}
                     onFileChange={handleBulkFile}
                     title="Import warranties"
@@ -542,6 +551,12 @@ export default function WarrantyManager() {
                                   >
                                     <EditIcon />
                                   </button>
+                                )}
+                                {canCreate('warranty_manager') && (
+                                  <DuplicateRowButton
+                                    onClick={() => openDuplicate(row)}
+                                    label={`Duplicate warranty ${row.serial_number}`}
+                                  />
                                 )}
                                 {canDelete('warranty_manager') && (
                                   <button

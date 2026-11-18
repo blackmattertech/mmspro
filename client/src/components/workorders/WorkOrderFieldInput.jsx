@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import DateField from '../ui/DateField'
 import FilterableSelect from '../ui/FilterableSelect'
 import { getWorkOrderFileSignedUrl, validateWorkOrderFile } from '../../lib/workOrderAssets'
@@ -6,17 +6,21 @@ import {
   createLocalFileItem,
   getFilePreviewSrc,
   getWorkOrderFiles,
-  isImageFileItem,
   revokeWorkOrderFilePreviews,
   workOrderFilesValue,
 } from '../../lib/workOrderFileValues'
-import { assetUrl } from '../../lib/assets'
-import ImageLightbox from '../shared/ImageLightbox'
+import { downloadFromUrl } from '../../lib/fileDownload'
+import AttachmentsEvidence, {
+  DEFAULT_DOCUMENT_HINT,
+  DEFAULT_IMAGE_HINT,
+  normalizeAttachmentItem,
+} from '../shared/AttachmentsEvidence'
 import SpellcheckInput from '../shared/SpellcheckInput'
 import FormLabel from '../shared/FormLabel'
 import { useTextFieldLimits } from '../../hooks/useTextFieldLimits'
 import { fieldHelpFor } from '../../lib/fieldHelpText'
 import { formFieldClassName, normalizeColSpan } from '../../lib/formLayoutIds'
+import { isRichTextFormField } from '../../lib/textFieldLimits'
 
 function useSignedPreviewMap(files) {
   const [urls, setUrls] = useState({})
@@ -59,12 +63,8 @@ function wrapClass(field, extra = '') {
   return formFieldClassName(field, extras)
 }
 
-const FILE_ACCEPT = '.pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.svg'
-const IMAGE_ACCEPT = 'image/jpeg,image/png,image/webp,image/gif,image/svg+xml,.svg'
-const IMAGE_TILE_SIZE = 96
-const FILE_ICON_SRC = assetUrl('Assets/icons/file-outline.svg')
-const VIEW_MORE_BTN_WIDTH = 104
-const FILE_CHIP_GAP = 8
+const FILE_ACCEPT = '.pdf,.doc,.docx,.xls,.xlsx,image/*,.jpg,.jpeg,.png,.gif,.webp,.bmp,.svg,.avif,.ico,.heic,.heif'
+const IMAGE_ACCEPT = 'image/*,.svg,.jpg,.jpeg,.png,.gif,.webp,.bmp,.avif,.ico,.heic,.heif'
 
 function isPermitRequiredField(field) {
   return /permit\s*required/i.test(String(field?.name || '').trim())
@@ -79,378 +79,88 @@ function singleOptionValue(value) {
   return String(value)
 }
 
-function ImageFieldPreview({ field, value, onChange, disabled }) {
-  const inputRef = useRef(null)
-  const id = `wo-field-${field.id}`
+function CatalogAttachmentsField({ field, value, onChange, disabled, mode, invalid = false }) {
   const files = getWorkOrderFiles(value)
   const signedUrls = useSignedPreviewMap(files)
   const [fieldError, setFieldError] = useState(null)
-  const [lightbox, setLightbox] = useState(null)
+  const fieldType = mode === 'images' ? 'image' : 'file'
 
   useEffect(() => () => revokeWorkOrderFilePreviews(value), [value])
 
-  const handleFileChange = (event) => {
-    const selected = [...(event.target.files || [])]
-    event.target.value = ''
-    if (!selected.length) return
+  const items = useMemo(() => (
+    files.map((item, index) => {
+      const normalized = normalizeAttachmentItem(item, index, signedUrls)
+      if (!normalized) return null
+      const preview = previewSrcFor(item, signedUrls)
+      return {
+        ...normalized,
+        previewSrc: normalized.kind === 'image' ? preview : null,
+        openUrl: preview || normalized.openUrl,
+        index,
+        raw: item,
+      }
+    }).filter(Boolean)
+  ), [files, signedUrls])
 
+  const handlePickFiles = (selected) => {
+    if (!selected.length) return
     const next = [...files]
     for (const file of selected) {
-      const validationError = validateWorkOrderFile(file, 'image')
+      const validationError = validateWorkOrderFile(file, fieldType)
       if (validationError) {
         setFieldError(validationError)
         return
       }
-      next.push(createLocalFileItem(file, 'image'))
+      next.push(createLocalFileItem(file, fieldType))
     }
-
     setFieldError(null)
     onChange(workOrderFilesValue(next))
   }
 
-  const removeFile = (itemKey) => {
-    const target = files.find((item) => (item.id || item.path) === itemKey)
+  const removeItem = (item) => {
+    const target = files[item.index]
     if (target?.previewUrl) URL.revokeObjectURL(target.previewUrl)
-    if (lightbox?.key === itemKey) setLightbox(null)
-    const next = files.filter((item) => (item.id || item.path) !== itemKey)
+    const next = files.filter((_, i) => i !== item.index)
     setFieldError(null)
     onChange(workOrderFilesValue(next))
-  }
-
-  const openLightbox = (item) => {
-    const src = previewSrcFor(item, signedUrls)
-    if (!src) return
-    setLightbox({ key: item.id || item.path, src, alt: item.name || field.name })
   }
 
   return (
     <div
-      className={wrapClass(field, 'wo-field-upload wo-field-upload--image')}
-      style={{ '--wo-image-tile-size': `${IMAGE_TILE_SIZE}px` }}
+      className={wrapClass(field, ['wo-field-upload', invalid ? 'company-form__field--invalid' : ''].filter(Boolean).join(' '))}
+      data-field-id={field.id}
     >
-      <FormLabel htmlFor={id} fieldType="image">
-        {field.is_required ? `${field.name} *` : field.name}
-      </FormLabel>
-
-      <div className="wo-field-upload__tiles">
-        {files.map((item) => {
-          const itemKey = item.id || item.path
-          const previewSrc = previewSrcFor(item, signedUrls)
-          return (
-            <div key={itemKey} className="wo-field-upload__tile-wrap">
-              <div className="wo-field-upload__tile wo-field-upload__tile--preview">
-                <button
-                  type="button"
-                  className="wo-field-upload__thumb-btn"
-                  onClick={() => openLightbox(item)}
-                  disabled={!previewSrc}
-                  aria-label={`View ${item.name}`}
-                >
-                  {previewSrc ? (
-                    <img src={previewSrc} alt={item.name} />
-                  ) : (
-                    <span className="wo-field-upload__thumb-fallback" aria-hidden="true">IMG</span>
-                  )}
-                </button>
-                {!disabled && (
-                  <button
-                    type="button"
-                    className="wo-field-upload__tile-remove"
-                    onClick={() => removeFile(itemKey)}
-                    aria-label={`Remove ${item.name}`}
-                  >
-                    ×
-                  </button>
-                )}
-              </div>
-              {item.name && (
-                <span className="wo-field-upload__tile-name" title={item.name}>{item.name}</span>
-              )}
-            </div>
-          )
-        })}
-
-        {!disabled && (
-          <div className="wo-field-upload__tile wo-field-upload__tile--add">
-            <input
-              ref={inputRef}
-              id={id}
-              type="file"
-              className="wo-field-upload__input"
-              accept={IMAGE_ACCEPT}
-              multiple
-              onChange={handleFileChange}
-              disabled={disabled}
-            />
-            <div className="wo-field-upload__add-label">
-              <span className="wo-field-upload__add-icon" aria-hidden="true">+</span>
-              <span className="wo-field-upload__add-text">
-                Add Image
-              </span>
-            </div>
-          </div>
-        )}
-      </div>
-
-      <p className="wo-field-upload__hint wo-field-upload__hint--below">
-        JPEG, PNG, WebP, GIF, SVG · max 10 MB each · click image to view full size
-      </p>
-
-      {fieldError && <span className="wo-field-upload__error">{fieldError}</span>}
-
-      {lightbox && (
-        <ImageLightbox
-          src={lightbox.src}
-          alt={lightbox.alt}
-          filename={lightbox.alt}
-          onClose={() => setLightbox(null)}
-        />
-      )}
+      <AttachmentsEvidence
+        title={field.is_required ? `${field.name} *` : field.name}
+        description={null}
+        badge={field.is_required ? 'Required' : 'Optional'}
+        mode={mode}
+        items={items}
+        disabled={disabled}
+        error={fieldError}
+        imageAccept={IMAGE_ACCEPT}
+        documentAccept={FILE_ACCEPT}
+        imageHint={DEFAULT_IMAGE_HINT}
+        documentHint={DEFAULT_DOCUMENT_HINT}
+        onPickFiles={handlePickFiles}
+        onRemove={removeItem}
+        onDownload={async (item) => {
+          let src = item.openUrl || item.previewSrc || getFilePreviewSrc(item.raw)
+          if (!src && item.raw?.path) {
+            try {
+              src = await getWorkOrderFileSignedUrl(item.raw.path)
+            } catch {
+              src = null
+            }
+          }
+          if (src) await downloadFromUrl(src, item.name)
+        }}
+      />
     </div>
   )
 }
 
-function FileFieldPreview({ field, value, onChange, disabled }) {
-  const id = `wo-field-${field.id}`
-  const type = field.field_type
-  const accept = type === 'image' ? IMAGE_ACCEPT : FILE_ACCEPT
-  const files = getWorkOrderFiles(value)
-  const signedUrls = useSignedPreviewMap(files)
-  const [fieldError, setFieldError] = useState(null)
-  const [lightbox, setLightbox] = useState(null)
-  const [expanded, setExpanded] = useState(false)
-  const [collapsedVisible, setCollapsedVisible] = useState(files.length)
-  const rowRef = useRef(null)
-  const measureRef = useRef(null)
-
-  useEffect(() => () => revokeWorkOrderFilePreviews(value), [value])
-
-  useLayoutEffect(() => {
-    if (!files.length) {
-      setCollapsedVisible(0)
-      return undefined
-    }
-
-    const measure = () => {
-      const row = rowRef.current
-      const measureRow = measureRef.current
-      if (!row || !measureRow) return
-
-      const chips = [...measureRow.querySelectorAll('[data-file-chip]')]
-      if (!chips.length) {
-        setCollapsedVisible(0)
-        return
-      }
-
-      const available = row.clientWidth
-      let used = 0
-      let fit = 0
-      for (let i = 0; i < chips.length; i += 1) {
-        const chipWidth = chips[i].offsetWidth
-        const remaining = chips.length - (i + 1)
-        const needMore = remaining > 0
-        const budget = needMore
-          ? available - VIEW_MORE_BTN_WIDTH - FILE_CHIP_GAP
-          : available
-        const nextUsed = used + (fit > 0 ? FILE_CHIP_GAP : 0) + chipWidth
-        if (nextUsed <= budget + 1) {
-          used = nextUsed
-          fit = i + 1
-        } else {
-          break
-        }
-      }
-
-      setCollapsedVisible(fit > 0 ? fit : 1)
-    }
-
-    measure()
-    const observer = typeof ResizeObserver !== 'undefined'
-      ? new ResizeObserver(measure)
-      : null
-    if (observer && rowRef.current) observer.observe(rowRef.current)
-    window.addEventListener('resize', measure)
-    return () => {
-      observer?.disconnect()
-      window.removeEventListener('resize', measure)
-    }
-  }, [files, expanded])
-
-  const handleFileChange = (e) => {
-    const selected = [...(e.target.files || [])]
-    e.target.value = ''
-    if (!selected.length) return
-
-    const next = [...files]
-    for (const file of selected) {
-      const validationError = validateWorkOrderFile(file, type)
-      if (validationError) {
-        setFieldError(validationError)
-        return
-      }
-      next.push(createLocalFileItem(file, type))
-    }
-
-    setFieldError(null)
-    setExpanded(false)
-    onChange(workOrderFilesValue(next))
-  }
-
-  const removeFile = (itemKey) => {
-    const target = files.find((item) => (item.id || item.path) === itemKey)
-    if (target?.previewUrl) URL.revokeObjectURL(target.previewUrl)
-    if (lightbox?.key === itemKey) setLightbox(null)
-    const next = files.filter((item) => (item.id || item.path) !== itemKey)
-    setFieldError(null)
-    onChange(workOrderFilesValue(next))
-  }
-
-  const openPreview = (item) => {
-    const src = previewSrcFor(item, signedUrls)
-    if (!src) return
-    setLightbox({ key: item.id || item.path, src, alt: item.name || field.name })
-  }
-
-  const hiddenCount = expanded ? 0 : Math.max(0, files.length - collapsedVisible)
-  const shownFiles = expanded ? files : files.slice(0, collapsedVisible)
-
-  return (
-    <div className={wrapClass(field, 'wo-field-upload')}>
-      <FormLabel htmlFor={id} fieldType={type}>
-        {field.is_required ? `${field.name} *` : field.name}
-      </FormLabel>
-
-      <div className="wo-field-upload__zone">
-        <input
-          id={id}
-          type="file"
-          className="wo-field-upload__input"
-          accept={accept}
-          multiple
-          onChange={handleFileChange}
-          disabled={disabled}
-        />
-        <div className="wo-field-upload__placeholder">
-          <span>
-            {files.length
-              ? `${files.length} file${files.length === 1 ? '' : 's'} selected`
-              : <>Drop files here or <strong>browse</strong></>}
-          </span>
-          <span className="wo-field-upload__hint">
-            {type === 'image' ? 'JPEG, PNG, WebP, GIF, SVG' : 'PDF, DOC, DOCX, XLS, XLSX, JPG, PNG, SVG'} · max 10 MB each · multiple allowed
-          </span>
-        </div>
-      </div>
-
-      {fieldError && <span className="wo-field-upload__error">{fieldError}</span>}
-
-      {files.length > 0 && (
-        <div className="wo-field-upload__row-wrap">
-          {/* Off-screen measure row keeps natural chip widths for overflow calc */}
-          <div className="wo-field-upload__row wo-field-upload__row--measure" ref={measureRef} aria-hidden="true">
-            {files.map((item) => (
-              <FileChip
-                key={`measure-${item.id || item.path}`}
-                item={item}
-                previewSrc={previewSrcFor(item, signedUrls)}
-                disabled
-                measuring
-              />
-            ))}
-          </div>
-
-          <div
-            ref={rowRef}
-            className={`wo-field-upload__row${expanded ? ' wo-field-upload__row--expanded' : ''}`}
-          >
-            {shownFiles.map((item) => (
-              <FileChip
-                key={item.id || item.path}
-                item={item}
-                previewSrc={previewSrcFor(item, signedUrls)}
-                disabled={disabled}
-                onRemove={() => removeFile(item.id || item.path)}
-                onPreview={() => openPreview(item)}
-              />
-            ))}
-
-            {hiddenCount > 0 && (
-              <button
-                type="button"
-                className="wo-field-upload__view-more"
-                onClick={() => setExpanded(true)}
-              >
-                View more ({hiddenCount})
-              </button>
-            )}
-
-            {expanded && files.length > collapsedVisible && (
-              <button
-                type="button"
-                className="wo-field-upload__view-more"
-                onClick={() => setExpanded(false)}
-              >
-                View less
-              </button>
-            )}
-          </div>
-        </div>
-      )}
-
-      {lightbox && (
-        <ImageLightbox
-          src={lightbox.src}
-          alt={lightbox.alt}
-          filename={lightbox.alt}
-          onClose={() => setLightbox(null)}
-        />
-      )}
-    </div>
-  )
-}
-
-function FileChip({ item, previewSrc: previewSrcProp, disabled, onRemove, onPreview, measuring = false }) {
-  const previewSrc = previewSrcProp || getFilePreviewSrc(item)
-  const isImage = Boolean(previewSrc) || isImageFileItem(item)
-
-  return (
-    <div
-      className={`wo-field-upload__chip${isImage ? ' wo-field-upload__chip--image' : ''}`}
-      data-file-chip=""
-      title={item.name}
-    >
-      {isImage && previewSrc ? (
-        <button
-          type="button"
-          className="wo-field-upload__chip-preview"
-          onClick={onPreview}
-          disabled={measuring || !onPreview}
-          aria-label={`View ${item.name}`}
-        >
-          <img src={previewSrc} alt="" />
-        </button>
-      ) : (
-        <div className="wo-field-upload__chip-file">
-          <img src={FILE_ICON_SRC} alt="" className="wo-field-upload__chip-icon" />
-          <span className="wo-field-upload__chip-name">{item.name}</span>
-        </div>
-      )}
-
-      {!disabled && !measuring && (
-        <button
-          type="button"
-          className="wo-field-upload__chip-remove"
-          onClick={onRemove}
-          aria-label={`Remove ${item.name}`}
-        >
-          ×
-        </button>
-      )}
-    </div>
-  )
-}
-
-export default function WorkOrderFieldInput({ field, value, onChange, disabled }) {
+export default function WorkOrderFieldInput({ field, value, onChange, disabled, invalid = false }) {
   const id = `wo-field-${field.id}`
   const label = field.is_required ? `${field.name} *` : field.name
   const type = field.field_type
@@ -458,12 +168,16 @@ export default function WorkOrderFieldInput({ field, value, onChange, disabled }
   const { maxLengthForField } = useTextFieldLimits()
   const limit = maxLengthForField(field)
   const help = fieldHelpFor(field)
+  const withInvalid = (extra = '') => (
+    wrapClass(field, [extra, invalid ? 'company-form__field--invalid' : ''].filter(Boolean).join(' '))
+  )
 
-  if (type === 'textarea') {
+  if (type === 'textarea' || isRichTextFormField(field, type)) {
     return (
-      <div className={wrapClass(field, 'company-form__field--full')}>
+      <div className={withInvalid('company-form__field--full')} data-field-id={field.id}>
         <FormLabel htmlFor={id} fieldType="textarea" limit={limit}>{label}</FormLabel>
         <SpellcheckInput
+          richText
           multiline
           id={id}
           className="company-form__input company-form__textarea"
@@ -482,7 +196,7 @@ export default function WorkOrderFieldInput({ field, value, onChange, disabled }
   if (type === 'dropdown' || (isPermitRequiredField(field) && optionValues.length)) {
     const selected = singleOptionValue(value)
     return (
-      <div className={wrapClass(field)}>
+      <div className={withInvalid()} data-field-id={field.id}>
         <label className="company-form__label" htmlFor={id}>{label}</label>
         <FilterableSelect
           id={id}
@@ -502,7 +216,7 @@ export default function WorkOrderFieldInput({ field, value, onChange, disabled }
 
   if (type === 'radio') {
     return (
-      <div className={wrapClass(field)}>
+      <div className={withInvalid()} data-field-id={field.id}>
         <span className="company-form__label">{label}</span>
         <div className="asset-field-dependency__options" role="radiogroup" aria-label={field.name}>
           {optionValues.map((opt) => (
@@ -537,7 +251,7 @@ export default function WorkOrderFieldInput({ field, value, onChange, disabled }
       }
 
       return (
-        <div className={wrapClass(field)}>
+        <div className={withInvalid()} data-field-id={field.id}>
           <span className="company-form__label">{label}</span>
           <div className="asset-field-dependency__options" role="group" aria-label={field.name}>
             {optionValues.map((opt) => (
@@ -557,7 +271,7 @@ export default function WorkOrderFieldInput({ field, value, onChange, disabled }
     }
 
     return (
-      <div className={wrapClass(field, 'wo-field-checkbox')}>
+      <div className={withInvalid('wo-field-checkbox')} data-field-id={field.id}>
         <label className="wo-field-checkbox__label">
           <input
             id={id}
@@ -574,7 +288,7 @@ export default function WorkOrderFieldInput({ field, value, onChange, disabled }
 
   if (type === 'date') {
     return (
-      <div className={wrapClass(field)}>
+      <div className={withInvalid()} data-field-id={field.id}>
         <label className="company-form__label" htmlFor={id}>{label}</label>
         <DateField
           id={id}
@@ -588,7 +302,7 @@ export default function WorkOrderFieldInput({ field, value, onChange, disabled }
 
   if (type === 'datetime') {
     return (
-      <div className={wrapClass(field)}>
+      <div className={withInvalid()} data-field-id={field.id}>
         <label className="company-form__label" htmlFor={id}>{label}</label>
         <DateField
           id={id}
@@ -603,7 +317,7 @@ export default function WorkOrderFieldInput({ field, value, onChange, disabled }
 
   if (type === 'number') {
     return (
-      <div className={wrapClass(field)}>
+      <div className={withInvalid()} data-field-id={field.id}>
         <label className="company-form__label" htmlFor={id}>{label}</label>
         <input
           id={id}
@@ -618,28 +332,20 @@ export default function WorkOrderFieldInput({ field, value, onChange, disabled }
   }
 
   if (type === 'file' || type === 'image') {
-    if (type === 'image') {
-      return (
-        <ImageFieldPreview
-          field={field}
-          value={value}
-          onChange={onChange}
-          disabled={disabled}
-        />
-      )
-    }
     return (
-      <FileFieldPreview
+      <CatalogAttachmentsField
         field={field}
         value={value}
         onChange={onChange}
         disabled={disabled}
+        invalid={invalid}
+        mode={type === 'image' ? 'images' : 'documents'}
       />
     )
   }
 
   return (
-    <div className={wrapClass(field)}>
+    <div className={withInvalid()} data-field-id={field.id}>
       <FormLabel htmlFor={id} fieldType="text" limit={limit || undefined}>{label}</FormLabel>
       <SpellcheckInput
         id={id}

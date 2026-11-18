@@ -15,6 +15,7 @@ import {
   pickerOptionsForLevel,
 } from '../../lib/assetHierarchy'
 import { parseLayoutId } from '../../lib/formLayoutIds'
+import { assertEquipmentCloneChanged, equipmentValueText } from '../../lib/masterClone'
 import { resolveImageMime } from '../../lib/imageFiles'
 import { readFileAsDataUrl } from '../../config/warrantyDocuments'
 import DateField from '../ui/DateField'
@@ -25,6 +26,7 @@ import SpellcheckInput from '../shared/SpellcheckInput'
 import EquipmentQrCode from './EquipmentQrCode'
 import { useTextFieldLimits } from '../../hooks/useTextFieldLimits'
 import { masterFieldLimit } from '../../lib/textFieldLimits'
+import { useMandatoryFieldAlert } from '../../hooks/useMandatoryFieldAlert'
 import '../company/CompanyShared.css'
 
 const EQUIPMENT_IMAGE_ACCEPT = 'image/png,image/jpeg,image/webp,image/svg+xml,.svg'
@@ -66,33 +68,41 @@ function PlacementFields({
   departments,
   onLocation,
   onDepartment,
+  invalidFieldIds = [],
 }) {
   return (
     <>
       <MasterSelect
+        id="location"
         label="Location"
         value={locationId}
         options={locations}
         onChange={onLocation}
         placeholder="Select location…"
         getLabel={locationLabel}
+        invalid={invalidFieldIds.includes('location')}
       />
       <MasterSelect
+        id="department"
         label="Department"
         value={departmentId}
         options={departments}
         onChange={onDepartment}
         placeholder="Select department…"
         getLabel={departmentLabel}
+        invalid={invalidFieldIds.includes('department')}
       />
     </>
   )
 }
 
-function MasterSelect({ label, value, options, onChange, placeholder, getLabel }) {
+function MasterSelect({ id, label, value, options, onChange, placeholder, getLabel, invalid = false }) {
   return (
     <div className="equipment-field">
-      <div className="company-form__field">
+      <div
+        className={`company-form__field${invalid ? ' company-form__field--invalid' : ''}`}
+        data-field-id={id}
+      >
         <span className="company-form__label">{label} *</span>
         <FilterableSelect
           value={value}
@@ -181,8 +191,20 @@ function blockingLevelName(field, fields, values) {
   return blocked
 }
 
+/**
+ * Asset code = last filled hierarchy level (mirrors the server derivation).
+ * Image levels are skipped because images are not submitted as field values.
+ */
+function deriveAssetCode(fieldDefs, items) {
+  const byField = new Map((items || []).map((item) => [item.field_id, equipmentValueText(item)]))
+  const filled = orderedHierarchyFields(fieldDefs)
+    .filter((field) => !isImageField(field) && byField.get(field.id))
+  return filled.length ? byField.get(filled[filled.length - 1].id) : ''
+}
+
 export default function EquipmentModal({
   equipment,
+  cloneSource = null,
   saving,
   onClose,
   onSave,
@@ -200,6 +222,13 @@ export default function EquipmentModal({
   const { layout, loading: layoutLoading } = useFormLayout('equipment.create')
   const { maxLengthForField } = useTextFieldLimits()
   const [error, setError] = useState(null)
+  const {
+    invalidFieldIds,
+    showMissing,
+    clearInvalidField,
+    clearAll: clearMandatoryHighlight,
+    alertModal,
+  } = useMandatoryFieldAlert()
   const handleBackdropClick = useBackdropClose(onClose)
 
   useEffect(() => {
@@ -359,20 +388,20 @@ export default function EquipmentModal({
     e.preventDefault()
     setError(null)
 
-    const missing = visibleCatalogFields
-      .filter((field) => {
-        if (!hierarchyLevelRevealed(field, fieldDefs, values)) return false
-        if (!field.is_required) return false
-        if (isImageField(field)) return !imagePreview(field)
-        return !fieldText(values[field.id])
-      })
-      .map((field) => field.name)
-    if (!departmentId) missing.unshift('Department')
-    if (!locationId) missing.unshift('Location')
+    const missing = []
+    if (!locationId) missing.push({ id: 'location', label: 'Location' })
+    if (!departmentId) missing.push({ id: 'department', label: 'Department' })
+    for (const field of visibleCatalogFields) {
+      if (!hierarchyLevelRevealed(field, fieldDefs, values)) continue
+      if (!field.is_required) continue
+      const empty = isImageField(field) ? !imagePreview(field) : !fieldText(values[field.id])
+      if (empty) missing.push({ id: field.id, label: field.name })
+    }
     if (missing.length) {
-      setError(`Fill the mandatory field${missing.length === 1 ? '' : 's'}: ${missing.join(', ')}`)
+      setError(showMissing(missing))
       return
     }
+    clearMandatoryHighlight()
 
     const imageField = visibleCatalogFields.find((field) => isImageField(field))
     const pickedImage = imageField ? images[imageField.id] : null
@@ -403,6 +432,21 @@ export default function EquipmentModal({
     payload.department_id = departmentId
     payload.reading_required = readingRequired
 
+    if (!isEdit && cloneSource?.id) {
+      const sourceItems = cloneSource.values ?? cloneSource.field_values ?? []
+      const result = assertEquipmentCloneChanged({
+        source: cloneSource,
+        payload,
+        sourceCode: deriveAssetCode(fieldDefs, sourceItems) || cloneSource.code,
+        nextCode: deriveAssetCode(fieldDefs, payload.values),
+      })
+      if (!result.ok) {
+        setError(result.message)
+        return
+      }
+      payload.clone_of_id = cloneSource.id
+    }
+
     try {
       await onSave(payload)
     } catch (err) {
@@ -413,7 +457,10 @@ export default function EquipmentModal({
   const renderField = (field) => {
     const locked = !hierarchyLevelRevealed(field, fieldDefs, values)
     const blockedBy = locked ? blockingLevelName(field, fieldDefs, values) : ''
-    const write = (next) => setValues((current) => applyHierarchyFieldChange(field.id, next, current, fieldDefs))
+    const write = (next) => {
+      clearInvalidField(field.id)
+      setValues((current) => applyHierarchyFieldChange(field.id, next, current, fieldDefs))
+    }
     const configuredOptions = (field.dropdown_options || []).map((option) => String(option).trim()).filter(Boolean)
     const choiceOptions = withCurrentOption(
       configuredOptions.length
@@ -426,9 +473,13 @@ export default function EquipmentModal({
     const textLimit = maxLengthForField(field) || masterFieldLimit(
       field.field_type === 'textarea' ? 'description' : 'name',
     )
+    const fieldInvalid = invalidFieldIds.includes(field.id)
     return (
     <div key={field.id} className="equipment-field">
-      <div className="company-form__field">
+      <div
+        className={`company-form__field${fieldInvalid ? ' company-form__field--invalid' : ''}`}
+        data-field-id={field.id}
+      >
         {isImageField(field) ? (
           <FormLabel fieldType="image">{fieldLabel}</FormLabel>
         ) : field.field_type === 'textarea' || field.field_type === 'text' || !field.field_type ? (
@@ -587,8 +638,15 @@ export default function EquipmentModal({
                   departmentId={departmentId}
                   locations={locationOptions}
                   departments={departmentOptions}
-                  onLocation={setLocationId}
-                  onDepartment={setDepartmentId}
+                  onLocation={(value) => {
+                    clearInvalidField('location')
+                    setLocationId(value)
+                  }}
+                  onDepartment={(value) => {
+                    clearInvalidField('department')
+                    setDepartmentId(value)
+                  }}
+                  invalidFieldIds={invalidFieldIds}
                 />
               )}
               {section.items.map((item) => {
@@ -620,6 +678,7 @@ export default function EquipmentModal({
           </div>
         </form>
       </div>
+      {alertModal}
     </div>
   )
 }

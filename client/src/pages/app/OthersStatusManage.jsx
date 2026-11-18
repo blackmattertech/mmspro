@@ -11,6 +11,8 @@ import { reorderItemsById } from '../../lib/assetFormSchema'
 import PageBack from '../../components/shared/PageBack'
 import EditIcon from '../../components/ui/EditIcon'
 import TrashIcon from '../../components/ui/TrashIcon'
+import DuplicateRowButton from '../../components/ui/DuplicateRowButton'
+import { createNestedClone, prepareNestedCloneCreate } from '../../lib/nestedClone'
 import OrgStatusEditModal from '../../components/others/OrgStatusEditModal'
 import '../../components/company/CompanyShared.css'
 import '../../components/tasks/TaskMetaSettings.css'
@@ -65,6 +67,7 @@ export default function OthersStatusManage({
 
   const [editItem, setEditItem] = useState(null)
   const [creating, setCreating] = useState(false)
+  const [clone, setClone] = useState(null)
   const [localRows, setLocalRows] = useState([])
   const [draggingId, setDraggingId] = useState(null)
   const [dropTargetId, setDropTargetId] = useState(null)
@@ -75,6 +78,18 @@ export default function OthersStatusManage({
   }, [statuses])
 
   const rows = draggingId ? localRows : statuses
+  // Task statuses live in task_statuses (no key); all others are org_statuses with key + name.
+  const cloneKind = entityType === 'task' ? 'task_status' : 'org_status'
+  const closeEditor = () => { setCreating(false); setEditItem(null); setClone(null) }
+
+  const openDuplicate = (row) => {
+    const next = createNestedClone(cloneKind, row)
+    if (!next) return
+    setActionError(null)
+    setEditItem(null)
+    setCreating(false)
+    setClone(next)
+  }
   const backTo = backToProp
     || (org?.slug ? orgPath(org.slug, 'masters/forms') : '#')
 
@@ -155,7 +170,7 @@ export default function OthersStatusManage({
               <button
                 type="button"
                 className="company-btn company-btn--primary"
-                onClick={() => { setCreating(true); setEditItem(null) }}
+                onClick={() => { setCreating(true); setEditItem(null); setClone(null) }}
                 disabled={saving}
               >
                 + Add status
@@ -245,12 +260,17 @@ export default function OthersStatusManage({
                             <button
                               type="button"
                               className="company-btn company-btn--secondary company-btn--compact company-btn--icon"
-                              onClick={() => { setEditItem(row); setCreating(false) }}
+                              onClick={() => { setEditItem(row); setCreating(false); setClone(null) }}
                               aria-label={`Edit ${row.name}`}
                               disabled={saving}
                             >
                               <EditIcon />
                             </button>
+                            <DuplicateRowButton
+                              onClick={() => openDuplicate(row)}
+                              disabled={saving}
+                              label={`Duplicate ${row.name}`}
+                            />
                             {!row.is_system && (
                               <button
                                 type="button"
@@ -274,15 +294,17 @@ export default function OthersStatusManage({
         </div>
       )}
 
-      {(creating || editItem) && (
+      {(creating || editItem || clone) && (
         <OrgStatusEditModal
-          item={editItem}
+          key={editItem?.id ?? (clone ? `clone-${clone.source.id}` : 'new')}
+          item={editItem || clone?.draft || null}
+          cloneSourceName={clone?.source?.name || null}
           entityLabel={label}
           saving={saving}
-          onClose={() => { setCreating(false); setEditItem(null) }}
+          onClose={closeEditor}
           onSave={async (payload) => {
             if (editItem?.id) await update(editItem.id, payload)
-            else await create(payload)
+            else await create(prepareNestedCloneCreate(cloneKind, clone, payload))
           }}
         />
       )}

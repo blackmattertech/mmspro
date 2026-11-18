@@ -15,7 +15,7 @@ export const SYSTEM_FIELD_MASTERS = {
   checklist_template_id: 'checklists',
   technician_ids: 'employees_multi',
   assignee_ids: 'employees_multi',
-  work_center: 'work_centers',
+  // work_center stores a name string from Masters / Forms overlay — not a UUID picker.
 }
 
 /** Hardcoded Work Request request-type list — used on every module. */

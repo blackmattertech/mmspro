@@ -14,6 +14,7 @@ const DEFAULT_FORM = {
 
 export default function OrgStatusEditModal({
   item,
+  cloneSourceName = null,
   entityLabel,
   saving,
   onClose,
@@ -68,12 +69,17 @@ export default function OrgStatusEditModal({
           <div className="modal__header-main">
             <PageBack onClick={onClose} className="page-back--header" label={entityLabel} />
             <h2 id="org-status-edit-title" className="company-modal__title">
-              {isEdit ? 'Edit status' : 'Add status'}
+              {isEdit ? 'Edit status' : cloneSourceName ? 'Duplicate status' : 'Add status'}
             </h2>
           </div>
         </div>
 
         <form className="company-form company-modal__form" onSubmit={handleSubmit}>
+          {cloneSourceName && !isEdit && (
+            <p className="company-form__hint">
+              Duplicating “{cloneSourceName}”. Change the name and at least one other detail before saving.
+            </p>
+          )}
           <div className="company-form__grid">
             <label className="company-form__field company-form__field--full">
               <span className="company-form__label">Name *</span>

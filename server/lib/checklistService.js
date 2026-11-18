@@ -3,6 +3,12 @@ import {
   CHECKLIST_FIELD_TYPES,
   OPTION_CHECKLIST_FIELD_TYPES,
 } from './pmConstants.js'
+import {
+  enforceWorkRecordClone,
+  toChecklistCloneComparable,
+  CHECKLIST_CLONE_SERVER_COMPARE_KEYS,
+  CHECKLIST_CLONE_UNIQUE_KEYS,
+} from './workRecordClone.js'
 
 const CHECKLIST_MODULES = new Set(['work_request', 'work_order', 'pm_plan'])
 
@@ -402,6 +408,16 @@ export async function getChecklistTemplate(orgId, templateId) {
 export async function createChecklistTemplate(orgId, profileId, body = {}) {
   const name = String(body.name || '').trim()
   if (!name) throw httpError('Checklist name is required.')
+
+  // Duplicate → prefilled create. Sections/fields are written by follow-up calls after
+  // the template exists, so only the unique name can be enforced here.
+  await enforceWorkRecordClone({
+    body,
+    loadSource: (sourceId) => getChecklistTemplate(orgId, sourceId),
+    toComparable: toChecklistCloneComparable,
+    uniqueKeys: CHECKLIST_CLONE_UNIQUE_KEYS,
+    compareKeys: CHECKLIST_CLONE_SERVER_COMPARE_KEYS,
+  })
 
   const formIds = body.form_ids !== undefined
     ? normalizeFormIds(body.form_ids, body.module_key)

@@ -31,6 +31,7 @@ export const PRODUCT_MODULE_GROUPS = [
       { id: 'logbook', label: 'Meter reading', permissionKeys: ['logbook'] },
       { id: 'tasks_followups', label: 'Tasks & Follow-ups', permissionKeys: ['tasks_followups'] },
       { id: 'warranty_manager', label: 'Warranty Manager', permissionKeys: ['warranty_manager'] },
+      { id: 'support_tickets', label: 'Support & Tickets', permissionKeys: ['support_tickets'] },
       { id: 'reports', label: 'Reports', permissionKeys: [
         'reports',
         'reports_daily_logs',

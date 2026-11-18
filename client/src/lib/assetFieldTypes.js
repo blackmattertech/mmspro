@@ -1,6 +1,6 @@
 export const ASSET_FIELD_TYPES = [
   { value: 'text', label: 'Text' },
-  { value: 'textarea', label: 'Textarea' },
+  { value: 'textarea', label: 'Long text' },
   { value: 'number', label: 'Number' },
   { value: 'date', label: 'Date' },
   { value: 'datetime', label: 'Date & time' },

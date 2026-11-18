@@ -1,0 +1,30 @@
+.error-alert-overlay {
+  z-index: 1400;
+}
+
+.error-alert-modal__banner {
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--color-primary) 10%, white);
+  border: 1px solid color-mix(in srgb, var(--color-primary) 28%, white);
+  color: var(--color-primary);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.error-alert-modal__list {
+  margin: 0;
+  padding-left: 1.2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--color-dark-navy, #1a2332);
+}
+
+.error-alert-modal__list li::marker {
+  color: var(--color-primary);
+}

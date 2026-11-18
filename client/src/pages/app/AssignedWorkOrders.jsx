@@ -21,6 +21,7 @@ export default function AssignedWorkOrders() {
     columnFilters = {}, setColumnFilter, headerSort = null, setHeaderSort,
     statusFilters = [],
     reportFilterRows = null,
+    reportStatusCounts = null,
   } = useOutletContext()
   const debouncedSearch = useDebouncedValue(search)
   const [listTotal, setListTotal] = useState(0)
@@ -54,11 +55,12 @@ export default function AssignedWorkOrders() {
     sortDir: headerSort?.dir || '',
     sort_by: headerSort ? '' : sortBy,
   }), [debouncedSearch, pagination.pageSize, pagination.offset, listFilters, statusFilters, headerSort, sortBy])
-  const { orders, total, loading, error, reload } = useWorkOrderList(fetchOrders, {
+  const { orders, total, statusCounts, loading, error, reload } = useWorkOrderList(fetchOrders, {
     cacheKey: listCacheKey,
     onRows: reportFilterRows,
   })
   useEffect(() => { setListTotal(total) }, [total])
+  useEffect(() => { reportStatusCounts?.(statusCounts) }, [statusCounts, reportStatusCounts])
 
   if (loading) {
     return <div className="company-loading">Loading...</div>
@@ -77,8 +79,8 @@ export default function AssignedWorkOrders() {
         serverPaged
         columns={ASSIGNED_COLUMNS}
         tableId="work-orders-assigned"
-        emptyTitle="No work orders assigned yet."
-        emptyHint="Work orders you requested or created and assigned to someone else appear here."
+        emptyTitle="No work orders assigned to you."
+        emptyHint="Work orders you claimed or that were assigned to you appear here."
         onView={setSelectedId}
         paginationResetKey={`${search}|${locationFilter}|${fieldFilter?.field}|${fieldFilter?.value}|${sortBy}`}
         headerSort={headerSort}

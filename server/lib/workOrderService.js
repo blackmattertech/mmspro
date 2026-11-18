@@ -8,7 +8,11 @@ import {
   getTextFieldLimitsMap,
 } from './textFieldLimits.js'
 import { completionRequiredFromLayout, filledByForNativeKey, layoutHasSystemKey, workOrderFormIdForSource } from './workOrderForms.js'
-import { canEditFilledBy } from './formFillership.js'
+import {
+  canChangeWorkOrderStatus,
+  canEditFilledBy,
+  canEditWorkOrderStatusProgressRemarks,
+} from './formFillership.js'
 
 export const WO_STATUSES = [
   'draft',
@@ -628,13 +632,10 @@ export async function updateWorkOrderLifecycle(orgId, profileId, workOrderId, bo
       err.status = 400
       throw err
     }
-    const canSetProgress = Boolean(
-      actors?.isTechnician
-      || actors?.isSupervisor
-      || actors?.isOrgAdmin
-    )
-    if (actors && !canSetProgress) {
-      const err = new Error('Only an assigned technician or supervisor can update progress.')
+    if (actors && !canEditWorkOrderStatusProgressRemarks(actors)) {
+      const err = new Error(
+        'Only an assigned technician or the Order-To department head can update progress.',
+      )
       err.status = 403
       throw err
     }
@@ -644,6 +645,14 @@ export async function updateWorkOrderLifecycle(orgId, profileId, workOrderId, bo
   patch = computeDurations(patch, existing)
 
   if (actors) {
+    if (nextStatus !== existing.status && !canChangeWorkOrderStatus(actors, nextStatus)) {
+      const err = new Error(
+        'Only an assigned technician or the Order-To department head can change this work order status.',
+      )
+      err.status = 403
+      throw err
+    }
+
     const { loadRuntimeFormLayout } = await import('./orgFormLayouts.js')
     const formId = workOrderFormIdForSource(existing.source_type)
     const layout = await loadRuntimeFormLayout(orgId, formId)
@@ -662,7 +671,7 @@ export async function updateWorkOrderLifecycle(orgId, profileId, workOrderId, bo
     if (reserved.length) {
       const onlyProgress = reserved.length === 1 && reserved[0] === 'progress_percent'
       const err = new Error(onlyProgress
-        ? 'Only a technician assigned to this work request or work order can update progress.'
+        ? 'Only an assigned technician or the Order-To department head can update progress.'
         : 'Only the assigned technician can edit technician sections on this work order.')
       err.status = 403
       throw err

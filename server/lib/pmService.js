@@ -36,6 +36,12 @@ import {
   nextDueAfterGenerate,
   resolveLivePlanStatus,
 } from './pmSchedule.js'
+import {
+  enforceCloneOfId,
+  PM_PLAN_CLONE_COMPARE_KEYS,
+  PM_PLAN_CLONE_UNIQUE_KEYS,
+} from './recordClone.js'
+import { enforceNestedCloneOrThrow, loadNestedCloneSource } from './nestedClone.js'
 
 const PLAN_SELECT = `
   id, org_id, plan_number, name, department_id, location_id, area_id, equipment_id,
@@ -236,6 +242,12 @@ export async function listActivityTypes(orgId, { includeInactive = false } = {})
 export async function createActivityType(orgId, body = {}) {
   const name = String(body.name || '').trim()
   if (!name) throw httpError('Activity type name is required.')
+
+  await enforceNestedCloneOrThrow({
+    body,
+    kind: 'pm_activity_type',
+    loadSource: (id) => loadNestedCloneSource({ table: 'pm_activity_types', orgId, id }),
+  })
 
   const { data, error } = await supabaseAdmin
     .from('pm_activity_types')
@@ -729,7 +741,55 @@ export async function getPmPlan(orgId, planId) {
   }
 }
 
+function pmPlanCloneComparable(row = {}) {
+  const technicianIds = Array.isArray(row.technician_ids)
+    ? row.technician_ids.map(String).sort()
+    : (row.technicians || []).map((person) => String(person.id)).filter(Boolean).sort()
+  return {
+    name: row.name,
+    department_id: row.department_id,
+    location_id: row.location_id,
+    area_id: row.area_id,
+    equipment_id: row.equipment_id,
+    activity_type_id: row.activity_type_id,
+    work_center: row.work_center,
+    priority: row.priority,
+    status: row.status,
+    schedule_type: row.schedule_type,
+    is_recurring: row.is_recurring,
+    calendar_unit: row.calendar_unit,
+    every_n: row.every_n,
+    weekdays: row.weekdays,
+    custom_interval: row.custom_interval,
+    custom_unit: row.custom_unit,
+    never_ends: row.never_ends,
+    start_date: row.start_date ? String(row.start_date).slice(0, 10) : '',
+    end_date: row.end_date ? String(row.end_date).slice(0, 10) : '',
+    grace_days: row.grace_days,
+    generate_before_days: row.generate_before_days,
+    last_reading: row.last_reading,
+    last_service_date: row.last_service_date ? String(row.last_service_date).slice(0, 10) : '',
+    reading_interval: row.reading_interval,
+    whichever_comes_first: row.whichever_comes_first,
+    checklist_template_id: row.checklist_template_id,
+    contractor_vendor_id: row.contractor_vendor_id,
+    estimated_labour_hours: row.estimated_labour_hours,
+    estimated_duration_hours: row.estimated_duration_hours,
+    required_tools: row.required_tools,
+    required_skills: row.required_skills,
+    technician_ids: technicianIds,
+  }
+}
+
 export async function createPmPlan(orgId, profileId, body = {}, { lean = false } = {}) {
+  await enforceCloneOfId({
+    body,
+    loadSource: (id) => getPmPlan(orgId, id),
+    toComparable: pmPlanCloneComparable,
+    uniqueKeys: PM_PLAN_CLONE_UNIQUE_KEYS,
+    compareKeys: PM_PLAN_CLONE_COMPARE_KEYS,
+  })
+
   const layout = await loadRuntimeFormLayout(orgId, 'pm.plan')
   const payload = normalizePlanPayload(body, null, layout)
   if (payload.checklist_template_id) {

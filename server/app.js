@@ -34,6 +34,8 @@ import integrationPublicRoutes from './routes/api/integrationsPublic.js'
 import publicPlanRoutes from './routes/api/publicPlans.js'
 import recordRoutes from './routes/api/records.js'
 import tableColumnDefaultsRoutes from './routes/api/tableColumnDefaults.js'
+import importJobsRoutes from './routes/api/importJobs.js'
+import recordTemplatesRoutes from './routes/api/recordTemplates.js'
 
 const app = express()
 const isDev = process.env.NODE_ENV !== 'production'
@@ -149,6 +151,8 @@ app.use('/api', apiRoutes)
 app.use('/api/notifications', notificationRoutes)
 app.use('/api/records', recordRoutes)
 app.use('/api/table-column-defaults', tableColumnDefaultsRoutes)
+app.use('/api/import-jobs', importJobsRoutes)
+app.use('/api/record-templates', recordTemplatesRoutes)
 app.use('/admin-api', adminRoutes)
 
 app.get('/health', (_req, res) => res.json({ status: 'ok' }))

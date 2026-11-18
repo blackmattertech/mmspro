@@ -1,15 +1,23 @@
 export const WORK_ORDER_TABS = [
   {
-    id: 'received',
-    label: 'Received',
-    segment: 'work-orders/received',
-    countKey: 'received',
+    id: 'all',
+    label: 'All Workorders',
+    segment: 'work-orders/all',
+    countKey: 'all',
+    moduleKey: 'work_orders_received',
+    icon: 'addItem',
+  },
+  {
+    id: 'unassigned',
+    label: 'Unassigned',
+    segment: 'work-orders/unassigned',
+    countKey: 'unassigned',
     moduleKey: 'work_orders_received',
     icon: 'addItem',
   },
   {
     id: 'assigned',
-    label: 'Assigned',
+    label: 'Assigned to Me',
     segment: 'work-orders/assigned',
     countKey: 'assigned',
     moduleKey: 'work_orders_assigned',
@@ -17,7 +25,7 @@ export const WORK_ORDER_TABS = [
   },
   {
     id: 'manual',
-    label: 'Manual',
+    label: 'Manual Workorders',
     segment: 'work-orders/manual',
     countKey: 'manual',
     moduleKey: 'work_orders_manual',
@@ -28,6 +36,9 @@ export const WORK_ORDER_TABS = [
 export function isWorkOrderTabActive(tabId, pathname) {
   if (pathname.includes('/work-orders/scheduled')) return false
   if (tabId === 'manual') return /\/work-orders\/manual(?:\/|$)/.test(pathname)
+  if (tabId === 'all') {
+    return pathname.includes('/work-orders/all') || pathname.includes('/work-orders/received')
+  }
   return pathname.includes(`/work-orders/${tabId}`)
 }
 
@@ -43,7 +54,7 @@ export function visibleWorkOrderTabs(canRead) {
 
 export function defaultWorkOrderTab(canRead) {
   const tabs = visibleWorkOrderTabs(canRead)
-  return tabs.find((tab) => tab.id === 'received') || tabs[0] || null
+  return tabs.find((tab) => tab.id === 'all') || tabs[0] || null
 }
 
 export function isWorkOrdersNavPath(pathname) {

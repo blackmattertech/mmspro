@@ -1,6 +1,8 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useDebouncedValue } from '../../hooks/useDebouncedValue'
 import { NavLink, Navigate, Outlet, useNavigate, useLocation } from 'react-router-dom'
+import StatusPhaseBar, { resolveStatusFilters } from '../shared/StatusPhaseBar'
+import { WORK_ORDER_PHASES, WO_STATUS_LABELS } from '../../lib/statusPhases'
 import { useOrg } from '../../hooks/useOrg'
 import { useProfile } from '../../hooks/useProfile'
 import { useLocations } from '../../hooks/useLocations'
@@ -76,13 +78,22 @@ export default function WorkOrdersLayout() {
   const [advancedRules, setAdvancedRules] = useState([createFilterRule()])
   const [columnFilters, setColumnFilters] = useState({})
   const [headerSort, setHeaderSort] = useState(null)
-  const [statusFilters] = useState([])
+  const [statusSelection, setStatusSelection] = useState([])
+  const [statusCounts, setStatusCounts] = useState([])
+  const statusFilters = useMemo(
+    () => resolveStatusFilters(statusSelection, WORK_ORDER_PHASES),
+    [statusSelection],
+  )
+  const reportStatusCounts = useCallback((rows) => {
+    setStatusCounts(Array.isArray(rows) ? rows : [])
+  }, [])
   const [exporting, setExporting] = useState(false)
   const [bulkReloadToken, setBulkReloadToken] = useState(0)
   const { counts: tabCounts } = useWorkOrderCounts()
   const {
     bulkInputRef,
     bulkBusy,
+    bulkProgress,
     bulkError,
     bulkResult,
     handleDownloadTemplate,
@@ -121,6 +132,11 @@ export default function WorkOrdersLayout() {
   const reportFilterRows = useCallback((rows) => {
     setFilterRows(Array.isArray(rows) ? rows : [])
   }, [])
+
+  useEffect(() => {
+    setStatusSelection([])
+    setStatusCounts([])
+  }, [activeTab])
   const workOrderFilterFields = useMemo(() => buildWorkOrderFilterFields({
     pageRows: filterRows,
     statusOptions: loadedStatusOptions,
@@ -144,11 +160,13 @@ export default function WorkOrdersLayout() {
       return next
     })
   }
-  const exportPath = activeTab === 'received'
-    ? '/received'
-    : activeTab === 'assigned'
-      ? '/assigned'
-      : '/manual/orders'
+  const exportPath = activeTab === 'all' || activeTab === 'received'
+    ? '/all'
+    : activeTab === 'unassigned'
+      ? '/unassigned'
+      : activeTab === 'assigned'
+        ? '/assigned'
+        : '/manual/orders'
 
   const exportRows = async () => {
     setExporting(true)
@@ -183,10 +201,11 @@ export default function WorkOrdersLayout() {
     setHeaderSort,
     statusFilters,
     reportFilterRows,
+    reportStatusCounts,
   }), [
     debouncedSearch, locationFilter, sortBy, advancedRules,
     activeLocations, bulkReloadToken, columnFilters, headerSort, statusFilters,
-    reportFilterRows,
+    reportFilterRows, reportStatusCounts,
   ])
 
   if (!permsLoading && onIndex && org?.slug && fallbackTab) {
@@ -227,6 +246,7 @@ export default function WorkOrdersLayout() {
                 <MasterBulkActions
                   onDownload={handleDownloadTemplate}
                   bulkBusy={bulkBusy}
+                    bulkProgress={bulkProgress}
                   bulkInputRef={bulkInputRef}
                   onFileChange={handleBulkFile}
                   title="Import work orders"
@@ -294,6 +314,7 @@ export default function WorkOrdersLayout() {
                     <MasterBulkActions
                       onDownload={handleDownloadTemplate}
                       bulkBusy={bulkBusy}
+                    bulkProgress={bulkProgress}
                       bulkInputRef={bulkInputRef}
                       onFileChange={handleBulkFile}
                       addLabel="+ Add Work Order"
@@ -316,6 +337,16 @@ export default function WorkOrdersLayout() {
 
       <div className="wo-page__content">
         <div className="company-panel">
+          {!isFormPage && (
+            <StatusPhaseBar
+              counts={statusCounts}
+              phases={WORK_ORDER_PHASES}
+              selectedKeys={statusSelection}
+              onChange={setStatusSelection}
+              labelByKey={WO_STATUS_LABELS}
+              ariaLabel="Filter work orders by status"
+            />
+          )}
           <Outlet context={outletContext} />
         </div>
       </div>

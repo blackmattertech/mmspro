@@ -15,6 +15,7 @@ import { downloadBlobFile } from '../../lib/api'
 import { getEquipmentColumnValues } from '../../lib/api-equipment'
 import { unwrapList } from '../../lib/listResponse'
 import {
+  canResetMeter,
   formatMeterDate,
   formatMeterTime,
   formatMeterValue,
@@ -38,6 +39,7 @@ import {
   useMasterBulkUpload,
 } from '../../components/company/MasterBulkUpload'
 import MeterReadingModal from '../../components/logbook/MeterReadingModal'
+import ResetMeterModal from '../../components/logbook/ResetMeterModal'
 import { useBackdropClose } from '../../hooks/useBackdropClose'
 import '../../components/shared/TableFilterToolbar.css'
 import '../../components/shared/TableColumnPicker.css'
@@ -63,10 +65,26 @@ function LoggerCell({ row }) {
 
 function meterCellText(row, column) {
   if (column.id === 'last_reading') return formatMeterValue(row.last_reading)
+  if (column.id === 'cumulative_reading') return formatMeterValue(row.cumulative_reading)
   if (column.id === 'date') return formatMeterDate(row.last_reading_at)
   if (column.id === 'time') return row.last_reading_at ? formatMeterTime(row.last_reading_at) : '—'
   if (column.id === 'logged_by') return null
   return meterFieldText(row, column) || '—'
+}
+
+function resetMeterTitle(lastReading) {
+  if (canResetMeter(lastReading)) return 'Start the meter from 0. Cumm. Reading keeps the total so far.'
+  if (lastReading == null) return 'Log a reading before resetting this meter.'
+  return 'This meter is already at 0.'
+}
+
+function ReadingCell({ row }) {
+  return (
+    <span className="meter-reading-cell">
+      {formatMeterValue(row.reading)}
+      {row.is_reset ? <span className="company-badge company-badge--primary">Reset</span> : null}
+    </span>
+  )
 }
 
 function HistoryModal({ equipmentId, assetFields, canCreate, canDelete, onClose, onChanged }) {
@@ -76,6 +94,7 @@ function HistoryModal({ equipmentId, assetFields, canCreate, canDelete, onClose,
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [adding, setAdding] = useState(false)
+  const [resetting, setResetting] = useState(false)
 
   const load = useCallback(() => {
     setLoading(true)
@@ -94,7 +113,10 @@ function HistoryModal({ equipmentId, assetFields, canCreate, canDelete, onClose,
   const readings = payload?.readings || []
 
   const handleDelete = async (row) => {
-    if (!(await requestDelete({ title: 'Delete reading', message: 'Delete this meter reading?' }))) return
+    const message = row.is_reset
+      ? 'Delete this reset? Later readings will no longer add onto the total from before the reset.'
+      : 'Delete this meter reading?'
+    if (!(await requestDelete({ title: 'Delete reading', message }))) return
     try {
       await deleteMeterReading(row.id)
       await load()
@@ -126,6 +148,15 @@ function HistoryModal({ equipmentId, assetFields, canCreate, canDelete, onClose,
               <button type="button" className="company-btn company-btn--primary" onClick={() => setAdding(true)}>
                 Add reading
               </button>
+              <button
+                type="button"
+                className="company-btn company-btn--outline"
+                onClick={() => setResetting(true)}
+                disabled={!canResetMeter(equipment.last_reading)}
+                title={resetMeterTitle(equipment.last_reading)}
+              >
+                Reset meter
+              </button>
             </div>
           )}
           {error && <div className="company-alert" role="alert">{error}</div>}
@@ -138,6 +169,7 @@ function HistoryModal({ equipmentId, assetFields, canCreate, canDelete, onClose,
                   <thead>
                     <tr>
                       <th>Reading</th>
+                      <th>Cumm. Reading</th>
                       <th>Date</th>
                       <th>Time</th>
                       <th>Logged by</th>
@@ -146,12 +178,13 @@ function HistoryModal({ equipmentId, assetFields, canCreate, canDelete, onClose,
                   </thead>
                   <tbody>
                     {readings.length === 0 ? (
-                      <TableEmptyRow colSpan={canDelete ? 5 : 4}>
+                      <TableEmptyRow colSpan={canDelete ? 6 : 5}>
                         No meter readings yet.
                       </TableEmptyRow>
                     ) : readings.map((row) => (
                       <tr key={row.id}>
-                        <td>{formatMeterValue(row.reading)}</td>
+                        <td><ReadingCell row={row} /></td>
+                        <td>{formatMeterValue(row.cumulative_reading)}</td>
                         <td>{formatMeterDate(row.reading_at)}</td>
                         <td>{formatMeterTime(row.reading_at)}</td>
                         <td><LoggerCell row={row} /></td>
@@ -182,6 +215,19 @@ function HistoryModal({ equipmentId, assetFields, canCreate, canDelete, onClose,
             onClose={() => setAdding(false)}
             onSaved={async () => {
               setAdding(false)
+              await load()
+              onChanged?.()
+            }}
+          />
+        )}
+        {resetting && equipment && (
+          <ResetMeterModal
+            nested
+            equipment={equipment}
+            assetLabel={meterAssetLabel(equipment, assetFields)}
+            onClose={() => setResetting(false)}
+            onReset={async () => {
+              setResetting(false)
               await load()
               onChanged?.()
             }}
@@ -218,6 +264,7 @@ export default function Logbook() {
   const [reloadKey, setReloadKey] = useState(0)
   const [historyId, setHistoryId] = useState(null)
   const [adding, setAdding] = useState(null)
+  const [resetting, setResetting] = useState(null)
   const [assetFields, setAssetFields] = useState(null)
   const [hierarchyValueOptions, setHierarchyValueOptions] = useState({})
   const seenLoad = useRef(false)
@@ -352,6 +399,7 @@ export default function Logbook() {
   const {
     bulkInputRef,
     bulkBusy,
+    bulkProgress,
     bulkError,
     bulkResult,
     handleDownloadTemplate,
@@ -377,7 +425,7 @@ export default function Logbook() {
       <header className="company-page__header">
         <h1 className="company-page__title">Meter reading</h1>
         <p className="company-page__subtitle">
-          Log meter readings for assets that require them. Scan an asset QR code, then choose Add reading.
+          Log meter readings for assets that require them. Reset a meter to start again from 0. Cumm. Reading keeps the running total in the table and in history.
         </p>
       </header>
       <div className="company-page__content">
@@ -429,6 +477,7 @@ export default function Logbook() {
                     <MasterBulkActions
                       onDownload={handleDownloadTemplate}
                       bulkBusy={bulkBusy}
+                    bulkProgress={bulkProgress}
                       bulkInputRef={bulkInputRef}
                       onFileChange={handleBulkFile}
                       title="Import meter readings"
@@ -521,6 +570,17 @@ export default function Logbook() {
                                     Add reading
                                   </button>
                                 )}
+                                {canCreate('logbook') && (
+                                  <button
+                                    type="button"
+                                    className="company-btn company-btn--outline company-btn--compact"
+                                    onClick={() => setResetting(row)}
+                                    disabled={!canResetMeter(row.last_reading)}
+                                    title={resetMeterTitle(row.last_reading)}
+                                  >
+                                    Reset
+                                  </button>
+                                )}
                                 <button
                                   type="button"
                                   className="company-btn company-btn--ghost company-btn--compact"
@@ -571,6 +631,17 @@ export default function Logbook() {
           onClose={() => setAdding(null)}
           onSaved={() => {
             setAdding(null)
+            refresh()
+          }}
+        />
+      )}
+      {resetting && (
+        <ResetMeterModal
+          equipment={resetting}
+          assetLabel={meterAssetLabel(resetting, assetFields)}
+          onClose={() => setResetting(null)}
+          onReset={() => {
+            setResetting(null)
             refresh()
           }}
         />

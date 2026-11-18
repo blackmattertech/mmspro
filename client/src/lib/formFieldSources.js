@@ -250,7 +250,15 @@ export function isEmptyMasterValue(value) {
   return false
 }
 
-export function missingRequiredLayoutValues(layout, { systemValues = {}, masterValues = {}, catalogValues = {} } = {}) {
+function humanizeFieldKey(value) {
+  return String(value || '')
+    .replace(/[_-]+/g, ' ')
+    .replace(/\b\w/g, (char) => char.toUpperCase())
+    .trim()
+}
+
+/** Missing required layout fields with ids for highlighting and labels for the alert. */
+export function listMissingRequiredLayoutFields(layout, { systemValues = {}, masterValues = {}, catalogValues = {} } = {}) {
   if (!layout) return []
   const values = { ...catalogValues, ...masterValues }
   for (const [key, value] of Object.entries(catalogValues)) {
@@ -271,16 +279,36 @@ export function missingRequiredLayoutValues(layout, { systemValues = {}, masterV
     const parsed = parseLayoutId(field.id)
     if (parsed.kind === 'system') {
       const value = systemValues[parsed.value]
-      if (isEmptyMasterValue(value)) missing.push(parsed.value)
+      if (isEmptyMasterValue(value)) {
+        missing.push({
+          id: field.id,
+          key: parsed.value,
+          label: field.label || humanizeFieldKey(parsed.value) || parsed.value,
+        })
+      }
     } else if (parsed.kind === 'master' || parsed.kind === 'field') {
       const value = masterValues[field.id] ?? masterValues[parsed.value] ?? catalogValues[field.id]
       if (isEmptyMasterValue(value)) {
-        missing.push(field.label || getMasterSource(field.masterSource || parsed.value)?.label || parsed.value)
+        missing.push({
+          id: field.id,
+          key: parsed.value,
+          label: field.label || getMasterSource(field.masterSource || parsed.value)?.label || parsed.value,
+        })
       }
     } else if (parsed.kind === 'catalog') {
       const value = catalogValues[parsed.value] ?? catalogValues[field.id]
-      if (isEmptyMasterValue(value)) missing.push(parsed.value)
+      if (isEmptyMasterValue(value)) {
+        missing.push({
+          id: field.id,
+          key: parsed.value,
+          label: field.label || humanizeFieldKey(parsed.value) || parsed.value,
+        })
+      }
     }
   }
   return missing
+}
+
+export function missingRequiredLayoutValues(layout, options = {}) {
+  return listMissingRequiredLayoutFields(layout, options).map((field) => field.label)
 }

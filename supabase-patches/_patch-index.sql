@@ -129,6 +129,18 @@
 --   120-warranty-status-counts.sql                 → 120-warranty-status-counts — Warranty status bucket RPC
 --   121-wr-location-scope-and-indexes.sql          → 121-wr-location-scope-and-indexes — WR location scope + indexes
 --   122-uom-master.sql                           → 122-uom-master — Unit of measure master
+--   123-org-data-reset-otps.sql                  → 123-org-data-reset-otps — OTP codes for module data reset
+--   124-wr-effective-status-counts.sql           → 124-wr-effective-status-counts — WR display status counts
+--   125-wo-order-to-tabs.sql                     → 125-wo-order-to-tabs — All / Unassigned Order To visibility
+--   126-meter-reading-reset.sql                  → 126-meter-reading-reset — Cumulative meter reading across resets
+--   127-uom-category.sql                         → 127-uom-category — Optional category on units of measure
+--   128-support-tickets.sql                      → 128-support-tickets — Support tickets, conversation, and SLA
+--   129-support-ticket-attachments.sql           → 129-support-ticket-attachments — Message attachments + storage bucket
+--   130-report-ready-reports.sql                 → 130-report-ready-reports — Ready report artifacts + storage bucket
+--   131-import-jobs.sql                          → 131-import-jobs — Background Excel import jobs + storage
+--   132-support-rich-text-storage.sql            → 132-support-rich-text-storage — Rich text storage limits
+--   133-import-job-progress.sql                  → 133-import-job-progress — Row progress for background imports
+--   134-record-templates.sql                     → 134-record-templates — Org-shared record templates + storage
 
 --
 -- OTHER:

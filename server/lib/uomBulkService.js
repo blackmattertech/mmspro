@@ -1,9 +1,17 @@
 import ExcelJS from 'exceljs'
 import { supabaseAdmin } from '../services/supabase.js'
 import { buildWorkbook, readTemplateRows } from './excelTemplate.js'
-import { lookupUomKey, normalizeUomCode, normalizeUomName } from './uomMaster.js'
+import {
+  lookupUomKey,
+  normalizeUomCategory,
+  normalizeUomCode,
+  normalizeUomName,
+} from './uomMaster.js'
 
+/** Required columns. Category is optional so older template files still import. */
 const TEMPLATE_COLUMNS = ['Code', 'Name', 'Active']
+const TEMPLATE_EXTRA_COLUMNS = ['Category']
+const TEMPLATE_HEADERS = ['Code', 'Name', 'Category', 'Active']
 
 export function parseUomActive(value) {
   const raw = String(value || '').trim().toLowerCase()
@@ -19,16 +27,22 @@ export function parseUomBulkRow(rowValues = {}) {
   return {
     code: normalizeUomCode(rowValues.Code),
     name: normalizeUomName(rowValues.Name),
+    category: normalizeUomCategory(rowValues.Category),
     is_active: parseUomActive(rowValues.Active),
   }
 }
 
 export function buildUomsTemplate() {
   return buildWorkbook(
-    TEMPLATE_COLUMNS,
+    TEMPLATE_HEADERS,
     [{ header: 'Active', values: ['Yes', 'No'] }],
     {
-      sampleRow: { Code: 'NOS', Name: 'Numbers', Active: 'Yes' },
+      sampleRow: {
+        Code: 'NOS',
+        Name: 'Numbers',
+        Category: 'Count Units',
+        Active: 'Yes',
+      },
     },
   )
 }
@@ -36,11 +50,13 @@ export function buildUomsTemplate() {
 export async function importUoms(orgId, buffer) {
   const workbook = new ExcelJS.Workbook()
   await workbook.xlsx.load(buffer)
-  const rows = readTemplateRows(workbook, TEMPLATE_COLUMNS)
+  const rows = readTemplateRows(workbook, TEMPLATE_COLUMNS, {
+    extraColumns: TEMPLATE_EXTRA_COLUMNS,
+  })
 
   const { data: existing, error } = await supabaseAdmin
     .from('org_uoms')
-    .select('id, code, name, is_active')
+    .select('id, code, name, category, is_active')
     .eq('org_id', orgId)
   if (error) throw error
 
@@ -57,6 +73,7 @@ export async function importUoms(orgId, buffer) {
           .from('org_uoms')
           .update({
             name: parsed.name,
+            category: parsed.category,
             is_active: parsed.is_active,
             updated_at: new Date().toISOString(),
           })
@@ -72,9 +89,10 @@ export async function importUoms(orgId, buffer) {
             org_id: orgId,
             code: parsed.code,
             name: parsed.name,
+            category: parsed.category,
             is_active: parsed.is_active,
           })
-          .select('id, code, name, is_active')
+          .select('id, code, name, category, is_active')
           .single()
         if (insertError) {
           if (insertError.code === '23505') {

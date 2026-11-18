@@ -62,6 +62,8 @@ export default function DepartmentModal({
   onLimitExceeded,
   nested = false,
 }) {
+  // A duplicate draft has no id, so it behaves as a create.
+  const isEdit = Boolean(department?.id)
   const [form, setForm] = useState(() => emptyForm(defaultLocationId))
   const [error, setError] = useState(null)
   const [showLocationModal, setShowLocationModal] = useState(false)
@@ -82,19 +84,19 @@ export default function DepartmentModal({
   }, [department, defaultLocationId])
 
   useEffect(() => {
-    if (department || !defaultLocationId) return
+    if (isEdit || !defaultLocationId) return
     setForm((prev) => (
       prev.locationScope && prev.locationScope !== LOCATION_NONE
         ? prev
         : { ...prev, locationScope: defaultLocationId }
     ))
-  }, [department, defaultLocationId])
+  }, [isEdit, defaultLocationId])
 
   useEffect(() => {
-    if (!lockLocation || !defaultLocationId || department) return
+    if (!lockLocation || !defaultLocationId || isEdit) return
     if (form.locationScope === defaultLocationId) return
     setForm((prev) => ({ ...prev, locationScope: defaultLocationId }))
-  }, [lockLocation, defaultLocationId, department, form.locationScope])
+  }, [lockLocation, defaultLocationId, isEdit, form.locationScope])
 
   const parentOptions = departments.filter((d) => d.id !== department?.id)
   const canCreateLocation = Boolean(onCreateLocation) && !lockLocation
@@ -170,7 +172,7 @@ export default function DepartmentModal({
           <div className="company-modal__header">
             <div className="modal__header-main">
               <PageBack onClick={onClose} className="page-back--header" label="Departments" />
-              <h2 id="department-modal-title">{department ? 'Edit Department' : 'Add Department'}</h2>
+              <h2 id="department-modal-title">{isEdit ? 'Edit Department' : 'Add Department'}</h2>
             </div>
             <button type="button" className="company-modal__close" onClick={onClose} aria-label="Close">×</button>
           </div>

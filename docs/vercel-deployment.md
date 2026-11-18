@@ -151,6 +151,7 @@ Express + in-memory caches + `setInterval` schedulers are a poor fit for Vercel 
 
 - Cold starts reload `firebase-admin`, Supabase client, and wipe `signedUrlCache` / permission caches.
 - Background jobs in [`server/index.js`](../server/index.js) only start when the process calls `listen()` — they do **not** run reliably from the serverless `app.js` export alone.
+- **BullMQ Workers must not run inside Vercel Functions.** They need a long-lived Node process.
 
 **Preferred production layout**
 
@@ -158,17 +159,23 @@ Express + in-memory caches + `setInterval` schedulers are a poor fit for Vercel 
 |-------|------|
 | Client (Vite static) | Vercel |
 | API (`node index.js`) | Always-on: Railway, Render, Fly.io, or a small VM |
-| Schedulers | Same always-on process, or external cron → `POST /api/internal/run-jobs` |
+| BullMQ workers | Same always-on process (embedded from `index.js`) **or** `npm run worker` |
+| Schedulers | BullMQ repeatables on the worker, or external cron → `POST /api/internal/run-jobs` |
+| Redis | Upstash Redis (`REDIS_URL=rediss://…`) |
 
 Set client `VITE_API_URL` to the always-on API URL and redeploy the client.
 
-Optional keep-warm (only if you must stay on Vercel Functions): ping `GET /health` every 1–5 minutes from an external cron. Prefer moving the API off serverless instead.
+When `REDIS_URL` is set on an always-on host, Excel bulk imports return `202 { jobId }` and process in the background. Without Redis, imports stay synchronous (unchanged behavior). Use `?sync=1` to force sync even when Redis is configured.
 
-### Scheduler controls
+Optional keep-warm (only if you must stay on Vercel Functions): ping `GET /health` every 1–5 minutes from an external cron. Prefer moving the API off serverless instead. On Vercel-only API, you may still **enqueue** jobs if `REDIS_URL` is set, but you must run `npm run worker` on an always-on host or imports will sit queued.
+
+### Scheduler / queue controls
 
 | Env var | Default | Meaning |
 |---------|---------|---------|
-| `ENABLE_TASK_SCHEDULER` | `true` when not on Vercel (`VERCEL` unset) | Start in-process recurrence / reminder / PM timers |
+| `REDIS_URL` | unset | Upstash Redis URL for BullMQ. When unset, imports stay sync and in-process timers may run |
+| `ENABLE_BULLMQ_WORKER` | `true` on always-on when `REDIS_URL` is set; always `false` on `VERCEL=1` | Start BullMQ workers in this process |
+| `ENABLE_TASK_SCHEDULER` | `true` when not on Vercel and BullMQ workers did not start | Start in-process recurrence / reminder / PM timers |
 | `INTERNAL_JOBS_SECRET` | unset | If set, enables `POST /api/internal/run-jobs` with header `x-internal-jobs-secret` for external cron |
 
-On Vercel, leave `ENABLE_TASK_SCHEDULER=false` (automatic when `VERCEL=1`) and call the internal jobs endpoint from cron, or run schedulers on an always-on worker.
+Do **not** run inline timers, BullMQ repeatables, and external cron at the same time — jobs will double-fire. Prefer BullMQ workers on always-on; keep `/api/internal/run-jobs` as an ops fallback only.

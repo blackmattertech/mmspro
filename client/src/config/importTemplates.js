@@ -208,8 +208,8 @@ export const IMPORT_TEMPLATES = [
     description: 'Bulk create asset records with placement and custom fields.',
     moduleKey: 'equipment',
     instructions: [
-      'Download the Excel template — columns match your organization’s asset fields, plus Location, Department, Area, Reading required, and Active.',
-      'Location and Department must match the Valid values sheet. Area accepts any name: an existing area is reused, and a new name is created for that location and department and appears on the Areas tab.',
+      'Download the Excel template — columns match your organization’s asset fields, plus Location, Department, Reading required, and Active. Area appears only when that field is configured in Super Admin for your company.',
+      'Location and Department must match the Valid values sheet. When Area is included, pick a value from the Valid values sheet (or an existing area name for that location and department).',
       'Use Yes/No for Reading required and Active. Leave them blank to default Reading required to No and Active to Yes.',
       'Complete any other required columns for each asset row.',
       'Upload the .xlsx file. Each valid row creates one asset record.',

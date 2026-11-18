@@ -215,12 +215,31 @@ export function readTemplateRows(workbook, expectedColumns, { extraColumns = [],
   return rows
 }
 
+export async function countExcelDataRows(buffer) {
+  const workbook = new ExcelJS.Workbook()
+  await workbook.xlsx.load(buffer)
+  const sheet = workbook.getWorksheet(TEMPLATE_SHEET) || workbook.worksheets[0]
+  if (!sheet) return 0
+  let count = 0
+  sheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
+    if (rowNumber <= 1) return
+    let hasValue = false
+    row.eachCell({ includeEmpty: false }, () => {
+      hasValue = true
+    })
+    if (hasValue) count += 1
+  })
+  return count
+}
+
 export async function runBulkImport(buffer, columns, importRow, options = {}) {
   const workbook = new ExcelJS.Workbook()
   await workbook.xlsx.load(buffer)
   const rows = readTemplateRows(workbook, columns, options)
   const results = { created: 0, failed: 0, errors: [], preview: [] }
   const chunkSize = Math.max(1, Number(options.chunkSize) || 20)
+  const { emitImportProgress } = await import('./importProgressContext.js')
+  emitImportProgress(0, rows.length)
 
   for (let index = 0; index < rows.length; index += chunkSize) {
     const chunk = rows.slice(index, index + chunkSize)
@@ -242,6 +261,7 @@ export async function runBulkImport(buffer, columns, importRow, options = {}) {
         })
       }
     })
+    emitImportProgress(Math.min(rows.length, index + chunk.length), rows.length)
   }
 
   return results

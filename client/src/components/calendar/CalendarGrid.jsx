@@ -5,6 +5,7 @@ import { buildCalendarGrid } from '../../hooks/useCalendar'
 import { useOrg } from '../../hooks/useOrg'
 import { usePermissions } from '../../hooks/usePermissions'
 import { calendarEventPath } from '../../lib/calendarEventPath'
+import { calendarEventLabel, calendarEventTooltipLines } from '../../lib/calendarEventLabel'
 import { orgPath } from '../../config/navigation'
 import { tableRowClickProps } from '../../lib/clickableTableRow'
 import FilterableSelect from '../ui/FilterableSelect'
@@ -103,23 +104,36 @@ export function CalendarFilters({
   )
 }
 
+function EventHoverDetails({ task }) {
+  const lines = calendarEventTooltipLines(task)
+  if (!lines.length) return null
+  return (
+    <span className="cal-event-tip" role="tooltip">
+      {lines.map((line) => (
+        <span key={line} className="cal-event-tip__line">{line}</span>
+      ))}
+    </span>
+  )
+}
+
 function EventPill({ task }) {
   const colorKey = eventColorKey(task)
   const to = useEventPath(task)
-  const label = `${SOURCE_LABELS[task.source] || 'Item'}: ${task.title}`
+  const label = calendarEventLabel(task)
   const color = EVENT_SOURCE_COLORS[colorKey] || EVENT_SOURCE_COLORS.task
   const bg = EVENT_SOURCE_BG[colorKey] || EVENT_SOURCE_BG.task
   const body = (
     <>
       <span className="cal-pill__dot" style={{ background: color }} aria-hidden="true" />
-      <span className="cal-pill__title">{task.title}</span>
+      <span className="cal-pill__title">{label}</span>
+      <EventHoverDetails task={task} />
     </>
   )
   const style = { background: bg, borderColor: color }
 
   if (!to) {
     return (
-      <div className="cal-pill" style={style} title={label}>
+      <div className="cal-pill" style={style} aria-label={label}>
         {body}
       </div>
     )
@@ -128,7 +142,7 @@ function EventPill({ task }) {
     <Link
       className="cal-pill"
       style={style}
-      title={label}
+      aria-label={label}
       to={to}
       onClick={(e) => e.stopPropagation()}
     >
@@ -375,15 +389,22 @@ function DayAgendaItem({ task }) {
   const colorKey = eventColorKey(task)
   const color = EVENT_SOURCE_COLORS[colorKey] || EVENT_SOURCE_COLORS.task
   const bg = EVENT_SOURCE_BG[colorKey] || EVENT_SOURCE_BG.task
+  const label = calendarEventLabel(task)
+  const detailLines = calendarEventTooltipLines(task).slice(1)
   const body = (
     <>
       <span className="cal-day-agenda__dot" style={{ background: color }} aria-hidden="true" />
       <div className="cal-day-agenda__body">
-        <span className="cal-day-agenda__item-title">{task.title}</span>
+        <span className="cal-day-agenda__item-title">{label}</span>
         <span className="cal-day-agenda__meta">
           {SOURCE_LABELS[task.source] || 'Item'}
           {task.plant ? ` · ${task.plant}` : ''}
         </span>
+        {detailLines.length > 0 && (
+          <span className="cal-day-agenda__details">
+            {detailLines.join(' · ')}
+          </span>
+        )}
       </div>
     </>
   )
@@ -402,10 +423,12 @@ function DayAgendaItem({ task }) {
 function CalendarTableRow({ task, priorityLabels }) {
   const to = useEventPath(task)
   const navigate = useNavigate()
+  const label = calendarEventLabel(task)
+  const tip = calendarEventTooltipLines(task).join('\n')
   const clickable = to
     ? tableRowClickProps({
       onOpen: () => navigate(to),
-      label: `Open ${task.title}`,
+      label: `Open ${label}`,
       className: 'cal-table__row--clickable',
     })
     : {}
@@ -414,7 +437,7 @@ function CalendarTableRow({ task, priorityLabels }) {
     <tr {...clickable}>
       <td>{formatDisplayDate(task.date)}</td>
       <td>
-        <span className="cal-table__title" title={task.title}>{task.title}</span>
+        <span className="cal-table__title" title={tip || label}>{label}</span>
       </td>
       <td>{task.plant}</td>
       <td>{SOURCE_LABELS[task.source] || task.type || '—'}</td>

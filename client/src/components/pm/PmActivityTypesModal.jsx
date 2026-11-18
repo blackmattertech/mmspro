@@ -5,6 +5,8 @@ import SpellcheckInput from '../shared/SpellcheckInput'
 import GooToggle from '../ui/GooToggle'
 import EditIcon from '../ui/EditIcon'
 import TrashIcon from '../ui/TrashIcon'
+import DuplicateRowButton from '../ui/DuplicateRowButton'
+import { createNestedClone, prepareNestedCloneCreate } from '../../lib/nestedClone'
 import {
   getPmActivityTypes,
   createPmActivityType,
@@ -21,6 +23,7 @@ export default function PmActivityTypesModal({ onClose }) {
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [editing, setEditing] = useState(null)
+  const [clone, setClone] = useState(null)
   const [error, setError] = useState(null)
   const [saving, setSaving] = useState(false)
   const handleBackdropClick = useBackdropClose(onClose)
@@ -36,8 +39,19 @@ export default function PmActivityTypesModal({ onClose }) {
 
   const resetDraft = () => {
     setEditing(null)
+    setClone(null)
     setName('')
     setDescription('')
+  }
+
+  const startDuplicate = (row) => {
+    const next = createNestedClone('pm_activity_type', row)
+    if (!next) return
+    setError(null)
+    setEditing(null)
+    setClone(next)
+    setName(next.draft.name || '')
+    setDescription(next.draft.description || '')
   }
 
   const handleSave = async (event) => {
@@ -48,7 +62,11 @@ export default function PmActivityTypesModal({ onClose }) {
       if (editing) {
         await updatePmActivityType(editing.id, { name: name.trim(), description: description.trim() })
       } else {
-        await createPmActivityType({ name: name.trim(), description: description.trim() })
+        await createPmActivityType(prepareNestedCloneCreate(
+          'pm_activity_type',
+          clone,
+          { name: name.trim(), description: description.trim() },
+        ))
       }
       resetDraft()
       await load()
@@ -77,7 +95,7 @@ export default function PmActivityTypesModal({ onClose }) {
     setError(null)
     try {
       await deletePmActivityType(row.id)
-      if (editing?.id === row.id) resetDraft()
+      if (editing?.id === row.id || clone?.source?.id === row.id) resetDraft()
       await load()
     } catch (err) {
       setError(err.message)
@@ -115,6 +133,7 @@ export default function PmActivityTypesModal({ onClose }) {
                     className="company-btn company-btn--secondary company-btn--compact company-btn--icon"
                     onClick={() => {
                       setEditing(row)
+                      setClone(null)
                       setName(row.name)
                       setDescription(row.description || '')
                     }}
@@ -122,6 +141,11 @@ export default function PmActivityTypesModal({ onClose }) {
                   >
                     <EditIcon />
                   </button>
+                  <DuplicateRowButton
+                    onClick={() => startDuplicate(row)}
+                    disabled={saving}
+                    label={`Duplicate ${row.name}`}
+                  />
                   {!row.is_system && (
                     <button type="button" className="company-btn company-btn--secondary company-btn--compact company-btn--icon" onClick={() => handleDelete(row)} aria-label="Delete">
                       <TrashIcon />
@@ -133,7 +157,12 @@ export default function PmActivityTypesModal({ onClose }) {
           </div>
 
           <form className="pm-section" onSubmit={handleSave}>
-            <h3 className="pm-section__title">{editing ? 'Edit type' : 'Add type'}</h3>
+            <h3 className="pm-section__title">{editing ? 'Edit type' : clone ? 'Duplicate type' : 'Add type'}</h3>
+            {clone && (
+              <p className="pm-section__hint">
+                Duplicating “{clone.source.name}”. Change the name and at least one other detail before saving.
+              </p>
+            )}
             <div className="company-form__grid company-form__grid--2">
               <label className="company-form__field">
                 <span className="company-form__label">Name *</span>
@@ -146,7 +175,7 @@ export default function PmActivityTypesModal({ onClose }) {
             </div>
             {error && <p className="company-alert">{error}</p>}
             <div className="company-modal__actions">
-              {editing && (
+              {(editing || clone) && (
                 <button type="button" className="company-btn company-btn--secondary" onClick={resetDraft}>Cancel</button>
               )}
               <button type="submit" className="company-btn company-btn--primary" disabled={saving}>

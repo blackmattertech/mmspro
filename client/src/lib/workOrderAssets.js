@@ -5,7 +5,19 @@ import { resolveImageMime } from './imageFiles'
 export const WORK_ORDER_ASSETS_BUCKET = 'work-order-assets'
 const MAX_BYTES = 10 * 1024 * 1024
 
-const IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/svg+xml'])
+const IMAGE_TYPES = new Set([
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/gif',
+  'image/svg+xml',
+  'image/bmp',
+  'image/avif',
+  'image/x-icon',
+  'image/vnd.microsoft.icon',
+  'image/heic',
+  'image/heif',
+])
 
 const FILE_TYPES = new Set([
   ...IMAGE_TYPES,
@@ -19,7 +31,14 @@ const FILE_TYPES = new Set([
   'application/x-zip-compressed',
 ])
 
-const FILE_NAME_RE = /\.(jpe?g|png|gif|webp|svg|pdf|docx?|xlsx?|zip)$/i
+const IMAGE_NAME_RE = /\.(jpe?g|png|gif|webp|bmp|svg|avif|ico|heic|heif)$/i
+const FILE_NAME_RE = /\.(jpe?g|png|gif|webp|bmp|svg|avif|ico|heic|heif|pdf|docx?|xlsx?|zip)$/i
+
+function isAllowedImageUpload(file) {
+  const type = String(resolveImageMime(file) || file?.type || '').toLowerCase()
+  if (type.startsWith('image/')) return true
+  return IMAGE_NAME_RE.test(String(file?.name || ''))
+}
 
 function sanitizeFileName(name) {
   return String(name || 'file')
@@ -31,18 +50,15 @@ function sanitizeFileName(name) {
 export function validateWorkOrderFile(file, fieldType) {
   if (!file) return 'No file selected'
 
-  const allowed = fieldType === 'image' ? IMAGE_TYPES : FILE_TYPES
   const name = String(file.name || '')
-  const typeOk = allowed.has(file.type) || (
-    fieldType === 'image'
-      ? /\.(jpe?g|png|gif|webp|svg)$/i.test(name)
-      : FILE_NAME_RE.test(name)
-  )
+  const typeOk = fieldType === 'image'
+    ? isAllowedImageUpload(file)
+    : (FILE_TYPES.has(file.type) || file.type?.startsWith('image/') || FILE_NAME_RE.test(name))
   if (!typeOk) {
     if (fieldType === 'image') {
-      return 'Image must be JPEG, PNG, WebP, GIF, or SVG'
+      return 'Image must be JPEG, PNG, WebP, GIF, SVG, BMP, AVIF, or similar'
     }
-    return 'File type not supported. Use PDF, DOC, DOCX, XLS, XLSX, ZIP, JPG, PNG, or SVG'
+    return 'File type not supported. Use PDF, DOC, DOCX, XLS, XLSX, ZIP, or common image formats'
   }
 
   if (file.size > MAX_BYTES) {

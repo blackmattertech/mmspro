@@ -16,14 +16,14 @@ import {
 } from '../../lib/taskActivity'
 import EmployeeAvatar from '../company/EmployeeAvatar'
 import PersonChip from '../shared/PersonChip'
-import NavIcon from '../layout/NavIcon'
 import { formatPhoneDisplay } from '../shared/PhoneInput'
 import { CommentIcon, AttachmentIcon } from './TaskCardIcons'
 import TaskAssigneeAvatars, { resolveTaskAssignees } from './TaskAssigneeAvatars'
 import SpellcheckInput from '../shared/SpellcheckInput'
+import AttachmentsEvidence, { normalizeAttachmentItem } from '../shared/AttachmentsEvidence'
+import { isWarrantyImageDocument } from '../../config/warrantyDocuments'
 
 const ACTIVITY_PREVIEW_COUNT = 5
-const ATTACHMENT_PREVIEW_COUNT = 3
 const REFERENCE_PREVIEW_COUNT = 4
 
 function visibilityLabel(value) {
@@ -97,11 +97,6 @@ function duePillVariant(status) {
   }
 }
 
-function formatFileSize(bytes) {
-  if (!bytes) return '0 KB'
-  return `${Math.max(1, Math.round(bytes / 1024))} KB`
-}
-
 function formatActivityTime(value) {
   if (!value) return ''
   return formatDisplayDateTime(value)
@@ -157,34 +152,6 @@ function DetailMetric({ label, value, children }) {
       <div className="task-detail-metric__value">
         {children ?? (value === null || value === undefined || value === '' ? '—' : value)}
       </div>
-    </div>
-  )
-}
-
-function AttachmentFileActions({ file }) {
-  if (!file?.signed_url) return null
-
-  return (
-    <div className="task-detail-attachments__actions">
-      <a
-        href={file.signed_url}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="company-btn company-btn--secondary company-btn--compact company-btn--icon task-detail-attachments__action"
-        aria-label={`View ${file.file_name}`}
-        title="View"
-      >
-        <NavIcon name="view" />
-      </a>
-      <a
-        href={file.signed_url}
-        download={file.file_name || true}
-        className="company-btn company-btn--secondary company-btn--compact company-btn--icon task-detail-attachments__action"
-        aria-label={`Download ${file.file_name}`}
-        title="Download"
-      >
-        <NavIcon name="download" />
-      </a>
     </div>
   )
 }
@@ -320,13 +287,26 @@ export function TaskDetailContent({
   saving,
 }) {
   const [showAllActivity, setShowAllActivity] = useState(false)
-  const [showAllAttachments, setShowAllAttachments] = useState(false)
   const [showAllReferences, setShowAllReferences] = useState(false)
 
   const attachments = task?.task_attachments || []
   const references = task?.task_references || []
   const links = task?.task_links || []
   const activities = task?.task_activities || []
+  const attachmentItems = useMemo(() => (
+    attachments.map((file, index) => {
+      const normalized = normalizeAttachmentItem({
+        ...file,
+        name: file.file_name,
+        type: file.content_type,
+        size: file.file_size,
+        previewUrl: isWarrantyImageDocument(file.content_type) ? file.signed_url : null,
+        signed_url: file.signed_url,
+        url: file.signed_url,
+      }, index)
+      return normalized
+    }).filter(Boolean)
+  ), [attachments])
   const assignees = resolveTaskAssignees({
     assignees: task?.assignees,
     creator: task?.creator,
@@ -356,9 +336,6 @@ export function TaskDetailContent({
     return rows
   }, [references, links])
 
-  const visibleAttachments = showAllAttachments
-    ? attachments
-    : attachments.slice(0, ATTACHMENT_PREVIEW_COUNT)
   const visibleReferences = showAllReferences
     ? referenceRows
     : referenceRows.slice(0, REFERENCE_PREVIEW_COUNT)
@@ -516,31 +493,12 @@ export function TaskDetailContent({
             {attachments.length === 0 ? (
               <div className="company-empty task-detail-empty">No attachments.</div>
             ) : (
-              <>
-                <ul className="task-detail-attachments">
-                  {visibleAttachments.map((file) => (
-                    <li key={file.id} className="task-detail-attachments__item">
-                      <div className="task-detail-attachments__meta">
-                        <span className="task-detail-attachments__name">{file.file_name}</span>
-                        <span className="task-detail-attachments__size">
-                          {formatFileSize(file.file_size)}
-                          {file.content_type ? ` · ${file.content_type.split('/').pop()?.toUpperCase()}` : ''}
-                        </span>
-                      </div>
-                      <AttachmentFileActions file={file} />
-                    </li>
-                  ))}
-                </ul>
-                {attachments.length > ATTACHMENT_PREVIEW_COUNT && (
-                  <button
-                    type="button"
-                    className="task-detail-link task-detail-link--button"
-                    onClick={() => setShowAllAttachments((value) => !value)}
-                  >
-                    {showAllAttachments ? 'Show fewer' : 'View all attachments'}
-                  </button>
-                )}
-              </>
+              <AttachmentsEvidence
+                showHeader={false}
+                items={attachmentItems}
+                readOnly
+                badge={null}
+              />
             )}
           </DetailCard>
 

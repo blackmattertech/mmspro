@@ -99,7 +99,7 @@
 }
 
 .reports-filters__close {
-  display: none;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
   width: 44px;
@@ -247,10 +247,6 @@
 }
 
 @media (max-width: 1100px) {
-  .reports-filters__close {
-    display: inline-flex;
-  }
-
   .reports-filters__panel--rail {
     max-height: none;
     height: 100%;

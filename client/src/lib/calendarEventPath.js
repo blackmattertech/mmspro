@@ -29,7 +29,7 @@ export function calendarEventPath(orgSlug, event, canRead) {
   if (source === 'work_order') {
     const segment = firstSegment(canRead, [
       ['work_orders_manual', 'work-orders/manual'],
-      ['work_orders_received', 'work-orders/received'],
+      ['work_orders_received', 'work-orders/all'],
       ['work_orders_assigned', 'work-orders/assigned'],
       ['work_orders_scheduled', 'work-orders/scheduled'],
     ])

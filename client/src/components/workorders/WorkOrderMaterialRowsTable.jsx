@@ -103,6 +103,8 @@ export default function WorkOrderMaterialRowsTable({
                     onChange={(e) => updateRow(index, 'description', e.target.value)}
                     aria-label={`Material description ${index + 1}`}
                     maxLength={descriptionMaxLength}
+                    autoGrow={false}
+                    rows={1}
                   />
                 )}
               </td>

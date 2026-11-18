@@ -2,6 +2,7 @@ import { supabaseAdmin } from '../services/supabase.js'
 
 export const UOM_CODE_MAX = 40
 export const UOM_NAME_MAX = 100
+export const UOM_CATEGORY_MAX = 100
 
 const CODE_PATTERN = /^[\p{L}\p{N}][\p{L}\p{N} .\/+-]*$/u
 
@@ -44,6 +45,18 @@ export function normalizeUomName(value) {
     throw err
   }
   return name
+}
+
+/** Optional free-text grouping (e.g. Electrical Units). Empty → null. */
+export function normalizeUomCategory(value) {
+  const category = String(value || '').trim().replace(/\s+/g, ' ')
+  if (!category) return null
+  if (category.length > UOM_CATEGORY_MAX) {
+    const err = new Error(`UOM category must be ${UOM_CATEGORY_MAX} characters or fewer`)
+    err.status = 400
+    throw err
+  }
+  return category
 }
 
 /**

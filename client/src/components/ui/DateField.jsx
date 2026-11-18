@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { formatDisplayDate } from '../../lib/displayDate'
+import { formatLocalDateTimeValue } from '../../lib/dateConstraints'
 import './DateField.css'
 
 const TimeField = lazy(() => import('./TimeField'))
@@ -49,6 +50,23 @@ function parseValue(value) {
 
 const toDateValue = (y, m, d) => `${y}-${pad(m + 1)}-${pad(d)}`
 
+function toLocalDate(y, m, d, time = '00:00') {
+  const [hh, mm] = String(time || '00:00').split(':').map(Number)
+  return new Date(y, m, d, Number.isNaN(hh) ? 0 : hh, Number.isNaN(mm) ? 0 : mm, 0, 0)
+}
+
+function isDayAfterToday(cell, now) {
+  const day = new Date(cell.y, cell.m, cell.d)
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  return day.getTime() > today.getTime()
+}
+
+function isSameCalendarDay(a, b) {
+  return a.getFullYear() === b.getFullYear()
+    && a.getMonth() === b.getMonth()
+    && a.getDate() === b.getDate()
+}
+
 function buildCalendarCells(viewYear, viewMonth) {
   const firstWeekday = new Date(viewYear, viewMonth, 1).getDay()
   const cells = []
@@ -76,6 +94,8 @@ export default function DateField({
   onChange,
   disabled = false,
   withTime = false,
+  /** When true, days after today cannot be selected; times on today clamp to now. */
+  disableFuture = false,
   className = 'company-form__input',
   placeholder,
 }) {
@@ -87,6 +107,10 @@ export default function DateField({
   const [coords, setCoords] = useState({ top: 0, left: 0 })
   const wrapRef = useRef(null)
   const popoverRef = useRef(null)
+  const canGoNextMonth = !disableFuture || (
+    viewYear < now.getFullYear()
+    || (viewYear === now.getFullYear() && viewMonth < now.getMonth())
+  )
 
   const updatePosition = () => {
     const anchor = wrapRef.current
@@ -154,15 +178,38 @@ export default function DateField({
   }
 
   const emit = (y, m, d, time) => {
+    if (disableFuture && isDayAfterToday({ y, m, d }, new Date())) return
+
     if (withTime) {
-      onChange(`${toDateValue(y, m, d)}T${time || '00:00'}`)
-    } else {
-      onChange(toDateValue(y, m, d))
+      let nextTime = time || '00:00'
+      if (disableFuture) {
+        const candidate = toLocalDate(y, m, d, nextTime)
+        const current = new Date()
+        if (candidate.getTime() > current.getTime()) {
+          onChange(formatLocalDateTimeValue(current))
+          return
+        }
+      }
+      onChange(`${toDateValue(y, m, d)}T${nextTime}`)
+      return
     }
+
+    onChange(toDateValue(y, m, d))
   }
 
   const selectDay = (cell) => {
-    emit(cell.y, cell.m, cell.d, parsed?.time)
+    if (disableFuture && isDayAfterToday(cell, new Date())) return
+    let nextTime = parsed?.time
+    if (withTime && disableFuture) {
+      const current = new Date()
+      if (isSameCalendarDay(toLocalDate(cell.y, cell.m, cell.d), current)) {
+        const candidate = toLocalDate(cell.y, cell.m, cell.d, nextTime || '00:00')
+        if (!nextTime || candidate.getTime() > current.getTime()) {
+          nextTime = `${pad(current.getHours())}:${pad(current.getMinutes())}`
+        }
+      }
+    }
+    emit(cell.y, cell.m, cell.d, nextTime)
     if (cell.m !== viewMonth || cell.y !== viewYear) {
       setViewYear(cell.y)
       setViewMonth(cell.m)
@@ -185,6 +232,7 @@ export default function DateField({
   }
 
   const moveMonth = (delta) => {
+    if (delta > 0 && !canGoNextMonth) return
     const next = new Date(viewYear, viewMonth + delta, 1)
     setViewYear(next.getFullYear())
     setViewMonth(next.getMonth())
@@ -221,7 +269,13 @@ export default function DateField({
                 <path d="M9 2.5L4.5 7L9 11.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
             </button>
-            <button type="button" className="date-field__nav-btn" onClick={() => moveMonth(1)} aria-label="Next month">
+            <button
+              type="button"
+              className="date-field__nav-btn"
+              onClick={() => moveMonth(1)}
+              aria-label="Next month"
+              disabled={!canGoNextMonth}
+            >
               <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
                 <path d="M5 2.5L9.5 7L5 11.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
@@ -236,21 +290,27 @@ export default function DateField({
         </div>
 
         <div className="date-field__grid">
-          {cells.map((cell) => (
-            <button
-              key={`${cell.y}-${cell.m}-${cell.d}`}
-              type="button"
-              className={[
-                'date-field__day',
-                cell.inMonth ? '' : 'date-field__day--muted',
-                isToday(cell) ? 'date-field__day--today' : '',
-                isSelected(cell) ? 'date-field__day--selected' : '',
-              ].filter(Boolean).join(' ')}
-              onClick={() => selectDay(cell)}
-            >
-              {cell.d}
-            </button>
-          ))}
+          {cells.map((cell) => {
+            const dayDisabled = disableFuture && isDayAfterToday(cell, now)
+            return (
+              <button
+                key={`${cell.y}-${cell.m}-${cell.d}`}
+                type="button"
+                className={[
+                  'date-field__day',
+                  cell.inMonth ? '' : 'date-field__day--muted',
+                  dayDisabled ? 'date-field__day--disabled' : '',
+                  isToday(cell) ? 'date-field__day--today' : '',
+                  isSelected(cell) ? 'date-field__day--selected' : '',
+                ].filter(Boolean).join(' ')}
+                onClick={() => selectDay(cell)}
+                disabled={dayDisabled}
+                aria-disabled={dayDisabled || undefined}
+              >
+                {cell.d}
+              </button>
+            )
+          })}
         </div>
 
         {withTime && (

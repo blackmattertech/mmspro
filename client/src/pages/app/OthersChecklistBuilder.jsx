@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
 import { useOrg } from '../../hooks/useOrg'
 import { usePermissions } from '../../hooks/usePermissions'
@@ -15,6 +15,7 @@ import {
   getChecklistTemplate,
   createChecklistTemplate,
   updateChecklistTemplate,
+  deleteChecklistTemplate,
   createChecklistSection,
   updateChecklistSection,
   deleteChecklistSection,
@@ -29,6 +30,13 @@ import EditIcon from '../../components/ui/EditIcon'
 import TrashIcon from '../../components/ui/TrashIcon'
 import GooToggle from '../../components/ui/GooToggle'
 import SpellcheckInput from '../../components/shared/SpellcheckInput'
+import {
+  checkCloneChanged,
+  readCloneFromId,
+  toChecklistCloneComparable,
+  CHECKLIST_CLONE_COMPARE_KEYS,
+  CHECKLIST_CLONE_UNIQUE_KEYS,
+} from '../../lib/workRecordClone'
 import '../../components/company/CompanyShared.css'
 import './Others.css'
 import './OthersChecklistBuilder.css'
@@ -62,10 +70,44 @@ function parseOptions(text) {
     .filter(Boolean)
 }
 
+/**
+ * Deep-copy a template's sections/fields into plain client-side drafts (no server ids)
+ * so a duplicate can be edited before anything is saved. Fields that were never
+ * assigned to a section are kept together in a trailing "General" section.
+ */
+function cloneSectionsDraft(detail, nextId) {
+  const copyField = (field) => ({
+    id: nextId(),
+    name: field.name || '',
+    field_type: field.field_type,
+    options: Array.isArray(field.options) ? [...field.options] : [],
+    is_required: Boolean(field.is_required),
+  })
+  const sections = (detail?.sections || []).map((section) => ({
+    id: nextId(),
+    name: section.name || '',
+    fields: (section.fields || []).map(copyField),
+  }))
+  const unsectioned = detail?.unsectioned_fields || []
+  if (unsectioned.length) {
+    sections.push({ id: nextId(), name: 'General', fields: unsectioned.map(copyField) })
+  }
+  return sections
+}
+
 export default function OthersChecklistBuilder() {
   const { requestDelete, deleteModal } = useConfirmDelete()
   const { checklistId } = useParams()
   const isNew = !checklistId || checklistId === 'new'
+  const location = useLocation()
+  // Set by the Duplicate action on the checklists list (only meaningful on /new).
+  const cloneFromId = isNew ? readCloneFromId(location) : ''
+  const cloneIdRef = useRef(0)
+  const nextCloneId = useCallback(() => {
+    cloneIdRef.current += 1
+    return `draft-${cloneIdRef.current}`
+  }, [])
+  const [cloneSource, setCloneSource] = useState(null)
   const navigate = useNavigate()
   const { org } = useOrg()
   const { role } = useAuth()
@@ -85,7 +127,7 @@ export default function OthersChecklistBuilder() {
   const [form, setForm] = useState({ name: '', description: '', is_active: true, form_ids: ['pm.plan'] })
   const [sections, setSections] = useState([])
   const [selectedSectionId, setSelectedSectionId] = useState(null)
-  const [loading, setLoading] = useState(!isNew)
+  const [loading, setLoading] = useState(!isNew || Boolean(cloneFromId))
   const [saving, setSaving] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
@@ -159,6 +201,38 @@ export default function OthersChecklistBuilder() {
   }, [applyDetail])
 
   useEffect(() => {
+    if (isNew && cloneFromId) {
+      let cancelled = false
+      ;(async () => {
+        setLoading(true)
+        setError(null)
+        try {
+          const detail = await getChecklistTemplate(cloneFromId)
+          if (cancelled) return
+          const draftForm = {
+            name: detail?.name || '',
+            description: detail?.description || '',
+            is_active: detail?.is_active !== false,
+            form_ids: formIdsFromChecklist(detail),
+          }
+          // Two independent deep copies: one to edit, one frozen as the clone baseline.
+          const editableSections = cloneSectionsDraft(detail, nextCloneId)
+          setCloneSource({
+            id: detail.id,
+            ...draftForm,
+            sections: cloneSectionsDraft(detail, nextCloneId),
+          })
+          setForm(draftForm)
+          setSections(editableSections)
+          setSelectedSectionId(editableSections[0]?.id || null)
+        } catch (err) {
+          if (!cancelled) setError(err.message || 'Could not load checklist to duplicate')
+        } finally {
+          if (!cancelled) setLoading(false)
+        }
+      })()
+      return () => { cancelled = true }
+    }
     if (isNew) {
       setLoading(false)
       return undefined
@@ -177,7 +251,7 @@ export default function OthersChecklistBuilder() {
       }
     })()
     return () => { cancelled = true }
-  }, [checklistId, isNew, applyDetail])
+  }, [checklistId, isNew, applyDetail, cloneFromId, nextCloneId])
 
   const selectedSection = useMemo(
     () => sections.find((row) => row.id === selectedSectionId) || null,
@@ -223,11 +297,76 @@ export default function OthersChecklistBuilder() {
     }
   }
 
+  // Duplicate mode: sections/fields live only in local state until "Create checklist".
+  const cloneDraft = isNew && Boolean(cloneSource)
+
+  const persistCloneDraft = async () => {
+    const name = form.name.trim()
+    if (!name) throw new Error('Checklist name is required.')
+    if (!form.form_ids.length) throw new Error('Choose at least one form for this checklist.')
+
+    const description = form.description.trim()
+    const cloneCheck = checkCloneChanged({
+      source: cloneSource,
+      next: {
+        name,
+        description,
+        form_ids: form.form_ids,
+        is_active: form.is_active,
+        sections,
+      },
+      toComparable: toChecklistCloneComparable,
+      uniqueKeys: CHECKLIST_CLONE_UNIQUE_KEYS,
+      compareKeys: CHECKLIST_CLONE_COMPARE_KEYS,
+    })
+    if (!cloneCheck.ok) throw new Error(cloneCheck.message)
+
+    setSaving(true)
+    let created = null
+    try {
+      created = await createChecklistTemplate({
+        name,
+        description: description || null,
+        is_active: form.is_active,
+        form_ids: form.form_ids,
+        clone_of_id: cloneSource.id,
+      })
+      for (const section of sections) {
+        const savedSection = await createChecklistSection(created.id, { name: section.name })
+        for (const field of section.fields || []) {
+          await createChecklistField(created.id, {
+            name: field.name,
+            field_type: field.field_type,
+            options: field.options || [],
+            is_required: Boolean(field.is_required),
+            section_id: savedSection.id,
+          })
+        }
+      }
+      return created
+    } catch (err) {
+      // Do not leave a half-copied checklist behind.
+      if (created?.id) {
+        try { await deleteChecklistTemplate(created.id) } catch { /* best effort */ }
+      }
+      throw err
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const handleSaveMeta = async (event) => {
     event.preventDefault()
     if (!canManage) return
     setError(null)
     try {
+      if (cloneDraft) {
+        const created = await persistCloneDraft()
+        if (org?.slug) {
+          navigate(orgPath(org.slug, `masters/checklists/${created.id}`), { replace: true })
+        }
+        return
+      }
       await ensureSavedTemplate()
     } catch (err) {
       setError(err.message)
@@ -237,6 +376,17 @@ export default function OthersChecklistBuilder() {
   const handleAddSection = async () => {
     if (!canManage) return
     setError(null)
+    if (cloneDraft) {
+      const section = {
+        id: nextCloneId(),
+        name: sectionNameDraft.trim() || `Section ${(sections.length || 0) + 1}`,
+        fields: [],
+      }
+      setSections((prev) => [...prev, section])
+      setSelectedSectionId(section.id)
+      setSectionNameDraft('')
+      return
+    }
     setBusy(true)
     try {
       const saved = await ensureSavedTemplate()
@@ -256,6 +406,13 @@ export default function OthersChecklistBuilder() {
     const name = window.prompt('Section name', section.name)
     if (name == null) return
     const trimmed = name.trim()
+    if (cloneDraft) {
+      if (!trimmed) return
+      setSections((prev) => prev.map((row) => (
+        row.id === section.id ? { ...row, name: trimmed } : row
+      )))
+      return
+    }
     if (!trimmed || !template?.id) return
     setBusy(true)
     setError(null)
@@ -270,8 +427,15 @@ export default function OthersChecklistBuilder() {
   }
 
   const handleDeleteSection = async (section) => {
-    if (!template?.id) return
+    if (!template?.id && !cloneDraft) return
     if (!(await requestDelete({ title: 'Delete section', message: `Delete section "${section.name}" and its fields?` }))) return
+    if (cloneDraft) {
+      const remaining = sections.filter((row) => row.id !== section.id)
+      setSections(remaining)
+      if (selectedSectionId === section.id) setSelectedSectionId(remaining[0]?.id || null)
+      resetFieldDraft()
+      return
+    }
     setBusy(true)
     setError(null)
     try {
@@ -318,6 +482,36 @@ export default function OthersChecklistBuilder() {
       setError('Select or add a section first.')
       return
     }
+    if (cloneDraft) {
+      const preset = CHECKLIST_FIELD_PRESETS.find((row) => row.id === fieldDraft.presetId)
+      const fieldType = preset?.field_type || fieldDraft.field_type
+      const options = OPTION_CHECKLIST_FIELD_TYPES.has(fieldType)
+        ? (preset?.options?.length ? [...preset.options] : parseOptions(fieldDraft.optionsText))
+        : []
+      if (OPTION_CHECKLIST_FIELD_TYPES.has(fieldType) && options.length < 2) {
+        setError('Dropdown and radio fields need at least two options.')
+        return
+      }
+      setError(null)
+      const draftField = {
+        name: fieldDraft.name.trim() || 'Inspection item',
+        field_type: fieldType,
+        options,
+        is_required: Boolean(fieldDraft.is_required),
+      }
+      setSections((prev) => prev.map((section) => {
+        if (section.id !== selectedSectionId) return section
+        const fields = section.fields || []
+        return {
+          ...section,
+          fields: editingFieldId
+            ? fields.map((field) => (field.id === editingFieldId ? { ...field, ...draftField } : field))
+            : [...fields, { id: nextCloneId(), ...draftField }],
+        }
+      }))
+      resetFieldDraft()
+      return
+    }
     setBusy(true)
     setError(null)
     try {
@@ -350,13 +544,22 @@ export default function OthersChecklistBuilder() {
   }
 
   const handleDeleteField = async (fieldId) => {
-    if (!template?.id) return
-    const field = (template.fields || []).find((item) => item.id === fieldId)
+    if (!template?.id && !cloneDraft) return
+    const field = (template?.fields || []).find((item) => item.id === fieldId)
       || selectedFields?.find?.((item) => item.id === fieldId)
     if (!(await requestDelete({
       title: 'Delete field',
       message: `Delete field "${field?.name || 'this field'}"?`,
     }))) return
+    if (cloneDraft) {
+      setSections((prev) => prev.map((section) => (
+        section.id === selectedSectionId
+          ? { ...section, fields: (section.fields || []).filter((item) => item.id !== fieldId) }
+          : section
+      )))
+      if (editingFieldId === fieldId) resetFieldDraft()
+      return
+    }
     setBusy(true)
     setError(null)
     try {
@@ -371,12 +574,18 @@ export default function OthersChecklistBuilder() {
   }
 
   const moveField = async (index, direction) => {
-    if (!template?.id || !selectedSection) return
+    if ((!template?.id && !cloneDraft) || !selectedSection) return
     const next = [...selectedFields]
     const target = index + direction
     if (target < 0 || target >= next.length) return
     const [row] = next.splice(index, 1)
     next.splice(target, 0, row)
+    if (cloneDraft) {
+      setSections((prev) => prev.map((section) => (
+        section.id === selectedSectionId ? { ...section, fields: next } : section
+      )))
+      return
+    }
     setBusy(true)
     try {
       await reorderChecklistFields(template.id, next.map((field) => field.id))
@@ -406,7 +615,7 @@ export default function OthersChecklistBuilder() {
         <div className="others-manage__header-row">
           <div>
             <h1 className="company-page__title">
-              {template?.id ? 'Checklist builder' : 'New checklist'}
+              {template?.id ? 'Checklist builder' : (cloneDraft ? 'Duplicate checklist' : 'New checklist')}
             </h1>
             <p className="company-page__subtitle">
               Name the checklist, add sections, then define inspection fields and types.

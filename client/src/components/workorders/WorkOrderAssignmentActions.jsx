@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useDepartments } from '../../hooks/useDepartments'
 import { useEmployees } from '../../hooks/useEmployees'
+import { useMasterOptions } from '../../hooks/useMasterOptions'
 import { usePermissions } from '../../hooks/usePermissions'
 import { useAuth } from '../../hooks/useAuth'
 import { updateWorkOrderAssignment } from '../../lib/api-work-orders'
@@ -18,6 +19,25 @@ import FormLabel from '../shared/FormLabel'
 import EmployeeAvatar from '../company/EmployeeAvatar'
 import FilterableSelect from '../ui/FilterableSelect'
 import '../company/CompanyShared.css'
+
+function workCenterSelectOptions(rows, currentValue) {
+  const seen = new Set()
+  const options = []
+  for (const row of rows || []) {
+    const name = String(row?.name || '').trim()
+    if (!name || seen.has(name.toLowerCase())) continue
+    seen.add(name.toLowerCase())
+    options.push({
+      value: name,
+      label: row.code ? `${name} (${row.code})` : name,
+    })
+  }
+  const current = String(currentValue || '').trim()
+  if (current && !seen.has(current.toLowerCase())) {
+    options.unshift({ value: current, label: current })
+  }
+  return options
+}
 
 export default function WorkOrderAssignmentActions({ detail, onUpdated, readOnly = false }) {
   const actions = detail?.assignment_actions || {}
@@ -106,6 +126,12 @@ export default function WorkOrderAssignmentActions({ detail, onUpdated, readOnly
     departmentId: effectiveDepartmentId || undefined,
     forAssignment: true,
   })
+  // Name list from Masters (same source as resolveWorkCenterChoiceList) — not location-scoped.
+  const { options: workCenterRows, loading: workCentersLoading } = useMasterOptions('work_centers')
+  const workCenterOptions = useMemo(
+    () => workCenterSelectOptions(workCenterRows, workCenter),
+    [workCenterRows, workCenter],
+  )
 
   useEffect(() => {
     setDepartmentId(detail?.assigned_department_id || '')
@@ -316,11 +342,18 @@ export default function WorkOrderAssignmentActions({ detail, onUpdated, readOnly
           return (
             <label key={key} className={className}>
               <span className="company-form__label">Work center{requiredMark}</span>
-              <SpellcheckInput
-                className="company-form__input"
+              <FilterableSelect
+                className="company-form__input--select"
                 value={workCenter}
-                onChange={(e) => setWorkCenter(e.target.value)}
-                disabled={locked}
+                onChange={setWorkCenter}
+                options={workCenterOptions}
+                getOptionValue={(opt) => opt.value}
+                getOptionLabel={(opt) => opt.label}
+                placeholder={workCentersLoading ? 'Loading…' : 'Select work center'}
+                disabled={locked || workCentersLoading}
+                required={!viewOnly && Boolean(props.required)}
+                allowEmpty={!props.required}
+                emptyLabel="Select work center"
               />
             </label>
           )
@@ -363,6 +396,7 @@ export default function WorkOrderAssignmentActions({ detail, onUpdated, readOnly
             <label key={key} className={className}>
               <FormLabel fieldType="textarea" limit={remarksLimit}>Assignment remarks{requiredMark}</FormLabel>
               <SpellcheckInput
+                richText
                 multiline
                 className="company-form__input company-form__textarea"
                 rows={2}
@@ -428,11 +462,17 @@ export default function WorkOrderAssignmentActions({ detail, onUpdated, readOnly
             <>
               <label className="company-form__field">
                 <span className="company-form__label">Work center</span>
-                <SpellcheckInput
-                  className="company-form__input"
+                <FilterableSelect
+                  className="company-form__input--select"
                   value={workCenter}
-                  onChange={(e) => setWorkCenter(e.target.value)}
-                  disabled={saving}
+                  onChange={setWorkCenter}
+                  options={workCenterOptions}
+                  getOptionValue={(opt) => opt.value}
+                  getOptionLabel={(opt) => opt.label}
+                  placeholder={workCentersLoading ? 'Loading…' : 'Select work center'}
+                  disabled={saving || workCentersLoading}
+                  allowEmpty
+                  emptyLabel="Select work center"
                 />
               </label>
               <label className="company-form__field">
@@ -459,6 +499,7 @@ export default function WorkOrderAssignmentActions({ detail, onUpdated, readOnly
               <label className="company-form__field">
                 <FormLabel fieldType="textarea" limit={remarksLimit}>Assignment remarks</FormLabel>
                 <SpellcheckInput
+                  richText
                   multiline
                   className="company-form__input company-form__textarea"
                   rows={2}

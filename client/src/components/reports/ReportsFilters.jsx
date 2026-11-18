@@ -1,7 +1,6 @@
 import { useMemo } from 'react'
 import DateField from '../ui/DateField'
 import FilterableSelect from '../ui/FilterableSelect'
-import ColumnReorderPanel from '../shared/ColumnReorderPanel'
 import { EMPTY_REPORT_FILTERS } from '../../lib/reportColumns'
 import '../company/CompanyShared.css'
 import './ReportsFilters.css'
@@ -91,16 +90,6 @@ export default function ReportsFilters({
   onApplied,
   onClose,
   reportKind = 'unified',
-  columnDefs = [],
-  selectedColumnIds = [],
-  columnOrder,
-  onToggleColumn,
-  onResetColumns,
-  onReorderColumns,
-  onMoveColumn,
-  onSaveColumns,
-  onMakeDefaultColumns,
-  makingDefaultColumns = false,
 }) {
   const showOrderType = reportKind === 'unified'
   const showOrderDepts = reportKind === 'unified' || reportKind === 'work_request'
@@ -460,30 +449,6 @@ export default function ReportsFilters({
                   />
                 )}
               </div>
-            </section>
-          )}
-
-          {columnDefs.length > 0 && (
-            <section className="reports-filters__group">
-              <div className="reports-filters__group-heading">
-                <h3 className="reports-filters__group-title">Columns</h3>
-              </div>
-              <p className="reports-filters__hint">
-                {selectedColumnIds.length} of {columnDefs.length} selected
-              </p>
-              <ColumnReorderPanel
-                className="table-column-picker__panel--inline"
-                columnDefs={columnDefs}
-                visibleColumnIds={selectedColumnIds}
-                columnOrder={columnOrder}
-                onToggle={onToggleColumn}
-                onReset={onResetColumns}
-                onReorder={onReorderColumns}
-                onMove={onMoveColumn}
-                onSave={onSaveColumns}
-                onMakeDefault={onMakeDefaultColumns}
-                makingDefault={makingDefaultColumns}
-              />
             </section>
           )}
         </div>

@@ -3,16 +3,19 @@ import DateField from '../ui/DateField'
 import TimeField from '../ui/TimeField'
 import FilterableSelect from '../ui/FilterableSelect'
 import SpellcheckInput from '../shared/SpellcheckInput'
+import RichTextDisplay from '../shared/RichTextDisplay'
 import PersonChip from '../shared/PersonChip'
 import { useOrg } from '../../hooks/useOrg'
 import { useProfile } from '../../hooks/useProfile'
 import { getOrgAssetSignedUrl } from '../../lib/orgAssets'
 import { formatDisplayDateTime } from '../../lib/displayDate'
+import { isRichTextEmpty, plainTextFromRich } from '../../lib/richText'
 import './Pm.css'
 
 export function isFieldComplete(field, value) {
   if (field.field_type === 'checkbox') return value === true
   if (value == null) return false
+  if (field.field_type === 'multiline') return !isRichTextEmpty(value)
   return String(value).trim() !== ''
 }
 
@@ -181,6 +184,7 @@ function ChecklistAnswer({ field, value, disabled, onChange }) {
   if (field.field_type === 'multiline') {
     return (
       <SpellcheckInput
+        richText
         multiline
         className="company-form__input company-form__textarea"
         rows={2}
@@ -483,9 +487,14 @@ export default function ChecklistExecution({
                               disabled={disabled}
                               onChange={(next) => setValue(field.id, next)}
                             />
-                            {done && field.field_type !== 'checkbox' ? (
+                            {done && field.field_type === 'multiline' ? (
                               <span className="pm-checklist-table__selected">
-                                Selected: {String(answer)}
+                                Selected: <RichTextDisplay value={answer} empty="" />
+                              </span>
+                            ) : null}
+                            {done && field.field_type !== 'checkbox' && field.field_type !== 'multiline' ? (
+                              <span className="pm-checklist-table__selected">
+                                Selected: {plainTextFromRich(answer) || String(answer)}
                               </span>
                             ) : null}
                             {done && field.field_type === 'checkbox' ? (

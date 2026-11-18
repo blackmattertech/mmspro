@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useOrg } from '../../hooks/useOrg'
 import { usePermissions } from '../../hooks/usePermissions'
 import { orgPath } from '../../config/navigation'
@@ -21,8 +21,33 @@ import {
   useMasterBulkUpload,
   MasterBulkActions,
 } from '../../components/company/MasterBulkUpload'
+import {
+  checkCloneChanged,
+  readCloneFromId,
+  toWarrantyCloneComparable,
+  WARRANTY_CLONE_COMPARE_KEYS,
+  WARRANTY_CLONE_UNIQUE_KEYS,
+} from '../../lib/workRecordClone'
 import '../../components/company/CompanyShared.css'
 import '../../components/warranty/WarrantyManager.css'
+
+/**
+ * Duplicate: same mapping as edit, but serial number is never carried over (the server
+ * assigns it) and documents are not copied — each line starts with no uploads.
+ */
+function warrantyToCloneForm(record, vendors) {
+  const form = warrantyToForm(record, vendors)
+  return {
+    ...form,
+    documents: [],
+    removedDocumentIds: [],
+    items: (form.items || []).map((item) => ({
+      ...item,
+      documents: [],
+      removedDocumentIds: [],
+    })),
+  }
+}
 
 function warrantySavePayload(values) {
   return {
@@ -43,18 +68,23 @@ function warrantySavePayload(values) {
 
 export default function WarrantyFormPage() {
   const { warrantyId } = useParams()
+  const location = useLocation()
   const navigate = useNavigate()
   const { org } = useOrg()
   const isEdit = Boolean(warrantyId)
+  // Set by the Duplicate action on the warranty list.
+  const cloneFromId = isEdit ? '' : readCloneFromId(location)
+  const [cloneSource, setCloneSource] = useState(null)
+  const cloneLoadedRef = useRef(false)
   const { canCreate, canUpdate } = usePermissions()
   const canSave = isEdit
     ? canUpdate('warranty_manager')
     : canCreate('warranty_manager')
   const { items: vendors, loading: vendorsLoading, create: createVendor, saving: vendorCreateSaving } = useVendors()
-  const extras = useFormFieldValues('warranty.warranty', warrantyId)
+  const extras = useFormFieldValues('warranty.warranty', warrantyId || cloneFromId || null)
   const { layout } = useFormLayout('warranty.warranty')
 
-  const [loading, setLoading] = useState(isEdit)
+  const [loading, setLoading] = useState(isEdit || Boolean(cloneFromId))
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
   const [serialNumber, setSerialNumber] = useState(null)
@@ -66,6 +96,7 @@ export default function WarrantyFormPage() {
   const {
     bulkInputRef,
     bulkBusy,
+    bulkProgress,
     bulkError,
     bulkResult,
     bulkPreview,
@@ -108,6 +139,33 @@ export default function WarrantyFormPage() {
     return () => { cancelled = true }
   }, [isEdit, warrantyId, vendors, vendorsLoading])
 
+  useEffect(() => {
+    if (!cloneFromId || cloneLoadedRef.current || vendorsLoading) return undefined
+    let cancelled = false
+
+    async function loadSource() {
+      setLoading(true)
+      setError(null)
+      try {
+        const record = await getWarranty(cloneFromId)
+        if (cancelled) return
+        const draft = warrantyToCloneForm(record, vendors)
+        cloneLoadedRef.current = true
+        // Compare against the seeded form (not the raw row) so header-level
+        // fallbacks applied by warrantyToForm do not look like user edits.
+        setCloneSource({ id: record.id, ...draft })
+        setValues(draft)
+      } catch (err) {
+        if (!cancelled) setError(err.message)
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }
+
+    loadSource()
+    return () => { cancelled = true }
+  }, [cloneFromId, vendors, vendorsLoading])
+
   const handleSubmit = async (event) => {
     event.preventDefault()
     if (!canSave) return
@@ -116,6 +174,20 @@ export default function WarrantyFormPage() {
     if (limitError) {
       setError(limitError)
       return
+    }
+
+    if (cloneSource) {
+      const cloneCheck = checkCloneChanged({
+        source: cloneSource,
+        next: values,
+        toComparable: toWarrantyCloneComparable,
+        uniqueKeys: WARRANTY_CLONE_UNIQUE_KEYS,
+        compareKeys: WARRANTY_CLONE_COMPARE_KEYS,
+      })
+      if (!cloneCheck.ok) {
+        setError(cloneCheck.message)
+        return
+      }
     }
 
     const warrantyPayload = warrantySavePayload(values)
@@ -127,7 +199,11 @@ export default function WarrantyFormPage() {
     try {
       const saved = isEdit
         ? await updateWarranty(warrantyId, { ...warrantyPayload, vendor_id: warrantyPayload.vendor_id || native.vendor_id || null })
-        : await createWarranty({ ...warrantyPayload, vendor_id: warrantyPayload.vendor_id || native.vendor_id || null })
+        : await createWarranty({
+          ...warrantyPayload,
+          vendor_id: warrantyPayload.vendor_id || native.vendor_id || null,
+          ...(cloneSource?.id ? { clone_of_id: cloneSource.id } : {}),
+        })
 
       await syncWarrantyDocuments(saved.id, documents, removedDocumentIds)
       await extras.save(saved.id, extraValues)
@@ -177,8 +253,11 @@ export default function WarrantyFormPage() {
   }
 
   const pageTitle = useMemo(
-    () => (isEdit ? `Edit Warranty ${serialNumber ?? ''}` : 'New Warranty'),
-    [isEdit, serialNumber],
+    () => {
+      if (isEdit) return `Edit Warranty ${serialNumber ?? ''}`
+      return cloneFromId ? 'Duplicate Warranty' : 'New Warranty'
+    },
+    [isEdit, serialNumber, cloneFromId],
   )
 
   if (loading || vendorsLoading) {
@@ -201,6 +280,7 @@ export default function WarrantyFormPage() {
               <MasterBulkActions
                 onDownload={handleDownloadTemplate}
                 bulkBusy={bulkBusy}
+                    bulkProgress={bulkProgress}
                 bulkInputRef={bulkInputRef}
                 onFileChange={handleBulkFile}
                 title="Import warranties"
@@ -233,7 +313,7 @@ export default function WarrantyFormPage() {
             canSave={canSave}
             onClear={handleClear}
             onCancel={goBack}
-            onAddSimilar={!isEdit ? handleAddSimilar : null}
+            onAddSimilar={!isEdit && !cloneFromId ? handleAddSimilar : null}
             vendors={vendors}
             vendorsLoading={vendorsLoading}
             onCreateVendor={createVendor}

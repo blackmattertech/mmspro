@@ -10,6 +10,8 @@ import { invalidateReferenceCache } from '../../lib/referenceDataCache'
 import GooToggle from '../ui/GooToggle'
 import TrashIcon from '../ui/TrashIcon'
 import EditIcon from '../ui/EditIcon'
+import DuplicateRowButton from '../ui/DuplicateRowButton'
+import { createMasterClone, prepareMasterCloneCreate } from '../../lib/masterClone'
 import LocationModal from './LocationModal'
 import LocationHeadCell from './LocationHeadCell'
 import LimitExceededCard from '../shared/LimitExceededCard'
@@ -63,12 +65,14 @@ export default function LocationsTab({ canManage }) {
   const { visible: limitVisible, resource: limitResource, overflow: limitOverflow, trigger: triggerLimit, tryHandleLimitError, dismiss: dismissLimit } = useLimitExceeded()
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState(null)
+  const [clone, setClone] = useState(null)
   const [viewing, setViewing] = useState(null)
   const [togglingId, setTogglingId] = useState(null)
 
   const {
     bulkInputRef,
     bulkBusy,
+    bulkProgress,
     bulkError,
     bulkResult,
     handleDownloadTemplate,
@@ -147,20 +151,39 @@ export default function LocationsTab({ canManage }) {
       return
     }
     setEditing(null)
+    setClone(null)
     setModalOpen(true)
+  }
+
+  const openDuplicate = (loc) => {
+    if (atLocationLimit) {
+      triggerLimit('Location')
+      return
+    }
+    setEditing(null)
+    setClone(createMasterClone('location', loc))
+    setModalOpen(true)
+  }
+
+  const closeModal = () => {
+    setModalOpen(false)
+    setClone(null)
   }
 
   const openView = (loc) => setViewing(loc)
 
   const openEdit = (loc) => {
     setEditing(loc)
+    setClone(null)
     setModalOpen(true)
   }
 
   const handleSave = async (payload) => {
+    // Duplicate check runs before the try so its message surfaces in the modal.
+    const createPayload = editing ? payload : prepareMasterCloneCreate('location', clone, payload)
     try {
       if (editing) await update(editing.id, payload)
-      else await create(payload)
+      else await create(createPayload)
       await reloadLimits()
       setModalOpen(false)
     } catch (err) {
@@ -315,6 +338,7 @@ export default function LocationsTab({ canManage }) {
                 <MasterBulkActions
                   onDownload={handleDownloadTemplate}
                   bulkBusy={bulkBusy}
+                    bulkProgress={bulkProgress}
                   bulkInputRef={bulkInputRef}
                   onFileChange={handleBulkFile}
                   addLabel="+ Add Location"
@@ -473,6 +497,11 @@ export default function LocationsTab({ canManage }) {
                           >
                             <EditIcon />
                           </button>
+                          <DuplicateRowButton
+                            onClick={() => openDuplicate(loc)}
+                            disabled={saving}
+                            label={`Duplicate ${loc.name}`}
+                          />
                           <button
                             type="button"
                             className="company-btn company-btn--danger company-btn--compact company-btn--icon"
@@ -513,11 +542,11 @@ export default function LocationsTab({ canManage }) {
 
       {modalOpen && (
         <LocationModal
-          key={editing?.id ?? 'new'}
-          location={editing}
+          key={editing?.id ?? (clone ? `clone-${clone.source.id}` : 'new')}
+          location={editing || clone?.draft || null}
           employees={employees}
           saving={saving}
-          onClose={() => setModalOpen(false)}
+          onClose={closeModal}
           onSave={handleSave}
         />
       )}

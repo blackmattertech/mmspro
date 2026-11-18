@@ -1,5 +1,6 @@
 import { supabaseAdmin } from '../services/supabase.js'
 import { DEFAULT_CATEGORIES } from './taskDefaults.js'
+import { enforceNestedCloneOrThrow, loadNestedCloneSource } from './nestedClone.js'
 
 function trimOrNull(value) {
   const text = String(value ?? '').trim()
@@ -46,6 +47,12 @@ export async function listTaskCategories(orgId, { includeInactive = false } = {}
 export async function createTaskCategory(orgId, body) {
   const name = trimOrNull(body.name)
   if (!name) throw Object.assign(new Error('Category name is required'), { status: 400 })
+
+  await enforceNestedCloneOrThrow({
+    body,
+    kind: 'task_category',
+    loadSource: (id) => loadNestedCloneSource({ table: 'task_categories', orgId, id }),
+  })
 
   const { data, error } = await supabaseAdmin
     .from('task_categories')

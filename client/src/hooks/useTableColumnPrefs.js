@@ -7,6 +7,7 @@ import {
   loadTableColumnPrefs,
   resolveColumnPrefs,
   saveTableColumnPrefs,
+  applyColumnToggle,
   pinActionsLast,
   visibleIdsFromPrefs,
   withOrgVersion,
@@ -155,16 +156,11 @@ export function useTableColumnPrefs(tableId, columnDefs) {
   )
 
   const toggleColumn = useCallback((columnId) => {
-    const def = columnDefsRef.current.find((col) => col.id === columnId)
-    if (!def || def.locked) return
     setPrefs((prev) => {
-      const resolved = resolveColumnPrefs(prev, columnDefsRef.current)
-      const hidden = new Set(resolved.hidden)
-      if (hidden.has(columnId)) hidden.delete(columnId)
-      else hidden.add(columnId)
-      const visible = resolved.order.filter((id) => !hidden.has(id))
-      if (!visible.length) return prev
-      const next = { ...resolved, hidden: [...hidden] }
+      const defs = columnDefsRef.current
+      const resolved = resolveColumnPrefs(prev, defs)
+      const next = applyColumnToggle(resolved, defs, columnId)
+      if (samePrefs(resolved, next)) return prev
       writePrefs(next)
       return next
     })

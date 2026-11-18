@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useDebouncedValue } from '../../hooks/useDebouncedValue'
-import { NavLink, Navigate, Outlet, useLocation } from 'react-router-dom'
+import { NavLink, Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom'
+import StatusPhaseBar, { resolveStatusFilters } from '../shared/StatusPhaseBar'
+import { WORK_REQUEST_PHASES, WR_DISPLAY_STATUS_LABELS } from '../../lib/statusPhases'
 import { useOrg } from '../../hooks/useOrg'
 import { usePermissions } from '../../hooks/usePermissions'
 import { useTableColumnPrefs } from '../../hooks/useTableColumnPrefs'
@@ -31,6 +33,8 @@ import {
   useMasterBulkUpload,
   MasterBulkActions,
 } from '../company/MasterBulkUpload'
+import TemplatesButton from '../templates/TemplatesButton'
+import { templateNavState } from '../../lib/recordTemplates'
 import '../company/CompanyShared.css'
 import '../shared/TableFilterToolbar.css'
 import '../shared/TableColumnPicker.css'
@@ -40,6 +44,7 @@ import './WorkRequests.css'
 
 export default function WorkRequestsLayout() {
   const location = useLocation()
+  const navigate = useNavigate()
   const { org } = useOrg()
   const { canRead, canCreate, loading: permsLoading } = usePermissions()
   const [search, setSearch] = useState('')
@@ -47,7 +52,15 @@ export default function WorkRequestsLayout() {
   const [sortBy, setSortBy] = useState('newest')
   const [columnFilters, setColumnFilters] = useState({})
   const [headerSort, setHeaderSort] = useState(null)
-  const [statusFilters] = useState([])
+  const [statusSelection, setStatusSelection] = useState([])
+  const [statusCounts, setStatusCounts] = useState([])
+  const statusFilters = useMemo(
+    () => resolveStatusFilters(statusSelection, WORK_REQUEST_PHASES),
+    [statusSelection],
+  )
+  const reportStatusCounts = useCallback((rows) => {
+    setStatusCounts(Array.isArray(rows) ? rows : [])
+  }, [])
   const [tabCounts, setTabCounts] = useState(
     () => peekReferenceData('tab-counts', { module: 'work_requests' }) || {},
   )
@@ -57,6 +70,7 @@ export default function WorkRequestsLayout() {
   const {
     bulkInputRef,
     bulkBusy,
+    bulkProgress,
     bulkError,
     bulkResult,
     handleDownloadTemplate,
@@ -77,7 +91,8 @@ export default function WorkRequestsLayout() {
   const draftTab = tabs.find((tab) => tab.id === 'drafts') || null
   const activeTab = getWorkRequestActiveTab(location.pathname)
   const listFilter = activeTab && activeTab !== 'create' ? activeTab : null
-  const isCreatePage = activeTab === 'create'
+  const isEditPage = /\/work-request\/[^/]+\/edit(?:\/|$)/.test(location.pathname)
+  const isCreatePage = activeTab === 'create' || isEditPage
   const isListPage = Boolean(listFilter)
   const onIndex = /\/work-request\/?$/.test(location.pathname)
   const fallbackTab = defaultWorkRequestTab(canRead)
@@ -126,6 +141,10 @@ export default function WorkRequestsLayout() {
   }
 
   useEffect(() => {
+    setStatusSelection([])
+  }, [listFilter])
+
+  useEffect(() => {
     let cancelled = false
     const load = () => {
       getWorkRequestTabCounts()
@@ -169,10 +188,11 @@ export default function WorkRequestsLayout() {
     columnDefs: requestColumns,
     bulkReloadToken,
     reportFilterRows,
+    reportStatusCounts,
   }), [
     listFilter, debouncedSearch, sortBy, columnFilters,
     headerSort, statusFilters, visibleColumnIds, requestColumns, bulkReloadToken,
-    reportFilterRows,
+    reportFilterRows, reportStatusCounts,
   ])
 
   const exportRows = async () => {
@@ -221,12 +241,14 @@ export default function WorkRequestsLayout() {
         <div className="wo-page__intro">
           <PageBreadcrumbs />
           <h1 className="wo-page__title">
-            {isCreatePage ? 'Create Work Request' : 'Work Requests'}
+            {isEditPage ? 'Edit Draft Work Request' : isCreatePage ? 'Create Work Request' : 'Work Requests'}
           </h1>
           <p className="wo-page__subtitle">
-            {isCreatePage
-              ? 'Fill in request details and submit for maintenance'
-              : 'Create, track, and manage maintenance requests'}
+            {isEditPage
+              ? 'Update the draft, save changes, or submit to create the work request'
+              : isCreatePage
+                ? 'Fill in request details and submit for maintenance'
+                : 'Create, track, and manage maintenance requests'}
           </p>
         </div>
       </header>
@@ -238,18 +260,31 @@ export default function WorkRequestsLayout() {
             <span className="wo-command__rule" aria-hidden="true" />
             <div className="wo-command__actions">
               {canCreateRequest ? (
-                <MasterBulkActions
-                  onDownload={handleDownloadTemplate}
-                  bulkBusy={bulkBusy}
-                  bulkInputRef={bulkInputRef}
-                  onFileChange={handleBulkFile}
-                  title="Import work requests"
-                  noun="work request"
-                  bulkError={bulkError}
-                  bulkResult={bulkResult}
-                  actionLabel="Import"
-                  showToolbarDownload={false}
-                />
+                <>
+                  <TemplatesButton
+                    moduleKey="work_request"
+                    onSelect={(row) => {
+                      if (!org?.slug) return
+                      navigate(orgPath(org.slug, 'work-request/create'), {
+                        state: templateNavState(row.id),
+                        replace: true,
+                      })
+                    }}
+                  />
+                  <MasterBulkActions
+                    onDownload={handleDownloadTemplate}
+                    bulkBusy={bulkBusy}
+                    bulkProgress={bulkProgress}
+                    bulkInputRef={bulkInputRef}
+                    onFileChange={handleBulkFile}
+                    title="Import work requests"
+                    noun="work request"
+                    bulkError={bulkError}
+                    bulkResult={bulkResult}
+                    actionLabel="Import"
+                    showToolbarDownload={false}
+                  />
+                </>
               ) : null}
             </div>
           </div>
@@ -341,6 +376,7 @@ export default function WorkRequestsLayout() {
                 <MasterBulkActions
                   onDownload={handleDownloadTemplate}
                   bulkBusy={bulkBusy}
+                    bulkProgress={bulkProgress}
                   bulkInputRef={bulkInputRef}
                   onFileChange={handleBulkFile}
                   title="Import work requests"
@@ -378,6 +414,16 @@ export default function WorkRequestsLayout() {
           <Outlet />
         ) : (
           <div className="company-panel">
+            {listFilter && listFilter !== 'drafts' && (
+              <StatusPhaseBar
+                counts={statusCounts}
+                phases={WORK_REQUEST_PHASES}
+                selectedKeys={statusSelection}
+                onChange={setStatusSelection}
+                labelByKey={WR_DISPLAY_STATUS_LABELS}
+                ariaLabel="Filter work requests by status"
+              />
+            )}
             <Outlet context={outletContext} />
           </div>
         )}

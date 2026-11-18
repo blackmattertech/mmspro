@@ -39,6 +39,7 @@ import {
   saveFormSkips,
 } from '../../lib/formSkips.js'
 import { loadOrgChecklistEnabledFormIds } from '../../lib/checklistService.js'
+import { enforceOptionClonesOrThrow } from '../../lib/nestedClone.js'
 
 const router = Router()
 const formMasterListCache = createTtlCache({ ttlMs: 15_000, maxEntries: 200 })
@@ -269,6 +270,12 @@ router.put('/:formId/:fieldId', canReadAssets, requireManage, async (req, res) =
     const pack = await loadFormPack(req.userProfile.org_id, formId)
     const field = pack.fields.find((item) => item.id === fieldId)
     if (!field) return res.status(404).json({ error: 'That field is not a configurable form master' })
+    // Duplicate option → only when the client marks clones; a normal save is untouched.
+    await enforceOptionClonesOrThrow({
+      currentOptions: field.options || [],
+      nextOptions: Array.isArray(req.body?.options) ? req.body.options : [],
+      clones: req.body?.clones,
+    })
     const saved = await saveFormMasterOptions(
       req.userProfile.org_id,
       formId,

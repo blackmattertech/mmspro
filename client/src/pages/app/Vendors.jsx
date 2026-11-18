@@ -7,6 +7,8 @@ import { useDebouncedValue } from '../../hooks/useDebouncedValue'
 import VendorModal from '../../components/vendors/VendorModal'
 import EditIcon from '../../components/ui/EditIcon'
 import TrashIcon from '../../components/ui/TrashIcon'
+import DuplicateRowButton from '../../components/ui/DuplicateRowButton'
+import { createMasterClone, prepareMasterCloneCreate } from '../../lib/masterClone'
 import NavIcon from '../../components/layout/NavIcon'
 import TablePagination from '../../components/shared/TablePagination'
 import TableEmptyRow from '../../components/shared/TableEmptyRow'
@@ -111,6 +113,7 @@ export default function Vendors() {
   const listFilters = useMemo(() => compactFilters(columnFilters), [columnFilters])
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState(null)
+  const [clone, setClone] = useState(null)
   const [listTotal, setListTotal] = useState(0)
   const filterResetKey = `${debouncedSearch}|${JSON.stringify(columnFilters)}|${sortBy}`
   const pagination = useTablePagination(listTotal, { resetKey: filterResetKey })
@@ -135,6 +138,7 @@ export default function Vendors() {
   useEffect(() => {
     if (params.get('create') !== '1') return
     setEditing(null)
+    setClone(null)
     setModalOpen(true)
     const next = new URLSearchParams(params)
     next.delete('create')
@@ -164,7 +168,19 @@ export default function Vendors() {
 
   const openCreate = () => {
     setEditing(null)
+    setClone(null)
     setModalOpen(true)
+  }
+
+  const openDuplicate = (row) => {
+    setEditing(null)
+    setClone(createMasterClone('vendor', row))
+    setModalOpen(true)
+  }
+
+  const closeModal = () => {
+    setModalOpen(false)
+    setClone(null)
   }
 
   const openView = (row) => {
@@ -174,12 +190,15 @@ export default function Vendors() {
 
   const openEdit = (row) => {
     setEditing(row)
+    setClone(null)
     setModalOpen(true)
   }
 
   const handleSave = async (payload) => {
-    const saved = editing?.id ? await update(editing.id, payload) : await create(payload)
-    setModalOpen(false)
+    const saved = editing?.id
+      ? await update(editing.id, payload)
+      : await create(prepareMasterCloneCreate('vendor', clone, payload))
+    closeModal()
     return saved
   }
 
@@ -383,6 +402,13 @@ export default function Vendors() {
                                   <EditIcon />
                                 </button>
                               )}
+                              {canAdd && (
+                                <DuplicateRowButton
+                                  onClick={() => openDuplicate(row)}
+                                  disabled={saving}
+                                  label={`Duplicate ${row.name}`}
+                                />
+                              )}
                               {canRemove && (
                                 <button
                                   type="button"
@@ -411,9 +437,10 @@ export default function Vendors() {
 
       {modalOpen && (
         <VendorModal
-          vendor={editing}
+          key={editing?.id ?? (clone ? `clone-${clone.source.id}` : 'new')}
+          vendor={editing || clone?.draft || null}
           saving={saving}
-          onClose={() => setModalOpen(false)}
+          onClose={closeModal}
           onSave={handleSave}
         />
       )}

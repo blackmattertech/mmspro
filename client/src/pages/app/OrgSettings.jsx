@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react'
 import { companyFetch } from '../../lib/api'
 import { usePermissions } from '../../hooks/usePermissions'
+import CompanyResetDataPanel from '../../components/company/CompanyResetDataPanel'
 import '../../components/company/CompanyShared.css'
 
 const LEAD_PRESETS = [7, 10, 15, 30]
 
 export default function OrgSettings() {
-  const { canUpdate } = usePermissions()
+  const { canUpdate, isOrgAdmin } = usePermissions()
   const canEdit = canUpdate('settings')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -115,6 +116,8 @@ export default function OrgSettings() {
             </button>
           )}
         </form>
+
+        {isOrgAdmin && <CompanyResetDataPanel />}
       </div>
     </div>
   )

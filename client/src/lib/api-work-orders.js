@@ -62,6 +62,7 @@ function manualWorkOrderBody(payload = {}) {
     permit_expiry_at: payload.permitExpiryAt || null,
     client_request_id: payload.clientRequestId || null,
   }
+  if (payload.cloneOfId) body.clone_of_id = payload.cloneOfId
   return body
 }
 
@@ -138,13 +139,31 @@ export function deleteManualWorkOrder(workOrderId) {
   return workOrdersFetch(`/manual/${workOrderId}`, { method: 'DELETE' })
 }
 
-export async function getReceivedWorkOrders({ search, limit = 50, offset = 0, ...rest } = {}) {
-  const data = await workOrdersFetch(`/received${listQueryParams({ search, limit, offset, ...rest })}`)
+export async function getAllWorkOrders({ search, limit = 50, offset = 0, ...rest } = {}) {
+  const data = await workOrdersFetch(`/all${listQueryParams({ search, limit, offset, ...rest })}`)
   return asListArray(data)
 }
 
+/** @deprecated Use getAllWorkOrders — kept for bookmarks / older callers. */
+export async function getReceivedWorkOrders(params = {}) {
+  return getAllWorkOrders(params)
+}
+
+export function getAllWorkOrder(id) {
+  return workOrdersFetch(`/all/${id}`)
+}
+
 export function getReceivedWorkOrder(id) {
-  return workOrdersFetch(`/received/${id}`)
+  return getAllWorkOrder(id)
+}
+
+export async function getUnassignedWorkOrders({ search, limit = 50, offset = 0, ...rest } = {}) {
+  const data = await workOrdersFetch(`/unassigned${listQueryParams({ search, limit, offset, ...rest })}`)
+  return asListArray(data)
+}
+
+export function getUnassignedWorkOrder(id) {
+  return workOrdersFetch(`/unassigned/${id}`)
 }
 
 export async function getAssignedWorkOrders({ search, limit = 50, offset = 0, ...rest } = {}) {
@@ -185,7 +204,8 @@ export async function getWorkOrderDetail(id, { prefer } = {}) {
     if (typeof fn === 'function' && !loaders.includes(fn)) loaders.push(fn)
   }
   pushUnique(prefer)
-  pushUnique(getReceivedWorkOrder)
+  pushUnique(getAllWorkOrder)
+  pushUnique(getUnassignedWorkOrder)
   pushUnique(getAssignedWorkOrder)
   pushUnique(getManualWorkOrder)
   let lastError = null

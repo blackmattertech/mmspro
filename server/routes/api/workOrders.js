@@ -9,6 +9,12 @@ import {
 import { supabaseAdmin } from '../../services/supabase.js'
 import { assertChecklistForForm, snapshotChecklistTemplate } from '../../lib/checklistService.js'
 import { canViewAssociatedWorkRecord, getScopedLocationId, hasModulePermission } from '../../lib/orgPermissions.js'
+import {
+  canClaimWorkOrderAssignment,
+  canPatchDepartmentTechnicianAssignment,
+  employeeMatchesDepartmentAssignment,
+  resolveAssignmentActionFlags,
+} from '../../lib/workOrderAssignmentActions.js'
 import { getSignedUrl, getSignedUrls } from '../../lib/signedUrlCache.js'
 import {
   applyIlikeSearch,
@@ -47,6 +53,10 @@ import {
   excludeScheduledWorkOrders,
   onlyManualOriginWorkOrders,
 } from '../../lib/workOrderOrigin.js'
+import {
+  isInOrderToTabScope,
+  orderToTabOrFilter,
+} from '../../lib/workOrderTabVisibility.js'
 import { actorsFromRequest, loadFillershipRecord } from '../../lib/formFillershipRecord.js'
 import { buildAssetHierarchy, ensureUserSelfCreatorAssigned } from '../../lib/workRequestService.js'
 import {
@@ -57,18 +67,21 @@ import {
   DAILY_LOG_ACTIVE_STATUSES,
   DAILY_LOG_READONLY_STATUSES,
 } from '../../lib/workOrderDailyLogService.js'
-import {
-  buildWorkOrdersTemplate,
-  bulkImportWorkOrders,
-} from '../../lib/workOrderBulkService.js'
-import { attachFailedFileToResult } from '../../lib/importErrorWorkbook.js'
+import { buildWorkOrdersTemplate } from '../../lib/workOrderBulkService.js'
 import { bufferFromBase64Upload, excelFilePayload } from '../../lib/excelTemplate.js'
+import { enqueueOrRunBulkImport, sendBulkImportResponse, wantsSyncImport } from '../../lib/bulkImportEnqueue.js'
 import {
   clipToLimit,
   clipTrimmedToLimit,
   getTextFieldLimitsMap,
   limitKeyFromField,
 } from '../../lib/textFieldLimits.js'
+import {
+  enforceWorkRecordClone,
+  MANUAL_WO_CLONE_COMPARE_KEYS,
+  MANUAL_WO_CLONE_UNIQUE_KEYS,
+  toManualWorkOrderCloneComparable,
+} from '../../lib/workRecordClone.js'
 
 const router = Router()
 
@@ -388,29 +401,8 @@ async function listReceivedWorkOrderIds(orgId, employee) {
   return [...ids]
 }
 
-function isOutgoingWorkOrder(row, profileId) {
-  if (!profileId || !row) return false
-  return row.created_by === profileId || row.requester_id === profileId
-}
-
-function assignedOutgoingOrFilter(profileId) {
-  return `created_by.eq.${profileId},requester_id.eq.${profileId}`
-}
-
-function receivedWorkOrderOrFilter(employee, assigneeIds, { isLocationHead } = {}) {
-  const parts = []
-  if (employee.department_id) {
-    if (employee.location_id) {
-      parts.push(`and(assigned_department_id.eq.${employee.department_id},assigned_location_id.eq.${employee.location_id})`)
-    } else {
-      parts.push(`assigned_department_id.eq.${employee.department_id}`)
-    }
-  }
-  if (isLocationHead && employee.location_id) {
-    parts.push(`assigned_location_id.eq.${employee.location_id}`)
-  }
-  if (assigneeIds.length) parts.push(`id.in.(${assigneeIds.join(',')})`)
-  return parts.join(',')
+function receivedWorkOrderOrFilter(employee, _assigneeIds, { isLocationHead } = {}) {
+  return orderToTabOrFilter(employee, { isLocationHead })
 }
 
 async function receivedVisibilityArgs(orgId, profile, employee, session) {
@@ -428,21 +420,19 @@ async function receivedVisibilityArgs(orgId, profile, employee, session) {
   }
 }
 
-/** Legacy fallback when patch 72 is not applied yet — still loads all matching IDs. */
+/** Legacy fallback when list RPC is missing — Order To (+ location head) All scope. */
 async function listVisibleReceivedWorkOrderIds(orgId, profile, employee, session, { status = 'all' } = {}) {
   if (!employee) return []
 
-  const profileId = profile?.id || profile
-  const myAssigneeIds = await listReceivedWorkOrderIds(orgId, employee)
   const isLocationHead = employee.location_id
     ? await isLocationHeadFor(orgId, employee, employee.location_id, session)
     : false
-  const orFilter = receivedWorkOrderOrFilter(employee, myAssigneeIds, { isLocationHead })
+  const orFilter = receivedWorkOrderOrFilter(employee, [], { isLocationHead })
   if (!orFilter) return []
 
   let query = supabaseAdmin
     .from('manual_work_orders')
-    .select('id, created_by, requester_id, source_type')
+    .select('id')
     .eq('org_id', orgId)
     .or(orFilter)
   query = excludeScheduledWorkOrders(query)
@@ -450,24 +440,32 @@ async function listVisibleReceivedWorkOrderIds(orgId, profile, employee, session
 
   const { data, error } = await query
   if (error) throw error
-
-  const candidates = (data || []).filter((row) => !isOutgoingWorkOrder(row, profileId))
-  const poolIds = await listUnclaimedWorkRequestPoolIds(orgId)
-  return [...new Set([...candidates.map((row) => row.id), ...poolIds])]
+  return (data || []).map((row) => row.id)
 }
 
-async function pageVisibleReceivedWorkOrderIds(orgId, profile, employee, session, {
+async function listUnassignedOrderToWorkOrderIds(orgId, profile, employee, session, { status = 'all' } = {}) {
+  const allIds = await listVisibleReceivedWorkOrderIds(orgId, profile, employee, session, { status })
+  if (!allIds.length) return []
+  const { data: assignees, error } = await supabaseAdmin
+    .from('manual_work_order_assignees')
+    .select('work_order_id')
+    .eq('org_id', orgId)
+    .in('work_order_id', allIds)
+  if (error) throw error
+  const taken = new Set((assignees || []).map((row) => row.work_order_id))
+  return allIds.filter((id) => !taken.has(id))
+}
+
+function buildOrderToListRpcArgs(orgId, profile, employee, session, {
   status = 'all',
   limit = 50,
   offset = 0,
   search = null,
   controls = null,
 } = {}) {
-  if (!employee) return { ids: [], total: 0 }
-
   const listControls = controls || {}
-  const args = {
-    ...(await receivedVisibilityArgs(orgId, profile, employee, session)),
+  return receivedVisibilityArgs(orgId, profile, employee, session).then((visibility) => ({
+    ...visibility,
     p_status: status || 'all',
     p_search: search ? String(search).trim() || null : null,
     p_limit: limit,
@@ -479,12 +477,40 @@ async function pageVisibleReceivedWorkOrderIds(orgId, profile, employee, session
     p_sort: listControls.sort || null,
     p_sort_dir: listControls.sortDir || 'desc',
     p_filters: listControls.filters || {},
-  }
+  }))
+}
+
+async function pageVisibleReceivedWorkOrderIds(orgId, profile, employee, session, options = {}) {
+  if (!employee) return { ids: [], total: 0 }
+  const { limit = 50, offset = 0, status = 'all' } = options
+  const args = await buildOrderToListRpcArgs(orgId, profile, employee, session, options)
 
   const { data, error } = await supabaseAdmin.rpc('list_visible_received_work_order_ids', args)
   if (error) {
     if (!isMissingRpcError(error)) throw error
     const allIds = await listVisibleReceivedWorkOrderIds(orgId, profile, employee, session, { status })
+    return {
+      ids: allIds.slice(offset, offset + limit),
+      total: allIds.length,
+    }
+  }
+
+  const rows = data || []
+  return {
+    ids: rows.map((row) => row.id).filter(Boolean),
+    total: Number(rows[0]?.total_count) || 0,
+  }
+}
+
+async function pageUnassignedOrderToWorkOrderIds(orgId, profile, employee, session, options = {}) {
+  if (!employee) return { ids: [], total: 0 }
+  const { limit = 50, offset = 0, status = 'all' } = options
+  const args = await buildOrderToListRpcArgs(orgId, profile, employee, session, options)
+
+  const { data, error } = await supabaseAdmin.rpc('list_unassigned_order_to_work_order_ids', args)
+  if (error) {
+    if (!isMissingRpcError(error)) throw error
+    const allIds = await listUnassignedOrderToWorkOrderIds(orgId, profile, employee, session, { status })
     return {
       ids: allIds.slice(offset, offset + limit),
       total: allIds.length,
@@ -504,6 +530,7 @@ async function countVisibleReceivedWorkOrders(orgId, profile, employee, session,
   const args = {
     ...(await receivedVisibilityArgs(orgId, profile, employee, session)),
     p_status: status || 'all',
+    p_exclude_statuses: ['draft'],
   }
 
   const { data, error } = await supabaseAdmin.rpc('count_visible_received_work_orders', args)
@@ -516,50 +543,33 @@ async function countVisibleReceivedWorkOrders(orgId, profile, employee, session,
   return Number(data) || 0
 }
 
-async function isUnclaimedWorkRequestPool(orgId, workOrder) {
-  if (!workOrder?.work_request_id) return false
-  if (!['assigned', 'accepted'].includes(workOrder.status)) return false
-  const { count, error } = await supabaseAdmin
-    .from('manual_work_order_assignees')
-    .select('work_order_id', { count: 'exact', head: true })
-    .eq('org_id', orgId)
-    .eq('work_order_id', workOrder.id)
-  if (error) throw error
-  return (count || 0) === 0
+async function countUnassignedOrderToWorkOrders(orgId, profile, employee, session, { status = 'all' } = {}) {
+  if (!employee) return 0
+
+  const args = {
+    ...(await receivedVisibilityArgs(orgId, profile, employee, session)),
+    p_status: status || 'all',
+    p_exclude_statuses: ['draft'],
+  }
+
+  const { data, error } = await supabaseAdmin.rpc('count_unassigned_order_to_work_orders', args)
+  if (error) {
+    if (!isMissingRpcError(error)) throw error
+    const ids = await listUnassignedOrderToWorkOrderIds(orgId, profile, employee, session, { status })
+    return ids.length
+  }
+
+  return Number(data) || 0
 }
 
-async function listUnclaimedWorkRequestPoolIds(orgId) {
-  const { data: orders, error } = await supabaseAdmin
-    .from('manual_work_orders')
-    .select('id')
-    .eq('org_id', orgId)
-    .not('work_request_id', 'is', null)
-    .in('status', ['assigned', 'accepted'])
-  if (error) throw error
-  const ids = (orders || []).map((row) => row.id)
-  if (!ids.length) return []
-  const { data: assignees, error: assigneeError } = await supabaseAdmin
-    .from('manual_work_order_assignees')
-    .select('work_order_id')
-    .eq('org_id', orgId)
-    .in('work_order_id', ids)
-  if (assigneeError) throw assigneeError
-  const taken = new Set((assignees || []).map((row) => row.work_order_id))
-  return ids.filter((id) => !taken.has(id))
-}
-
-async function employeeCanViewReceivedWorkOrder(orgId, employee, workOrder, profile, session) {
+/** All / Unassigned detail gate: Order To department or location head. */
+async function employeeCanViewReceivedWorkOrder(orgId, employee, workOrder, _profile, session) {
   if (!employee || !workOrder) return false
   if (isScheduledWorkOrder(workOrder)) return false
-  if (await isUnclaimedWorkRequestPool(orgId, workOrder)) return true
-  if (isOutgoingWorkOrder(workOrder, profile?.id || profile)) return false
-
-  const myAssigneeIds = await listReceivedWorkOrderIds(orgId, employee)
-  if (myAssigneeIds.includes(workOrder.id)) return true
-
-  if (employeeMatchesDepartmentAssignment(employee, workOrder)) return true
-  if (!workOrder.assigned_location_id) return false
-  return isLocationHeadFor(orgId, employee, workOrder.assigned_location_id, session)
+  const isLocationHead = workOrder.assigned_location_id
+    ? await isLocationHeadFor(orgId, employee, workOrder.assigned_location_id, session)
+    : false
+  return isInOrderToTabScope(employee, workOrder, { isLocationHead })
 }
 
 async function validateAssignedDepartment(orgId, departmentId, locationId, { fallbackLocationId = null } = {}) {
@@ -696,19 +706,6 @@ async function attachDepartmentAssignments(rows) {
   })
 }
 
-function employeeMatchesDepartmentAssignment(employee, workOrder) {
-  if (!employee?.department_id || !workOrder?.assigned_department_id) return false
-  if (employee.department_id !== workOrder.assigned_department_id) return false
-  if (
-    workOrder.assigned_location_id
-    && employee.location_id
-    && workOrder.assigned_location_id !== employee.location_id
-  ) {
-    return false
-  }
-  return true
-}
-
 async function isLocationHeadFor(orgId, employee, locationId, session = null) {
   if (!employee?.id || !locationId) return false
 
@@ -740,71 +737,16 @@ async function actorsForWorkOrder(req, workOrderId) {
 
 async function buildAssignmentActions(orgId, detail, employee, session = null) {
   if (!detail || !employee) {
-    return {
-      can_reassign_as_location_head: false,
-      can_assign_department_technicians: false,
-      can_claim_self: false,
-      employee_id: employee?.id || null,
-    }
-  }
-
-  const canApprove = session?.is_org_admin
-    || session?.is_department_head
-    || hasModulePermission(session, 'work_orders_approve', 'update')
-    || hasModulePermission(session, 'work_orders_received', 'update')
-    || hasModulePermission(session, 'work_orders', 'update')
-    || hasModulePermission(session, 'work_request_approve', 'update')
-
-  if (!canApprove) {
-    const unclaimedPool = Boolean(
-      detail.work_request_id
-      && !(detail.assignees || []).length
-      && ['assigned', 'accepted'].includes(detail.status),
-    )
-    return {
-      can_reassign_as_location_head: false,
-      can_assign_department_technicians: false,
-      can_claim_self: unclaimedPool,
-      employee_id: employee.id,
-    }
+    return resolveAssignmentActionFlags({ employee, detail, session })
   }
 
   const isLH = await isLocationHeadFor(orgId, employee, detail.assigned_location_id, session)
-  const inDeptPool = employeeMatchesDepartmentAssignment(employee, detail)
-  const locationPool = Boolean(
-    detail.assigned_location_id
-    && detail.assigned_location_id === employee.location_id,
-  )
-  const alreadyAssignee = (detail.assignees || []).some((a) => a.id === employee.id)
-  const unclaimedPool = Boolean(
-    detail.work_request_id
-    && !(detail.assignees || []).length
-    && ['assigned', 'accepted'].includes(detail.status),
-  )
-
-  const canAssignDepartmentTechnicians = Boolean(
-    (inDeptPool || unclaimedPool)
-    && (
-      session?.is_org_admin
-      || session?.is_department_head
-      || hasModulePermission(session, 'work_orders_approve', 'update')
-      || hasModulePermission(session, 'work_request_approve', 'update')
-    ),
-  )
-
-  return {
-    can_reassign_as_location_head: Boolean(isLH && locationPool),
-    can_assign_department_technicians: canAssignDepartmentTechnicians,
-    can_claim_self: Boolean(
-      !alreadyAssignee
-      && (
-        unclaimedPool
-        || inDeptPool
-        || (locationPool && !detail.assigned_department_id)
-      ),
-    ),
-    employee_id: employee.id,
-  }
+  return resolveAssignmentActionFlags({
+    employee,
+    detail,
+    session,
+    isLocationHead: isLH,
+  })
 }
 
 async function validateAssignedEmployees(orgId, rawIds, { locationId = null, departmentId = null } = {}) {
@@ -1014,6 +956,7 @@ const WO_TEXT_FILTERS = {
   priority: 'priority',
   work_center: 'work_center',
   location: (query, value) => query.eq('assigned_location_id', value),
+  pm_plan_id: (query, value) => query.eq('pm_plan_id', value),
   created_from: (query, value) => query.gte('created_at', value),
   created_to: (query, value) => query.lte('created_at', `${value}T23:59:59.999`),
 }
@@ -1319,25 +1262,41 @@ async function listReceivedWorkOrders(orgId, profile, {
   return listEnvelope(ordered, { total, limit, offset, status_counts })
 }
 
-function isAssignedByMeRow(wo, assignees, myEmployeeId) {
-  const hasDepartment = Boolean(wo.assigned_department_id)
-  const hasLocation = Boolean(wo.assigned_location_id)
-  if (!assignees.length && !hasDepartment && !hasLocation) return false
-  if (hasDepartment || hasLocation) return true
-  if (!myEmployeeId) return true
-  return assignees.some((a) => a.id !== myEmployeeId)
+async function tallyStatusesForWorkOrderIds(orgId, ids, { search = null } = {}) {
+  if (!ids.length) return []
+  let query = supabaseAdmin
+    .from('manual_work_orders')
+    .select('status')
+    .eq('org_id', orgId)
+    .in('id', ids)
+    .neq('status', 'draft')
+  query = excludeScheduledWorkOrders(query)
+  query = applyIlikeSearch(query, search, ['wo_number', 'short_description', 'problem_description'])
+  const { data, error } = await query
+  if (error) throw error
+  const map = new Map()
+  for (const row of data || []) {
+    const key = String(row.status || '')
+    if (!key) continue
+    map.set(key, (map.get(key) || 0) + 1)
+  }
+  return [...map.entries()].map(([status, count]) => ({ status, count }))
 }
 
-/** Lightweight count for badge — no summaries, creators, or signed URLs. */
+/** Assigned to Me badge — WOs where I am an assignee. */
 async function countAssignedByMe(orgId, profile, { status = 'all' } = {}) {
-  const profileId = profile?.id || profile
+  const employee = await getEmployeeByProfile(orgId, profile?.id || profile, { email: profile?.email })
+  if (!employee) return 0
+  const myIds = await listReceivedWorkOrderIds(orgId, employee)
+  if (!myIds.length) return 0
   let query = supabaseAdmin
     .from('manual_work_orders')
     .select('id', { count: 'exact', head: true })
     .eq('org_id', orgId)
-    .or(assignedOutgoingOrFilter(profileId))
+    .in('id', myIds)
   query = excludeScheduledWorkOrders(query)
   query = applyWorkOrderStatusFilter(query, status)
+  query = query.neq('status', 'draft')
   const { count, error } = await query
   if (error) throw error
   return count || 0
@@ -1350,16 +1309,19 @@ async function listAssignedByMeWorkOrders(orgId, profile, {
   search = null,
   controls = null,
 } = {}) {
-  const profileId = profile?.id || profile
-  const searchColumns = ['wo_number', 'short_description', 'problem_description']
+  const employee = await getEmployeeByProfile(orgId, profile?.id || profile, { email: profile?.email })
+  if (!employee) return listEnvelope([], { total: 0, limit, offset, status_counts: [] })
 
+  const myIds = await listReceivedWorkOrderIds(orgId, employee)
+  if (!myIds.length) return listEnvelope([], { total: 0, limit, offset, status_counts: [] })
+
+  const searchColumns = ['wo_number', 'short_description', 'problem_description']
   let query = supabaseAdmin
     .from('manual_work_orders')
     .select(WO_LIST_SELECT, { count: 'exact' })
     .eq('org_id', orgId)
-    .or(assignedOutgoingOrFilter(profileId))
+    .in('id', myIds)
   query = excludeScheduledWorkOrders(query)
-
   query = applyIlikeSearch(query, search, searchColumns)
   query = applyWorkOrderStatusFilter(query, status)
   query = applyWorkOrderListControls(query, controls, (sorted) => sorted.order('created_at', { ascending: false }))
@@ -1367,21 +1329,114 @@ async function listAssignedByMeWorkOrders(orgId, profile, {
 
   const [{ data: workOrders, error, count }, status_counts] = await Promise.all([
     query,
-    countStatusesViaRpc(
-      'count_manual_work_orders_by_status',
-      {
-        p_org_id: orgId,
-        p_location_id: null,
-        p_profile_id: profileId || null,
-        p_source_type: null,
-        p_search: search ? String(search).trim() || null : null,
-      },
-      () => [],
-    ),
+    tallyStatusesForWorkOrderIds(orgId, myIds, { search }),
   ])
   if (error) throw error
   const rows = await buildWorkOrderListResponse(orgId, workOrders || [])
   return listEnvelope(rows, { total: count || 0, limit, offset, status_counts })
+}
+
+async function listUnassignedWorkOrders(orgId, profile, {
+  status = 'all',
+  limit = 50,
+  offset = 0,
+  search = null,
+  session = null,
+  controls = null,
+} = {}) {
+  const employee = await getEmployeeByProfile(orgId, profile?.id, { email: profile?.email })
+  if (!employee) return listEnvelope([], { total: 0, limit, offset, status_counts: [] })
+
+  const [{ ids, total }, status_counts] = await Promise.all([
+    pageUnassignedOrderToWorkOrderIds(
+      orgId,
+      profile,
+      employee,
+      session,
+      { status, limit, offset, search, controls },
+    ),
+    listUnassignedOrderToWorkOrderIds(orgId, profile, employee, session, { status: 'all' })
+      .then((allUnassigned) => tallyStatusesForWorkOrderIds(orgId, allUnassigned, { search })),
+  ])
+  if (!ids.length) return listEnvelope([], { total, limit, offset, status_counts })
+
+  const { data, error } = await supabaseAdmin
+    .from('manual_work_orders')
+    .select(WO_LIST_SELECT)
+    .eq('org_id', orgId)
+    .in('id', ids)
+  if (error) throw error
+  const rows = await buildWorkOrderListResponse(orgId, data || [])
+  const byId = new Map(rows.map((row) => [row.id, row]))
+  const ordered = ids.map((id) => byId.get(id)).filter(Boolean)
+  return listEnvelope(ordered, { total, limit, offset, status_counts })
+}
+
+async function listManualCreatedAssignedWorkOrders(orgId, profile, {
+  status = 'all',
+  limit = 50,
+  offset = 0,
+  search = null,
+  controls = null,
+} = {}) {
+  const profileId = profile?.id || profile
+  const employee = await getEmployeeByProfile(orgId, profileId, { email: profile?.email })
+  if (!employee) return listEnvelope([], { total: 0, limit, offset, status_counts: [] })
+
+  const myIds = await listReceivedWorkOrderIds(orgId, employee)
+  if (!myIds.length) return listEnvelope([], { total: 0, limit, offset, status_counts: [] })
+
+  const searchColumns = ['wo_number', 'short_description', 'problem_description']
+  let query = supabaseAdmin
+    .from('manual_work_orders')
+    .select(WO_LIST_SELECT, { count: 'exact' })
+    .eq('org_id', orgId)
+    .eq('created_by', profileId)
+    .in('id', myIds)
+  query = onlyManualOriginWorkOrders(query)
+  query = applyIlikeSearch(query, search, searchColumns)
+  query = applyWorkOrderStatusFilter(query, status)
+  query = applyWorkOrderListControls(query, controls, (sorted) => sorted.order('created_at', { ascending: false }))
+  query = query.range(offset, offset + limit - 1)
+
+  const [{ data, error, count }, status_counts] = await Promise.all([
+    query,
+    (async () => {
+      let statusQuery = supabaseAdmin
+        .from('manual_work_orders')
+        .select('id')
+        .eq('org_id', orgId)
+        .eq('created_by', profileId)
+        .in('id', myIds)
+        .neq('status', 'draft')
+      statusQuery = onlyManualOriginWorkOrders(statusQuery)
+      const { data: rows, error: statusError } = await statusQuery
+      if (statusError) throw statusError
+      return tallyStatusesForWorkOrderIds(orgId, (rows || []).map((row) => row.id), { search })
+    })(),
+  ])
+  if (error) throw error
+  const rows = await buildWorkOrderListResponse(orgId, data || [])
+  return listEnvelope(rows, { total: count || 0, limit, offset, status_counts })
+}
+
+async function countManualCreatedAssigned(orgId, profile) {
+  const profileId = profile?.id || profile
+  const employee = await getEmployeeByProfile(orgId, profileId, { email: profile?.email })
+  if (!employee) return 0
+  const myIds = await listReceivedWorkOrderIds(orgId, employee)
+  if (!myIds.length) return 0
+  let query = supabaseAdmin
+    .from('manual_work_orders')
+    .select('id', { count: 'exact', head: true })
+    .eq('org_id', orgId)
+    .eq('created_by', profileId)
+    .in('id', myIds)
+    .neq('status', 'draft')
+  query = onlyManualOriginWorkOrders(query)
+  const { count, error } = await query
+  if (error) throw error
+  return count || 0
 }
 
 async function enrichWorkOrderRow(orgId, row, assigneesByWo = null) {
@@ -1747,12 +1802,16 @@ router.get('/manual/template', canCreateWorkOrders, async (req, res) => {
 router.post('/manual/import', canCreateWorkOrders, async (req, res) => {
   try {
     const buffer = bufferFromBase64Upload(req.body?.data)
-    const result = await bulkImportWorkOrders(
-      req.userProfile.org_id,
-      req.userProfile.id,
+    const outcome = await enqueueOrRunBulkImport({
+      orgId: req.userProfile.org_id,
+      userId: req.userProfile.id,
+      templateKey: 'work_orders',
+      fileName: 'work-orders.xlsx',
       buffer,
-    )
-    res.json(await attachFailedFileToResult(result, buffer, 'work-orders-import-failed-rows.xlsx'))
+      context: { profileId: req.userProfile.id },
+      forceSync: wantsSyncImport(req),
+    })
+    sendBulkImportResponse(res, outcome)
   } catch (err) {
     res.status(err.status || 400).json({ error: err.message })
   }
@@ -1950,6 +2009,26 @@ router.post('/manual', canCreateWorkOrders, async (req, res) => {
       : (requested === 'created' || requested === 'assigned' ? 'assigned' : 'draft')
     const values = req.body?.values && typeof req.body.values === 'object' ? req.body.values : {}
 
+    // Duplicate → prefilled create: block saves that are unchanged copies of the source.
+    await enforceWorkRecordClone({
+      body: req.body,
+      loadSource: async (sourceId) => {
+        const { data: source, error: sourceError } = await supabaseAdmin
+          .from('manual_work_orders')
+          .select('*')
+          .eq('org_id', orgId)
+          .eq('id', sourceId)
+          .maybeSingle()
+        if (sourceError) throw sourceError
+        if (!source) return null
+        const sourceAssignees = (await loadAssigneesForWorkOrders(orgId, [sourceId], { withPhotos: false })).get(sourceId) || []
+        return { ...source, assigned_employee_ids: sourceAssignees.map((row) => row.id) }
+      },
+      toComparable: toManualWorkOrderCloneComparable,
+      uniqueKeys: MANUAL_WO_CLONE_UNIQUE_KEYS,
+      compareKeys: MANUAL_WO_CLONE_COMPARE_KEYS,
+    })
+
     const [fields, settingsMap] = await Promise.all([
       loadOrgWorkOrderFields(orgId),
       loadFieldSettings(orgId),
@@ -2116,13 +2195,10 @@ router.patch('/manual/:id/assignment', canApproveWorkOrders, assertOrgOwnership(
       workOrder.assigned_location_id,
       req.orgPermissions,
     )
-    const inDeptPool = employeeMatchesDepartmentAssignment(employee, workOrder)
     const atLocation = Boolean(
       workOrder.assigned_location_id
       && workOrder.assigned_location_id === employee.location_id,
     )
-    const locationOnlyPool = atLocation && !workOrder.assigned_department_id
-    const unclaimedPool = await isUnclaimedWorkRequestPool(orgId, workOrder)
 
     const respondWithDetail = async () => {
       const detail = await loadWorkOrderDetail(orgId, workOrderId)
@@ -2135,14 +2211,12 @@ router.patch('/manual/:id/assignment', canApproveWorkOrders, assertOrgOwnership(
       return res.json({ ...detail, assignment_actions })
     }
 
-    // Self-claim from the open work-request pool, or a department / location pool
+    // Self-claim: Order To department members, or location-only pool (no Order To dept).
     if (claimSelf) {
-      if (!unclaimedPool && !inDeptPool && !locationOnlyPool) {
+      if (!canClaimWorkOrderAssignment(employee, workOrder)) {
         return res.status(403).json({ error: 'You can only claim work orders assigned to your location or department' })
       }
-      const current = unclaimedPool
-        ? []
-        : ((await loadAssigneesForWorkOrders(orgId, [workOrderId])).get(workOrderId) || [])
+      const current = (await loadAssigneesForWorkOrders(orgId, [workOrderId])).get(workOrderId) || []
       const ids = [...new Set([...current.map((a) => a.id), employee.id])]
       const promoted = await applyTechnicianAssignment(orgId, profileId, workOrder, ids)
 
@@ -2229,16 +2303,12 @@ router.patch('/manual/:id/assignment', canApproveWorkOrders, assertOrgOwnership(
       return respondWithDetail()
     }
 
-    // Order To department head, or someone in that department who can approve,
-    // assigns technicians inside the department. Department and location stay put.
-    const canAssignDepartmentTechnicians = Boolean(
-      (inDeptPool || unclaimedPool)
-      && (
-        req.orgPermissions?.is_org_admin
-        || req.orgPermissions?.is_department_head
-        || hasModulePermission(req.orgPermissions, 'work_orders_approve', 'update')
-        || hasModulePermission(req.orgPermissions, 'work_request_approve', 'update')
-      ),
+    // Order To department head / approver (in that department), or org admin.
+    // Department and location stay put. Order From heads cannot assign here.
+    const canAssignDepartmentTechnicians = canPatchDepartmentTechnicianAssignment(
+      employee,
+      workOrder,
+      req.orgPermissions,
     )
     if (canAssignDepartmentTechnicians) {
       if (!hasEmployeeIds || req.body.assigned_employee_ids.length === 0) {
@@ -2820,12 +2890,6 @@ export async function countWorkOrderTabs(orgId, profile, orgPermissions, { emplo
   const scopedLocationId = getScopedLocationId(orgPermissions)
   const employee = knownEmployee || await getEmployeeByProfile(orgId, profile.id, { email: profile.email })
 
-  let manualCountQuery = supabaseAdmin
-    .from('manual_work_orders')
-    .select('id', { count: 'exact', head: true })
-    .eq('org_id', orgId)
-    .neq('status', 'draft')
-  manualCountQuery = onlyManualOriginWorkOrders(manualCountQuery)
   let scheduledCountQuery = supabaseAdmin
     .from('manual_work_orders')
     .select('id', { count: 'exact', head: true })
@@ -2833,33 +2897,28 @@ export async function countWorkOrderTabs(orgId, profile, orgPermissions, { emplo
     .eq('source_type', SCHEDULED_WO_SOURCE)
     .neq('status', 'draft')
   if (scopedLocationId) {
-    manualCountQuery = manualCountQuery.eq('assigned_location_id', scopedLocationId)
     scheduledCountQuery = scheduledCountQuery.eq('assigned_location_id', scopedLocationId)
   }
 
-  const [receivedResult, assigned, scheduledResult, manualResult] = await Promise.all([
+  const [allResult, unassignedResult, assigned, scheduledResult, manualResult] = await Promise.all([
     employee
-      ? countVisibleReceivedWorkOrders(
-        orgId,
-        profile,
-        employee,
-        orgPermissions,
-        { status: 'all' },
-      )
+      ? countVisibleReceivedWorkOrders(orgId, profile, employee, orgPermissions, { status: 'all' })
+      : 0,
+    employee
+      ? countUnassignedOrderToWorkOrders(orgId, profile, employee, orgPermissions, { status: 'all' })
       : 0,
     countAssignedByMe(orgId, profile),
     scheduledCountQuery.then(({ count, error }) => {
       if (error) throw error
       return count || 0
     }),
-    manualCountQuery.then(({ count, error }) => {
-      if (error) throw error
-      return count || 0
-    }),
+    countManualCreatedAssigned(orgId, profile),
   ])
 
   return {
-    received: receivedResult,
+    all: allResult,
+    received: allResult,
+    unassigned: unassignedResult,
     assigned,
     scheduled: scheduledResult,
     manual: manualResult,
@@ -2882,46 +2941,20 @@ router.get('/counts', canReadWorkOrders, async (req, res) => {
 router.get('/manual/orders', canReadWorkOrders, async (req, res) => {
   const orgId = req.userProfile.org_id
   const { limit, offset } = parsePagination(req.query)
-  const scopedLocationId = getScopedLocationId(req.orgPermissions)
   try {
-    const searchColumns = ['wo_number', 'short_description', 'problem_description']
     const controls = parseListControls(req.query)
     controls.sortBy = req.query.sort_by || ''
-    const pageLimit = controls.exportCsv ? 5000 : limit
-    const pageOffset = controls.exportCsv ? 0 : offset
-    let query = supabaseAdmin
-      .from('manual_work_orders')
-      .select(WO_LIST_SELECT, { count: 'exact' })
-      .eq('org_id', orgId)
-    query = onlyManualOriginWorkOrders(query)
-
-    if (scopedLocationId) query = query.eq('assigned_location_id', scopedLocationId)
-    query = applyIlikeSearch(query, req.query.search, searchColumns)
-    query = applyWorkOrderListControls(query, controls, (sorted) => sorted.order('created_at', { ascending: false }))
-    query = query.range(pageOffset, pageOffset + pageLimit - 1)
-
-    const [{ data, error, count }, status_counts] = await Promise.all([
-      query,
-      countStatusesViaRpc(
-        'count_manual_work_orders_by_status',
-        {
-          p_org_id: orgId,
-          p_location_id: scopedLocationId || null,
-          p_profile_id: null,
-          p_source_type: MANUAL_WO_SOURCE,
-          p_search: req.query.search ? String(req.query.search).trim() || null : null,
-        },
-        () => [],
-      ),
-    ])
-
-    if (error) return res.status(500).json({ error: error.message })
-    const rows = await buildWorkOrderListResponse(orgId, data || [])
+    const rows = await listManualCreatedAssignedWorkOrders(orgId, req.userProfile, {
+      limit: controls.exportCsv ? 5000 : limit,
+      offset: controls.exportCsv ? 0 : offset,
+      search: req.query.search,
+      controls,
+    })
     if (controls.exportCsv) {
-      sendCsv(res, 'work-orders.csv', rows, await withCatalogColumns(orgId, WO_CSV_COLUMNS))
+      sendCsv(res, 'work-orders.csv', rows.items || [], await withCatalogColumns(orgId, WO_CSV_COLUMNS))
       return
     }
-    res.json(listEnvelope(rows, { total: count || 0, limit, offset, status_counts }))
+    res.json(rows)
   } catch (err) {
     res.status(500).json({ error: err.message })
   }
@@ -3031,7 +3064,7 @@ router.get('/scheduled/:id', requireWorkRecordView, async (req, res) => {
   }
 })
 
-router.get('/received', canReadWorkOrders, async (req, res) => {
+async function handleAllWorkOrdersList(req, res) {
   const orgId = req.userProfile.org_id
   const { limit, offset } = parsePagination(req.query)
   try {
@@ -3052,9 +3085,35 @@ router.get('/received', canReadWorkOrders, async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message })
   }
+}
+
+router.get('/all', canReadWorkOrders, handleAllWorkOrdersList)
+router.get('/received', canReadWorkOrders, handleAllWorkOrdersList)
+
+router.get('/unassigned', canReadWorkOrders, async (req, res) => {
+  const orgId = req.userProfile.org_id
+  const { limit, offset } = parsePagination(req.query)
+  try {
+    const controls = parseListControls(req.query)
+    controls.sortBy = req.query.sort_by || ''
+    const rows = await listUnassignedWorkOrders(orgId, req.userProfile, {
+      limit: controls.exportCsv ? 5000 : limit,
+      offset: controls.exportCsv ? 0 : offset,
+      search: req.query.search,
+      session: req.orgPermissions,
+      controls,
+    })
+    if (controls.exportCsv) {
+      sendCsv(res, 'work-orders.csv', rows.items || [], await withCatalogColumns(orgId, WO_CSV_COLUMNS))
+      return
+    }
+    res.json(rows)
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
 })
 
-router.get('/received/:id', requireWorkRecordView, async (req, res) => {
+async function handleOrderToWorkOrderDetail(req, res) {
   const orgId = req.userProfile.org_id
   const profileId = req.userProfile.id
   try {
@@ -3062,7 +3121,7 @@ router.get('/received/:id', requireWorkRecordView, async (req, res) => {
     const detail = await loadWorkOrderDetail(orgId, req.params.id)
     if (!detail) return res.status(404).json({ error: 'Not found' })
 
-    const inReceivedFlow = Boolean(
+    const inOrderToFlow = Boolean(
       employee
       && !isScheduledWorkOrder(detail)
       && await employeeCanViewReceivedWorkOrder(
@@ -3073,7 +3132,7 @@ router.get('/received/:id', requireWorkRecordView, async (req, res) => {
         req.orgPermissions,
       ),
     )
-    if (!inReceivedFlow) {
+    if (!inOrderToFlow) {
       res.json(detail)
       return
     }
@@ -3084,14 +3143,14 @@ router.get('/received/:id', requireWorkRecordView, async (req, res) => {
       employee,
       req.orgPermissions,
     )
-
-    res.json({
-      ...detail,
-      assignment_actions,
-    })
+    res.json({ ...detail, assignment_actions })
   } catch (err) {
     res.status(500).json({ error: err.message })
   }
-})
+}
+
+router.get('/all/:id', requireWorkRecordView, handleOrderToWorkOrderDetail)
+router.get('/unassigned/:id', requireWorkRecordView, handleOrderToWorkOrderDetail)
+router.get('/received/:id', requireWorkRecordView, handleOrderToWorkOrderDetail)
 
 export default router

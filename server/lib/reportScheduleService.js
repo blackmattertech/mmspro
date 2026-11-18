@@ -11,6 +11,7 @@ import {
 } from './reportConstants.js'
 import { getCustomReport } from './reportCustomService.js'
 import { normalizeEmailBodyText } from './reportEmail.js'
+import { enforceNestedCloneOrThrow } from './nestedClone.js'
 
 const ALL_SCHEDULES_LIMIT = 200
 
@@ -163,6 +164,11 @@ export async function listAllReportSchedules(orgId) {
 
 export async function createReportSchedule(orgId, reportKey, body, now = new Date()) {
   const payload = normalizeScheduleInput(body, reportKey)
+  await enforceNestedCloneOrThrow({
+    body,
+    kind: 'report_schedule',
+    loadSource: (id) => getReportSchedule(orgId, id),
+  })
   const customFields = await resolveCustomReportFields(orgId, reportKey, body.custom_report_id)
   const row = {
     org_id: orgId,

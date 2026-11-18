@@ -16,6 +16,8 @@ import { invalidateReferenceCache } from '../../lib/referenceDataCache'
 import GooToggle from '../ui/GooToggle'
 import TrashIcon from '../ui/TrashIcon'
 import EditIcon from '../ui/EditIcon'
+import DuplicateRowButton from '../ui/DuplicateRowButton'
+import { createMasterClone, prepareMasterCloneCreate } from '../../lib/masterClone'
 import WorkCenterModal from './WorkCenterModal'
 import {
   useMasterBulkUpload,
@@ -88,6 +90,7 @@ export default function WorkCentersTab({ canManage }) {
 
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState(null)
+  const [clone, setClone] = useState(null)
   const [viewing, setViewing] = useState(null)
   const [togglingId, setTogglingId] = useState(null)
   const [selected, setSelected] = useState(() => new Set())
@@ -98,6 +101,7 @@ export default function WorkCentersTab({ canManage }) {
   const {
     bulkInputRef,
     bulkBusy,
+    bulkProgress,
     bulkError,
     bulkResult,
     handleDownloadTemplate,
@@ -161,20 +165,33 @@ export default function WorkCentersTab({ canManage }) {
 
   const openCreate = () => {
     setEditing(null)
+    setClone(null)
     setModalOpen(true)
+  }
+
+  const openDuplicate = (row) => {
+    setEditing(null)
+    setClone(createMasterClone('work_center', row))
+    setModalOpen(true)
+  }
+
+  const closeModal = () => {
+    setModalOpen(false)
+    setClone(null)
   }
 
   const openView = (row) => setViewing(row)
 
   const openEdit = (row) => {
     setEditing(row)
+    setClone(null)
     setModalOpen(true)
   }
 
   const handleSave = async (payload) => {
     if (editing) await update(editing.id, payload)
-    else await create(payload)
-    setModalOpen(false)
+    else await create(prepareMasterCloneCreate('work_center', clone, payload))
+    closeModal()
   }
 
   const handleDelete = async (row) => {
@@ -298,6 +315,7 @@ export default function WorkCentersTab({ canManage }) {
               <MasterBulkActions
                 onDownload={handleDownloadTemplate}
                 bulkBusy={bulkBusy}
+                    bulkProgress={bulkProgress}
                 bulkInputRef={bulkInputRef}
                 onFileChange={handleBulkFile}
                 addLabel="+ Add Work Center"
@@ -437,6 +455,11 @@ export default function WorkCentersTab({ canManage }) {
                           >
                             <EditIcon />
                           </button>
+                          <DuplicateRowButton
+                            onClick={() => openDuplicate(row)}
+                            disabled={saving}
+                            label={`Duplicate ${row.name}`}
+                          />
                           <button
                             type="button"
                             className="company-btn company-btn--danger company-btn--compact company-btn--icon"
@@ -477,11 +500,12 @@ export default function WorkCentersTab({ canManage }) {
 
       {modalOpen && (
         <WorkCenterModal
-          workCenter={editing}
+          key={editing?.id ?? (clone ? `clone-${clone.source.id}` : 'new')}
+          workCenter={editing || clone?.draft || null}
           saving={saving}
           defaultLocationId={scopedLocationId || ''}
           lockLocation={Boolean(scopedLocationId)}
-          onClose={() => setModalOpen(false)}
+          onClose={closeModal}
           onSave={handleSave}
         />
       )}

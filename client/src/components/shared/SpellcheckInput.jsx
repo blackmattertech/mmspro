@@ -2,6 +2,7 @@ import { forwardRef, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useSpellcheckSuggestions } from '../../hooks/useSpellcheckSuggestions'
 import { preloadSpellchecker, replaceMisspelledWord } from '../../lib/spellcheck'
 import { characterLimitError } from '../../lib/textFieldLimits'
+import RichTextEditor from './RichTextEditor'
 import './SpellcheckInput.css'
 
 export { characterLimitError } from '../../lib/textFieldLimits'
@@ -20,7 +21,7 @@ function assignRef(ref, node) {
   else ref.current = node
 }
 
-const SpellcheckInput = forwardRef(function SpellcheckInput({
+const PlainSpellcheckInput = forwardRef(function PlainSpellcheckInput({
   multiline = false,
   variant,
   className = '',
@@ -37,6 +38,7 @@ const SpellcheckInput = forwardRef(function SpellcheckInput({
   hardMax = false,
   autoGrow,
   rows,
+  placeholder,
   ...props
 }, ref) {
   const [armed, setArmed] = useState(false)
@@ -128,7 +130,7 @@ const SpellcheckInput = forwardRef(function SpellcheckInput({
           disabled={disabled}
           readOnly={readOnly}
           maxLength={hasLimit && hardMax ? limit : undefined}
-          placeholder={props.placeholder}
+          placeholder={placeholder}
           spellCheck={false}
           aria-invalid={exceeded || undefined}
           onChange={onChange}
@@ -170,6 +172,49 @@ const SpellcheckInput = forwardRef(function SpellcheckInput({
       )}
     </div>
   )
+})
+
+function shouldUseRichText(props) {
+  // Rich text is opt-in (modules forms). Masters and other plain fields stay as input/textarea.
+  return props.richText === true
+}
+
+const SpellcheckInput = forwardRef(function SpellcheckInput(props, ref) {
+  if (shouldUseRichText(props)) {
+    const {
+      className = '',
+      wrapperClassName = '',
+      value,
+      onChange,
+      disabled = false,
+      readOnly = false,
+      name,
+      maxLength,
+      showCount,
+      placeholder,
+      id,
+      multiline = false,
+    } = props
+    const compact = !multiline && !/\bcompany-form__textarea\b/.test(className)
+    return (
+      <RichTextEditor
+        id={id}
+        className={[className, wrapperClassName].filter(Boolean).join(' ')}
+        value={value}
+        onChange={onChange}
+        disabled={disabled}
+        readOnly={readOnly}
+        name={name}
+        maxLength={maxLength}
+        showCount={showCount}
+        placeholder={placeholder}
+        compact={compact}
+      />
+    )
+  }
+
+  const { richText: _richText, ...plainProps } = props
+  return <PlainSpellcheckInput ref={ref} {...plainProps} />
 })
 
 export default SpellcheckInput

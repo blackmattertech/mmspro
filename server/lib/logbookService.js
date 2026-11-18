@@ -3,16 +3,28 @@ import { applyIlikeSearch, listEnvelope } from './listQuery.js'
 import { hierarchyParentFields } from './equipmentService.js'
 import { loadTimelineActors } from './timelineActors.js'
 import { formatDisplayDate, formatDisplayDateTime } from './displayDate.js'
+import {
+  annotateMeterCycle,
+  cumulativeFromOffset,
+  resetCycleOffset,
+  roundMeter,
+} from '../../shared/meterCycle.js'
 
 const LIST_CAP = 5000
 
 const EQUIPMENT_LIST_SELECT = `
   id, name, code, location_id, department_id, area_id, is_active, reading_required,
-  last_meter_reading, last_meter_reading_at, last_meter_logged_by, last_meter_logged_by_name,
+  last_meter_reading, last_meter_reading_at, meter_reading_offset,
+  last_meter_logged_by, last_meter_logged_by_name,
   last_meter_logged_by_department, last_meter_logged_by_designation,
   org_locations(id, name),
   departments(id, name),
   areas(id, name)
+`
+
+const READING_COLUMNS = `
+  id, equipment_id, reading, reading_at, is_reset, cycle_offset,
+  logged_by, logged_by_name, logged_by_department, logged_by_designation, created_at
 `
 
 function httpError(message, status = 400) {
@@ -38,6 +50,10 @@ function mapEquipment(row) {
     area_id: row.area_id,
     is_active: row.is_active !== false,
     reading_required: row.reading_required === true,
+    meter_reading_offset: asReading(row.meter_reading_offset) ?? 0,
+    cumulative_reading: row.last_meter_reading == null
+      ? null
+      : cumulativeFromOffset(row.meter_reading_offset, row.last_meter_reading),
     location_name: row.org_locations?.name || null,
     department_name: row.departments?.name || null,
     area_name: row.areas?.name || null,
@@ -149,10 +165,15 @@ async function withLoggerPeople(orgId, rows) {
 }
 
 function mapReading(row) {
+  const reading = asReading(row.reading)
+  const cycleOffset = asReading(row.cycle_offset) ?? 0
   return {
     id: row.id,
     equipment_id: row.equipment_id,
-    reading: asReading(row.reading),
+    reading,
+    is_reset: row.is_reset === true,
+    cycle_offset: cycleOffset,
+    cumulative_reading: cumulativeFromOffset(cycleOffset, reading ?? 0),
     reading_at: row.reading_at,
     logged_by: row.logged_by || null,
     logged_by_name: row.logged_by_name || 'Unknown user',
@@ -233,10 +254,12 @@ async function readerContext(orgId, userId) {
 async function refreshLatest(orgId, equipmentId) {
   const { data, error } = await supabaseAdmin
     .from('equipment_meter_readings')
-    .select('reading, reading_at, logged_by, logged_by_name, logged_by_department, logged_by_designation')
+    .select('reading, reading_at, logged_by, logged_by_name, logged_by_department, logged_by_designation, cycle_offset, is_reset')
     .eq('org_id', orgId)
     .eq('equipment_id', equipmentId)
     .order('reading_at', { ascending: false })
+    .order('created_at', { ascending: false })
+    .order('id', { ascending: false })
     .limit(1)
     .maybeSingle()
   if (error) throw error
@@ -246,6 +269,7 @@ async function refreshLatest(orgId, equipmentId) {
     .update({
       last_meter_reading: data?.reading ?? null,
       last_meter_reading_at: data?.reading_at ?? null,
+      meter_reading_offset: data ? (asReading(data.cycle_offset) ?? 0) : 0,
       last_meter_logged_by: data?.logged_by ?? null,
       last_meter_logged_by_name: data?.logged_by_name ?? null,
       last_meter_logged_by_department: data?.logged_by_department ?? null,
@@ -255,6 +279,55 @@ async function refreshLatest(orgId, equipmentId) {
     .eq('org_id', orgId)
   if (updateError) throw updateError
   return data || null
+}
+
+const OFFSET_UPDATE_CHUNK = 500
+
+/** One asset's meter log is replayed after a delete so later cycles keep the right total. */
+async function recomputeMeterCycle(orgId, equipmentId) {
+  const { data, error } = await supabaseAdmin
+    .from('equipment_meter_readings')
+    .select('id, reading, reading_at, created_at, is_reset, cycle_offset')
+    .eq('org_id', orgId)
+    .eq('equipment_id', equipmentId)
+    .order('reading_at', { ascending: true })
+    .order('created_at', { ascending: true })
+    .order('id', { ascending: true })
+  if (error) throw error
+
+  const stored = data || []
+  const storedOffset = new Map(stored.map((row) => [row.id, roundMeter(row.cycle_offset) ?? 0]))
+  const annotated = annotateMeterCycle(stored)
+  const groups = new Map()
+  for (const row of annotated.readings) {
+    const previous = storedOffset.get(row.id) ?? 0
+    if (previous === row.cycle_offset) continue
+    const key = String(row.cycle_offset)
+    const ids = groups.get(key) || []
+    ids.push(row.id)
+    groups.set(key, ids)
+  }
+
+  const writes = []
+  for (const [offset, ids] of groups) {
+    for (let index = 0; index < ids.length; index += OFFSET_UPDATE_CHUNK) {
+      const slice = ids.slice(index, index + OFFSET_UPDATE_CHUNK)
+      writes.push(
+        supabaseAdmin
+          .from('equipment_meter_readings')
+          .update({ cycle_offset: Number(offset) })
+          .eq('org_id', orgId)
+          .in('id', slice),
+      )
+    }
+  }
+  if (writes.length) {
+    const results = await Promise.all(writes)
+    for (const result of results) {
+      if (result.error) throw result.error
+    }
+  }
+  return annotated
 }
 
 function activeFilters(filters) {
@@ -285,6 +358,7 @@ function columnText(row, columnId) {
   if (columnId === 'name') return row?.name || ''
   if (columnId === 'code') return row?.code || ''
   if (columnId === 'last_reading') return readingText(row?.last_reading)
+  if (columnId === 'cumulative_reading') return readingText(row?.cumulative_reading)
   if (columnId === 'date') return dateText(row?.last_reading_at)
   if (columnId === 'time') return timeText(row?.last_reading_at)
   if (columnId === 'logged_by') {
@@ -343,6 +417,7 @@ function matchesColumnFilters(row, filters) {
 
 function sortValue(row, columnId) {
   if (columnId === 'last_reading') return row.last_reading
+  if (columnId === 'cumulative_reading') return row.cumulative_reading
   if (columnId === 'date' || columnId === 'time') {
     if (!row.last_reading_at) return null
     const time = new Date(row.last_reading_at).getTime()
@@ -444,6 +519,8 @@ export async function getLatestMeterReading(orgId, equipmentId) {
     location_id: equipment.location_id,
     reading_required: equipment.reading_required,
     reading: equipment.last_reading,
+    cumulative_reading: equipment.cumulative_reading,
+    meter_reading_offset: equipment.meter_reading_offset,
     reading_at: equipment.last_reading_at,
     logged_by: equipment.logged_by,
     logged_by_name: equipment.logged_by_name,
@@ -459,10 +536,12 @@ export async function listMeterReadings(orgId, equipmentId) {
   const equipment = mapEquipment(row)
   const { data, error } = await supabaseAdmin
     .from('equipment_meter_readings')
-    .select('id, equipment_id, reading, reading_at, logged_by, logged_by_name, logged_by_department, logged_by_designation, created_at')
+    .select(READING_COLUMNS)
     .eq('org_id', orgId)
     .eq('equipment_id', equipmentId)
     .order('reading_at', { ascending: false })
+    .order('created_at', { ascending: false })
+    .order('id', { ascending: false })
     .limit(200)
   if (error) throw error
   const [withEquipment, ...readings] = await withLoggerPeople(orgId, [
@@ -490,19 +569,62 @@ export async function addMeterReading(orgId, equipmentId, body, userId, { readin
   if (Number.isNaN(stamp.getTime())) throw httpError('Meter reading time is invalid.')
   const readingAtIso = stamp.toISOString()
   const reader = await readerContext(orgId, userId)
+  const cycleOffset = asReading(equipment.meter_reading_offset) ?? 0
   const { data, error } = await supabaseAdmin
     .from('equipment_meter_readings')
     .insert({
       org_id: orgId,
       equipment_id: equipmentId,
       reading,
+      is_reset: false,
+      cycle_offset: cycleOffset,
       reading_at: readingAtIso,
       logged_by: userId || null,
       logged_by_name: reader.name,
       logged_by_department: reader.department,
       logged_by_designation: reader.designation,
     })
-    .select('id, equipment_id, reading, reading_at, logged_by, logged_by_name, logged_by_department, logged_by_designation, created_at')
+    .select(READING_COLUMNS)
+    .single()
+  if (error) throw error
+
+  await refreshLatest(orgId, equipmentId)
+  const [saved] = await withLoggerPeople(orgId, [mapReading(data)])
+  return saved
+}
+
+export async function resetMeterReading(orgId, equipmentId, userId) {
+  const equipment = await getEquipmentRow(orgId, equipmentId)
+  if (equipment.reading_required !== true) {
+    throw httpError('Turn on Reading required for this asset before resetting the meter.')
+  }
+
+  const lastReading = asReading(equipment.last_meter_reading)
+  const nextOffset = resetCycleOffset(equipment.meter_reading_offset, lastReading)
+  if (lastReading == null) {
+    throw httpError('Log a meter reading before resetting this meter.')
+  }
+  if (nextOffset == null) {
+    throw httpError('This meter is already at 0.')
+  }
+
+  const reader = await readerContext(orgId, userId)
+  const readingAtIso = new Date().toISOString()
+  const { data, error } = await supabaseAdmin
+    .from('equipment_meter_readings')
+    .insert({
+      org_id: orgId,
+      equipment_id: equipmentId,
+      reading: 0,
+      is_reset: true,
+      cycle_offset: nextOffset,
+      reading_at: readingAtIso,
+      logged_by: userId || null,
+      logged_by_name: reader.name,
+      logged_by_department: reader.department,
+      logged_by_designation: reader.designation,
+    })
+    .select(READING_COLUMNS)
     .single()
   if (error) throw error
 
@@ -531,6 +653,7 @@ export async function deleteMeterReading(orgId, readingId, { assertEquipment } =
     .eq('id', readingId)
   if (error) throw error
 
+  await recomputeMeterCycle(orgId, existing.equipment_id)
   await refreshLatest(orgId, existing.equipment_id)
   return { id: readingId, equipment_id: existing.equipment_id, deleted: true }
 }

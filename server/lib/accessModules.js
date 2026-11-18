@@ -35,11 +35,11 @@ export const ACCESS_MODULE_GROUPS = [
     id: 'work_orders',
     label: 'Work Orders',
     modules: [
-      { key: 'work_orders_received', label: 'Received', actions: ['create', 'read', 'update', 'delete'] },
+      { key: 'work_orders_received', label: 'All / Unassigned', actions: ['create', 'read', 'update', 'delete'] },
       { key: 'work_orders_approve', label: 'Approving Work Order', actions: ['update'] },
-      { key: 'work_orders_assigned', label: 'Assigned', actions: ['create', 'read', 'update', 'delete'] },
+      { key: 'work_orders_assigned', label: 'Assigned to Me', actions: ['create', 'read', 'update', 'delete'] },
       { key: 'work_orders_scheduled', label: 'PM Schedule', actions: ['create', 'read', 'update', 'delete'] },
-      { key: 'work_orders_manual', label: 'Manual', actions: ['create', 'read', 'update', 'delete'] },
+      { key: 'work_orders_manual', label: 'Manual Workorders', actions: ['create', 'read', 'update', 'delete'] },
     ],
   },
   {
@@ -54,6 +54,13 @@ export const ACCESS_MODULE_GROUPS = [
     label: 'Warranty Manager',
     modules: [
       { key: 'warranty_manager', label: 'Warranty Manager', actions: ['create', 'read', 'update', 'delete'] },
+    ],
+  },
+  {
+    id: 'support_tickets',
+    label: 'Support & Tickets',
+    modules: [
+      { key: 'support_tickets', label: 'Support & Tickets', actions: ['create', 'read', 'update'] },
     ],
   },
   {

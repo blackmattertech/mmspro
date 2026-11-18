@@ -4,8 +4,12 @@ import {
   DetailGrid,
   DetailField,
 } from '../shared/DetailView'
-import { warrantyDocumentLabelText } from '../../config/warrantyDocuments'
+import {
+  isWarrantyImageDocument,
+  warrantyDocumentLabelText,
+} from '../../config/warrantyDocuments'
 import { formatCalendarDate } from '../../lib/displayDate'
+import AttachmentsEvidence, { normalizeAttachmentItem } from '../shared/AttachmentsEvidence'
 
 function formatDate(value) {
   if (!value) return '—'
@@ -24,40 +28,36 @@ function formatNotifyDays(value) {
 
 function DocumentCards({ documents }) {
   if (!documents?.length) return null
+
+  const items = documents.map((doc, index) => {
+    const normalized = normalizeAttachmentItem({
+      ...doc,
+      name: doc.file_name,
+      type: doc.content_type,
+      size: doc.file_size,
+      previewUrl: isWarrantyImageDocument(doc.content_type) ? doc.signed_url : null,
+      signed_url: doc.signed_url,
+      url: doc.signed_url,
+    }, index)
+    if (!normalized) return null
+    return {
+      ...normalized,
+      raw: doc,
+    }
+  }).filter(Boolean)
+
   return (
-    <div className="warranty-detail-documents">
-      {documents.map((doc) => {
-        const isImage = String(doc.content_type || '').startsWith('image/')
-        return (
-          <div key={doc.id} className="warranty-detail-documents__card">
-            {isImage && doc.signed_url ? (
-              <a href={doc.signed_url} target="_blank" rel="noopener noreferrer">
-                <img src={doc.signed_url} alt="" className="warranty-detail-documents__image" />
-              </a>
-            ) : (
-              <div className="warranty-detail-documents__file">
-                {(doc.file_name || '').split('.').pop()?.toUpperCase() || 'FILE'}
-              </div>
-            )}
-            <div className="warranty-detail-documents__meta">
-              <div className="warranty-detail-documents__label">
-                {warrantyDocumentLabelText(doc.label)}
-              </div>
-              {doc.signed_url && (
-                <a
-                  href={doc.signed_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="warranty-detail-documents__name"
-                >
-                  View file
-                </a>
-              )}
-            </div>
-          </div>
-        )
-      })}
-    </div>
+    <AttachmentsEvidence
+      showHeader={false}
+      items={items}
+      readOnly
+      badge={null}
+      renderDocumentExtra={(item) => (
+        <span className="warranty-detail-documents__label">
+          {warrantyDocumentLabelText(item.raw?.label)}
+        </span>
+      )}
+    />
   )
 }
 
@@ -130,7 +130,7 @@ export function WarrantyDetailContent({ record }) {
             </DetailGrid>
             {itemDocuments.length > 0 && (
               <div className="warranty-detail-item__documents">
-                <h5 className="warranty-detail-item__documents-title">Images / documents</h5>
+                <h5 className="warranty-detail-item__documents-title">Attachments & Evidence</h5>
                 <DocumentCards documents={itemDocuments} />
               </div>
             )}

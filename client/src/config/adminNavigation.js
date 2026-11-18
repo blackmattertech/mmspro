@@ -6,6 +6,7 @@ export const ADMIN_NAV_ITEMS = [
   { id: 'plans', label: 'Plans', path: '/admin/plans', icon: 'plans' },
   { id: 'users', label: 'Users', path: '/admin/users', icon: 'users' },
   { id: 'integrations', label: 'Integrations', path: '/admin/integrations', icon: 'plug' },
+  { id: 'support', label: 'Support', path: '/admin/support', icon: 'headset' },
 ]
 
 /** Flatten admin nav for quick-access shortcuts. */

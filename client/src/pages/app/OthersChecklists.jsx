@@ -18,6 +18,8 @@ import EditIcon from '../../components/ui/EditIcon'
 import SettingsIcon from '../../components/ui/SettingsIcon'
 import RecordPdfButton from '../../components/shared/RecordPdfButton'
 import TrashIcon from '../../components/ui/TrashIcon'
+import DuplicateRowButton from '../../components/ui/DuplicateRowButton'
+import { cloneNavState } from '../../lib/workRecordClone'
 import ChecklistModuleSettingsModal from '../../components/checklists/ChecklistModuleSettingsModal'
 import '../../components/company/CompanyShared.css'
 import './Others.css'
@@ -77,6 +79,11 @@ export default function OthersChecklists() {
     navigate(orgPath(org.slug, id
       ? `masters/checklists/${id}`
       : 'masters/checklists/new'))
+  }
+
+  const handleDuplicate = (row) => {
+    if (!org?.slug || !row?.id) return
+    navigate(orgPath(org.slug, 'masters/checklists/new'), { state: cloneNavState(row.id) })
   }
 
   const handleDelete = async (row) => {
@@ -194,6 +201,12 @@ export default function OthersChecklists() {
                             >
                               <EditIcon />
                             </button>
+                          )}
+                          {canManage && (
+                            <DuplicateRowButton
+                              onClick={() => handleDuplicate(row)}
+                              label={`Duplicate ${row.name}`}
+                            />
                           )}
                           {canRemove && (
                             <button

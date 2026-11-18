@@ -189,6 +189,7 @@ export default function WorkOrderDailyLogSection({ detail, onUpdated, canEdit: c
               <label className="company-form__field">
                 <span className="company-form__label">Work done today</span>
                 <SpellcheckInput
+                  richText
                   multiline
                   className="company-form__input company-form__textarea"
                   rows={3}
@@ -214,7 +215,9 @@ export default function WorkOrderDailyLogSection({ detail, onUpdated, canEdit: c
                 <label className="company-form__field">
                   <FormLabel fieldType="textarea" limit={maxLength('remarks')}>Remarks</FormLabel>
                   <SpellcheckInput
-                    className="company-form__input"
+                    richText
+                    multiline
+                    className="company-form__input company-form__textarea"
                     value={draft.remarks}
                     disabled={saving || !(editingOpen || editingClosed)}
                     onChange={(e) => setDraftField('remarks', e.target.value)}

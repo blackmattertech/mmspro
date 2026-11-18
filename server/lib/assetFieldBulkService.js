@@ -30,7 +30,7 @@ const CHILD_COLUMNS = ['Name', 'Section', 'Parent', 'Active']
 
 const FIELD_TYPE_ALIASES = [
   ['text', 'Text'],
-  ['textarea', 'Textarea'],
+  ['textarea', 'Long text', 'Textarea'],
   ['number', 'Number'],
   ['date', 'Date'],
   ['datetime', 'Date & time'],

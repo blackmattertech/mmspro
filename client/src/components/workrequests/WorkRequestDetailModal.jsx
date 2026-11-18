@@ -11,6 +11,7 @@ import {
   rejectWorkRequest,
   requestWorkRequestInfo,
   replyToWorkRequest,
+  submitWorkRequestDraft,
   saveWorkRequestChecklist,
 } from '../../lib/api-work-requests'
 import { getReceivedWorkOrder, getWorkOrderDetail } from '../../lib/api-work-orders'
@@ -18,15 +19,16 @@ import { notifyTabCountsChanged } from '../../lib/tabCountEvents'
 import { orgPath } from '../../config/navigation'
 import ChecklistExecution from '../pm/ChecklistExecution'
 import { getWorkOrderFileSignedUrl, uploadWorkOrderFile } from '../../lib/workOrderAssets'
-import { downloadFromUrl } from '../../lib/fileDownload'
-import { getWorkOrderFiles, isImageFileItem, revokeWorkOrderFilePreviews, workOrderFilesValue, filesNeedStoredPreview } from '../../lib/workOrderFileValues'
-import ImageLightbox from '../shared/ImageLightbox'
+import { getWorkOrderFiles, revokeWorkOrderFilePreviews, workOrderFilesValue, filesNeedStoredPreview } from '../../lib/workOrderFileValues'
 import PageBack from '../shared/PageBack'
+import SaveAsTemplateButton from '../templates/SaveAsTemplateButton'
 import RecordTimeline, { hydrateTimelineAttachments } from '../shared/RecordTimeline'
 import EmployeeAvatar from '../company/EmployeeAvatar'
 import FilterableSelect from '../ui/FilterableSelect'
 import WorkRequestAttachmentsField from './WorkRequestAttachmentsField'
+import WorkOrderAttachmentsField from '../workorders/WorkOrderAttachmentsField'
 import SpellcheckInput from '../shared/SpellcheckInput'
+import RichTextDisplay from '../shared/RichTextDisplay'
 import FormLabel from '../shared/FormLabel'
 import { useTextFieldLimits } from '../../hooks/useTextFieldLimits'
 import { firstCharacterLimitMessage, findVisibleCharacterLimitError } from '../../lib/textFieldLimits'
@@ -89,7 +91,12 @@ function WorkRequestChecklistPanel({ detail, readOnly = false }) {
 }
 import { useFormLayout } from '../../hooks/useFormLayout'
 import { useFormFieldValues } from '../../hooks/useFormFieldValues'
-import { canEditFilledBy, resolveFormActors } from '../../lib/formFillership'
+import {
+  canEditFilledBy,
+  canEditWorkOrderStatusProgressRemarks,
+  canEditWorkOrderSupervisorStatus,
+  resolveFormActors,
+} from '../../lib/formFillership'
 import {
   catalogId,
   parseLayoutId,
@@ -383,140 +390,18 @@ function MetaItem({ label, children }) {
   )
 }
 
-function formatFileSize(bytes) {
-  const n = Number(bytes)
-  if (!Number.isFinite(n) || n <= 0) return null
-  if (n < 1024) return `${n} B`
-  if (n < 1024 * 1024) return `${Math.round(n / 1024)} KB`
-  return `${(n / (1024 * 1024)).toFixed(1)} MB`
-}
-
 function WorkRequestAttachments({ attachments }) {
   const files = getWorkOrderFiles(attachments)
-  const [fileError, setFileError] = useState(null)
-  const [urls, setUrls] = useState({})
-  const [lightbox, setLightbox] = useState(null)
-
-  const pathKey = files.map((file) => file.path).filter(Boolean).join('|')
-
-  useEffect(() => {
-    if (!pathKey) {
-      setUrls({})
-      return undefined
-    }
-
-    let cancelled = false
-    const paths = pathKey.split('|')
-    ;(async () => {
-      const next = {}
-      await Promise.all(paths.map(async (path) => {
-        try {
-          const url = await getWorkOrderFileSignedUrl(path)
-          if (url) next[path] = url
-        } catch (err) {
-          if (!cancelled) setFileError(err.message || 'Could not open file')
-        }
-      }))
-      if (!cancelled) setUrls(next)
-    })()
-
-    return () => { cancelled = true }
-  }, [pathKey])
-
   if (!files.length) return null
-
-  const downloadAttachment = async (file) => {
-    const label = file.name || file.file_name || 'download'
-    const url = (file.path && urls[file.path]) || file.url || file.previewUrl
-    setFileError(null)
-    try {
-      const src = url || (file.path ? await getWorkOrderFileSignedUrl(file.path) : null)
-      if (src) await downloadFromUrl(src, label)
-    } catch (err) {
-      setFileError(err.message || 'Could not download file')
-    }
-  }
-
-  const openFile = async (file) => {
-    const label = file.name || file.file_name || 'Download file'
-    const url = (file.path && urls[file.path]) || file.url || file.previewUrl
-    setFileError(null)
-    try {
-      if (isImageFileItem(file)) {
-        const src = url || (file.path ? await getWorkOrderFileSignedUrl(file.path) : null)
-        if (!src) return
-        setLightbox({ src, alt: label, filename: label })
-        return
-      }
-      if (url) {
-        await downloadFromUrl(url, label)
-        return
-      }
-      if (!file.path) return
-      const signed = await getWorkOrderFileSignedUrl(file.path)
-      if (signed) await downloadFromUrl(signed, label)
-    } catch (err) {
-      setFileError(err.message || 'Could not open file')
-    }
-  }
 
   return (
     <section className="wo-received-detail__section">
-      <h3>Attachments</h3>
-      {fileError && (
-        <div className="wo-alert wo-alert--error" role="alert">{fileError}</div>
-      )}
-      <ul className="wr-detail-attachments">
-        {files.map((file, index) => {
-          const label = file.name || file.file_name || 'Download file'
-          const size = formatFileSize(file.size)
-          const previewSrc = (file.path && urls[file.path]) || file.url || file.previewUrl
-          const isImage = isImageFileItem(file)
-          return (
-            <li key={file.path || `${label}-${index}`} className="wr-detail-attachments__item">
-              <button
-                type="button"
-                className="wr-detail-attachments__thumb"
-                onClick={() => openFile(file)}
-                aria-label={isImage ? `Preview ${label}` : `Download ${label}`}
-              >
-                {isImage && previewSrc ? (
-                  <img src={previewSrc} alt="" />
-                ) : (
-                  <span className="wr-detail-attachments__fallback" aria-hidden="true">
-                    {(label.split('.').pop() || 'FILE').slice(0, 4).toUpperCase()}
-                  </span>
-                )}
-              </button>
-              <div className="wr-detail-attachments__meta">
-                <button
-                  type="button"
-                  className="wo-received-detail__file-link"
-                  onClick={() => openFile(file)}
-                >
-                  {label}
-                </button>
-                {size && <span className="wr-detail-attachments__size">{size}</span>}
-                <button
-                  type="button"
-                  className="wr-detail-attachments__download"
-                  onClick={() => downloadAttachment(file)}
-                >
-                  Download
-                </button>
-              </div>
-            </li>
-          )
-        })}
-      </ul>
-      {lightbox && (
-        <ImageLightbox
-          src={lightbox.src}
-          alt={lightbox.alt}
-          filename={lightbox.filename}
-          onClose={() => setLightbox(null)}
-        />
-      )}
+      <WorkOrderAttachmentsField
+        title="Attachments & Evidence"
+        description="Photos and documents submitted with this work request."
+        files={files}
+        readOnly
+      />
     </section>
   )
 }
@@ -533,7 +418,8 @@ export default function WorkRequestDetailModal({
   const { detail, loading, error, reload } = useWorkOrderDetail(requestId, fetchWorkRequest)
   const { org } = useOrg()
   const { user } = useAuth()
-  const { isOrgAdmin, session, canUpdate } = usePermissions()
+  const { isOrgAdmin, session, canUpdate, canCreate } = usePermissions()
+  const canSaveTemplate = canCreate('work_request_create') || canCreate('work_request')
   const { labelByKey: requestStatusLabels } = useOrgStatusOptions('work_request', { includeInactive: true })
   const { labelByKey: workOrderStatusLabels } = useOrgStatusOptions('work_order', { includeInactive: true })
   const { layout, catalogFields, hasLayout } = useFormLayout('work_request.create')
@@ -560,6 +446,8 @@ export default function WorkRequestDetailModal({
   const handleRejectBackdropClick = useBackdropClose(closeRejectDialog)
 
   const showActions = canApprove && detail && ACTIONABLE.has(detail.status)
+  const canSubmitDraft = Boolean(detail?.can_submit_draft)
+  const canEditDraft = Boolean(detail?.can_edit_draft)
   const canReply = Boolean(detail?.can_reply)
   const latestInfoRequest = [...(detail?.timeline || [])]
     .reverse()
@@ -639,6 +527,10 @@ export default function WorkRequestDetailModal({
     setReplyFiles([])
   })
 
+  const submitDraft = () => runAction(async () => {
+    await submitWorkRequestDraft(requestId)
+  }, { refreshWorkOrders: true })
+
   const hierarchy = detail?.asset_hierarchy || []
   const technicians = detail?.assigned_technicians || []
   const statusDisplay = detail
@@ -686,15 +578,43 @@ export default function WorkRequestDetailModal({
     || linkedAssignmentActions.can_reassign_as_location_head
     || linkedAssignmentActions.can_claim_self
   )
-  const myEmployeeId = session?.employee_id || null
+  const linkedLifecycleActors = useMemo(() => {
+    if (!linkedOrder) return null
+    return resolveFormActors({
+      formId: 'work_orders.manual',
+      isOrgAdmin,
+      profileId: user?.id,
+      employeeId: session?.employee_id,
+      isDepartmentHead: Boolean(session?.is_department_head),
+      employeeDepartmentId: session?.department_id,
+      canApproveIncoming: canUpdate('work_request_approve') || canUpdate('work_request_incoming'),
+      isSupervisor: isOrgAdmin
+        || canUpdate('work_orders_approve')
+        || Boolean(linkedOrder.supervisor_id && user?.id && String(linkedOrder.supervisor_id) === String(user.id)),
+      record: {
+        created_by: linkedOrder.created_by,
+        requested_by: linkedOrder.requester_id,
+        assigned_department_id: linkedOrder.assigned_department_id,
+        order_to_department_id: linkedOrder.assigned_department_id,
+        supervisor_id: linkedOrder.supervisor_id,
+        assignees: linkedOrder.assignees || [],
+      },
+    })
+  }, [
+    linkedOrder,
+    isOrgAdmin,
+    user?.id,
+    session?.employee_id,
+    session?.is_department_head,
+    session?.department_id,
+    canUpdate,
+  ])
   const canEditLinkedLifecycle = Boolean(
-    linkedOrder
+    linkedLifecycleActors
     && (
-      isOrgAdmin
-      || canUpdate('work_orders_received')
-      || canUpdate('work_orders')
-      || (myEmployeeId && (linkedOrder.assignees || []).some((row) => row.id === myEmployeeId))
-    )
+      canEditWorkOrderStatusProgressRemarks(linkedLifecycleActors)
+      || canEditWorkOrderSupervisorStatus(linkedLifecycleActors)
+    ),
   )
   const layoutFields = detail?.layout_fields || []
   const breakdownFields = detail?.breakdown_fields || []
@@ -781,9 +701,18 @@ export default function WorkRequestDetailModal({
               </h2>
             </div>
           </div>
-          <button type="button" className="wr-detail-sheet__close" onClick={onClose} aria-label="Close">
-            ×
-          </button>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            {detail && canSaveTemplate ? (
+              <SaveAsTemplateButton
+                moduleKey="work_request"
+                sourceRecordId={detail.id}
+                defaultName={detail.short_description || detail.request_number || 'Work request'}
+              />
+            ) : null}
+            <button type="button" className="wr-detail-sheet__close" onClick={onClose} aria-label="Close">
+              ×
+            </button>
+          </div>
         </header>
 
         <div className="wr-detail-sheet__body">
@@ -898,21 +827,23 @@ export default function WorkRequestDetailModal({
                   <MetaItem label="Request date">{formatDate(detail.request_date)}</MetaItem>
                   {(detail.linked_work_order || detail.manual_work_order_id) && (
                     <MetaItem label="Work order">
-                      {org?.slug && workOrderId ? (
-                        <Link
-                          to={orgPath(org.slug, `work-orders/received?open=${encodeURIComponent(workOrderId)}`)}
-                          className="company-link"
-                        >
-                          {detail.linked_work_order?.wo_number
-                            || detail.manual_work_order_id?.slice(0, 8)
-                            || 'Open work order'}
-                        </Link>
-                      ) : (
-                        detail.linked_work_order?.wo_number
-                        || (detail.manual_work_order_id
-                          ? `Linked · ${detail.manual_work_order_id.slice(0, 8)}…`
-                          : '—')
-                      )}
+                      {(() => {
+                        const woLabel = detail.linked_work_order?.wo_number
+                          || detail.manual_work_order_id?.slice(0, 8)
+                          || 'Open work order'
+                        const requesterId = detail.requested_by || detail.requester?.id || detail.requester?.profile_id
+                        const isOrderFromViewer = Boolean(user?.id && requesterId && user.id === requesterId)
+                        // Order From tracks progress on the work request — do not deep-link to WO page.
+                        if (isOrderFromViewer || !org?.slug || !workOrderId) return woLabel
+                        return (
+                          <Link
+                            to={orgPath(org.slug, `work-orders/all?open=${encodeURIComponent(workOrderId)}`)}
+                            className="company-link"
+                          >
+                            {woLabel}
+                          </Link>
+                        )
+                      })()}
                     </MetaItem>
                   )}
                 </div>
@@ -989,7 +920,7 @@ export default function WorkRequestDetailModal({
                         {layoutFields.map((field) => (
                           <div key={field.id} className="wo-received-detail__field">
                             <dt>{field.label}</dt>
-                            <dd style={{ whiteSpace: 'pre-wrap' }}>{field.value || '—'}</dd>
+                            <dd><RichTextDisplay value={field.value} /></dd>
                           </div>
                         ))}
                       </dl>
@@ -1008,7 +939,7 @@ export default function WorkRequestDetailModal({
                       {breakdownFields.map((field) => (
                         <div key={field.id} className="wo-received-detail__field">
                           <dt>{field.label}</dt>
-                          <dd style={{ whiteSpace: 'pre-wrap' }}>{field.value || '—'}</dd>
+                          <dd><RichTextDisplay value={field.value} /></dd>
                         </div>
                       ))}
                     </dl>
@@ -1021,6 +952,35 @@ export default function WorkRequestDetailModal({
 
                 {actionError && (
                   <div className="wo-alert wo-alert--error" role="alert">{actionError}</div>
+                )}
+
+                {(canEditDraft || canSubmitDraft) && (
+                  <section className="wo-received-detail__section wo-assignment-actions">
+                    <h3>Draft actions</h3>
+                    <p className="wo-permit__hint">
+                      Edit this draft, then save or submit to create the work request.
+                    </p>
+                    <div className="wr-actions">
+                      {canEditDraft && org?.slug && (
+                        <Link
+                          to={orgPath(org.slug, `work-request/${detail.id}/edit`)}
+                          className="company-btn company-btn--secondary"
+                        >
+                          Edit draft
+                        </Link>
+                      )}
+                      {canSubmitDraft && (
+                        <button
+                          type="button"
+                          className="company-btn company-btn--primary"
+                          disabled={acting}
+                          onClick={submitDraft}
+                        >
+                          {acting ? 'Submitting…' : 'Submit work request'}
+                        </button>
+                      )}
+                    </div>
+                  </section>
                 )}
 
                 {canReply && (
@@ -1036,6 +996,7 @@ export default function WorkRequestDetailModal({
                       <label className="company-form__field company-form__field--full">
                         <FormLabel fieldType="textarea" limit={remarksLimit}>Your reply</FormLabel>
                         <SpellcheckInput
+                          richText
                           multiline
                           className="company-form__input company-form__textarea"
                           rows={3}
@@ -1048,6 +1009,7 @@ export default function WorkRequestDetailModal({
                       </label>
                       <WorkRequestAttachmentsField
                         label="Additional attachments"
+                        description="Add photos or documents with your reply."
                         files={replyFiles}
                         onChange={setReplyFiles}
                         disabled={acting}
@@ -1129,6 +1091,7 @@ export default function WorkRequestDetailModal({
                         <label className="company-form__field company-form__field--full">
                           <FormLabel fieldType="textarea" limit={remarksLimit}>Message to requester</FormLabel>
                           <SpellcheckInput
+                            richText
                             multiline
                             className="company-form__input company-form__textarea"
                             rows={3}
@@ -1234,6 +1197,7 @@ export default function WorkRequestDetailModal({
               <label className="company-form__field">
                 <FormLabel fieldType="textarea" limit={remarksLimit}>Rejection reason *</FormLabel>
                 <SpellcheckInput
+                  richText
                   multiline
                   className="company-form__input company-form__textarea"
                   rows={4}

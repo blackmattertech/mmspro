@@ -19,6 +19,8 @@ import { invalidateReferenceCache } from '../../lib/referenceDataCache'
 import GooToggle from '../ui/GooToggle'
 import TrashIcon from '../ui/TrashIcon'
 import EditIcon from '../ui/EditIcon'
+import DuplicateRowButton from '../ui/DuplicateRowButton'
+import { createMasterClone, prepareMasterCloneCreate } from '../../lib/masterClone'
 import DepartmentModal, { formatDepartmentLocation } from './DepartmentModal'
 import LimitExceededCard from '../shared/LimitExceededCard'
 import TablePagination from '../shared/TablePagination'
@@ -84,12 +86,14 @@ export default function DepartmentsTab({ canManage }) {
   const { visible: limitVisible, resource: limitResource, overflow: limitOverflow, trigger: triggerLimit, tryHandleLimitError, dismiss: dismissLimit } = useLimitExceeded()
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState(null)
+  const [clone, setClone] = useState(null)
   const [viewing, setViewing] = useState(null)
   const [togglingId, setTogglingId] = useState(null)
 
   const {
     bulkInputRef,
     bulkBusy,
+    bulkProgress,
     bulkError,
     bulkResult,
     handleDownloadTemplate,
@@ -171,20 +175,39 @@ export default function DepartmentsTab({ canManage }) {
       return
     }
     setEditing(null)
+    setClone(null)
     setModalOpen(true)
+  }
+
+  const openDuplicate = (dept) => {
+    if (atDepartmentLimit) {
+      triggerLimit('Department')
+      return
+    }
+    setEditing(null)
+    setClone(createMasterClone('department', dept))
+    setModalOpen(true)
+  }
+
+  const closeModal = () => {
+    setModalOpen(false)
+    setClone(null)
   }
 
   const openView = (dept) => setViewing(dept)
 
   const openEdit = (dept) => {
     setEditing(dept)
+    setClone(null)
     setModalOpen(true)
   }
 
   const handleSave = async (payload) => {
+    // Duplicate check runs before the try so its message surfaces in the modal.
+    const createPayload = editing ? payload : prepareMasterCloneCreate('department', clone, payload)
     try {
       if (editing) await update(editing.id, payload)
-      else await create(payload)
+      else await create(createPayload)
       await reloadLimits()
       setModalOpen(false)
     } catch (err) {
@@ -336,6 +359,7 @@ export default function DepartmentsTab({ canManage }) {
               <MasterBulkActions
               onDownload={handleDownloadTemplate}
               bulkBusy={bulkBusy}
+                    bulkProgress={bulkProgress}
               bulkInputRef={bulkInputRef}
               onFileChange={handleBulkFile}
               addLabel="+ Add Department"
@@ -483,6 +507,11 @@ export default function DepartmentsTab({ canManage }) {
                           >
                             <EditIcon />
                           </button>
+                          <DuplicateRowButton
+                            onClick={() => openDuplicate(dept)}
+                            disabled={saving}
+                            label={`Duplicate ${dept.name}`}
+                          />
                           <button
                             type="button"
                             className="company-btn company-btn--danger company-btn--compact company-btn--icon"
@@ -522,15 +551,15 @@ export default function DepartmentsTab({ canManage }) {
 
       {modalOpen && (
         <DepartmentModal
-          key={editing?.id ?? 'new'}
-          department={editing}
+          key={editing?.id ?? (clone ? `clone-${clone.source.id}` : 'new')}
+          department={editing || clone?.draft || null}
           locations={activeLocations}
           departments={activeDepartments}
           saving={saving}
           nestedSaving={savingLocation}
           defaultLocationId={editing ? '' : defaultCreateLocationId}
           lockLocation={!editing && lockCreateLocation}
-          onClose={() => setModalOpen(false)}
+          onClose={closeModal}
           onSave={handleSave}
           onCreateLocation={canSelectAnyLocation ? handleCreateLocation : undefined}
           onLimitExceeded={tryHandleLimitError}

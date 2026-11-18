@@ -7,6 +7,7 @@ import { loadOrgLetterhead } from './reportService.js'
 import { resolveProgressPercent } from './statusProgress.js'
 import { listOrgStatuses } from './orgStatusService.js'
 import { formatDisplayDate, formatDisplayDateTime } from './displayDate.js'
+import { plainTextFromRich } from './richText.js'
 
 const COMPLETED_STATUSES = new Set(['completed', 'verified', 'closed'])
 
@@ -92,7 +93,7 @@ function displayText(value, { empty = '—' } = {}) {
       const parsed = parseJsonValue(trimmed)
       if (parsed) return displayText(parsed, { empty })
     }
-    return value
+    return plainTextFromRich(value) || empty
   }
   if (Array.isArray(value)) {
     const parts = value

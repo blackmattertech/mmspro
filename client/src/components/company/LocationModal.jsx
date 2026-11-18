@@ -40,6 +40,8 @@ export default function LocationModal({
   onSave,
   nested = false,
 }) {
+  // A duplicate draft has no id, so it behaves as a create.
+  const isEdit = Boolean(location?.id)
   const [form, setForm] = useState(EMPTY)
   const [error, setError] = useState(null)
   const handleBackdropClick = useBackdropClose(onClose)
@@ -104,7 +106,7 @@ export default function LocationModal({
 
     try {
       const payload = { ...form }
-      if (!location) {
+      if (!isEdit) {
         delete payload.head_employee_id
       } else {
         payload.head_employee_id = form.head_employee_id || null
@@ -131,7 +133,7 @@ export default function LocationModal({
         <div className="company-modal__header">
           <div className="modal__header-main">
             <PageBack onClick={onClose} className="page-back--header" label="Locations" />
-            <h2 id="location-modal-title">{location ? 'Edit Location' : 'Add Location'}</h2>
+            <h2 id="location-modal-title">{isEdit ? 'Edit Location' : 'Add Location'}</h2>
           </div>
           <button type="button" className="company-modal__close" onClick={onClose} aria-label="Close">×</button>
         </div>
@@ -224,7 +226,7 @@ export default function LocationModal({
             />
             <span className="location-primary__label">Primary location</span>
           </div>
-          {location ? (
+          {isEdit ? (
             <EmployeeSelect
               label="Location head"
               value={form.head_employee_id}
@@ -238,7 +240,7 @@ export default function LocationModal({
               Save the location first, assign employees to it, then set a location head when editing.
             </p>
           )}
-          {location && !headOptions.length && (
+          {isEdit && !headOptions.length && (
             <p className="company-modal__hint">
               No employees at this location yet. Assign employees first, then choose a location head.
             </p>

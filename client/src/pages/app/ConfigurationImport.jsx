@@ -76,6 +76,13 @@ function ImportStatusPanel({ job, onDownloadFailed, onUploadAgain }) {
   if (!job) return null
 
   if (job.status === 'running') {
+    const done = Number(job.progressDone || 0)
+    const total = Number(job.progressTotal || 0)
+    const pct = total > 0
+      ? (job.progressPercent != null
+        ? job.progressPercent
+        : Math.min(100, Math.round((done / total) * 100)))
+      : null
     return (
       <div className="import-status import-status--processing" role="status">
         <p className="import-status__title">Import in progress</p>
@@ -83,6 +90,21 @@ function ImportStatusPanel({ job, onDownloadFailed, onUploadAgain }) {
           Processing <strong>{job.fileName}</strong> in the background. You can leave this page or
           continue working — we will update this section when the import finishes.
         </p>
+        <p className="import-status__meta">
+          {total > 0 ? `${done} / ${total} rows (${pct}%)` : 'Preparing file…'}
+        </p>
+        <div
+          className="import-status__progress"
+          role="progressbar"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={pct ?? 0}
+        >
+          <div
+            className={`import-status__progress-bar${pct == null ? ' import-status__progress-bar--indeterminate' : ''}`}
+            style={pct != null ? { width: `${pct}%` } : undefined}
+          />
+        </div>
       </div>
     )
   }

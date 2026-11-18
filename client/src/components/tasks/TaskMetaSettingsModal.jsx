@@ -5,6 +5,8 @@ import { reorderItemsById } from '../../lib/assetFormSchema'
 import { useTaskMeta } from '../../hooks/useTaskMeta'
 import EditIcon from '../ui/EditIcon'
 import TrashIcon from '../ui/TrashIcon'
+import DuplicateRowButton from '../ui/DuplicateRowButton'
+import { createNestedClone, prepareNestedCloneCreate } from '../../lib/nestedClone'
 import TaskMetaEditModal from './TaskMetaEditModal'
 import TaskPriorityIcon from './TaskPriorityIcon'
 import '../company/CompanyShared.css'
@@ -92,6 +94,7 @@ function MetaDragTable({
   rows,
   onReorder,
   onEdit,
+  onDuplicate,
   onDelete,
   saving,
 }) {
@@ -221,6 +224,11 @@ function MetaDragTable({
                       >
                         <EditIcon />
                       </button>
+                      <DuplicateRowButton
+                        onClick={() => onDuplicate(row)}
+                        disabled={saving}
+                        label={`Duplicate ${row.name}`}
+                      />
                       <button
                         type="button"
                         className="company-btn company-btn--danger company-btn--compact company-btn--icon"
@@ -273,25 +281,28 @@ export default function TaskMetaSettingsModal({ onClose }) {
 
   const [editState, setEditState] = useState(null)
 
-  const openCreate = (kind) => setEditState({ kind, item: null })
-  const openEdit = (kind, item) => setEditState({ kind, item })
+  const openCreate = (kind) => setEditState({ kind, item: null, clone: null })
+  const openEdit = (kind, item) => setEditState({ kind, item, clone: null })
+  const openDuplicate = (kind, row) => {
+    const clone = createNestedClone(`task_${kind}`, row)
+    if (clone) setEditState({ kind, item: null, clone })
+  }
 
   const handleSave = async (payload) => {
     if (!editState) return
-    const { kind, item } = editState
+    const { kind, item, clone } = editState
     if (item?.id) {
       if (kind === 'status') await updateStatus(item.id, payload)
       else if (kind === 'priority') await updatePriority(item.id, payload)
       else if (kind === 'category') await updateCategory(item.id, payload)
       else if (kind === 'tag') await updateTag(item.id, payload)
-    } else if (kind === 'status') {
-      await createStatus({ ...payload, sort_order: statuses.length })
-    } else if (kind === 'priority') {
-      await createPriority({ ...payload, sort_order: priorities.length })
-    } else if (kind === 'category') {
-      await createCategory({ ...payload, sort_order: categories.length })
-    } else if (kind === 'tag') {
-      await createTag({ ...payload, sort_order: tags.length })
+    } else {
+      // Duplicate → prefilled create: validates the clone changed and attaches clone_of_id.
+      const body = prepareNestedCloneCreate(`task_${kind}`, clone, payload)
+      if (kind === 'status') await createStatus({ ...body, sort_order: statuses.length })
+      else if (kind === 'priority') await createPriority({ ...body, sort_order: priorities.length })
+      else if (kind === 'category') await createCategory({ ...body, sort_order: categories.length })
+      else if (kind === 'tag') await createTag({ ...body, sort_order: tags.length })
     }
   }
 
@@ -363,6 +374,7 @@ export default function TaskMetaSettingsModal({ onClose }) {
                   saving={saving}
                   onReorder={reorderStatuses}
                   onEdit={(row) => openEdit('status', row)}
+                  onDuplicate={(row) => openDuplicate('status', row)}
                   onDelete={(row) => handleDelete('status', row)}
                 />
               </section>
@@ -395,6 +407,7 @@ export default function TaskMetaSettingsModal({ onClose }) {
                   saving={saving}
                   onReorder={reorderPriorities}
                   onEdit={(row) => openEdit('priority', row)}
+                  onDuplicate={(row) => openDuplicate('priority', row)}
                   onDelete={(row) => handleDelete('priority', row)}
                 />
               </section>
@@ -419,6 +432,7 @@ export default function TaskMetaSettingsModal({ onClose }) {
                           <td><ActiveBadge active={row.is_active} /></td>
                           <td className="company-table__actions">
                             <button type="button" className="company-btn company-btn--secondary company-btn--compact company-btn--icon" onClick={() => openEdit('category', row)} aria-label={`Edit ${row.name}`} title="Edit"><EditIcon /></button>
+                            <DuplicateRowButton onClick={() => openDuplicate('category', row)} disabled={saving} label={`Duplicate ${row.name}`} />
                             <button type="button" className="company-btn company-btn--danger company-btn--compact company-btn--icon" onClick={() => handleDelete('category', row)} aria-label={`Delete ${row.name}`} title="Delete"><TrashIcon /></button>
                           </td>
                         </tr>
@@ -448,6 +462,7 @@ export default function TaskMetaSettingsModal({ onClose }) {
                           <td><ActiveBadge active={row.is_active} /></td>
                           <td className="company-table__actions">
                             <button type="button" className="company-btn company-btn--secondary company-btn--compact company-btn--icon" onClick={() => openEdit('tag', row)} aria-label={`Edit ${row.name}`} title="Edit"><EditIcon /></button>
+                            <DuplicateRowButton onClick={() => openDuplicate('tag', row)} disabled={saving} label={`Duplicate ${row.name}`} />
                             <button type="button" className="company-btn company-btn--danger company-btn--compact company-btn--icon" onClick={() => handleDelete('tag', row)} aria-label={`Delete ${row.name}`} title="Delete"><TrashIcon /></button>
                           </td>
                         </tr>
@@ -480,7 +495,8 @@ export default function TaskMetaSettingsModal({ onClose }) {
       {editState && (
         <TaskMetaEditModal
           kind={editState.kind}
-          item={editState.item}
+          item={editState.item || editState.clone?.draft || null}
+          cloneSourceName={editState.clone?.source?.name || null}
           saving={saving}
           onClose={() => setEditState(null)}
           onSave={handleSave}

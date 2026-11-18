@@ -3,6 +3,8 @@ import { useBackdropClose } from '../../hooks/useBackdropClose'
 import NavIcon from '../layout/NavIcon'
 import PageBack from '../shared/PageBack'
 import { ImportGroupList } from './ImportGroupList'
+import { resolveBulkUploadResponse } from '../../lib/resolveBulkUpload'
+import { downloadBase64File } from '../../lib/fileDownload'
 
 /**
  * Shared bulk template download + xlsx upload helpers for company masters.
@@ -21,6 +23,7 @@ export function useMasterBulkUpload({
   const [bulkResult, setBulkResult] = useState(null)
   const [bulkPreview, setBulkPreview] = useState(null)
   const [pendingFile, setPendingFile] = useState(null)
+  const [bulkProgress, setBulkProgress] = useState(null)
 
   const handleDownloadTemplate = async () => {
     setBulkError(null)
@@ -48,6 +51,7 @@ export function useMasterBulkUpload({
     setBulkBusy(true)
     setBulkError(null)
     setBulkResult(null)
+    setBulkProgress(null)
     try {
       const dataUrl = await new Promise((resolve, reject) => {
         const reader = new FileReader()
@@ -63,14 +67,26 @@ export function useMasterBulkUpload({
         setBulkResult(null)
         return
       }
-      const result = await upload(base64)
+      const raw = await upload(base64)
+      const result = await resolveBulkUploadResponse(raw, {
+        pollMs: 1000,
+        onStatus: (job) => {
+          setBulkProgress({
+            done: job.progress_done || 0,
+            total: job.progress_total || 0,
+            percent: job.progress_percent,
+          })
+        },
+      })
       setBulkResult(result)
+      setBulkProgress(null)
       await onSuccess?.(result)
     } catch (err) {
       if (onError?.(err)) return
       setBulkError(err.message)
     } finally {
       setBulkBusy(false)
+      setBulkProgress(null)
       if (bulkInputRef.current) bulkInputRef.current.value = ''
     }
   }
@@ -79,17 +95,30 @@ export function useMasterBulkUpload({
     if (!pendingFile) return
     setBulkBusy(true)
     setBulkError(null)
+    setBulkProgress(null)
     try {
-      const result = await upload(pendingFile)
+      const raw = await upload(pendingFile)
+      const result = await resolveBulkUploadResponse(raw, {
+        pollMs: 1000,
+        onStatus: (job) => {
+          setBulkProgress({
+            done: job.progress_done || 0,
+            total: job.progress_total || 0,
+            percent: job.progress_percent,
+          })
+        },
+      })
       setBulkResult(result)
       setBulkPreview(null)
       setPendingFile(null)
+      setBulkProgress(null)
       await onSuccess?.(result)
     } catch (err) {
       if (onError?.(err)) return
       setBulkError(err.message)
     } finally {
       setBulkBusy(false)
+      setBulkProgress(null)
     }
   }
 
@@ -104,6 +133,7 @@ export function useMasterBulkUpload({
     bulkError,
     bulkResult,
     bulkPreview,
+    bulkProgress,
     setBulkResult,
     handleDownloadTemplate,
     handleBulkFile,
@@ -124,6 +154,7 @@ export function MasterBulkActions({
   bulkError,
   bulkResult,
   bulkPreview = null,
+  bulkProgress = null,
   onConfirmImport,
   onCancelPreview,
   noun = 'record',
@@ -303,6 +334,38 @@ export function MasterBulkActions({
                 </div>
               )}
 
+              {bulkBusy && (
+                <div className="master-bulk-modal__progress" role="status">
+                  <p className="master-bulk-modal__progress-text">
+                    {bulkProgress?.total > 0
+                      ? `Importing ${bulkProgress.done} / ${bulkProgress.total} rows (${
+                        bulkProgress.percent != null
+                          ? bulkProgress.percent
+                          : Math.min(100, Math.round((bulkProgress.done / bulkProgress.total) * 100))
+                      }%)`
+                      : 'Uploading and preparing import…'}
+                  </p>
+                  <div className="master-bulk-modal__progress-track">
+                    <div
+                      className={`master-bulk-modal__progress-bar${
+                        !(bulkProgress?.total > 0) ? ' master-bulk-modal__progress-bar--indeterminate' : ''
+                      }`}
+                      style={
+                        bulkProgress?.total > 0
+                          ? {
+                            width: `${
+                              bulkProgress.percent != null
+                                ? bulkProgress.percent
+                                : Math.min(100, Math.round((bulkProgress.done / bulkProgress.total) * 100))
+                            }%`,
+                          }
+                          : undefined
+                      }
+                    />
+                  </div>
+                </div>
+              )}
+
               {bulkError && <div className="company-error">{bulkError}</div>}
               <MasterBulkResult result={bulkPreview ? null : bulkResult} noun={noun} />
             </div>
@@ -324,6 +387,7 @@ export function MasterBulkResult({ result, noun }) {
   if (updated) parts.push(`${updated} ${noun}(s) updated`)
   if (!created && !updated && !failed) parts.push(`0 ${noun}(s) created`)
   if (failed) parts.push(`${failed} row(s) failed`)
+  const failedFile = result.failedFile
   return (
     <div className={`company-alert ${tone}`}>
       <strong>{result.summary || parts[0]}</strong>
@@ -338,6 +402,17 @@ export function MasterBulkResult({ result, noun }) {
             <li>…and {result.errors.length - 10} more</li>
           )}
         </ul>
+      )}
+      {failedFile?.data && (
+        <div className="master-bulk-modal__confirm">
+          <button
+            type="button"
+            className="company-btn company-btn--secondary"
+            onClick={() => downloadBase64File(failedFile)}
+          >
+            Download failed rows
+          </button>
+        </div>
       )}
     </div>
   )

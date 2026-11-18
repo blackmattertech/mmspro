@@ -6,6 +6,7 @@ import { useTaskDetail } from '../../hooks/useTaskDetail'
 import { useTaskMeta } from '../../hooks/useTaskMeta'
 import { orgPath } from '../../config/navigation'
 import RecordDetailLayout from '../../components/shared/RecordDetailLayout'
+import SaveAsTemplateButton from '../../components/templates/SaveAsTemplateButton'
 import { TaskDetailContent } from '../../components/tasks/TaskDetailContent'
 import '../../components/company/CompanyShared.css'
 import '../../components/tasks/Tasks.css'
@@ -14,7 +15,8 @@ export default function TaskDetailPage() {
   const { taskId } = useParams()
   const navigate = useNavigate()
   const { org } = useOrg()
-  const { canUpdate } = usePermissions()
+  const { canCreate, canUpdate } = usePermissions()
+  const canSaveTemplate = canCreate('tasks_followups')
   const { activeStatuses, statuses, priorities } = useTaskMeta()
   const {
     task,
@@ -44,19 +46,20 @@ export default function TaskDetailPage() {
       subtitle={task?.short_description || undefined}
       loading={loading}
       error={error}
-      actions={canUpdate('tasks_followups') && (
+      actions={(
         <>
-          <button type="button" className="company-btn company-btn--primary" onClick={openEdit}>
-            Edit Task
-          </button>
-          <button
-            type="button"
-            className="company-btn company-btn--secondary company-btn--icon task-detail-more-btn"
-            aria-label="More actions"
-            title="More actions"
-          >
-            ⋮
-          </button>
+          {canSaveTemplate && task?.id ? (
+            <SaveAsTemplateButton
+              moduleKey="tasks_followups"
+              sourceRecordId={task.id}
+              defaultName={task.title || task.task_number || 'Task'}
+            />
+          ) : null}
+          {canUpdate('tasks_followups') ? (
+            <button type="button" className="company-btn company-btn--primary" onClick={openEdit}>
+              Edit Task
+            </button>
+          ) : null}
         </>
       )}
     >

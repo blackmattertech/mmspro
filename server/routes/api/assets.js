@@ -19,12 +19,9 @@ import {
   isActiveOnlyUpdate,
   isDropdownValuesOnlyUpdate,
 } from '../../lib/assetFieldService.js'
-import {
-  buildChildrenTemplate,
-  bulkImportChildren,
-} from '../../lib/assetFieldBulkService.js'
-import { attachFailedFileToResult } from '../../lib/importErrorWorkbook.js'
+import { buildChildrenTemplate } from '../../lib/assetFieldBulkService.js'
 import { bufferFromBase64Upload, excelFilePayload } from '../../lib/excelTemplate.js'
+import { enqueueOrRunBulkImport, sendBulkImportResponse, wantsSyncImport } from '../../lib/bulkImportEnqueue.js'
 
 const router = Router()
 
@@ -75,8 +72,15 @@ router.get('/fields/template/children', canUpdateAssets, requireManageAssetChild
 router.post('/fields/bulk/children', canUpdateAssets, requireManageAssetChildren, async (req, res) => {
   try {
     const buffer = bufferFromBase64Upload(req.body?.data)
-    const result = await bulkImportChildren(req.userProfile.org_id, buffer)
-    res.json(await attachFailedFileToResult(result, buffer, 'child-values-import-failed-rows.xlsx'))
+    const outcome = await enqueueOrRunBulkImport({
+      orgId: req.userProfile.org_id,
+      userId: req.userProfile.id,
+      templateKey: 'asset_field_children',
+      fileName: 'child-values.xlsx',
+      buffer,
+      forceSync: wantsSyncImport(req),
+    })
+    sendBulkImportResponse(res, outcome)
   } catch (err) {
     res.status(err.status || 400).json({ error: err.message })
   }

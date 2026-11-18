@@ -429,6 +429,7 @@ export default function TaskForm({
             hint={FIELD_HELP_TEXT.problem_description.hint}
           >
             <SpellcheckInput
+              richText
               multiline
               className="company-form__input company-form__textarea"
               rows={5}
@@ -866,6 +867,7 @@ export default function TaskForm({
           <div className="company-form__grid task-form__grid">
             <FormField label="Follow-up Remarks" fullWidth maxLength={maxLength('follow_up_remarks')}>
               <SpellcheckInput
+                richText
                 multiline
                 className="company-form__input company-form__textarea"
                 rows={3}
@@ -876,6 +878,7 @@ export default function TaskForm({
             </FormField>
             <FormField label="Next Action" fullWidth>
               <SpellcheckInput
+                richText
                 multiline
                 className="company-form__input company-form__textarea"
                 rows={3}
@@ -885,6 +888,7 @@ export default function TaskForm({
             </FormField>
             <FormField label="Completion Remarks" fullWidth maxLength={maxLength('completion_remarks')}>
               <SpellcheckInput
+                richText
                 multiline
                 className="company-form__input company-form__textarea"
                 rows={3}
@@ -932,11 +936,12 @@ export default function TaskForm({
         </div>
       </FormSection>
 
-      <FormSection title="Section F — Attachments" description="Upload images, PDFs, documents, or videos related to this task.">
+      <FormSection title="Section F — Attachments">
         <TaskAttachmentsSection
           attachments={values.attachments || []}
           removedAttachmentIds={values.removedAttachmentIds || []}
           disabled={saving}
+          showHeader
           onChange={({ attachments, removedAttachmentIds }) => {
             onChange({ ...values, attachments, removedAttachmentIds })
           }}

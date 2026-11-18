@@ -435,6 +435,21 @@ const icons = {
       />
     </svg>
   ),
+  /** Support & Tickets — ImageKit headset outline */
+  headset: (
+    <span
+      className="nav-icon-remote"
+      style={{
+        width: 20,
+        height: 20,
+        display: 'inline-block',
+        backgroundColor: 'currentColor',
+        WebkitMask: 'url("https://ik.imagekit.io/w2lf8dznx/icons/headset-outline%20(1).svg") center / contain no-repeat',
+        mask: 'url("https://ik.imagekit.io/w2lf8dznx/icons/headset-outline%20(1).svg") center / contain no-repeat',
+      }}
+      aria-hidden="true"
+    />
+  ),
 }
 
 export default function NavIcon({ name }) {

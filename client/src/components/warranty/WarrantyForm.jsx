@@ -537,6 +537,7 @@ export default function WarrantyForm({
               <label className="company-form__field">
                 <FormLabel fieldType="textarea" limit={remarksLimit}>Remarks</FormLabel>
                 <SpellcheckInput
+                  richText
                   multiline
                   rows={4}
                   className="company-form__input company-form__textarea"
@@ -550,7 +551,8 @@ export default function WarrantyForm({
               {isVisible('documents') && (
                 <WarrantyDocumentsSection
                   compact
-                  title="Images / documents"
+                  title="Attachments & Evidence"
+                  description="Upload product photos and supporting warranty documents."
                   documents={item.documents || []}
                   removedDocumentIds={item.removedDocumentIds || []}
                   disabled={saving || !canSave}

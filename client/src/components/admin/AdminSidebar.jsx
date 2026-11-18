@@ -33,27 +33,35 @@ export default function AdminSidebar({ collapsed = false, onToggle, mobileOpen =
             <span className="sidebar__brand-tag">Super Admin Panel</span>
           </div>
         )}
-        <button
-          type="button"
-          className="sidebar__toggle sidebar__toggle--collapse"
-          onClick={onToggle}
-          aria-label={visualCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-        >
-          <NavIcon name={visualCollapsed ? 'sidebarExpand' : 'sidebarCollapse'} />
-          {visualCollapsed && (
-            <span className="sidebar__tooltip" aria-hidden="true">Expand sidebar</span>
-          )}
-        </button>
-        {onMobileClose && (
+        <div className="sidebar__brand-actions">
           <button
             type="button"
-            className="sidebar__toggle sidebar__toggle--close"
-            onClick={onMobileClose}
-            aria-label="Close navigation"
+            className="sidebar__toggle sidebar__toggle--collapse"
+            onClick={onToggle}
+            aria-label={visualCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           >
-            <NavIcon name="close" />
+            <NavIcon name={visualCollapsed ? 'sidebarExpand' : 'sidebarCollapse'} />
+            {visualCollapsed && (
+              <span className="sidebar__tooltip" aria-hidden="true">Expand sidebar</span>
+            )}
           </button>
-        )}
+          <SidebarQuickAccess
+            collapsed={visualCollapsed}
+            scope={ADMIN_QUICK_ACCESS_SCOPE}
+            options={ADMIN_SHORTCUTS}
+            catalog={ADMIN_SHORTCUTS}
+          />
+          {onMobileClose && (
+            <button
+              type="button"
+              className="sidebar__toggle sidebar__toggle--close"
+              onClick={onMobileClose}
+              aria-label="Close navigation"
+            >
+              <NavIcon name="close" />
+            </button>
+          )}
+        </div>
       </div>
 
       <nav className="sidebar__nav">
@@ -84,12 +92,6 @@ export default function AdminSidebar({ collapsed = false, onToggle, mobileOpen =
             </strong>
           </div>
         )}
-        <SidebarQuickAccess
-          collapsed={visualCollapsed}
-          scope={ADMIN_QUICK_ACCESS_SCOPE}
-          options={ADMIN_SHORTCUTS}
-          catalog={ADMIN_SHORTCUTS}
-        />
         <div className="admin-sidebar__actions">
           {!visualCollapsed && <p>Quick actions</p>}
           <Link to="/admin/organizations?new=1" className="admin-sidebar__add">

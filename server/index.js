@@ -3,6 +3,7 @@ import './lib/serverLog.js'
 import app from './app.js'
 import { getCorsOrigins, getPublicAppUrl } from './lib/appUrl.js'
 import { startTaskScheduler } from './lib/taskScheduler.js'
+import { startWorkers, bullmqWorkersOwnSchedulers } from './lib/workers/startWorkers.js'
 import { ensureSchemaPatches } from './lib/runSchemaPatches.js'
 
 const configuredPort = Number(process.env.PORT) || 5050
@@ -40,7 +41,19 @@ async function main() {
         'APP_PUBLIC_URL is not set — password/invite links use localhost and will not work from email on other devices. Set APP_PUBLIC_URL in server/.env to your ngrok URL for local email testing.'
       )
     }
-    startTaskScheduler()
+    startWorkers()
+      .then((workersStarted) => {
+        // Skip inline timers only when BullMQ repeatables registered successfully.
+        if (workersStarted && bullmqWorkersOwnSchedulers()) {
+          console.log('[taskScheduler] skipped inline timers — BullMQ worker owns schedulers')
+          return
+        }
+        startTaskScheduler()
+      })
+      .catch((err) => {
+        console.error('[workers] start failed — falling back to inline scheduler:', err.message)
+        startTaskScheduler()
+      })
   })
 
   server.on('error', (err) => {
