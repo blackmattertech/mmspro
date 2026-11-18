@@ -215,15 +215,17 @@ export function NotificationsProvider({ children }) {
   }, [user, queueReminderPopup])
 
   useEffect(() => {
-    return runWhenIdle(() => {
-      ensureFirebaseConfig().then((status) => {
-        if (!status) return
-        setFirebaseReady({
-          configured: Boolean(status.configured),
-          vapid: Boolean(status.vapidConfigured),
-        })
+    let cancelled = false
+    ensureFirebaseConfig().then((status) => {
+      if (cancelled || !status) return
+      setFirebaseReady({
+        configured: Boolean(status.configured),
+        vapid: Boolean(status.vapidConfigured),
       })
-    }, 3000)
+    })
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   const registerToken = useCallback(async () => {

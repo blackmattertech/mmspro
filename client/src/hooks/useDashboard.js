@@ -80,9 +80,7 @@ export const useDashboard = () => {
         setLocations(summary.locations)
       }
     } catch (err) {
-      setOverview([])
-      setModules([])
-      setCharts(null)
+      // Keep previous board visible while reporting the error (stale-while-revalidate).
       setError(err.message || 'Failed to load dashboard')
     } finally {
       setLoading(false)
@@ -91,8 +89,11 @@ export const useDashboard = () => {
   }, [permLoading, fetchLocationId, dateFrom, dateTo])
 
   useEffect(() => {
-    if (permLoading) return
-    fetchData()
+    if (permLoading) return undefined
+    const timer = window.setTimeout(() => {
+      fetchData()
+    }, 180)
+    return () => window.clearTimeout(timer)
   }, [permLoading, fetchData])
 
   const createWorkOrder = async () => {

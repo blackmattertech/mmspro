@@ -25,6 +25,9 @@ let app = null
 let messaging = null
 let analyticsInitStarted = false
 let appInflight = null
+let messagingInflight = null
+let serviceWorkerRegistration = null
+let messagingModulePromise = null
 
 const getFirebaseApp = async () => {
   const config = await activeFirebaseConfig()
@@ -47,6 +50,13 @@ const getFirebaseApp = async () => {
   return appInflight
 }
 
+function loadMessagingModule() {
+  if (!messagingModulePromise) {
+    messagingModulePromise = import('firebase/messaging')
+  }
+  return messagingModulePromise
+}
+
 export const initAnalytics = async () => {
   const config = await activeFirebaseConfig()
   if (!config || analyticsInitStarted || typeof window === 'undefined') return null
@@ -66,28 +76,52 @@ export const initAnalytics = async () => {
 
 const registerServiceWorker = async () => {
   if (!('serviceWorker' in navigator)) return null
-  return navigator.serviceWorker.register('/firebase-messaging-sw.js', {
+  if (serviceWorkerRegistration) return serviceWorkerRegistration
+  serviceWorkerRegistration = await navigator.serviceWorker.register('/firebase-messaging-sw.js', {
     scope: '/firebase-cloud-messaging-push-scope',
   })
+  return serviceWorkerRegistration
 }
 
 export const initMessaging = async () => {
   const config = await activeFirebaseConfig()
   if (!config || typeof window === 'undefined') return null
   if (messaging) return messaging
+  if (messagingInflight) return messagingInflight
 
-  const { getMessaging, isSupported } = await import('firebase/messaging')
-  const supported = await isSupported()
-  if (!supported) return null
+  messagingInflight = (async () => {
+    const { getMessaging, isSupported } = await loadMessagingModule()
+    const supported = await isSupported()
+    if (!supported) return null
 
-  const firebaseApp = await getFirebaseApp()
-  if (!firebaseApp) return null
+    const firebaseApp = await getFirebaseApp()
+    if (!firebaseApp) return null
 
-  await registerServiceWorker()
-  await navigator.serviceWorker.ready
+    const registration = await registerServiceWorker()
+    if (registration) await registration.ready
+    else await navigator.serviceWorker.ready
 
-  messaging = getMessaging(firebaseApp)
-  return messaging
+    messaging = getMessaging(firebaseApp)
+    return messaging
+  })()
+
+  try {
+    return await messagingInflight
+  } finally {
+    messagingInflight = null
+  }
+}
+
+/** Warm Firebase messaging + SW while the permission dialog is open. */
+export const prefetchMessaging = () => {
+  if (typeof window === 'undefined') return Promise.resolve(null)
+  return ensureFirebaseConfig()
+    .then((status) => {
+      if (!status?.configured) return null
+      loadMessagingModule()
+      return initMessaging()
+    })
+    .catch(() => null)
 }
 
 const vapidKey = import.meta.env.VITE_FIREBASE_VAPID_KEY
@@ -157,8 +191,8 @@ export const requestNotificationPermission = async () => {
   const messagingInstance = await initMessaging()
   if (!messagingInstance) return null
 
-  const registration = await navigator.serviceWorker.ready
-  const { getToken } = await import('firebase/messaging')
+  const registration = serviceWorkerRegistration || await navigator.serviceWorker.ready
+  const { getToken } = await loadMessagingModule()
   const options = { serviceWorkerRegistration: registration }
   const key = await activeVapidKey()
   if (key) options.vapidKey = key
@@ -170,7 +204,7 @@ export const onForegroundMessage = (callback) => {
   let unsubscribe = () => {}
   initMessaging().then(async (instance) => {
     if (!instance) return
-    const { onMessage } = await import('firebase/messaging')
+    const { onMessage } = await loadMessagingModule()
     unsubscribe = onMessage(instance, callback)
   })
   return () => unsubscribe()

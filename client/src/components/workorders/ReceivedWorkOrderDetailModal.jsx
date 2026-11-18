@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import { useBackdropClose } from '../../hooks/useBackdropClose'
 import { useWorkOrderDetail } from '../../hooks/useWorkOrderList'
 import { getReceivedWorkOrder } from '../../lib/api-work-orders'
@@ -6,14 +6,16 @@ import { notifyTabCountsChanged } from '../../lib/tabCountEvents'
 import { getWorkOrderFileSignedUrl } from '../../lib/workOrderAssets'
 import { getStoredWorkOrderFiles } from '../../lib/workOrderFileValues'
 import { useOrgStatusOptions } from '../../hooks/useOrgStatusOptions'
+import { formatWorkOrderStatusLabel } from '../../lib/workOrderStatusLabel'
 import PageBack from '../shared/PageBack'
 import EditIcon from '../ui/EditIcon'
 import SaveAsTemplateButton from '../templates/SaveAsTemplateButton'
 import EmployeeAvatar from '../company/EmployeeAvatar'
 import PersonChip from '../shared/PersonChip'
 import WorkOrderAssignmentActions from './WorkOrderAssignmentActions'
-import WorkOrderLifecyclePanel, { formatStatus } from './WorkOrderLifecyclePanel'
 import { formatDisplayDateTime } from '../../lib/displayDate'
+
+const WorkOrderLifecyclePanel = lazy(() => import('./WorkOrderLifecyclePanel'))
 import WorkRequestFormSections from './WorkRequestFormSections'
 import { requestTypeLabel } from '../workrequests/WorkRequestDetailModal'
 import '../shared/RecordDetailLayout.css'
@@ -211,7 +213,7 @@ export default function ReceivedWorkOrderDetailModal({
                 <div className="wr-detail-meta">
                   <MetaItem label="Status">
                     <span className={`wo-status wo-status--${view.status}`}>
-                      {formatStatus(view.status, statusLabels, view)}
+                      {formatWorkOrderStatusLabel(view, statusLabels)}
                     </span>
                   </MetaItem>
                   <MetaItem label="Priority">
@@ -282,7 +284,7 @@ export default function ReceivedWorkOrderDetailModal({
                 <div>
                   <span className="wo-received-detail__label">Status</span>
                   <span className={`wo-status wo-status--${view.status}`}>
-                    {formatStatus(view.status, statusLabels, view)}
+                    {formatWorkOrderStatusLabel(view, statusLabels)}
                   </span>
                 </div>
               </div>
@@ -300,13 +302,15 @@ export default function ReceivedWorkOrderDetailModal({
                 <WorkOrderAssignmentActions detail={view} onUpdated={handleUpdated} />
               )}
 
-              <WorkOrderLifecyclePanel
-                key={view.id}
-                detail={view}
-                onUpdated={handleUpdated}
-                hideHeader={Boolean(workRequest)}
-                hideWorkRequestForm={Boolean(workRequest)}
-              />
+              <Suspense fallback={<div className="loading">Loading workflow…</div>}>
+                <WorkOrderLifecyclePanel
+                  key={view.id}
+                  detail={view}
+                  onUpdated={handleUpdated}
+                  hideHeader={Boolean(workRequest)}
+                  hideWorkRequestForm={Boolean(workRequest)}
+                />
+              </Suspense>
 
               {sections.map((section) => (
                 <section key={section.id} className="wo-received-detail__section">

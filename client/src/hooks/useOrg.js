@@ -79,8 +79,15 @@ export function OrgProvider({ children }) {
       if (cached.me) setMe((prev) => prev ?? cached.me)
     }
 
-    if (!hasSnapshot) setFetching(true)
+    // Login + OrgProvider share fetchSession inflight. When a fresh usable
+    // snapshot already exists (peek / sessionStorage TTL), skip a second GET.
+    if (hasSnapshot) {
+      loadOrgBootstrap().catch(() => {})
+      setFetching(false)
+      return
+    }
 
+    setFetching(true)
     setError(null)
     try {
       const data = await fetchSession(userId)
@@ -97,7 +104,7 @@ export function OrgProvider({ children }) {
         setMe(fallback.me || null)
         setBootstrappedUserId(userId)
         bootstrappedUserIdRef.current = userId
-      } else if (!hasSnapshot) {
+      } else {
         setOrg(null)
         setOrgRole(null)
         setBootstrappedUserId(userId)

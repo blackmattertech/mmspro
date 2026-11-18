@@ -1,9 +1,10 @@
-import { forwardRef, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { forwardRef, lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useSpellcheckSuggestions } from '../../hooks/useSpellcheckSuggestions'
 import { preloadSpellchecker, replaceMisspelledWord } from '../../lib/spellcheck'
 import { characterLimitError } from '../../lib/textFieldLimits'
-import RichTextEditor from './RichTextEditor'
 import './SpellcheckInput.css'
+
+const RichTextEditor = lazy(() => import('./RichTextEditor'))
 
 export { characterLimitError } from '../../lib/textFieldLimits'
 
@@ -196,20 +197,23 @@ const SpellcheckInput = forwardRef(function SpellcheckInput(props, ref) {
       multiline = false,
     } = props
     const compact = !multiline && !/\bcompany-form__textarea\b/.test(className)
+    const { richText: _richText, ...plainFallback } = props
     return (
-      <RichTextEditor
-        id={id}
-        className={[className, wrapperClassName].filter(Boolean).join(' ')}
-        value={value}
-        onChange={onChange}
-        disabled={disabled}
-        readOnly={readOnly}
-        name={name}
-        maxLength={maxLength}
-        showCount={showCount}
-        placeholder={placeholder}
-        compact={compact}
-      />
+      <Suspense fallback={<PlainSpellcheckInput ref={ref} {...plainFallback} richText={false} />}>
+        <RichTextEditor
+          id={id}
+          className={[className, wrapperClassName].filter(Boolean).join(' ')}
+          value={value}
+          onChange={onChange}
+          disabled={disabled}
+          readOnly={readOnly}
+          name={name}
+          maxLength={maxLength}
+          showCount={showCount}
+          placeholder={placeholder}
+          compact={compact}
+        />
+      </Suspense>
     )
   }
 

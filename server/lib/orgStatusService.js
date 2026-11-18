@@ -106,6 +106,51 @@ export async function listOrgStatuses(orgId, entityType, { includeInactive = fal
   return data || []
 }
 
+/**
+ * Bootstrap helper: one ensure pass + two list queries instead of
+ * ensure+list per entity type (cuts 4× sequential round-trips).
+ */
+export async function listOrgStatusesByEntityTypes(orgId, entityTypes, { includeInactive = false } = {}) {
+  const types = [...new Set((entityTypes || []).filter(Boolean))]
+  const out = Object.fromEntries(types.map((key) => [key, []]))
+  if (!types.length) return out
+
+  const tableTypes = types.filter((type) => ORG_STATUS_TABLE_TYPES.includes(type))
+  const wantTasks = types.includes('task')
+
+  await Promise.all([
+    tableTypes.length ? ensureOrgStatusesForOrg(orgId) : Promise.resolve(),
+    wantTasks ? ensureTaskMetaForOrg(orgId) : Promise.resolve(),
+  ])
+
+  const [tableResult, taskRows] = await Promise.all([
+    tableTypes.length
+      ? (() => {
+          let query = supabaseAdmin
+            .from('org_statuses')
+            .select('*')
+            .eq('org_id', orgId)
+            .in('entity_type', tableTypes)
+            .order('sort_order', { ascending: true })
+            .order('name', { ascending: true })
+          if (!includeInactive) query = query.eq('is_active', true)
+          return query
+        })()
+      : Promise.resolve({ data: [], error: null }),
+    wantTasks
+      ? listTaskStatuses(orgId, { includeInactive }).then((rows) => rows.map(mapTaskStatusRow))
+      : Promise.resolve([]),
+  ])
+
+  if (tableResult.error) throw tableResult.error
+  for (const row of tableResult.data || []) {
+    if (!out[row.entity_type]) out[row.entity_type] = []
+    out[row.entity_type].push(row)
+  }
+  if (wantTasks) out.task = taskRows
+  return out
+}
+
 export async function getOrgStatusMap(orgId, entityType) {
   const rows = await listOrgStatuses(orgId, entityType, { includeInactive: true })
   const byKey = new Map()

@@ -161,8 +161,13 @@ function withDepartmentHeadDefaults(permissions) {
  * Resolve the current user's full access-role matrix for an org.
  * Org admins (account admin / super_admin) and access role "Admin" get full permissions.
  * Results are cached briefly to avoid repeating 2–4 DB queries on every API call.
+ *
+ * @param {object} profile
+ * @param {{ disabledModules?: string[], employee?: object|null }} [options]
+ *   Pass disabledModules / employee from a parent handler (e.g. /api/session) to skip
+ *   duplicate org + employee lookups.
  */
-export async function resolveSessionPermissions(profile) {
+export async function resolveSessionPermissions(profile, options = {}) {
   const cacheKey = permissionsCacheKey(profile)
   if (cacheKey) {
     const cached = permissionsCache.get(cacheKey)
@@ -185,27 +190,49 @@ export async function resolveSessionPermissions(profile) {
   }
 
   const accountOrgAdmin = canManageOrg(profile?.role)
-  const [{ data: orgRow, error: orgError }, employee] = await Promise.all([
-    supabaseAdmin
-      .from('organizations')
-      .select('disabled_modules')
-      .eq('id', orgId)
-      .maybeSingle(),
-    getLinkedEmployee(orgId, profile),
-  ])
-  if (orgError && !isMissingDisabledModulesColumn(orgError)) throw orgError
-  const disabled_modules = normalizeDisabledModules(orgRow?.disabled_modules)
+  const hasDisabledHint = Object.prototype.hasOwnProperty.call(options, 'disabledModules')
+  const hasEmployeeHint = Object.prototype.hasOwnProperty.call(options, 'employee')
+
+  let disabled_modules
+  let employee
+  if (hasDisabledHint && hasEmployeeHint) {
+    disabled_modules = normalizeDisabledModules(options.disabledModules)
+    employee = options.employee || null
+  } else {
+    const orgPromise = hasDisabledHint
+      ? Promise.resolve({ data: { disabled_modules: options.disabledModules }, error: null })
+      : supabaseAdmin
+        .from('organizations')
+        .select('disabled_modules')
+        .eq('id', orgId)
+        .maybeSingle()
+    const employeePromise = hasEmployeeHint
+      ? Promise.resolve(options.employee || null)
+      : getLinkedEmployee(orgId, profile)
+    const [{ data: orgRow, error: orgError }, linked] = await Promise.all([orgPromise, employeePromise])
+    if (orgError && !isMissingDisabledModulesColumn(orgError)) throw orgError
+    disabled_modules = normalizeDisabledModules(
+      hasDisabledHint ? options.disabledModules : orgRow?.disabled_modules,
+    )
+    employee = linked
+  }
+
   const locationId = employee?.location_id || null
   const departmentId = employee?.department_id || null
+  const roleId = employee?.access_role_id || employee?.access_role?.id || null
 
-  const accessRole = employee?.access_role_id
-    ? await getAccessRoleMeta(employee.access_role_id)
-    : null
+  let accessRole = null
+  let permissions = null
+  if (accountOrgAdmin) {
+    accessRole = roleId ? await getAccessRoleMeta(roleId) : null
+  } else if (roleId) {
+    ;[accessRole, permissions] = await Promise.all([
+      getAccessRoleMeta(roleId),
+      getPermissionsForRole(roleId),
+    ])
+  }
+
   const orgAdmin = accountOrgAdmin || isOrgAdminAccessRoleName(accessRole?.name)
-  const permissions = orgAdmin
-    ? null
-    : await getPermissionsForRole(employee?.access_role_id)
-
   const headFlags = await loadHeadFlags(orgId, employee, accessRole)
 
   let session

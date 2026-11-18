@@ -15,6 +15,7 @@ import './TaskAssigneeAvatars.css'
 import TablePagination from '../shared/TablePagination'
 import TableEmptyRow from '../shared/TableEmptyRow'
 import TableColumnPicker from '../shared/TableColumnPicker'
+import { VirtualTableBody } from '../shared/VirtualTableBody'
 import { useTablePagination } from '../../hooks/useTablePagination'
 import { useTableColumnPrefs } from '../../hooks/useTableColumnPrefs'
 import RecordPdfButton from '../shared/RecordPdfButton'
@@ -163,72 +164,77 @@ export default function TasksTable({
               })}
             </tr>
           </thead>
-          <tbody>
-            {pagedTasks.length === 0 ? (
+          {pagedTasks.length === 0 ? (
+            <tbody>
               <TableEmptyRow colSpan={visibleColumnIds.length}>
                 No tasks match your filters.
               </TableEmptyRow>
-            ) : pagedTasks.map((task) => (
-              <tr
-                key={task.id}
-                {...tableRowClickProps({
-                  onOpen: () => openView(task),
-                  label: `View ${task.title}`,
-                })}
-              >
-                {visibleColumnIds.map((columnId) => {
-                  if (columnId === 'actions') {
-                    return (
-                      <td key={columnId} onClick={stopTableRowClick}>
-                        <div className="company-table__actions">
-                          <RecordPdfButton moduleKey="task" recordId={task.id} filename={`${task.task_number || 'task'}.pdf`} />
-                          {canDuplicate && onDuplicate && (
-                            <DuplicateRowButton
-                              onClick={() => onDuplicate(task)}
-                              label={`Duplicate ${task.title}`}
-                            />
-                          )}
-                          {canSaveTemplate ? (
-                            <SaveAsTemplateButton
-                              moduleKey="tasks_followups"
-                              sourceRecordId={task.id}
-                              defaultName={task.title || task.task_number || 'Task'}
-                              className="company-btn company-btn--secondary company-btn--compact"
-                              label="Template"
-                            />
-                          ) : null}
-                          {canManage && (
-                            <>
-                              <button
-                                type="button"
-                                className="company-btn company-btn--secondary company-btn--compact company-btn--icon"
-                                onClick={() => openEdit(task)}
-                                aria-label={`Edit ${task.title}`}
-                                title="Edit"
-                              >
-                                <EditIcon />
-                              </button>
-                              <button
-                                type="button"
-                                className="company-btn company-btn--danger company-btn--compact company-btn--icon"
-                                onClick={() => onDelete?.(task)}
-                                disabled={deleting}
-                                aria-label={`Delete ${task.title}`}
-                                title="Delete"
-                              >
-                                <TrashIcon />
-                              </button>
-                            </>
-                          )}
-                        </div>
-                      </td>
-                    )
-                  }
-                  return <td key={columnId}>{renderCell(task, columnId)}</td>
-                })}
-              </tr>
-            ))}
-          </tbody>
+            </tbody>
+          ) : (
+            <VirtualTableBody
+              items={pagedTasks}
+              renderRow={(task) => (
+                <tr
+                  key={task.id}
+                  {...tableRowClickProps({
+                    onOpen: () => openView(task),
+                    label: `View ${task.title}`,
+                  })}
+                >
+                  {visibleColumnIds.map((columnId) => {
+                    if (columnId === 'actions') {
+                      return (
+                        <td key={columnId} onClick={stopTableRowClick}>
+                          <div className="company-table__actions">
+                            <RecordPdfButton moduleKey="task" recordId={task.id} filename={`${task.task_number || 'task'}.pdf`} />
+                            {canDuplicate && onDuplicate && (
+                              <DuplicateRowButton
+                                onClick={() => onDuplicate(task)}
+                                label={`Duplicate ${task.title}`}
+                              />
+                            )}
+                            {canSaveTemplate ? (
+                              <SaveAsTemplateButton
+                                moduleKey="tasks_followups"
+                                sourceRecordId={task.id}
+                                defaultName={task.title || task.task_number || 'Task'}
+                                className="company-btn company-btn--secondary company-btn--compact"
+                                label="Template"
+                              />
+                            ) : null}
+                            {canManage && (
+                              <>
+                                <button
+                                  type="button"
+                                  className="company-btn company-btn--secondary company-btn--compact company-btn--icon"
+                                  onClick={() => openEdit(task)}
+                                  aria-label={`Edit ${task.title}`}
+                                  title="Edit"
+                                >
+                                  <EditIcon />
+                                </button>
+                                <button
+                                  type="button"
+                                  className="company-btn company-btn--danger company-btn--compact company-btn--icon"
+                                  onClick={() => onDelete?.(task)}
+                                  disabled={deleting}
+                                  aria-label={`Delete ${task.title}`}
+                                  title="Delete"
+                                >
+                                  <TrashIcon />
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        </td>
+                      )
+                    }
+                    return <td key={columnId}>{renderCell(task, columnId)}</td>
+                  })}
+                </tr>
+              )}
+            />
+          )}
         </table>
       </div>
       <TablePagination {...pagination} />
