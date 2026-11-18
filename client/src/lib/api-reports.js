@@ -1,8 +1,21 @@
-import { apiFetch } from './api'
+import { apiFetch, apiFetchBlob } from './api'
 import { listQueryParams } from './listResponse'
 
 export function reportsFetch(path, options = {}) {
   return apiFetch(`/api/reports${path}`, options)
+}
+
+function reportsBlob(path, body) {
+  const acceptsCsv = /\/csv(?:\?|$)/i.test(path)
+  return apiFetchBlob(`/api/reports${path}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      // CORS-safelisted Accept selects binary on new servers; old servers ignore it and keep JSON.
+      Accept: acceptsCsv ? 'text/csv' : 'application/pdf',
+    },
+    body: JSON.stringify(body || {}),
+  })
 }
 
 export function getReportFilters(reportKey) {
@@ -56,17 +69,11 @@ export function getReport(key, {
 }
 
 export function downloadReportPdf(key, body) {
-  return reportsFetch(`/${encodeURIComponent(key)}/pdf`, {
-    method: 'POST',
-    body: JSON.stringify(body),
-  })
+  return reportsBlob(`/${encodeURIComponent(key)}/pdf`, body)
 }
 
 export function downloadReportCsv(key, body) {
-  return reportsFetch(`/${encodeURIComponent(key)}/csv`, {
-    method: 'POST',
-    body: JSON.stringify(body),
-  })
+  return reportsBlob(`/${encodeURIComponent(key)}/csv`, body)
 }
 
 export function generateReadyReport(key, body) {

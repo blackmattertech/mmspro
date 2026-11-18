@@ -23,7 +23,7 @@ import {
   sendReportNow,
   updateCustomReport,
 } from '../../../lib/api-reports'
-import { downloadBase64File } from '../../../lib/fileDownload'
+import { downloadBlobFile } from '../../../lib/api'
 import { asListArray } from '../../../lib/listResponse'
 import { notifyCustomReportsChanged } from '../../../lib/reportNavEvents'
 import {
@@ -502,9 +502,18 @@ export default function ReportPage() {
       const file = kind === 'csv'
         ? await downloadReportCsv(reportKey, downloadPayload())
         : await downloadReportPdf(reportKey, downloadPayload())
-      downloadBase64File(file)
+      downloadBlobFile({
+        blob: file.blob,
+        filename: file.filename || (kind === 'csv' ? 'report.csv' : 'report.pdf'),
+      })
     } catch (err) {
-      setError(err.message)
+      const message = err?.message || 'Could not download report'
+      // Firefox surfaces aborted/CORS/large-response failures as NetworkError.
+      setError(
+        /NetworkError|Failed to fetch|network/i.test(message)
+          ? 'Could not download the report. Check your connection and try again. If this keeps happening, narrow the date range or columns and retry.'
+          : message,
+      )
     } finally {
       setDownloading(false)
     }

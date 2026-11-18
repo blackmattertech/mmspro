@@ -14,7 +14,9 @@
     "test:unit": "node --test lib/pmSchedule.test.js lib/formSkips.test.js lib/userSelfAssignment.test.js lib/warrantyBulkGroup.test.js lib/ttlCache.test.js lib/excelTemplate.test.js lib/workOrderOrigin.test.js lib/uomMaster.test.js lib/uomBulk.test.js lib/orgPermissions.accessAdmin.test.js lib/workRequestOrderFrom.test.js lib/orgDataReset.test.js lib/workOrderAssignmentActions.test.js lib/workRequestStatusFilter.test.js lib/deleteOrganization.password.test.js lib/companyMasterBulk.employees.test.js lib/supportTickets.test.js lib/richText.test.js lib/reportReadyService.test.js lib/bulkImportEnqueue.test.js lib/equipmentBulkService.areaTemplate.test.js lib/recordTemplateService.test.js lib/reportConstants.dynamicColumns.test.js ../shared/displayDate.test.js ../shared/meterCycle.test.js ../shared/workRecordClone.test.js ../shared/nestedClone.test.js lib/nestedClone.test.js",
     "wipe": "node scripts/wipe-all.js",
     "wipe:keep-admin": "node scripts/wipe-keep-admin.js",
-    "delete:org": "node scripts/delete-organization.js"
+    "delete:org": "node scripts/delete-organization.js",
+    "test": "node --test lib/*.test.js",
+    "smoke:export": "node scripts/smoke-export-compat.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.39.0",
@@ -30,6 +32,7 @@
     "pdfkit": "^0.20.2",
     "postgres": "^3.4.9",
     "qrcode": "^1.5.4",
+    "sharp": "^0.34.4",
     "swagger-ui-express": "^5.0.1",
     "ws": "^8.21.0",
     "yaml": "^2.9.0"

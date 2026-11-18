@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import ws from 'ws'
-import 'dotenv/config'
+import '../lib/loadEnv.js'
 
 const isPlaceholder = (value) => !value || /^your_/i.test(value)
 

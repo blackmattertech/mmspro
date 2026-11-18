@@ -1,4 +1,4 @@
-import 'dotenv/config'
+import './lib/loadEnv.js'
 import './lib/serverLog.js'
 import app from './app.js'
 import { getCorsOrigins, getPublicAppUrl } from './lib/appUrl.js'

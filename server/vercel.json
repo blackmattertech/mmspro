@@ -1,3 +1,9 @@
 {
-  "regions": ["bom1"]
+  "regions": ["bom1"],
+  "functions": {
+    "app.js": {
+      "maxDuration": 60,
+      "memory": 1024
+    }
+  }
 }
