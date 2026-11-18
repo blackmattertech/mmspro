@@ -1,11 +1,5 @@
 {
   "regions": ["bom1"],
-  "crons": [
-    {
-      "path": "/health",
-      "schedule": "*/2 * * * *"
-    }
-  ],
   "functions": {
     "app.js": {
       "includeFiles": "{shared/**,openapi/**,node_modules/semver/**}",
