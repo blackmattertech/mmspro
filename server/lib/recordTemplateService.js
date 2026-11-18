@@ -19,7 +19,7 @@ import {
   normalizeTemplateName,
   recordTemplateModule,
   validateTemplateName,
-} from '../../shared/recordTemplates.js'
+} from '../shared/recordTemplates.js'
 
 const WO_ASSETS_BUCKET = 'work-order-assets'
 const ORG_ASSETS_BUCKET = 'org-assets'

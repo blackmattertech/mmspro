@@ -3,7 +3,7 @@ import { verifyAuth } from '../../middleware/auth.js'
 import { requireOrgAccess } from '../../middleware/orgAccess.js'
 import { loadOrgPermissions } from '../../middleware/modulePermission.js'
 import { hasAnyModulePermission } from '../../lib/orgPermissions.js'
-import { isRecordTemplateModuleKey, recordTemplateModule } from '../../../shared/recordTemplates.js'
+import { isRecordTemplateModuleKey, recordTemplateModule } from '../../shared/recordTemplates.js'
 import {
   applyRecordTemplate,
   createRecordTemplate,

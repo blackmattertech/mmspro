@@ -5,4 +5,4 @@ export {
   formatDisplayDateValue,
   formatDisplayTime,
   parseToIsoDate,
-} from '../../shared/displayDate.js'
+} from '../shared/displayDate.js'

@@ -1,5 +1,5 @@
 import { enforceCloneOfId } from './recordClone.js'
-import { cloneUniqueKeysFor } from '../../shared/workRecordClone.js'
+import { cloneUniqueKeysFor } from '../shared/workRecordClone.js'
 
 export {
   MANUAL_WO_CLONE_UNIQUE_KEYS,
@@ -17,7 +17,7 @@ export {
   CHECKLIST_CLONE_UNIQUE_KEYS,
   CHECKLIST_CLONE_SERVER_COMPARE_KEYS,
   toChecklistCloneComparable,
-} from '../../shared/workRecordClone.js'
+} from '../shared/workRecordClone.js'
 
 /**
  * Wrapper around enforceCloneOfId that only requires unique keys the source

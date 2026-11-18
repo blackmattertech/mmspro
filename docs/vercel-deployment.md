@@ -15,13 +15,15 @@ Deploy MMSPro as **two separate Vercel projects**: one for the client (`client/`
 
 Vercel auto-detects [`server/app.js`](server/app.js) as the Express entry point. Do **not** use a separate `api/index.js` handler.
 
+`npm run build` / `postinstall` runs [`server/scripts/vendor-shared.js`](server/scripts/vendor-shared.js) to copy repo `shared/` into `server/shared/` so serverless can resolve shared modules when Root Directory is `server`.
+
 **Environment variables** (set in Vercel dashboard — do not commit `.env`):
 
 | Variable | Example | Notes |
 |----------|---------|-------|
 | `SUPABASE_URL` | `https://xxx.supabase.co` | Required |
 | `SUPABASE_SERVICE_ROLE_KEY` | `eyJ...` | Required |
-| `CLIENT_URL` | `https://mmspro.vercel.app` | CORS allowlist (comma-separated) |
+| `CLIENT_URL` | `https://mmspro.vercel.app` | **Required** CORS allowlist (comma-separated). Missing this + a crash looks like “CORS blocked” in the browser. |
 | `APP_PUBLIC_URL` | `https://mmspro.vercel.app` | Password-reset / invite email links (must NOT be ngrok) |
 | `API_PUBLIC_URL` | `https://mmspro-server.vercel.app` | Optional — Swagger server URL |
 | `FIREBASE_SERVICE_ACCOUNT_JSON` | `{"type":"service_account",...}` | Required on Vercel — paste full JSON as one line |
@@ -105,6 +107,7 @@ For FCM push notifications, ensure Web Push certificate (VAPID) is configured an
 - [ ] Login works
 - [ ] Dashboard loads data (Network tab shows requests to server URL, not `:5050`)
 - [ ] No CORS errors in browser console
+- [ ] `GET /health` returns `{"status":"ok"}` (if this 500s, browser CORS errors are a symptom of a crashed function — check Vercel Function logs)
 - [ ] Deep links work: `/login`, `/admin/dashboard`, `/:orgSlug/dashboard`
 
 ## 5. Local development

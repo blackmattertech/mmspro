@@ -109,5 +109,11 @@ export function getCorsOrigins() {
   const publicUrl = process.env.APP_PUBLIC_URL?.trim()
   if (publicUrl) origins.add(normalizeUrl(publicUrl))
 
+  // Production safety net: if env was never updated after a tunnel-only CLIENT_URL,
+  // still allow the known Vercel client host so login is not a silent CORS failure.
+  if (isProductionRuntime()) {
+    origins.add('https://mmspro.vercel.app')
+  }
+
   return [...origins]
 }

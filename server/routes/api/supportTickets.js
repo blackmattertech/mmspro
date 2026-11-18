@@ -3,7 +3,7 @@ import { assertOrgOwnership } from '../../middleware/orgAccess.js'
 import { requireAnyModulePermission, requireModulePermission } from '../../middleware/modulePermission.js'
 import { sendCsv } from '../../lib/listQuery.js'
 import { plainTextFromRich } from '../../lib/richText.js'
-import { TICKET_STATUSES } from '../../../shared/supportTickets.js'
+import { TICKET_STATUSES } from '../../shared/supportTickets.js'
 import {
   addMessage,
   changeTicket,
