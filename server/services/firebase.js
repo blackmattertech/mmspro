@@ -1,4 +1,3 @@
-import admin from 'firebase-admin'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import 'dotenv/config'
@@ -26,6 +25,14 @@ function serviceAccountFromFile() {
 
 let messaging = null
 let messagingKey = ''
+let adminModulePromise = null
+
+function loadFirebaseAdmin() {
+  if (!adminModulePromise) {
+    adminModulePromise = import('firebase-admin').then((mod) => mod.default || mod)
+  }
+  return adminModulePromise
+}
 
 export async function getFirebaseMessaging() {
   const { row } = await getIntegrationRow('firebase')
@@ -38,6 +45,7 @@ export async function getFirebaseMessaging() {
   const key = `${serviceAccount.project_id}:${serviceAccount.client_email}`
   if (messaging && messagingKey === key) return messaging
   try {
+    const admin = await loadFirebaseAdmin()
     const existing = admin.apps.find((app) => app.name === 'mmspro')
     if (existing) await existing.delete()
     const app = admin.initializeApp({

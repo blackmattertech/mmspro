@@ -1,5 +1,3 @@
-import sharp from 'sharp'
-
 const MAX_EDGE = 240
 const MAX_BYTES = 80_000
 
@@ -14,6 +12,7 @@ export async function preparePdfLogo(buffer, {
 } = {}) {
   if (!Buffer.isBuffer(buffer) || buffer.length < 24) return null
   try {
+    const { default: sharp } = await import('sharp')
     const image = sharp(buffer, { failOn: 'none' })
     const meta = await image.metadata()
     if (!meta.width || !meta.height) return null

@@ -1,6 +1,6 @@
 import { memo, useEffect, useRef, useState } from 'react'
 
-const VIRTUALIZE_AFTER = 50
+const VIRTUALIZE_AFTER = 25
 const ROW_HEIGHT = 48
 const OVERSCAN = 8
 

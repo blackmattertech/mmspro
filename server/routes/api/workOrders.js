@@ -1145,13 +1145,13 @@ function personFromActor(actor, fallback = null) {
   }
 }
 
-async function buildWorkOrderListResponse(orgId, rows, existingAssigneesByWo = null) {
+async function buildWorkOrderListResponse(orgId, rows, existingAssigneesByWo = null, { withPhotos = true } = {}) {
   if (!rows.length) return []
 
   const withDepartments = await attachDepartmentAssignments(rows)
   const withSummaries = await attachSummaries(orgId, withDepartments)
   const assigneesByWo = existingAssigneesByWo
-    || await loadAssigneesForWorkOrders(orgId, withSummaries.map((r) => r.id))
+    || await loadAssigneesForWorkOrders(orgId, withSummaries.map((r) => r.id), { withPhotos })
   const unassignedSelf = withSummaries.filter((row) => (
     row.source_type === 'user_self_request' && !(assigneesByWo.get(row.id) || []).length
   ))

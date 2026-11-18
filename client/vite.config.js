@@ -169,6 +169,7 @@ export default defineConfig(({ mode }) => {
               ) return 'vendor-react'
               if (id.includes('@lottiefiles')) return 'vendor-lottie'
               if (id.includes('nspell')) return 'vendor-spellcheck'
+              if (id.includes('@tiptap') || id.includes('prosemirror')) return 'vendor-tiptap'
             }
           },
         },

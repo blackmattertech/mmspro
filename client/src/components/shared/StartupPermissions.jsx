@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useId, useState } from 'react'
 import { useNotifications } from '../../hooks/useNotifications'
-import { ensureFirebaseConfig } from '../../lib/firebase'
+import { ensureFirebaseConfig, prefetchMessaging } from '../../lib/firebase'
 import {
   cameraPermissionState,
   notificationPermissionState,
@@ -52,19 +52,24 @@ export default function StartupPermissions() {
   const [open, setOpen] = useState(false)
   const [pending, setPending] = useState([])
   const [busy, setBusy] = useState(false)
+  const [prompting, setPrompting] = useState(false)
   const [note, setNote] = useState('')
 
   useEffect(() => {
     if (sessionDismissed()) return undefined
     let cancelled = false
     ;(async () => {
-      const firebase = await ensureFirebaseConfig()
+      const [firebase, cameraState] = await Promise.all([
+        ensureFirebaseConfig(),
+        cameraPermissionState(),
+      ])
       const next = []
       if (firebase?.configured && notificationPermissionState() === 'default') next.push('notifications')
-      if (await cameraPermissionState() === 'prompt') next.push('camera')
+      if (cameraState === 'prompt') next.push('camera')
       if (cancelled || sessionDismissed()) return
       setPending(next)
       setOpen(next.length > 0)
+      if (next.includes('notifications')) prefetchMessaging()
     })()
     return () => {
       cancelled = true
@@ -89,26 +94,44 @@ export default function StartupPermissions() {
     const current = pending[0]
     if (!current || busy) return
     setBusy(true)
+    setPrompting(true)
     setNote('')
     try {
       if (current === 'notifications') {
         const state = await askForNotifications()
+        setPrompting(false)
         if (state === 'default') return
-        if (state === 'granted') await registerToken()
-        if (state === 'denied') {
+        // Advance UI immediately; FCM token + API save run in the background.
+        const rest = pending.slice(1)
+        setPending(rest)
+        if (rest.length === 0) {
+          dismissForSession()
+          setOpen(false)
+        }
+        if (state === 'granted') {
+          void registerToken().catch(() => {})
+        } else if (state === 'denied') {
           setNote('Notifications stay off until they are allowed in the browser site settings.')
         }
-      } else if (current === 'camera') {
+        return
+      }
+
+      if (current === 'camera') {
         const state = await requestCameraAccess()
+        setPrompting(false)
         if (state === 'prompt') return
         if (state === 'denied') {
           setNote('Camera stays off until it is allowed in the browser site settings.')
         }
+        const rest = pending.slice(1)
+        setPending(rest)
+        if (rest.length === 0) {
+          dismissForSession()
+          setOpen(false)
+        }
       }
-      const rest = pending.slice(1)
-      setPending(rest)
-      if (rest.length === 0) setOpen(false)
     } finally {
+      setPrompting(false)
       setBusy(false)
     }
   }
@@ -117,6 +140,7 @@ export default function StartupPermissions() {
 
   const current = pending[0]
   const action = COPY[current]?.action || 'Allow'
+  const busyLabel = prompting ? 'Check the browser prompt…' : 'Working…'
 
   return (
     <div className="company-modal-overlay startup-permissions" role="presentation">
@@ -144,7 +168,7 @@ export default function StartupPermissions() {
             Not now
           </button>
           <button type="button" className="startup-permissions__allow" onClick={allowCurrent} disabled={busy}>
-            {busy ? 'Waiting…' : action}
+            {busy ? busyLabel : action}
           </button>
         </div>
       </div>

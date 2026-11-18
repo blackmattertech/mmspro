@@ -1,10 +1,8 @@
 import express from 'express'
 import cors from 'cors'
 import compression from 'compression'
-import swaggerUi from 'swagger-ui-express'
 import 'dotenv/config'
 import { getCorsOrigins } from './lib/appUrl.js'
-import { loadOpenApiSpec } from './openapi/loadSpec.js'
 import apiRoutes from './routes/api/index.js'
 import adminRoutes from './routes/admin/index.js'
 import notificationRoutes from './routes/api/notifications.js'
@@ -46,9 +44,12 @@ app.use(compression())
 
 const TIMED_API_PREFIXES = [
   '/api/session',
+  '/api/bootstrap',
   '/api/work-requests',
   '/api/work-orders',
   '/api/dashboard/summary',
+  '/api/tasks',
+  '/api/notifications',
 ]
 
 app.use((req, res, next) => {
@@ -112,16 +113,45 @@ app.use(
 )
 app.use(express.json({ limit: '4mb' }))
 
-try {
+let swaggerBundle = null
+async function loadSwaggerBundle() {
+  if (swaggerBundle) return swaggerBundle
+  const [{ loadOpenApiSpec }, swaggerMod] = await Promise.all([
+    import('./openapi/loadSpec.js'),
+    import('swagger-ui-express'),
+  ])
+  const swaggerUi = swaggerMod.default || swaggerMod
   const openApiSpec = loadOpenApiSpec()
-  app.get('/api/docs/openapi.json', (_req, res) => res.json(openApiSpec))
-  app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(openApiSpec))
-} catch (err) {
-  console.warn('Swagger UI disabled:', err.message)
-  app.get('/api/docs', (_req, res) => {
-    res.status(503).json({ error: 'API docs unavailable', detail: err.message })
-  })
+  swaggerBundle = { swaggerUi, openApiSpec }
+  return swaggerBundle
 }
+
+app.get('/api/docs/openapi.json', async (_req, res) => {
+  try {
+    const { openApiSpec } = await loadSwaggerBundle()
+    res.json(openApiSpec)
+  } catch (err) {
+    res.status(503).json({ error: 'API docs unavailable', detail: err.message })
+  }
+})
+
+app.use('/api/docs', async (req, res, next) => {
+  try {
+    const { swaggerUi, openApiSpec } = await loadSwaggerBundle()
+    const serve = Array.isArray(swaggerUi.serve) ? swaggerUi.serve : [swaggerUi.serve]
+    const setup = swaggerUi.setup(openApiSpec)
+    let index = 0
+    const run = (err) => {
+      if (err) return next(err)
+      const middleware = serve[index++]
+      if (middleware) return middleware(req, res, run)
+      return setup(req, res, next)
+    }
+    run()
+  } catch (err) {
+    res.status(503).json({ error: 'API docs unavailable', detail: err.message })
+  }
+})
 
 app.use('/api/auth', authRoutes)
 app.use('/api/internal', internalRoutes)

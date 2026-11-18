@@ -3,10 +3,10 @@ import { verifyAuth } from '../../middleware/auth.js'
 import { requireOrgAccess } from '../../middleware/orgAccess.js'
 import { supabaseAdmin } from '../../services/supabase.js'
 import { getScopedLocationId, resolveSessionPermissions } from '../../lib/orgPermissions.js'
-import { isMissingDisabledModulesColumn } from '../../lib/orgModules.js'
-import { loadMyProfileBundle } from './profile.js'
+import { isMissingDisabledModulesColumn, normalizeDisabledModules } from '../../lib/orgModules.js'
+import { findLinkedEmployee, loadMyProfileBundle, loadUserProfile } from './profile.js'
 import { loadOrgCatalogFields } from '../../lib/orgFormLayouts.js'
-import { listOrgStatuses } from '../../lib/orgStatusService.js'
+import { listOrgStatusesByEntityTypes } from '../../lib/orgStatusService.js'
 import { ORG_STATUS_ENTITY_TYPES } from '../../lib/orgStatusDefaults.js'
 import { countWorkRequestTabs, getEmployeeByProfile } from '../../lib/workRequestService.js'
 import { countWorkOrderTabs } from './workOrders.js'
@@ -23,7 +23,7 @@ const ORG_SELECT_BASE = 'id, name, slug, plan, is_active, logo_url'
 router.get('/session', verifyAuth, requireOrgAccess, async (req, res) => {
   try {
     const orgId = req.userProfile.org_id
-    const [orgResult, permissions, me] = await Promise.all([
+    const [orgResult, profile] = await Promise.all([
       orgId
         ? supabaseAdmin
           .from('organizations')
@@ -31,8 +31,7 @@ router.get('/session', verifyAuth, requireOrgAccess, async (req, res) => {
           .eq('id', orgId)
           .single()
         : Promise.resolve({ data: null, error: null }),
-      resolveSessionPermissions(req.userProfile),
-      loadMyProfileBundle(req.user.id),
+      loadUserProfile(req.user.id),
     ])
 
     let org = orgResult.data
@@ -51,6 +50,28 @@ router.get('/session', verifyAuth, requireOrgAccess, async (req, res) => {
       console.error('[session] org lookup failed:', orgError.message)
       return res.status(500).json({ error: orgError.message })
     }
+
+    const disabledModules = normalizeDisabledModules(org?.disabled_modules)
+    // One rich employee row for the profile bundle; slim fields feed permissions.
+    const employeeRow = orgId ? await findLinkedEmployee(orgId, profile) : null
+    const permissionEmployee = employeeRow
+      ? {
+          id: employeeRow.id,
+          location_id: employeeRow.location_id,
+          department_id: employeeRow.department_id,
+          access_role_id: employeeRow.access_role?.id || null,
+          name: employeeRow.name,
+          emp_id: employeeRow.emp_id,
+        }
+      : null
+
+    const [permissions, me] = await Promise.all([
+      resolveSessionPermissions(req.userProfile, {
+        disabledModules,
+        employee: permissionEmployee,
+      }),
+      loadMyProfileBundle(req.user.id, { profile, employee: employeeRow }),
+    ])
 
     res.json({
       role: req.userProfile.role,
@@ -115,24 +136,26 @@ router.get('/bootstrap', verifyAuth, requireOrgAccess, async (req, res) => {
       .limit(BOOTSTRAP_LIMIT)
     if (locationId) workCentersQuery = workCentersQuery.eq('location_id', locationId)
 
-    const [locations, departments, workCenters, catalog, statusEntries, employee] = await Promise.all([
+    const statusKeys = ORG_STATUS_ENTITY_TYPES.map((item) => item.key)
+    const employeePromise = getEmployeeByProfile(orgId, req.userProfile.id, {
+      email: req.userProfile.email,
+    }).catch(() => null)
+
+    const [locations, departments, workCenters, catalog, statusesByType, employee] = await Promise.all([
       locationsQuery,
       departmentsQuery,
       workCentersQuery,
       loadOrgCatalogFields(orgId).catch(() => []),
-      Promise.all(
-        ORG_STATUS_ENTITY_TYPES.map(async (item) => {
-          const rows = await listOrgStatuses(orgId, item.key, { includeInactive: true }).catch(() => [])
-          return [item.key, rows]
-        }),
-      ),
-      getEmployeeByProfile(orgId, req.userProfile.id, { email: req.userProfile.email }).catch(() => null),
+      listOrgStatusesByEntityTypes(orgId, statusKeys, { includeInactive: true }).catch(() => ({})),
+      employeePromise,
     ])
 
     if (locations.error) throw locations.error
     if (departments.error) throw departments.error
     if (workCenters.error) throw workCenters.error
 
+    // Tab counts need employee/session but not locations/catalog — start as soon as
+    // employee is known (already resolved above) without waiting on anything else.
     const [wrTabs, woTabs] = await Promise.all([
       countWorkRequestTabs(orgId, {
         profileId: req.userProfile.id,
@@ -156,7 +179,7 @@ router.get('/bootstrap', verifyAuth, requireOrgAccess, async (req, res) => {
       departments: departments.data || [],
       work_centers: workCenters.data || [],
       catalog_fields,
-      org_statuses: Object.fromEntries(statusEntries),
+      org_statuses: statusesByType,
       tab_counts: { work_requests: wrTabs, work_orders: woTabs },
     })
   } catch (err) {

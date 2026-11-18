@@ -12,6 +12,7 @@ import DuplicateIcon from '../ui/DuplicateIcon'
 import EditIcon from '../ui/EditIcon'
 import TrashIcon from '../ui/TrashIcon'
 import SaveAsTemplateButton from '../templates/SaveAsTemplateButton'
+import { VirtualTableBody } from '../shared/VirtualTableBody'
 import { PM_PLAN_COLUMNS, PM_PLAN_DEFAULT_COLUMN_IDS } from './pmPlanColumns'
 import { readCatalogText } from '../../lib/pickerFields'
 import { formatCalendarDate } from '../../lib/displayDate'
@@ -146,89 +147,8 @@ export default function PmPlansTable({
               {showActions && <th>Actions</th>}
             </tr>
           </thead>
-          <tbody>
-            {plans.map((plan) => {
-              const openPlan = () => (onOpen || onEdit)?.(plan)
-              return (
-              <tr
-                key={plan.id}
-                className={openPlan ? 'company-table__row--clickable' : undefined}
-                onClick={openPlan || undefined}
-                onKeyDown={openPlan ? (event) => {
-                  if (event.key === 'Enter' || event.key === ' ') {
-                    event.preventDefault()
-                    openPlan()
-                  }
-                } : undefined}
-                tabIndex={openPlan ? 0 : undefined}
-                role={openPlan ? 'button' : undefined}
-                aria-label={openPlan ? `View PM plan ${plan.plan_number || plan.name || ''}` : undefined}
-              >
-                {visibleDataColumns.map((columnId) => (
-                  <td key={columnId}>{renderCell(plan, columnId)}</td>
-                ))}
-                {showActions && (
-                  <td onClick={(event) => event.stopPropagation()}>
-                    <div className="pm-table-actions">
-                      {canAdd && (plan.status === 'active' || plan.status === 'overdue') && (
-                        <button
-                          type="button"
-                          className="company-btn company-btn--secondary company-btn--compact"
-                          onClick={() => onGenerate?.(plan)}
-                        >
-                          Generate
-                        </button>
-                      )}
-                      {canAdd && (
-                        <button
-                          type="button"
-                          className="company-btn company-btn--secondary company-btn--compact company-btn--icon"
-                          onClick={() => onDuplicate?.(plan)}
-                          disabled={duplicatingId === plan.id}
-                          aria-label="Duplicate plan"
-                          title="Duplicate"
-                        >
-                          <DuplicateIcon />
-                        </button>
-                      )}
-                      {canSaveTemplate ? (
-                        <SaveAsTemplateButton
-                          moduleKey="work_orders_scheduled"
-                          sourceRecordId={plan.id}
-                          defaultName={plan.name || plan.plan_number || 'PM plan'}
-                          className="company-btn company-btn--secondary company-btn--compact"
-                          label="Template"
-                        />
-                      ) : null}
-                      {canEdit && (
-                        <button
-                          type="button"
-                          className="company-btn company-btn--secondary company-btn--compact company-btn--icon"
-                          onClick={() => onEdit?.(plan)}
-                          aria-label="Edit plan"
-                          title="Edit"
-                        >
-                          <EditIcon />
-                        </button>
-                      )}
-                      {canRemove && (
-                        <button
-                          type="button"
-                          className="company-btn company-btn--secondary company-btn--compact company-btn--icon"
-                          onClick={() => onDelete?.(plan)}
-                          aria-label="Delete plan"
-                          title="Delete"
-                        >
-                          <TrashIcon />
-                        </button>
-                      )}
-                    </div>
-                  </td>
-                )}
-              </tr>
-              )
-            })}
-            {!plans.length && (
+          {!plans.length ? (
+            <tbody>
               <tr>
                 <td colSpan={Math.max(colSpan, 1)} className="company-empty">
                   <strong>{totalCount ? 'No matching PM plans.' : 'No PM plans yet.'}</strong>
@@ -239,8 +159,93 @@ export default function PmPlansTable({
                   </p>
                 </td>
               </tr>
-            )}
-          </tbody>
+            </tbody>
+          ) : (
+            <VirtualTableBody
+              items={plans}
+              renderRow={(plan) => {
+                const openPlan = () => (onOpen || onEdit)?.(plan)
+                return (
+                  <tr
+                    key={plan.id}
+                    className={openPlan ? 'company-table__row--clickable' : undefined}
+                    onClick={openPlan || undefined}
+                    onKeyDown={openPlan ? (event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault()
+                        openPlan()
+                      }
+                    } : undefined}
+                    tabIndex={openPlan ? 0 : undefined}
+                    role={openPlan ? 'button' : undefined}
+                    aria-label={openPlan ? `View PM plan ${plan.plan_number || plan.name || ''}` : undefined}
+                  >
+                    {visibleDataColumns.map((columnId) => (
+                      <td key={columnId}>{renderCell(plan, columnId)}</td>
+                    ))}
+                    {showActions && (
+                      <td onClick={(event) => event.stopPropagation()}>
+                        <div className="pm-table-actions">
+                          {canAdd && (plan.status === 'active' || plan.status === 'overdue') && (
+                            <button
+                              type="button"
+                              className="company-btn company-btn--secondary company-btn--compact"
+                              onClick={() => onGenerate?.(plan)}
+                            >
+                              Generate
+                            </button>
+                          )}
+                          {canAdd && (
+                            <button
+                              type="button"
+                              className="company-btn company-btn--secondary company-btn--compact company-btn--icon"
+                              onClick={() => onDuplicate?.(plan)}
+                              disabled={duplicatingId === plan.id}
+                              aria-label="Duplicate plan"
+                              title="Duplicate"
+                            >
+                              <DuplicateIcon />
+                            </button>
+                          )}
+                          {canSaveTemplate ? (
+                            <SaveAsTemplateButton
+                              moduleKey="work_orders_scheduled"
+                              sourceRecordId={plan.id}
+                              defaultName={plan.name || plan.plan_number || 'PM plan'}
+                              className="company-btn company-btn--secondary company-btn--compact"
+                              label="Template"
+                            />
+                          ) : null}
+                          {canEdit && (
+                            <button
+                              type="button"
+                              className="company-btn company-btn--secondary company-btn--compact company-btn--icon"
+                              onClick={() => onEdit?.(plan)}
+                              aria-label="Edit plan"
+                              title="Edit"
+                            >
+                              <EditIcon />
+                            </button>
+                          )}
+                          {canRemove && (
+                            <button
+                              type="button"
+                              className="company-btn company-btn--secondary company-btn--compact company-btn--icon"
+                              onClick={() => onDelete?.(plan)}
+                              aria-label="Delete plan"
+                              title="Delete"
+                            >
+                              <TrashIcon />
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    )}
+                  </tr>
+                )
+              }}
+            />
+          )}
         </table>
       </div>
     </div>

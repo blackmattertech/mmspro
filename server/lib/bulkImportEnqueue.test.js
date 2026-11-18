@@ -50,9 +50,11 @@ test('import registry covers core Excel templates', () => {
     'asset_field_parents',
     'asset_field_children',
   ]) {
-    assert.equal(getImportTemplate(key).key, key)
-    assert.ok(IMPORT_BULK_REGISTRY[key].failedFilename)
-    assert.equal(typeof IMPORT_BULK_REGISTRY[key].run, 'function')
+    assert.ok(IMPORT_BULK_REGISTRY[key])
+    const def = getImportTemplate(key)
+    assert.equal(def.key, key)
+    assert.ok(def.failedFilename)
+    assert.equal(typeof def.run, 'function')
   }
   assert.throws(() => getImportTemplate('nope'), (err) => err.status === 400)
 })

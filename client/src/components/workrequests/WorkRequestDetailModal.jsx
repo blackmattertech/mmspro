@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Link } from 'react-router-dom'
 import { useBackdropClose } from '../../hooks/useBackdropClose'
@@ -37,9 +37,10 @@ import EquipmentQrCode from '../equipment/EquipmentQrCode'
 import { AssetHierarchySummary } from './WorkRequestAssetFields'
 import { hierarchyDisplaySteps } from '../../lib/assetHierarchy'
 import WorkOrderAssignmentActions from '../workorders/WorkOrderAssignmentActions'
-import WorkOrderLifecyclePanel from '../workorders/WorkOrderLifecyclePanel'
 import { useOrgStatusOptions } from '../../hooks/useOrgStatusOptions'
 import { workRequestStatusDisplay } from '../../lib/workRequestStatusLabel'
+
+const WorkOrderLifecyclePanel = lazy(() => import('../workorders/WorkOrderLifecyclePanel'))
 
 function WorkRequestChecklistPanel({ detail, readOnly = false }) {
   const fields = detail?.checklist_snapshot?.fields || []
@@ -1132,14 +1133,16 @@ export default function WorkRequestDetailModal({
                       onUpdated={handleLinkedOrderUpdated}
                       readOnly={!canEditLinkedAssignment}
                     />
-                    <WorkOrderLifecyclePanel
-                      key={linkedOrder.id}
-                      detail={linkedOrder}
-                      onUpdated={handleLinkedOrderUpdated}
-                      canUpdate={canEditLinkedLifecycle}
-                      hideHeader
-                      hideWorkRequestForm
-                    />
+                    <Suspense fallback={<div className="loading">Loading workflow…</div>}>
+                      <WorkOrderLifecyclePanel
+                        key={linkedOrder.id}
+                        detail={linkedOrder}
+                        onUpdated={handleLinkedOrderUpdated}
+                        canUpdate={canEditLinkedLifecycle}
+                        hideHeader
+                        hideWorkRequestForm
+                      />
+                    </Suspense>
                   </>
                 )}
               </div>

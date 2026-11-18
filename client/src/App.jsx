@@ -87,13 +87,16 @@ const workOrderModules = [
 ]
 
 function PrefetchAuthenticatedShell() {
-  const { user } = useAuth()
+  const { user, role } = useAuth()
   useEffect(() => {
     if (!user) return
+    if (role === 'super_admin') {
+      import('./layouts/AdminLayout')
+      return
+    }
     import('./layouts/AppLayout')
-    import('./layouts/AdminLayout')
     import('./pages/app/Dashboard')
-  }, [user])
+  }, [user, role])
   return null
 }
 

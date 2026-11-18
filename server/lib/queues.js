@@ -1,4 +1,4 @@
-import { Queue } from 'bullmq'
+import { createRequire } from 'node:module'
 import { createRedisConnection, getRedisUrl, isJobQueueEnabled } from './redis.js'
 
 export const QUEUE_BULK_IMPORT = 'bulk-import'
@@ -24,6 +24,16 @@ const DEFAULT_JOB_OPTIONS = {
 }
 
 const queues = new Map()
+const require = createRequire(import.meta.url)
+let QueueCtor = null
+
+/** Lazy-load BullMQ so Express cold starts do not pay for it until enqueue/worker use. */
+function getQueueCtor() {
+  if (!QueueCtor) {
+    QueueCtor = require('bullmq').Queue
+  }
+  return QueueCtor
+}
 
 function connectionForQueue() {
   const url = getRedisUrl()
@@ -36,6 +46,7 @@ export function getQueue(name) {
   if (queues.has(name)) return queues.get(name)
   const connection = connectionForQueue()
   if (!connection) return null
+  const Queue = getQueueCtor()
   const queue = new Queue(name, {
     connection,
     defaultJobOptions: DEFAULT_JOB_OPTIONS,

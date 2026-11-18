@@ -44,7 +44,7 @@ async function attachUserAvatarUrl(profile) {
   return getSignedUrl(USER_ASSETS_BUCKET, profile.avatar_url)
 }
 
-async function loadUserProfile(userId) {
+export async function loadUserProfile(userId) {
   const { data, error } = await supabaseAdmin
     .from('profiles')
     .select(PROFILE_SELECT)
@@ -55,7 +55,7 @@ async function loadUserProfile(userId) {
   return data
 }
 
-async function findLinkedEmployee(orgId, profile) {
+export async function findLinkedEmployee(orgId, profile) {
   const { data: byProfile, error: profileError } = await supabaseAdmin
     .from('org_employees')
     .select(MY_EMPLOYEE_SELECT)
@@ -90,14 +90,21 @@ function isValidUserAvatarPath(path, userId) {
   return path.startsWith(`${userId}/`) && !path.includes('..')
 }
 
-export async function loadMyProfileBundle(userId) {
-  const profile = await loadUserProfile(userId)
+/**
+ * @param {string} userId
+ * @param {{ profile?: object, employee?: object|null }} [options]
+ *   Pass profile/employee from /api/session to avoid duplicate lookups.
+ */
+export async function loadMyProfileBundle(userId, options = {}) {
+  const profile = options.profile || await loadUserProfile(userId)
 
-  let employee = null
-  if (profile.org_id) {
+  let employee = Object.prototype.hasOwnProperty.call(options, 'employee')
+    ? options.employee
+    : null
+  if (!Object.prototype.hasOwnProperty.call(options, 'employee') && profile.org_id) {
     employee = await findLinkedEmployee(profile.org_id, profile)
-    if (employee) employee = await attachEmployeePhotoUrl(employee)
   }
+  if (employee) employee = await attachEmployeePhotoUrl(employee)
 
   const avatarUrl = await attachUserAvatarUrl(profile) || employee?.photo_signed_url || null
   return { profile, employee, avatar_url: avatarUrl }
