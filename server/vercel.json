@@ -1,3 +1,10 @@
 {
-  "regions": ["bom1"]
+  "regions": ["bom1"],
+  "functions": {
+    "app.js": {
+      "includeFiles": "{shared/**,openapi/**,node_modules/semver/**}",
+      "maxDuration": 60,
+      "memory": 1024
+    }
+  }
 }
