@@ -57,6 +57,13 @@ export const ACCESS_MODULE_GROUPS = [
     ],
   },
   {
+    id: 'support_tickets',
+    label: 'Support & Tickets',
+    modules: [
+      { key: 'support_tickets', label: 'Support & Tickets', actions: ['create', 'read', 'update'] },
+    ],
+  },
+  {
     id: 'tasks_followups',
     label: 'Tasks & Follow-ups',
     modules: [

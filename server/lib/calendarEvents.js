@@ -125,7 +125,7 @@ async function loadWorkOrders(orgId, employeeId, { from, to, locationId }) {
     .select(`
       id, wo_number, short_description, priority, status,
       planned_start_at, planned_end_at, scheduled_at,
-      assigned_location_id,
+      assigned_location_id, assigned_department_id, work_request_id,
       location:assigned_location_id ( id, name )
     `)
     .eq('org_id', orgId)
@@ -152,9 +152,10 @@ async function loadWorkOrders(orgId, employeeId, { from, to, locationId }) {
   const { data, error } = await query
   if (error) throw error
 
+  const rows = data || []
   let assigneeMap = new Map()
-  if (employeeId && data?.length) {
-    const ids = data.map((row) => row.id)
+  if (employeeId && rows.length) {
+    const ids = rows.map((row) => row.id)
     const { data: links } = await supabaseAdmin
       .from('manual_work_order_assignees')
       .select('work_order_id, employee_id')
@@ -163,23 +164,61 @@ async function loadWorkOrders(orgId, employeeId, { from, to, locationId }) {
     assigneeMap = new Map((links || []).map((row) => [row.work_order_id, true]))
   }
 
-  return (data || []).map((row) => {
+  const wrIds = [...new Set(rows.map((row) => row.work_request_id).filter(Boolean))]
+  const deptIds = [...new Set(rows.map((row) => row.assigned_department_id).filter(Boolean))]
+  const wrMap = new Map()
+  const deptMap = new Map()
+
+  if (wrIds.length) {
+    const { data: requests, error: wrError } = await supabaseAdmin
+      .from('work_requests')
+      .select(`
+        id, request_number, order_from_department_id, order_to_department_id
+      `)
+      .eq('org_id', orgId)
+      .in('id', wrIds)
+    if (wrError) throw wrError
+    for (const request of requests || []) wrMap.set(request.id, request)
+    for (const request of requests || []) {
+      if (request.order_from_department_id) deptIds.push(request.order_from_department_id)
+      if (request.order_to_department_id) deptIds.push(request.order_to_department_id)
+    }
+  }
+
+  const uniqueDeptIds = [...new Set(deptIds.filter(Boolean))]
+  if (uniqueDeptIds.length) {
+    const { data: departments, error: deptError } = await supabaseAdmin
+      .from('departments')
+      .select('id, name')
+      .eq('org_id', orgId)
+      .in('id', uniqueDeptIds)
+    if (deptError) throw deptError
+    for (const department of departments || []) deptMap.set(department.id, department)
+  }
+
+  return rows.map((row) => {
     const due = workOrderDueAt(row)
     const dateOnly = toDateOnly(due)
     if (!inRange(dateOnly, from, to)) return null
-    const title = row.wo_number
-      ? `${row.wo_number}${row.short_description ? ` · ${row.short_description}` : ''}`
-      : (row.short_description || 'Work order')
+    const workRequest = row.work_request_id ? wrMap.get(row.work_request_id) : null
+    const orderFromId = workRequest?.order_from_department_id || null
+    const orderToId = workRequest?.order_to_department_id || row.assigned_department_id || null
     return event({
       source: 'work_order',
       rawId: row.id,
-      title,
+      title: row.short_description || 'Work order',
       date: dateOnly,
       plant: row.location?.name,
       locationId: row.assigned_location_id,
       priority: normalizePriority(row.priority) || 'medium',
       assignedToMe: Boolean(assigneeMap.get(row.id)),
-      meta: { status_label: row.status || 'Work order' },
+      meta: {
+        status_label: row.status || 'Work order',
+        document_number: row.wo_number || null,
+        work_request: workRequest?.request_number || null,
+        order_from: orderFromId ? (deptMap.get(orderFromId)?.name || null) : null,
+        order_to: orderToId ? (deptMap.get(orderToId)?.name || null) : null,
+      },
     })
   }).filter(Boolean)
 }
@@ -189,6 +228,7 @@ async function loadWorkRequests(orgId, profileId, { from, to, locationId }) {
     .from('work_requests')
     .select(`
       id, request_number, short_description, priority, status, request_date, requested_by,
+      order_from:departments!work_requests_order_from_department_id_fkey ( id, name ),
       order_to:departments!work_requests_order_to_department_id_fkey ( id, name, location_id ),
       equipment ( id, name, location_id )
     `)
@@ -208,19 +248,22 @@ async function loadWorkRequests(orgId, profileId, { from, to, locationId }) {
     const locId = row.equipment?.location_id || row.order_to?.location_id || null
     if (locationId && locId && locId !== locationId) return null
     if (locationId && !locId) return null
-    const title = row.request_number
-      ? `${row.request_number}${row.short_description ? ` · ${row.short_description}` : ''}`
-      : (row.short_description || 'Work request')
     return event({
       source: 'work_request',
       rawId: row.id,
-      title,
+      title: row.short_description || 'Work request',
       date: row.request_date,
       plant: row.order_to?.name || row.equipment?.name,
       locationId: locId,
       priority: normalizePriority(row.priority) || 'medium',
       assignedToMe: profileId && row.requested_by === profileId,
-      meta: { status_label: row.status || 'Work request' },
+      meta: {
+        status_label: row.status || 'Work request',
+        document_number: row.request_number || null,
+        work_request: row.request_number || null,
+        order_from: row.order_from?.name || null,
+        order_to: row.order_to?.name || null,
+      },
     })
   }).filter(Boolean)
 }
@@ -245,22 +288,20 @@ async function loadPmPlans(orgId, { from, to, locationId }) {
   const { data, error } = await query
   if (error) throw error
 
-  return (data || []).map((row) => {
-    const title = row.plan_number
-      ? `${row.plan_number}${row.name ? ` · ${row.name}` : ''}`
-      : (row.name || 'PM plan')
-    return event({
-      source: 'pm_plan',
-      rawId: row.id,
-      title,
-      date: row.next_due_at,
-      plant: row.location?.name,
-      locationId: row.location_id,
-      priority: row.status === 'overdue' ? 'high' : 'medium',
-      assignedToMe: false,
-      meta: { status_label: row.status || 'PM' },
-    })
-  }).filter(Boolean)
+  return (data || []).map((row) => event({
+    source: 'pm_plan',
+    rawId: row.id,
+    title: row.name || 'PM plan',
+    date: row.next_due_at,
+    plant: row.location?.name,
+    locationId: row.location_id,
+    priority: row.status === 'overdue' ? 'high' : 'medium',
+    assignedToMe: false,
+    meta: {
+      status_label: row.status || 'PM',
+      document_number: row.plan_number || null,
+    },
+  })).filter(Boolean)
 }
 
 async function loadWarranties(orgId, { from, to }) {
@@ -278,22 +319,20 @@ async function loadWarranties(orgId, { from, to }) {
   const { data, error } = await query
   if (error) throw error
 
-  return (data || []).map((row) => {
-    const title = row.serial_number
-      ? `Warranty ${row.serial_number}${row.make ? ` · ${row.make}` : ''}`
-      : (row.make || 'Warranty expiry')
-    return event({
-      source: 'warranty',
-      rawId: row.id,
-      title,
-      date: row.warranty_end,
-      plant: '—',
-      locationId: null,
-      priority: 'medium',
-      assignedToMe: false,
-      meta: { status_label: 'Warranty end' },
-    })
-  }).filter(Boolean)
+  return (data || []).map((row) => event({
+    source: 'warranty',
+    rawId: row.id,
+    title: row.make || 'Warranty expiry',
+    date: row.warranty_end,
+    plant: '—',
+    locationId: null,
+    priority: 'medium',
+    assignedToMe: false,
+    meta: {
+      status_label: 'Warranty end',
+      document_number: row.serial_number || null,
+    },
+  })).filter(Boolean)
 }
 
 async function resolveEmployeeId(orgId, profileId) {

@@ -111,6 +111,7 @@ export function FormCatalogField({
   value,
   onChange,
   disabled,
+  invalid = false,
 }) {
   return (
     <WorkOrderFieldInput
@@ -126,6 +127,7 @@ export function FormCatalogField({
       value={value}
       onChange={onChange}
       disabled={disabled}
+      invalid={invalid}
     />
   )
 }
@@ -291,10 +293,21 @@ export default function OrderedFormLayout({
   actors = null,
   currentEmployeeId = null,
   valueLabels = {},
+  invalidFieldIds = [],
 }) {
   const formDef = formId ? getFormDef(formId) : null
   const dependencyValues = buildDependencyValues(catalogValues, masterValues)
   const activeRules = resolveActiveRules(layout, dependencyValues)
+  const invalidIds = new Set(
+    (Array.isArray(invalidFieldIds) ? invalidFieldIds : [])
+      .map((id) => String(id || '').trim())
+      .filter(Boolean),
+  )
+  const fieldIsInvalid = (item, parsed, catalogSource = null) => (
+    invalidIds.has(String(item?.id || ''))
+    || (parsed?.value && invalidIds.has(String(parsed.value)))
+    || (catalogSource?.id && invalidIds.has(String(catalogSource.id)))
+  )
   const lastCopyKey = useRef('')
   const prevFilterParents = useRef({})
   const lastValuesRef = useRef(null)
@@ -422,9 +435,10 @@ export default function OrderedFormLayout({
 
     const children = sectionFields.map((item) => {
       const parsed = parseLayoutId(item.id)
-      const className = formFieldClassName(item)
-      const required = Boolean(item.required)
       const catalogSource = parsed.kind === 'catalog' ? catalogById.get(parsed.value) : null
+      const invalid = fieldIsInvalid(item, parsed, catalogSource)
+      const className = formFieldClassName(item, invalid ? 'company-form__field--invalid' : '')
+      const required = Boolean(item.required)
       const locked = isFieldLockedByRules(item.id, activeRules) || sectionDisabled
       const excludeIds = excludedValuesForField(item.id, activeRules, dependencyValues)
       const primaryAsset = isPrimaryAssetPickerField(item)
@@ -443,6 +457,8 @@ export default function OrderedFormLayout({
           required,
           disabled: locked,
           section,
+          invalid,
+          'data-field-id': item.id,
         }
         const fromCanonical = typeof assetPicker === 'function' ? assetPicker(pickerProps) : null
         if (fromCanonical != null && fromCanonical !== false) return fromCanonical
@@ -491,7 +507,7 @@ export default function OrderedFormLayout({
             ? catalogValue
             : ''
           return (
-            <label key={item.id} className={className}>
+            <label key={item.id} className={className} data-field-id={item.id}>
               <span className="company-form__label">{catalogSource.name || catalogSource.label}</span>
               {isImage ? (
                 imageSrc
@@ -521,6 +537,7 @@ export default function OrderedFormLayout({
             value={catalogValue}
             onChange={(val) => onCatalogChange?.(catalogSource.id, val)}
             disabled={locked}
+            invalid={invalid}
           />
         )
       }
@@ -534,6 +551,7 @@ export default function OrderedFormLayout({
             field: item,
             required,
             disabled: locked,
+            invalid,
           })
           if (bound) return bound
         }
@@ -542,7 +560,7 @@ export default function OrderedFormLayout({
         const label = item.label || master?.label || 'Field'
         if (item.equipmentColumnId && !sourceId) {
           return (
-            <label key={item.id} className={className}>
+            <label key={item.id} className={className} data-field-id={item.id}>
               <span className="company-form__label">
                 {label}
                 {required ? ' *' : ''}
@@ -560,7 +578,7 @@ export default function OrderedFormLayout({
         if (sourceId) {
           const filters = resolveMasterFilters(item, layout, dependencyValues)
           return (
-            <label key={item.id} className={className}>
+            <label key={item.id} className={className} data-field-id={item.id}>
               <span className="company-form__label">
                 {label}
                 {required ? ' *' : ''}
@@ -597,6 +615,7 @@ export default function OrderedFormLayout({
             value={catalogValues[item.id] ?? masterValues[item.id]}
             onChange={(val) => (onMasterChange || onCatalogChange)?.(item.id, val)}
             disabled={locked}
+            invalid={invalid}
           />
         )
       }
@@ -610,6 +629,7 @@ export default function OrderedFormLayout({
           required,
           disabled: locked,
           section,
+          invalid,
         })
         if (rendered) return rendered
         if (systemField?.compound) return null
@@ -622,7 +642,7 @@ export default function OrderedFormLayout({
             dependencyValues,
           )
           return (
-            <label key={item.id} className={className}>
+            <label key={item.id} className={className} data-field-id={item.id}>
               <span className="company-form__label">
                 {label}
                 {required ? ' *' : ''}
@@ -667,6 +687,7 @@ export default function OrderedFormLayout({
             value={catalogValues[item.id] ?? masterValues[item.id]}
             onChange={(val) => (onMasterChange || onCatalogChange)?.(item.id, val)}
             disabled={locked}
+            invalid={invalid}
           />
         )
       }

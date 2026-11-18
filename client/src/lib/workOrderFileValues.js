@@ -23,7 +23,9 @@ function fileMeta(item) {
 
 export function getAttachmentKind(item) {
   const { type, name } = fileMeta(item)
-  if (type.startsWith('image/') || /\.(jpe?g|png|gif|webp|bmp|svg)$/i.test(name)) return 'image'
+  if (type.startsWith('image/') || /\.(jpe?g|png|gif|webp|bmp|svg|avif|ico|heic|heif)$/i.test(name)) {
+    return 'image'
+  }
   if (type.includes('pdf') || name.endsWith('.pdf')) return 'pdf'
   if (type.includes('zip') || /\.(zip|rar|7z)$/i.test(name)) return 'zip'
   return 'file'
@@ -45,7 +47,6 @@ export function createLocalFileItem(file, fieldType) {
 
 export function isImageFileItem(item) {
   if (!item) return false
-  if (item.previewUrl) return true
   return getAttachmentKind(item) === 'image'
 }
 

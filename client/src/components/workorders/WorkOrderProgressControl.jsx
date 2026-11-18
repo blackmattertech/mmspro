@@ -1,21 +1,16 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { updateWorkOrderLifecycle } from '../../lib/api-work-orders'
 import { useProfile } from '../../hooks/useProfile'
 import { usePermissions } from '../../hooks/usePermissions'
 import { useOrgStatusOptions } from '../../hooks/useOrgStatusOptions'
 import { resolveProgressPercent } from '../../lib/statusProgress'
+import {
+  canEditWorkOrderStatusProgressRemarks,
+  resolveFormActors,
+} from '../../lib/formFillership'
 import '../shared/StatusCountBar.css'
 
 const PROGRESS_PRESETS = [0, 25, 50, 75, 100]
-
-function isAssignedTechnician(detail, employeeId) {
-  if (!employeeId || !detail) return false
-  const id = String(employeeId)
-  const lists = [detail.assignees, detail.work_request?.assigned_technicians]
-  return lists.some((rows) => (
-    (rows || []).some((row) => String(row?.id || row?.employee_id || '') === id)
-  ))
-}
 
 function ProgressReadout({ percent }) {
   return (
@@ -33,25 +28,43 @@ export default function WorkOrderProgressControl({
   onUpdated,
   layout = 'inline',
   showLabel = false,
-  /** When set, overrides the default assignee/permission check. */
+  /** When set, overrides the default assignee / Order-To head check. */
   editable,
 }) {
   const { employee, profile } = useProfile()
-  const { isOrgAdmin, canUpdate } = usePermissions()
+  const { isOrgAdmin, canUpdate, session } = usePermissions()
   const { statuses } = useOrgStatusOptions('work_order', { includeInactive: true })
   const saved = resolveProgressPercent(detail, statuses)
-  const canSupervise = Boolean(
-    isOrgAdmin
-    || canUpdate('work_orders_approve')
-    || canUpdate('work_orders')
-    || canUpdate('work_orders_manual')
-    || canUpdate('work_orders_scheduled')
-    || detail?.created_by === profile?.id
-    || detail?.supervisor_id === profile?.id
-  )
+  const actors = useMemo(() => resolveFormActors({
+    formId: 'work_orders.manual',
+    isOrgAdmin,
+    profileId: profile?.id,
+    employeeId: session?.employee_id || employee?.id,
+    isDepartmentHead: Boolean(session?.is_department_head || employee?.is_department_head),
+    employeeDepartmentId: session?.department_id || employee?.department_id,
+    canApproveIncoming: canUpdate('work_request_approve') || canUpdate('work_request_incoming'),
+    record: {
+      created_by: detail?.created_by,
+      requested_by: detail?.requester_id,
+      assigned_department_id: detail?.assigned_department_id,
+      order_to_department_id: detail?.assigned_department_id,
+      assignees: detail?.assignees || detail?.work_request?.assigned_technicians,
+    },
+  }), [
+    isOrgAdmin,
+    profile?.id,
+    session?.employee_id,
+    session?.is_department_head,
+    session?.department_id,
+    employee?.id,
+    employee?.is_department_head,
+    employee?.department_id,
+    canUpdate,
+    detail,
+  ])
   const canAdjust = editable !== undefined
     ? Boolean(editable)
-    : (isAssignedTechnician(detail, employee?.id) || canSupervise)
+    : canEditWorkOrderStatusProgressRemarks(actors)
   const [value, setValue] = useState(saved)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)

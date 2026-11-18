@@ -5,9 +5,8 @@ const LABEL_ALIASES = {
   jobpriority: 'priority',
   jobstatus: 'status',
   plantfacility: 'location',
-  equipmentname: 'equipment',
-  asset: 'equipment',
-  assetname: 'equipment',
+  // Keep Asset as its own optional column; do not swallow Equipment name / Equipment Location
+  // catalog parents into the static Asset column — those stay available as field:* columns.
 }
 
 export function canonicalLabel(label) {

@@ -40,6 +40,8 @@ import PageBack from '../../components/shared/PageBack'
 import MastersBack from '../../components/company/MastersBack'
 import NavIcon from '../../components/layout/NavIcon'
 import SpellcheckInput from '../../components/shared/SpellcheckInput'
+import DuplicateRowButton from '../../components/ui/DuplicateRowButton'
+import { assertNestedCloneChanged, findDuplicateOptionLabel } from '../../lib/nestedClone'
 import PmActivityTypesModal from '../../components/pm/PmActivityTypesModal'
 import '../../components/company/CompanyShared.css'
 import '../../components/assets/AssetsFields.css'
@@ -340,13 +342,36 @@ function FormHub({ formId }) {
   )
 }
 
+/**
+ * Editor rows carry the label as saved (`original`, null for new rows) so a Duplicate can be
+ * checked against its source, and `dup` when the row was created through Duplicate.
+ */
+function optionRowsFrom(labels, nextKey) {
+  const saved = labels.map((label) => String(label ?? '').trim()).filter(Boolean)
+  const source = saved.length ? labels : ['']
+  return source.map((label) => ({
+    key: nextKey(),
+    label: String(label ?? ''),
+    original: String(label ?? '').trim() || null,
+    dup: null,
+    autoFocus: false,
+  }))
+}
+
 function OptionEditorModal({ formId, fieldId, onClose, onSaved }) {
   const { role } = useAuth()
   const { canUpdate, isOrgAdmin } = usePermissions()
   const canManage = canManageFormMasters(role, canUpdate, isOrgAdmin)
   const handleBackdropClick = useBackdropClose(onClose)
   const [payload, setPayload] = useState(null)
-  const [options, setOptions] = useState([''])
+  const rowKeyRef = useRef(0)
+  const nextRowKey = () => {
+    rowKeyRef.current += 1
+    return rowKeyRef.current
+  }
+  const [options, setOptions] = useState(() => [{
+    key: 0, label: '', original: null, dup: null, autoFocus: false,
+  }])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
@@ -368,7 +393,7 @@ function OptionEditorModal({ formId, fieldId, onClose, onSaved }) {
         const data = await getFormMasterField(formId, fieldId)
         if (cancelled) return
         setPayload(data)
-        setOptions(optionLabels(data?.field?.options))
+        setOptions(optionRowsFrom(optionLabels(data?.field?.options), nextRowKey))
       } catch (err) {
         if (!cancelled) setError(err.message || 'Could not load this master')
       } finally {
@@ -381,15 +406,41 @@ function OptionEditorModal({ formId, fieldId, onClose, onSaved }) {
   const handleSave = async (event) => {
     event.preventDefault()
     if (!canManage) return
-    const next = options.map((item) => item.trim()).filter(Boolean)
+    const next = options.map((item) => item.label.trim()).filter(Boolean)
     if (!next.length) {
       setError('Add at least one option.')
       return
     }
+
+    // Duplicate option: each copy must differ from its source and stay unique within the field.
+    // Plain edits skip these checks so existing saves behave exactly as before.
+    const duplicated = options.filter((item) => item.dup && item.label.trim())
+    for (const item of duplicated) {
+      const result = assertNestedCloneChanged(
+        'form_option',
+        { label: item.dup.sourceLabel, value: item.dup.sourceLabel },
+        { label: item.label.trim(), value: item.label.trim() },
+      )
+      if (!result.ok) {
+        setError(`"${item.label.trim()}" is a duplicate option. Change its label before saving.`)
+        return
+      }
+    }
+    if (duplicated.length) {
+      const repeated = findDuplicateOptionLabel(next)
+      if (repeated) {
+        setError(`Option "${repeated}" already exists in this field.`)
+        return
+      }
+    }
+    const clones = duplicated
+      .filter((item) => item.dup.sourceId)
+      .map((item) => ({ clone_of_id: item.dup.sourceId, label: item.label.trim() }))
+
     setSaving(true)
     setError(null)
     try {
-      await saveFormMasterOptions(formId, fieldId, next)
+      await saveFormMasterOptions(formId, fieldId, next, { clones })
       onSaved?.()
     } catch (err) {
       setError(err.message || 'Could not save options.')
@@ -404,6 +455,24 @@ function OptionEditorModal({ formId, fieldId, onClose, onSaved }) {
       const next = [...prev]
       const [row] = next.splice(index, 1)
       next.splice(nextIndex, 0, row)
+      return next
+    })
+  }
+
+  const duplicateOption = (index) => {
+    setOptions((prev) => {
+      const source = prev[index]
+      if (!source || !source.label.trim()) return prev
+      const copy = {
+        key: nextRowKey(),
+        label: source.label,
+        original: null,
+        // A saved source is identified by its saved label (options have no ids).
+        dup: { sourceId: source.original, sourceLabel: source.original || source.label.trim() },
+        autoFocus: true,
+      }
+      const next = [...prev]
+      next.splice(index + 1, 0, copy)
       return next
     })
   }
@@ -435,18 +504,32 @@ function OptionEditorModal({ formId, fieldId, onClose, onSaved }) {
           {error ? <div className="company-alert" role="alert">{error}</div> : null}
           {!loading && payload?.field ? (
             <div className="asset-dropdown-options">
+              {options.some((item) => item.dup) ? (
+                <p className="company-form__hint">
+                  Duplicated options start with the original label. Give each copy a new, unique label before saving.
+                </p>
+              ) : null}
               {options.map((opt, index) => (
-                <div key={index} className="asset-dropdown-options__row">
+                <div key={opt.key} className="asset-dropdown-options__row">
                   <SpellcheckInput
                     className="company-form__input"
-                    value={opt}
+                    value={opt.label}
                     onChange={(event) => {
                       const value = event.target.value
-                      setOptions((prev) => prev.map((item, i) => (i === index ? value : item)))
+                      setOptions((prev) => prev.map((item, i) => (i === index ? { ...item, label: value } : item)))
                     }}
                     placeholder={`Option ${index + 1}`}
                     disabled={!canManage || saving}
+                    autoFocus={opt.autoFocus}
                   />
+                  {canManage ? (
+                    <DuplicateRowButton
+                      className="company-btn company-btn--ghost"
+                      onClick={() => duplicateOption(index)}
+                      disabled={saving || !opt.label.trim()}
+                      label={`Duplicate option ${opt.label.trim() || index + 1}`}
+                    />
+                  ) : null}
                   <button
                     type="button"
                     className="company-btn company-btn--ghost"
@@ -482,7 +565,9 @@ function OptionEditorModal({ formId, fieldId, onClose, onSaved }) {
                 <button
                   type="button"
                   className="company-btn company-btn--secondary"
-                  onClick={() => setOptions((prev) => [...prev, ''])}
+                  onClick={() => setOptions((prev) => [...prev, {
+                    key: nextRowKey(), label: '', original: null, dup: null, autoFocus: false,
+                  }])}
                   disabled={saving}
                 >
                   + Add option

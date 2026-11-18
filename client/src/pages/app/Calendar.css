@@ -332,6 +332,17 @@
   z-index: 1;
 }
 
+.cal-grid__cell:has(.cal-pill:hover),
+.cal-grid__cell:has(.cal-pill:focus-visible) {
+  overflow: visible;
+  z-index: 6;
+}
+
+.cal-grid__tasks:has(.cal-pill:hover),
+.cal-grid__tasks:has(.cal-pill:focus-visible) {
+  overflow: visible;
+}
+
 .cal-grid__cell-head {
   display: flex;
   align-items: center;
@@ -393,6 +404,7 @@
 }
 
 .cal-pill {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -404,12 +416,14 @@
   border: 1px solid transparent;
   text-decoration: none;
   color: inherit;
-  overflow: hidden;
+  overflow: visible;
   flex-shrink: 0;
+  z-index: 1;
 }
 
 .cal-pill:hover {
   filter: brightness(0.97);
+  z-index: 20;
 }
 
 .cal-pill__dot {
@@ -428,6 +442,41 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.cal-event-tip {
+  position: absolute;
+  left: 0;
+  top: calc(100% + 6px);
+  z-index: 40;
+  display: none;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 180px;
+  max-width: 260px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #111827;
+  color: #fff;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.28);
+  pointer-events: none;
+  white-space: normal;
+}
+
+.cal-pill:hover .cal-event-tip,
+.cal-pill:focus-visible .cal-event-tip {
+  display: flex;
+}
+
+.cal-event-tip__line {
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 15px;
+}
+
+.cal-event-tip__line:first-child {
+  font-weight: 700;
+  margin-bottom: 2px;
 }
 
 .cal-grid__more {
@@ -555,6 +604,14 @@ a.cal-day-agenda__item:hover .cal-day-agenda__item-title {
 .cal-day-agenda__meta {
   font-size: 12px;
   color: var(--color-gray-blue);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cal-day-agenda__details {
+  font-size: 11px;
+  color: var(--color-medium-gray);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

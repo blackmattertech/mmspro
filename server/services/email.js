@@ -419,3 +419,61 @@ export const sendCompanyWelcomeEmail = (to, { contactName, companyName, temporar
   })
 }
 
+export const sendOrgDataResetOtpEmail = (to, {
+  orgName,
+  moduleLabel,
+  code,
+  expiresMinutes = 10,
+}) => {
+  const safeOrg = escapeHtml(orgName || 'your company')
+  const safeModule = escapeHtml(moduleLabel || 'selected module')
+  const safeCode = escapeHtml(code)
+  const minutes = Number(expiresMinutes) || 10
+
+  return sendEmail({
+    to,
+    subject: `Confirm data reset for ${orgName || 'your company'}`,
+    htmlContent: `
+      <div style="margin:0;padding:0;background:#f5f6f8;font-family:Inter,Arial,Helvetica,sans-serif;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f5f6f8;padding:24px 12px;">
+          <tr>
+            <td align="center">
+              <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%;background:#ffffff;border-radius:12px;overflow:hidden;border:1px solid #e8edf3;">
+                <tr>
+                  <td style="padding:20px 28px;background:#ffffff;border-bottom:3px solid #E63946;">
+                    <div style="font-size:16px;font-weight:700;color:#111111;">MMS PRO</div>
+                    <div style="font-size:12px;color:#6B7280;">Data reset verification</div>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:28px;">
+                    <h1 style="margin:0 0 12px;font-size:20px;line-height:26px;color:#111111;">Confirm module data reset</h1>
+                    <p style="margin:0 0 16px;font-size:15px;line-height:22px;color:#374151;">
+                      Use this code to reset <strong>${safeModule}</strong> data for <strong>${safeOrg}</strong>.
+                      This permanently deletes that module's records for this company only.
+                    </p>
+                    <div style="margin:0 0 18px;padding:16px 18px;background:#fef3f2;border:1px solid #fecdca;border-radius:10px;text-align:center;">
+                      <div style="font-size:12px;letter-spacing:0.08em;text-transform:uppercase;color:#b42318;margin-bottom:8px;">Verification code</div>
+                      <div style="font-size:32px;font-weight:700;letter-spacing:0.2em;color:#111111;">${safeCode}</div>
+                    </div>
+                    <p style="margin:0;font-size:13px;line-height:18px;color:#6B7280;">
+                      This code expires in ${minutes} minutes. If you did not request a data reset, ignore this email.
+                    </p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        </table>
+      </div>
+    `,
+    textContent: [
+      `Confirm module data reset for ${orgName || 'your company'}.`,
+      `Module: ${moduleLabel || 'selected module'}`,
+      `Verification code: ${code}`,
+      `This code expires in ${minutes} minutes.`,
+      'If you did not request a data reset, ignore this email.',
+    ].join('\n\n'),
+  })
+}
+

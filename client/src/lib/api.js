@@ -464,6 +464,35 @@ export function deleteOrganization(id, { password } = {}) {
   })
 }
 
+export function getOrgResetTargets(orgId) {
+  return adminFetch(`/organizations/${orgId}/reset-targets`)
+}
+
+export function resetOrgModule(orgId, { targetId, password } = {}) {
+  return adminFetch(`/organizations/${orgId}/reset-module`, {
+    method: 'POST',
+    body: JSON.stringify({ targetId, password }),
+  })
+}
+
+export function getCompanyResetTargets() {
+  return companyFetch('/reset-targets')
+}
+
+export function requestCompanyResetOtp({ targetId } = {}) {
+  return companyFetch('/reset-module/request-otp', {
+    method: 'POST',
+    body: JSON.stringify({ targetId }),
+  })
+}
+
+export function confirmCompanyResetModule({ targetId, otp, confirmName } = {}) {
+  return companyFetch('/reset-module/confirm', {
+    method: 'POST',
+    body: JSON.stringify({ targetId, otp, confirmName }),
+  })
+}
+
 export function getAdminUsers({ limit = 50, offset = 0 } = {}) {
   return adminFetch(`/users?limit=${limit}&offset=${offset}`)
 }

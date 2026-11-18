@@ -8,6 +8,8 @@ import { formatDisplayDateTime } from '../../lib/displayDate'
 import { VISIBILITY_OPTIONS } from '../../config/tasks'
 import EditIcon from '../ui/EditIcon'
 import TrashIcon from '../ui/TrashIcon'
+import DuplicateRowButton from '../ui/DuplicateRowButton'
+import SaveAsTemplateButton from '../templates/SaveAsTemplateButton'
 import TaskAssigneeAvatars from './TaskAssigneeAvatars'
 import './TaskAssigneeAvatars.css'
 import TablePagination from '../shared/TablePagination'
@@ -47,6 +49,9 @@ export default function TasksTable({
   pagination: paginationProp,
   serverPaged = false,
   canManage,
+  canDuplicate = false,
+  onDuplicate,
+  canSaveTemplate = false,
   onDelete,
   deleting,
   paginationResetKey = '',
@@ -177,6 +182,21 @@ export default function TasksTable({
                       <td key={columnId} onClick={stopTableRowClick}>
                         <div className="company-table__actions">
                           <RecordPdfButton moduleKey="task" recordId={task.id} filename={`${task.task_number || 'task'}.pdf`} />
+                          {canDuplicate && onDuplicate && (
+                            <DuplicateRowButton
+                              onClick={() => onDuplicate(task)}
+                              label={`Duplicate ${task.title}`}
+                            />
+                          )}
+                          {canSaveTemplate ? (
+                            <SaveAsTemplateButton
+                              moduleKey="tasks_followups"
+                              sourceRecordId={task.id}
+                              defaultName={task.title || task.task_number || 'Task'}
+                              className="company-btn company-btn--secondary company-btn--compact"
+                              label="Template"
+                            />
+                          ) : null}
                           {canManage && (
                             <>
                               <button

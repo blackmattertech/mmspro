@@ -8,6 +8,7 @@ import { getStoredWorkOrderFiles } from '../../lib/workOrderFileValues'
 import { useOrgStatusOptions } from '../../hooks/useOrgStatusOptions'
 import PageBack from '../shared/PageBack'
 import EditIcon from '../ui/EditIcon'
+import SaveAsTemplateButton from '../templates/SaveAsTemplateButton'
 import EmployeeAvatar from '../company/EmployeeAvatar'
 import PersonChip from '../shared/PersonChip'
 import WorkOrderAssignmentActions from './WorkOrderAssignmentActions'
@@ -119,6 +120,8 @@ export default function ReceivedWorkOrderDetailModal({
   fetchWorkOrder = getReceivedWorkOrder,
   onAssignmentUpdated,
   onEdit,
+  canSaveTemplate = false,
+  templateModuleKey = 'work_orders_manual',
 }) {
   const { detail, loading, error, reload } = useWorkOrderDetail(orderId, fetchWorkOrder)
   const [localDetail, setLocalDetail] = useState(null)
@@ -185,6 +188,13 @@ export default function ReceivedWorkOrderDetailModal({
                 <EditIcon />
               </button>
             )}
+            {canSaveTemplate && view?.id ? (
+              <SaveAsTemplateButton
+                moduleKey={templateModuleKey}
+                sourceRecordId={view.id}
+                defaultName={view.short_description || view.wo_number || 'Work order'}
+              />
+            ) : null}
             <button type="button" className="wr-detail-sheet__close" onClick={onClose} aria-label="Close">
               ×
             </button>

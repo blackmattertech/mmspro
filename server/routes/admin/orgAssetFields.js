@@ -19,13 +19,10 @@ import {
 } from '../../lib/sectionIconStorage.js'
 import {
   buildSectionsTemplate,
-  bulkImportSections,
   buildParentsTemplate,
-  bulkImportParents,
   buildChildrenTemplate,
-  bulkImportChildren,
 } from '../../lib/assetFieldBulkService.js'
-import { attachFailedFileToResult } from '../../lib/importErrorWorkbook.js'
+import { enqueueOrRunBulkImport, sendBulkImportResponse, wantsSyncImport } from '../../lib/bulkImportEnqueue.js'
 
 const router = Router({ mergeParams: true })
 
@@ -92,8 +89,15 @@ router.get('/template/parents', async (req, res) => {
 router.post('/bulk/sections', async (req, res) => {
   try {
     const buffer = parseBulkFile(req)
-    const result = await bulkImportSections(req.params.orgId, buffer)
-    res.json(await attachFailedFileToResult(result, buffer, 'sections-import-failed-rows.xlsx'))
+    const outcome = await enqueueOrRunBulkImport({
+      orgId: req.params.orgId,
+      userId: req.user?.id || null,
+      templateKey: 'asset_field_sections',
+      fileName: 'sections.xlsx',
+      buffer,
+      forceSync: wantsSyncImport(req),
+    })
+    sendBulkImportResponse(res, outcome)
   } catch (err) {
     res.status(err.status || 400).json({ error: err.message })
   }
@@ -102,8 +106,15 @@ router.post('/bulk/sections', async (req, res) => {
 router.post('/bulk/parents', async (req, res) => {
   try {
     const buffer = parseBulkFile(req)
-    const result = await bulkImportParents(req.params.orgId, buffer)
-    res.json(await attachFailedFileToResult(result, buffer, 'parent-fields-import-failed-rows.xlsx'))
+    const outcome = await enqueueOrRunBulkImport({
+      orgId: req.params.orgId,
+      userId: req.user?.id || null,
+      templateKey: 'asset_field_parents',
+      fileName: 'parents.xlsx',
+      buffer,
+      forceSync: wantsSyncImport(req),
+    })
+    sendBulkImportResponse(res, outcome)
   } catch (err) {
     res.status(err.status || 400).json({ error: err.message })
   }
@@ -125,8 +136,15 @@ router.get('/template/children', async (req, res) => {
 router.post('/bulk/children', async (req, res) => {
   try {
     const buffer = parseBulkFile(req)
-    const result = await bulkImportChildren(req.params.orgId, buffer)
-    res.json(await attachFailedFileToResult(result, buffer, 'child-values-import-failed-rows.xlsx'))
+    const outcome = await enqueueOrRunBulkImport({
+      orgId: req.params.orgId,
+      userId: req.user?.id || null,
+      templateKey: 'asset_field_children',
+      fileName: 'child-values.xlsx',
+      buffer,
+      forceSync: wantsSyncImport(req),
+    })
+    sendBulkImportResponse(res, outcome)
   } catch (err) {
     res.status(err.status || 400).json({ error: err.message })
   }

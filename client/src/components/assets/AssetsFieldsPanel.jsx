@@ -557,6 +557,7 @@ export default function AssetsFieldsPanel({
   const {
     bulkInputRef,
     bulkBusy,
+    bulkProgress,
     bulkError,
     bulkResult,
     setBulkResult,
@@ -650,6 +651,7 @@ export default function AssetsFieldsPanel({
     <MasterBulkActions
       onDownload={handleDownloadTemplate}
       bulkBusy={bulkBusy}
+                    bulkProgress={bulkProgress}
       bulkInputRef={bulkInputRef}
       onFileChange={handleBulkFile}
       addLabel={showAddButton ? bulkCopy.addLabel : undefined}

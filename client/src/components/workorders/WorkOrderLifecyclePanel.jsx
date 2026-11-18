@@ -3,7 +3,13 @@ import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import { createManualWorkOrder, updateWorkOrderLifecycle } from '../../lib/api-work-orders'
 import { useFormFieldValues } from '../../hooks/useFormFieldValues'
-import { canEditFilledBy, resolveFormActors } from '../../lib/formFillership'
+import {
+  WORK_ORDER_SUPERVISOR_STATUSES,
+  canEditFilledBy,
+  canEditWorkOrderStatusProgressRemarks,
+  canEditWorkOrderSupervisorStatus,
+  resolveFormActors,
+} from '../../lib/formFillership'
 import { formFieldClassName, parseLayoutId } from '../../lib/formLayoutIds'
 import {
   layoutHasSystemKey,
@@ -37,6 +43,7 @@ import ChecklistExecution, { isChecklistComplete } from '../pm/ChecklistExecutio
 import WorkOrderProgressControl from './WorkOrderProgressControl'
 import WorkOrderStatusPicker, { orderStatusOptions } from './WorkOrderStatusPicker'
 import SpellcheckInput from '../shared/SpellcheckInput'
+import RichTextDisplay from '../shared/RichTextDisplay'
 import FormLabel from '../shared/FormLabel'
 import { FIELD_HELP_TEXT } from '../../lib/fieldHelpText'
 import NavIcon from '../layout/NavIcon'
@@ -50,6 +57,7 @@ import {
   todayDateString,
 } from '../../lib/workOrderDaySnapshot'
 import { formatDurationHours, hoursBetween } from '../../lib/durationHours'
+import { firstFutureDateMessage } from '../../lib/dateConstraints'
 import './ManualWorkOrder.css'
 
 const PERMIT_LABELS = {
@@ -104,7 +112,7 @@ function formatSource(sourceType) {
   return SOURCE_LABELS[sourceType] || String(sourceType).replace(/_/g, ' ')
 }
 
-const SUPERVISOR_STATUSES = new Set(['verified', 'closed', 'returned_rework'])
+const SUPERVISOR_STATUSES = new Set(WORK_ORDER_SUPERVISOR_STATUSES)
 const MAINTENANCE_DOC_STATUSES = new Set([
   'accepted',
   'started',
@@ -462,16 +470,10 @@ export default function WorkOrderLifecyclePanel({
     [detail?.allowed_next_statuses],
   )
 
-  const isTechnician = useMemo(
-    () => (detail?.assignees || []).some((row) => row.id === employee?.id),
-    [detail?.assignees, employee?.id],
-  )
   const canSupervise = Boolean(
     isOrgAdmin
     || canUpdateModule('work_orders_approve')
-    || detail?.created_by === profile?.id
     || detail?.supervisor_id === profile?.id
-    || detail?.assignment_actions?.can_reassign_as_location_head,
   )
   const processFormId = workOrderFormIdForSource(detail?.source_type)
   const processStages = lifecycleStagesForStatus(detail?.status)
@@ -488,22 +490,26 @@ export default function WorkOrderLifecyclePanel({
     employeeId: employee?.id,
     isDepartmentHead: Boolean(session?.is_department_head || employee?.is_department_head),
     employeeDepartmentId: session?.department_id || employee?.department_id,
+    canApproveIncoming: canUpdateModule('work_request_approve') || canUpdateModule('work_request_incoming'),
     isSupervisor: canSupervise,
     record: {
       created_by: detail?.created_by,
+      requested_by: detail?.requester_id,
       assigned_department_id: detail?.assigned_department_id,
       order_to_department_id: detail?.assigned_department_id,
       supervisor_id: detail?.supervisor_id,
       assignees: detail?.assignees,
     },
   })
+  const canDriveStatusProgressRemarks = canEditWorkOrderStatusProgressRemarks(processActors)
+  const canDriveSupervisorStatus = canEditWorkOrderSupervisorStatus(processActors)
   const visibleStatuses = useMemo(
     () => nextStatuses.filter((status) => {
       if (status === 'accepted') return false
-      if (SUPERVISOR_STATUSES.has(status)) return canSupervise
-      return isTechnician || canSupervise
+      if (SUPERVISOR_STATUSES.has(status)) return canDriveSupervisorStatus
+      return canDriveStatusProgressRemarks
     }),
-    [nextStatuses, canSupervise, isTechnician],
+    [nextStatuses, canDriveSupervisorStatus, canDriveStatusProgressRemarks],
   )
   const statusPickerOptions = useMemo(
     () => orderStatusOptions([detail?.status, ...visibleStatuses]),
@@ -639,6 +645,18 @@ export default function WorkOrderLifecyclePanel({
           : []),
       ], maxLength) || findVisibleCharacterLimitError(document)
       if (limitError) throw new Error(limitError)
+      const futureDateError = firstFutureDateMessage([
+        { label: 'Work start', value: form.work_start_at },
+        { label: 'Work end', value: form.work_end_at },
+        { label: 'Breakdown start', value: form.breakdown_start_at },
+        { label: 'Breakdown end', value: form.breakdown_end_at },
+        ...(form.permit_required
+          ? (form.permit_details || []).flatMap((row, index) => ([
+            { label: `Permit ${index + 1} issue date`, value: row.issue_at },
+          ]))
+          : []),
+      ])
+      if (futureDateError) throw new Error(futureDateError)
       if (
         ['completed', 'verified', 'closed'].includes(status)
         && detail.checklist_snapshot
@@ -840,6 +858,7 @@ export default function WorkOrderLifecyclePanel({
             <span className="company-form__char-limit">Max {maxLength('dos_and_donts')}</span>
           </div>
           <SpellcheckInput
+            richText
             multiline
             className="company-form__input company-form__textarea wo-dos-donts__input"
             rows={4}
@@ -856,6 +875,7 @@ export default function WorkOrderLifecyclePanel({
             <span className="company-form__char-limit">Max {maxLength('dos_and_donts')}</span>
           </div>
           <SpellcheckInput
+            richText
             multiline
             className="company-form__input company-form__textarea wo-dos-donts__input"
             rows={4}
@@ -941,6 +961,7 @@ export default function WorkOrderLifecyclePanel({
                               value={permitRow.issue_at}
                               onChange={(v) => updatePermitDetail(index, 'issue_at', v)}
                               withTime
+                              disableFuture
                               disabled={locked}
                             />
                           </label>
@@ -992,6 +1013,7 @@ export default function WorkOrderLifecyclePanel({
                 value={form.work_start_at}
                 onChange={(v) => setField('work_start_at', v)}
                 withTime
+                disableFuture
                 disabled={locked}
               />
             </div>
@@ -1001,6 +1023,7 @@ export default function WorkOrderLifecyclePanel({
                 value={form.work_end_at}
                 onChange={(v) => setField('work_end_at', v)}
                 withTime
+                disableFuture
                 disabled={locked}
               />
             </div>
@@ -1069,6 +1092,7 @@ export default function WorkOrderLifecyclePanel({
                 value={form.breakdown_start_at}
                 onChange={(v) => setField('breakdown_start_at', v)}
                 withTime
+                disableFuture
                 disabled={locked}
               />
             </Field>
@@ -1077,6 +1101,7 @@ export default function WorkOrderLifecyclePanel({
                 value={form.breakdown_end_at}
                 onChange={(v) => setField('breakdown_end_at', v)}
                 withTime
+                disableFuture
                 disabled={locked}
               />
             </Field>
@@ -1120,6 +1145,7 @@ export default function WorkOrderLifecyclePanel({
         <label key={key} className={className}>
           <FormLabel fieldType="textarea" limit={maxLength(formKey)}>{label}{requiredMark}</FormLabel>
           <SpellcheckInput
+            richText
             multiline
             className="company-form__input company-form__textarea"
             rows={2}
@@ -1135,11 +1161,10 @@ export default function WorkOrderLifecyclePanel({
     if (key === 'execution_files') {
       return (
         <div key={key} className={className}>
-          <span className="company-form__label">Technician photos &amp; files{requiredMark}</span>
-          <p className="wo-permit__hint">
-            Assigned technicians can attach images and documents of the work performed.
-          </p>
           <WorkOrderAttachmentsField
+            title={`Technician photos & files${requiredMark || ''}`}
+            description="Assigned technicians can attach images and documents of the work performed."
+            badge={requiredMark ? 'Required' : 'Optional'}
             files={keptExecutionFiles}
             pendingFiles={pendingFiles}
             disabled={locked}
@@ -1167,6 +1192,12 @@ export default function WorkOrderLifecyclePanel({
   const openForPickup = !(detail?.assignees || []).length
     && Boolean(detail?.work_request_id)
     && ['assigned', 'accepted'].includes(detail?.status)
+  const assignmentActions = detail?.assignment_actions || {}
+  const canPickupHere = Boolean(
+    assignmentActions.can_claim_self
+    || assignmentActions.can_assign_department_technicians
+    || assignmentActions.can_reassign_as_location_head,
+  )
 
   const showDayChrome = !openForPickup && (canUpdate || hasDailyLogs)
   const stampDay = viewingPastDay
@@ -1183,8 +1214,9 @@ export default function WorkOrderLifecyclePanel({
   ].filter(Boolean)
 
   const canEditExecution = canEditFilledBy('technician', processActors)
-  const canEditCloseout = canEditFilledBy('supervisor', processActors)
-  const canSaveLifecycle = canUpdate && !viewingPastDay && (canEditExecution || canEditCloseout)
+  const canSaveLifecycle = canUpdate
+    && !viewingPastDay
+    && (canDriveStatusProgressRemarks || canDriveSupervisorStatus)
   const statusBlockedReasons = useMemo(() => {
     const blocked = {}
     const checklistActor = canEditFilledBy('technician', processActors)
@@ -1226,34 +1258,47 @@ export default function WorkOrderLifecyclePanel({
           </span>
           <div>
             <h3 className="wo-status-picker-block__title">
-              {canSupervise && !isTechnician ? 'Supervisor actions' : 'Update Task Status'}
+              {canDriveSupervisorStatus && !canDriveStatusProgressRemarks
+                ? 'Supervisor actions'
+                : 'Update Task Status'}
             </h3>
             <p className="wo-status-picker-block__hint">Select the current status of this work.</p>
           </div>
         </div>
       )}
-      <Field
-        label={isPmScheduled ? 'Remarks' : 'Action remarks'}
-        full
-        fieldType="textarea"
-        maxLength={maxLength('remarks')}
-      >
-        <SpellcheckInput
-          multiline
-          className="company-form__input company-form__textarea"
-          rows={isPmScheduled ? 3 : 2}
-          value={form.remarks}
-          onChange={(e) => setField('remarks', e.target.value)}
-          placeholder={isPmScheduled
-            ? 'Notes from this PM visit (findings, observations, issues…)'
-            : 'Optional remarks for timeline / audit'}
+      {canDriveStatusProgressRemarks ? (
+        <Field
+          label={isPmScheduled ? 'Remarks' : 'Action remarks'}
+          full
+          fieldType="textarea"
           maxLength={maxLength('remarks')}
-        />
-      </Field>
+        >
+          <SpellcheckInput
+            richText
+            multiline
+            className="company-form__input company-form__textarea"
+            rows={isPmScheduled ? 3 : 2}
+            value={form.remarks}
+            onChange={(e) => setField('remarks', e.target.value)}
+            placeholder={isPmScheduled
+              ? 'Notes from this PM visit (findings, observations, issues…)'
+              : 'Optional remarks for timeline / audit'}
+            maxLength={maxLength('remarks')}
+          />
+        </Field>
+      ) : null}
       {error && <div className="wo-alert wo-alert--error" role="alert">{error}</div>}
       {followUpSuccess && (
         <div className="wo-alert wo-alert--success" role="status">{followUpSuccess}</div>
       )}
+      <div className="wo-status-actions__progress">
+        <WorkOrderProgressControl
+          detail={detail}
+          onUpdated={onUpdated}
+          layout="panel"
+          editable={canDriveStatusProgressRemarks}
+        />
+      </div>
       {statusPickerOptions.length > 0 ? (
         <WorkOrderStatusPicker
           options={statusPickerOptions}
@@ -1319,15 +1364,6 @@ export default function WorkOrderLifecyclePanel({
         )}
       </div>
 
-      <div className="wo-status-actions__progress">
-        <WorkOrderProgressControl
-          detail={detail}
-          onUpdated={onUpdated}
-          layout="panel"
-          editable={canSaveLifecycle}
-        />
-      </div>
-
       {isPmScheduled && showFollowUp && (
         <div className="pm-wo-followup">
           <h4 className="pm-wo-followup__title">New regular work order</h4>
@@ -1350,6 +1386,7 @@ export default function WorkOrderLifecyclePanel({
             <label className="company-form__field company-form__field--full">
               <FormLabel fieldType="textarea" limit={maxLength('problem_description')}>Details</FormLabel>
               <SpellcheckInput
+                richText
                 multiline
                 className="company-form__input company-form__textarea"
                 rows={4}
@@ -1431,7 +1468,7 @@ export default function WorkOrderLifecyclePanel({
           </div>
           <div className="wo-received-detail__field wo-received-detail__field--full">
             <dt>Problem</dt>
-            <dd style={{ whiteSpace: 'pre-wrap' }}>{detail.problem_description || '—'}</dd>
+            <dd><RichTextDisplay value={detail.problem_description} /></dd>
           </div>
         </dl>
       </section>
@@ -1453,8 +1490,12 @@ export default function WorkOrderLifecyclePanel({
 
       {!hideWorkRequestForm && requestFiles.length > 0 && (
         <section className="wo-received-detail__section">
-          <h3>Request attachments</h3>
-          <WorkOrderAttachmentsField files={requestFiles} readOnly />
+          <WorkOrderAttachmentsField
+            title="Request attachments"
+            description="Photos and documents submitted with the work request."
+            files={requestFiles}
+            readOnly
+          />
         </section>
       )}
 
@@ -1541,7 +1582,7 @@ export default function WorkOrderLifecyclePanel({
 
       {!openForPickup && !layoutHasSystemKey(processLayout, 'checklist_execution') && checklistBlock}
 
-      {openForPickup && (
+      {openForPickup && canPickupHere && (
         <p className="wo-permit__hint">
           This work order is unassigned. Pick it in Assignment above to assign yourself and start. After that you can record the job here.
         </p>
@@ -1552,8 +1593,12 @@ export default function WorkOrderLifecyclePanel({
 
       {!canUpdate && executionFiles.length > 0 && (
         <section className="wo-received-detail__section">
-          <h3>Technician photos &amp; files</h3>
-          <WorkOrderAttachmentsField files={executionFiles} readOnly />
+          <WorkOrderAttachmentsField
+            title="Technician photos & files"
+            description="Photos and documents attached during work execution."
+            files={executionFiles}
+            readOnly
+          />
         </section>
       )}
 

@@ -9,14 +9,15 @@ import {
 import { assertLocationAccess, resolveLocationFilter } from '../../lib/orgPermissions.js'
 import { parseListControls, sendCsv } from '../../lib/listQuery.js'
 import { bufferFromBase64Upload, excelFilePayload } from '../../lib/excelTemplate.js'
-import { attachFailedFileToResult } from '../../lib/importErrorWorkbook.js'
-import { buildMeterReadingTemplate, bulkImportMeterReadings } from '../../lib/logbookBulkService.js'
+import { enqueueOrRunBulkImport, sendBulkImportResponse, wantsSyncImport } from '../../lib/bulkImportEnqueue.js'
+import { buildMeterReadingTemplate } from '../../lib/logbookBulkService.js'
 import {
   addMeterReading,
   deleteMeterReading,
   getLatestMeterReading,
   listLogbookEquipment,
   listMeterReadings,
+  resetMeterReading,
 } from '../../lib/logbookService.js'
 
 const router = Router()
@@ -62,6 +63,7 @@ router.get('/', canRead, async (req, res) => {
         { label: 'Department', value: (row) => row.department_name },
         { label: 'Area', value: (row) => row.area_name },
         { label: 'Last reading', value: (row) => row.last_reading ?? row.last_meter_reading },
+        { label: 'Cumm. Reading', value: (row) => row.cumulative_reading },
         { label: 'Reading at', value: (row) => row.last_reading_at || row.last_meter_reading_at },
         { label: 'Logged by', value: (row) => row.logged_by_name || row.last_meter_logged_by_name },
         { label: 'Logged by department', value: (row) => row.logged_by_department },
@@ -101,13 +103,16 @@ router.post('/import', canCreate, async (req, res) => {
   try {
     const buffer = bufferFromBase64Upload(req.body?.data)
     const locationId = resolveLocationFilter(req.orgPermissions, null)
-    const result = await bulkImportMeterReadings(
-      req.userProfile.org_id,
-      req.userProfile.id,
+    const outcome = await enqueueOrRunBulkImport({
+      orgId: req.userProfile.org_id,
+      userId: req.userProfile.id,
+      templateKey: 'meter_readings',
+      fileName: 'meter-readings.xlsx',
       buffer,
-      { locationId },
-    )
-    res.json(await attachFailedFileToResult(result, buffer, 'meter-readings-import-failed-rows.xlsx'))
+      context: { locationId, profileId: req.userProfile.id, userId: req.userProfile.id },
+      forceSync: wantsSyncImport(req),
+    })
+    sendBulkImportResponse(res, outcome)
   } catch (err) {
     res.status(err.status || 500).json({ error: err.message })
   }
@@ -118,6 +123,21 @@ router.get('/:equipmentId/readings', canRead, async (req, res) => {
     const payload = await listMeterReadings(req.userProfile.org_id, req.params.equipmentId)
     assertLocationAccess(req.orgPermissions, payload.equipment.location_id)
     res.json(payload)
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message })
+  }
+})
+
+router.post('/:equipmentId/reset', canCreate, async (req, res) => {
+  try {
+    const latest = await getLatestMeterReading(req.userProfile.org_id, req.params.equipmentId)
+    assertLocationAccess(req.orgPermissions, latest.location_id)
+    const saved = await resetMeterReading(
+      req.userProfile.org_id,
+      req.params.equipmentId,
+      req.userProfile.id,
+    )
+    res.status(201).json(saved)
   } catch (err) {
     res.status(err.status || 500).json({ error: err.message })
   }

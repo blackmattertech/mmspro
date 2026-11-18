@@ -157,6 +157,14 @@ const APP_SEGMENTS = [
     isPathActive: (pathname) => /\/warranty-manager(?:\/|$)/.test(pathname || ''),
   },
   {
+    id: 'support',
+    label: 'Support & Tickets',
+    segment: 'support',
+    icon: 'headset',
+    moduleKey: 'support_tickets',
+    isPathActive: (pathname) => /\/support(?:\/|$)/.test(pathname || ''),
+  },
+  {
     id: 'reports',
     label: 'Reports',
     segment: 'reports',
@@ -164,8 +172,39 @@ const APP_SEGMENTS = [
     moduleKey: 'reports',
     altModuleKeys: REPORT_MODULE_KEYS,
     isPathActive: (pathname) => /\/reports(?:\/|$)/.test(pathname || ''),
-    // Built-in report types stay in-page; sidebar children are saved custom reports only.
-    children: [],
+    children: [
+      {
+        id: 'report-builder',
+        label: 'Report Builder',
+        segment: 'reports',
+        icon: 'chart',
+        moduleKey: 'reports',
+        altModuleKeys: REPORT_MODULE_KEYS,
+        // Active for builder hub, type routes, and saved customs — not schedules/ready.
+        isPathActive: (pathname) => {
+          const match = pathname?.match(/\/reports(?:\/(.*))?$/)
+          if (!match) return false
+          const rest = match[1] || ''
+          return !rest.startsWith('schedules') && !rest.startsWith('ready')
+        },
+      },
+      {
+        id: 'report-schedules',
+        label: 'Scheduled Reports',
+        segment: 'reports/schedules',
+        icon: 'alarmCheck',
+        moduleKey: 'reports',
+        altModuleKeys: REPORT_MODULE_KEYS,
+      },
+      {
+        id: 'report-ready',
+        label: 'Ready Reports',
+        segment: 'reports/ready',
+        icon: 'document',
+        moduleKey: 'reports',
+        altModuleKeys: REPORT_MODULE_KEYS,
+      },
+    ],
   },
   {
     id: 'masters',
@@ -207,7 +246,9 @@ export function moduleKeyForPath(pathname, orgSlug) {
   if (rest.startsWith('work-request/all')) return 'work_request_all'
   if (rest.startsWith('work-request/drafts')) return 'work_request_my'
   if (rest.startsWith('work-request')) return 'work_request'
-  if (rest.startsWith('work-orders/received')) return 'work_orders_received'
+  if (rest.startsWith('work-orders/all') || rest.startsWith('work-orders/received') || rest.startsWith('work-orders/unassigned')) {
+    return 'work_orders_received'
+  }
   if (rest.startsWith('work-orders/assigned')) return 'work_orders_assigned'
   if (rest.startsWith('work-orders/scheduled')) return 'work_orders_scheduled'
   if (rest.startsWith('logbook')) return 'logbook'
@@ -215,6 +256,7 @@ export function moduleKeyForPath(pathname, orgSlug) {
   if (rest.startsWith('work-orders')) return 'work_orders'
   if (rest.startsWith('calendar')) return 'calendar'
   if (rest.startsWith('warranty-manager')) return 'warranty_manager'
+  if (rest.startsWith('support')) return 'support_tickets'
   if (rest.startsWith('tasks-and-followups')) return 'tasks_followups'
   if (rest.startsWith('reports')) return 'reports'
   if (rest.startsWith('masters/forms')) return 'assets'
@@ -266,7 +308,7 @@ function allowNavItem(item, allow, disabledModules) {
   return (item.altModuleKeys || []).some((key) => allow(key))
 }
 
-export function getNavItems(orgSlug, { canRead, disabledModules, reportShortcuts = [] } = {}) {
+export function getNavItems(orgSlug, { canRead, disabledModules } = {}) {
   const allow = typeof canRead === 'function' ? canRead : () => true
   const allowItem = (item) => allowNavItem(item, allow, disabledModules)
 
@@ -276,37 +318,6 @@ export function getNavItems(orgSlug, { canRead, disabledModules, reportShortcuts
         if (!MASTERS_HUB_ITEMS.some((hub) => allowItem(hub))) return null
         return { ...item, path: orgPath(orgSlug, item.segment) }
       }
-      if (item.id === 'reports') {
-        if (!allowItem(item)) return null
-        const scheduleChild = {
-          id: 'report-schedules',
-          label: 'Scheduled reports',
-          segment: 'reports/schedules',
-          path: orgPath(orgSlug, 'reports/schedules'),
-          moduleKey: 'reports',
-          altModuleKeys: REPORT_MODULE_KEYS,
-          icon: 'alarmCheck',
-        }
-        const customChildren = (Array.isArray(reportShortcuts) ? reportShortcuts : [])
-          .filter((row) => row?.id && row?.name)
-          .slice(0, 50)
-          .map((row) => ({
-            id: `report-custom-${row.id}`,
-            label: row.name,
-            segment: `reports/saved/${row.id}`,
-            path: orgPath(orgSlug, `reports/saved/${row.id}`),
-            moduleKey: 'reports',
-            altModuleKeys: REPORT_MODULE_KEYS,
-            icon: 'chart',
-            isCustomReport: true,
-          }))
-        const children = [scheduleChild, ...customChildren]
-        return {
-          ...item,
-          path: orgPath(orgSlug, 'reports'),
-          children,
-        }
-      }
       if (item.children) {
         const children = item.children
           .filter((child) => allowItem(child))
@@ -315,7 +326,11 @@ export function getNavItems(orgSlug, { canRead, disabledModules, reportShortcuts
             path: orgPath(orgSlug, child.segment),
           }))
         if (!children.length) return null
-        return { ...item, children }
+        return {
+          ...item,
+          ...(item.segment ? { path: orgPath(orgSlug, item.segment) } : {}),
+          children,
+        }
       }
       if (!allowItem(item)) return null
       return {
@@ -453,7 +468,8 @@ export function getBreadcrumbsForPath(pathname, orgSlug) {
     if (item.segment) {
       if (rest === item.segment || rest.startsWith(`${item.segment}/`)) {
         const leafLen = match?.leaf?.segment?.length || 0
-        if (!match || item.segment.length > leafLen) {
+        // Prefer a matched child over the parent when segments share a prefix (e.g. reports).
+        if (!match || (!match.parent && item.segment.length > leafLen)) {
           match = { parent: null, leaf: item }
         }
       }

@@ -35,6 +35,7 @@ const DEFAULT_SIMPLE = {
 export default function TaskMetaEditModal({
   kind,
   item,
+  cloneSourceName = null,
   saving,
   onClose,
   onSave,
@@ -100,7 +101,7 @@ export default function TaskMetaEditModal({
           <div className="modal__header-main">
             <PageBack onClick={onClose} className="page-back--header" label="Task Masters" />
             <h2 id="task-meta-edit-title">
-              {isEdit ? 'Edit' : 'New'}
+              {isEdit ? 'Edit' : cloneSourceName ? 'Duplicate' : 'New'}
               {' '}
               {isStatus ? 'Status' : isPriority ? 'Priority' : kind === 'category' ? 'Category' : 'Tag'}
             </h2>
@@ -109,6 +110,13 @@ export default function TaskMetaEditModal({
         </div>
 
         <form className="company-modal__form task-meta-edit-modal__form" onSubmit={handleSubmit}>
+          {cloneSourceName && !isEdit && (
+            <p className="company-form__hint">
+              Duplicating “{cloneSourceName}”.
+              {' '}
+              {isSimple ? 'Change the name before saving.' : 'Change the name and at least one other detail before saving.'}
+            </p>
+          )}
           {localError && <div className="company-alert" role="alert">{localError}</div>}
 
           <label className="company-form__field">

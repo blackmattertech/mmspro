@@ -13,6 +13,7 @@ import {
   resetTaskStatusesToDefault,
   updateTaskStatus,
 } from './taskMetaService.js'
+import { enforceNestedCloneOrThrow, loadNestedCloneSource } from './nestedClone.js'
 
 function trimOrNull(value) {
   const text = String(value ?? '').trim()
@@ -125,6 +126,17 @@ export async function createOrgStatus(orgId, entityType, body) {
     const row = await createTaskStatus(orgId, body)
     return mapTaskStatusRow(row)
   }
+
+  await enforceNestedCloneOrThrow({
+    body,
+    kind: 'org_status',
+    loadSource: (id) => loadNestedCloneSource({
+      table: 'org_statuses',
+      orgId,
+      id,
+      match: { entity_type: entityType },
+    }),
+  })
 
   await ensureOrgStatusesForOrg(orgId, entityType)
   let key = slugifyStatusKey(body.key || name)

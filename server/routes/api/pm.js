@@ -21,12 +21,9 @@ import {
   duplicatePmPlan,
   generateScheduledWorkOrder,
 } from '../../lib/pmService.js'
-import {
-  buildPmPlansTemplate,
-  bulkImportPmPlans,
-} from '../../lib/pmPlanBulkService.js'
-import { attachFailedFileToResult } from '../../lib/importErrorWorkbook.js'
+import { buildPmPlansTemplate } from '../../lib/pmPlanBulkService.js'
 import { bufferFromBase64Upload, excelFilePayload } from '../../lib/excelTemplate.js'
+import { enqueueOrRunBulkImport, sendBulkImportResponse, wantsSyncImport } from '../../lib/bulkImportEnqueue.js'
 import {
   listChecklistTemplates,
   getChecklistTemplate,
@@ -421,12 +418,16 @@ router.get('/plans/template', canCreate, async (req, res) => {
 router.post('/plans/import', canCreate, async (req, res) => {
   try {
     const buffer = bufferFromBase64Upload(req.body?.data)
-    const result = await bulkImportPmPlans(
-      req.userProfile.org_id,
-      req.userProfile.id,
+    const outcome = await enqueueOrRunBulkImport({
+      orgId: req.userProfile.org_id,
+      userId: req.userProfile.id,
+      templateKey: 'pm_plans',
+      fileName: 'pm-plans.xlsx',
       buffer,
-    )
-    res.json(await attachFailedFileToResult(result, buffer, 'pm-plans-import-failed-rows.xlsx'))
+      context: { profileId: req.userProfile.id },
+      forceSync: wantsSyncImport(req),
+    })
+    sendBulkImportResponse(res, outcome)
   } catch (err) {
     sendError(res, err)
   }

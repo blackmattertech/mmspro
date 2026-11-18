@@ -16,6 +16,8 @@ import '../shared/ListTableChrome.css'
 import GooToggle from '../ui/GooToggle'
 import TrashIcon from '../ui/TrashIcon'
 import EditIcon from '../ui/EditIcon'
+import DuplicateRowButton from '../ui/DuplicateRowButton'
+import { createMasterClone, prepareMasterCloneCreate } from '../../lib/masterClone'
 import AreaModal from './AreaModal'
 import TablePagination from '../shared/TablePagination'
 import TableEmptyRow from '../shared/TableEmptyRow'
@@ -87,6 +89,7 @@ export default function AreasTab({ canManage }) {
   useEffect(() => { setListTotal(total) }, [total])
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState(null)
+  const [clone, setClone] = useState(null)
   const [viewing, setViewing] = useState(null)
   const [togglingId, setTogglingId] = useState(null)
 
@@ -126,6 +129,7 @@ export default function AreasTab({ canManage }) {
   const {
     bulkInputRef,
     bulkBusy,
+    bulkProgress,
     bulkError,
     bulkResult,
     handleDownloadTemplate,
@@ -169,20 +173,33 @@ export default function AreasTab({ canManage }) {
 
   const openCreate = () => {
     setEditing(null)
+    setClone(null)
     setModalOpen(true)
+  }
+
+  const openDuplicate = (area) => {
+    setEditing(null)
+    setClone(createMasterClone('area', area))
+    setModalOpen(true)
+  }
+
+  const closeModal = () => {
+    setModalOpen(false)
+    setClone(null)
   }
 
   const openView = (area) => setViewing(area)
 
   const openEdit = (area) => {
     setEditing(area)
+    setClone(null)
     setModalOpen(true)
   }
 
   const handleSave = async (payload) => {
     if (editing) await update(editing.id, payload)
-    else await create(payload)
-    setModalOpen(false)
+    else await create(prepareMasterCloneCreate('area', clone, payload))
+    closeModal()
   }
 
   const handleDelete = async (area) => {
@@ -304,6 +321,7 @@ export default function AreasTab({ canManage }) {
               <MasterBulkActions
                 onDownload={handleDownloadTemplate}
                 bulkBusy={bulkBusy}
+                    bulkProgress={bulkProgress}
                 bulkInputRef={bulkInputRef}
                 onFileChange={handleBulkFile}
                 addLabel="+ Add Area"
@@ -439,6 +457,11 @@ export default function AreasTab({ canManage }) {
                         >
                           <EditIcon />
                         </button>
+                        <DuplicateRowButton
+                          onClick={() => openDuplicate(area)}
+                          disabled={saving}
+                          label={`Duplicate ${area.name}`}
+                        />
                         <button
                           type="button"
                           className="company-btn company-btn--danger company-btn--compact company-btn--icon"
@@ -479,11 +502,12 @@ export default function AreasTab({ canManage }) {
 
       {modalOpen && (
         <AreaModal
-          area={editing}
+          key={editing?.id ?? (clone ? `clone-${clone.source.id}` : 'new')}
+          area={editing || clone?.draft || null}
           saving={saving}
           defaultLocationId={scopedLocationId || ''}
           lockLocation={Boolean(scopedLocationId)}
-          onClose={() => setModalOpen(false)}
+          onClose={closeModal}
           onSave={handleSave}
         />
       )}

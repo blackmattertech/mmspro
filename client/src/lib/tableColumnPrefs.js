@@ -165,6 +165,45 @@ function finalizeColumnPrefs(result, columnDefs) {
   return { ...grouped, order }
 }
 
+const COLUMNS_SET_ALL = 'columns-set-all'
+
+/** Command for the column picker: show or hide every toggleable column at once. */
+export function columnsSetAll(visible) {
+  return { type: COLUMNS_SET_ALL, visible: Boolean(visible) }
+}
+
+function isColumnsSetAll(value) {
+  return Boolean(value && typeof value === 'object' && value.type === COLUMNS_SET_ALL)
+}
+
+/**
+ * Toggle one column, or show/hide every toggleable column.
+ * A single toggle still refuses to hide the last visible column.
+ * Select-all may hide every toggleable column. Locked columns stay visible.
+ */
+export function applyColumnToggle(prefs, columnDefs, columnId) {
+  const resolved = resolveColumnPrefs(prefs, columnDefs)
+  if (isColumnsSetAll(columnId)) {
+    const locked = new Set((columnDefs || []).filter((col) => col.locked).map((col) => col.id))
+    const hidden = columnId.visible
+      ? []
+      : resolved.order.filter((id) => !locked.has(id))
+    if (resolved.hidden.join('|') === hidden.join('|')) return resolved
+    return { ...resolved, hidden }
+  }
+
+  const def = (columnDefs || []).find((col) => col.id === columnId)
+  if (!def || def.locked) return resolved
+  const hidden = new Set(resolved.hidden)
+  if (hidden.has(columnId)) hidden.delete(columnId)
+  else hidden.add(columnId)
+  const visible = resolved.order.filter((id) => !hidden.has(id))
+  if (!visible.length) return resolved
+  const nextHidden = [...hidden]
+  if (resolved.hidden.join('|') === nextHidden.join('|')) return resolved
+  return { ...resolved, hidden: nextHidden }
+}
+
 export function visibleIdsFromPrefs(prefs, columnDefs) {
   const locked = new Set((columnDefs || []).filter((col) => col.locked).map((col) => col.id))
   const hidden = new Set(prefs?.hidden || [])

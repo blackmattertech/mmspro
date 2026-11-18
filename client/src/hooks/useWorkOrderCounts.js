@@ -6,15 +6,19 @@ import { peekReferenceData, seedReferenceData } from '../lib/referenceDataCache'
 import { TAB_COUNTS_EVENT } from '../lib/tabCountEvents'
 
 const EMPTY_COUNTS = {
-  received: 0,
+  all: 0,
+  unassigned: 0,
   assigned: 0,
   scheduled: 0,
   manual: 0,
 }
 
 function normalizeWorkOrderCounts(data) {
+  const all = Number(data?.all ?? data?.received) || 0
   return {
-    received: Number(data?.received) || 0,
+    all,
+    received: all,
+    unassigned: Number(data?.unassigned) || 0,
     assigned: Number(data?.assigned) || 0,
     scheduled: Number(data?.scheduled) || 0,
     manual: Number(data?.manual) || 0,

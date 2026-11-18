@@ -5,6 +5,7 @@ import { usePermissions } from '../../hooks/usePermissions'
 import { useDebouncedValue } from '../../hooks/useDebouncedValue'
 import { useTasksPage, useTaskPoll } from '../../hooks/useTasksPage'
 import { orgPath } from '../../config/navigation'
+import { cloneNavState } from '../../lib/workRecordClone'
 import { TASK_TABS } from '../../config/tasks'
 import { TABLE_SORT_OPTIONS, applyTableFilters, uniqueNameOptions, selectFilterField } from '../../lib/tableFilters'
 import { deleteTask, getTasksTemplate, bulkUploadTasks, getTaskTabCounts, exportTasks } from '../../lib/api-tasks'
@@ -29,6 +30,11 @@ import '../../components/shared/TableFilterToolbar.css'
 import '../../components/company/CompanyShared.css'
 import '../../components/tasks/Tasks.css'
 import { useConfirmDelete } from '../../hooks/useConfirmDelete'
+import StatusPhaseBar, { resolveStatusFilters } from '../../components/shared/StatusPhaseBar'
+import {
+  buildTaskPhases,
+  taskLabelByKey,
+} from '../../lib/statusPhases'
 
 const TaskVoiceAssistant = lazy(() => import('../../components/tasks/TaskVoiceAssistant'))
 const VoiceAgentIcon = lazy(() => import('../../components/ui/VoiceAgentIcon'))
@@ -70,6 +76,7 @@ export default function TasksManager() {
   const [sortBy, setSortBy] = useState('newest')
   const [overdueOnly, setOverdueOnly] = useState(false)
   const [dueTodayOnly, setDueTodayOnly] = useState(false)
+  const [statusSelection, setStatusSelection] = useState([])
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [voiceOpen, setVoiceOpen] = useState(false)
   const [exporting, setExporting] = useState(false)
@@ -131,12 +138,19 @@ export default function TasksManager() {
     priorities,
     categories,
     tags,
+    statusCounts,
     loading,
     error,
     reload,
   } = useTasksPage(filters, {
     mode: viewMode === 'kanban' ? 'kanban' : 'list',
   })
+  const taskPhases = useMemo(() => buildTaskPhases(statuses), [statuses])
+  const statusFilters = useMemo(
+    () => resolveStatusFilters(statusSelection, taskPhases),
+    [statusSelection, taskPhases],
+  )
+  const taskStatusLabelByKey = useMemo(() => taskLabelByKey(statuses), [statuses])
   const taskFilterFields = useMemo(() => ([
     selectFilterField('status', 'Status', uniqueNameOptions(statuses), 'All Status'),
     selectFilterField('priority', 'Priority', uniqueNameOptions(priorities), 'All Priorities'),
@@ -145,25 +159,36 @@ export default function TasksManager() {
     TASK_VISIBILITY_FILTER,
   ]), [statuses, priorities, categories, tags])
   useEffect(() => { setListTotal(total) }, [total])
+  useEffect(() => { setStatusSelection([]) }, [tab])
 
   const pollReload = useCallback(() => reload({ silent: true }), [reload])
   useTaskPoll(pollReload, 30000, true)
 
-  const filteredItems = useMemo(
-    () => filterTasks(items, { sortBy }),
-    [items, sortBy],
-  )
+  const filteredItems = useMemo(() => {
+    const selected = new Set(statusFilters)
+    const rows = selected.size
+      ? items.filter((task) => selected.has(String(task.status_id || task.status?.id || '')))
+      : items
+    return filterTasks(rows, { sortBy })
+  }, [items, sortBy, statusFilters])
 
   const filteredBoard = useMemo(() => {
     if (!board) return null
+    const selected = new Set(statusFilters)
     return {
       ...board,
-      columns: (board.columns || []).map((column) => ({
-        ...column,
-        tasks: filterTasks(column.tasks || [], { sortBy }),
-      })),
+      columns: (board.columns || []).map((column) => {
+        const columnId = String(column.status?.id || column.id || '')
+        const tasks = filterTasks(column.tasks || [], { sortBy })
+        if (!selected.size) return { ...column, tasks }
+        if (selected.has(columnId)) return { ...column, tasks }
+        return {
+          ...column,
+          tasks: tasks.filter((task) => selected.has(String(task.status_id || task.status?.id || ''))),
+        }
+      }),
     }
-  }, [board, sortBy])
+  }, [board, sortBy, statusFilters])
 
   const openCreate = () => {
     if (!org?.slug) return
@@ -173,6 +198,11 @@ export default function TasksManager() {
   const openTask = (task) => {
     if (!org?.slug || !task?.id) return
     navigate(orgPath(org.slug, `tasks-and-followups/${task.id}`))
+  }
+
+  const handleDuplicate = (task) => {
+    if (!org?.slug || !task?.id) return
+    navigate(orgPath(org.slug, 'tasks-and-followups/create'), { state: cloneNavState(task.id) })
   }
 
   const handleDelete = async (task) => {
@@ -199,6 +229,7 @@ export default function TasksManager() {
   const {
     bulkInputRef,
     bulkBusy,
+    bulkProgress,
     bulkError,
     bulkResult,
     handleDownloadTemplate,
@@ -256,6 +287,7 @@ export default function TasksManager() {
             <MasterBulkActions
               onDownload={handleDownloadTemplate}
               bulkBusy={bulkBusy}
+                    bulkProgress={bulkProgress}
               bulkInputRef={bulkInputRef}
               onFileChange={handleBulkFile}
               addLabel="+ New Task"
@@ -324,6 +356,17 @@ export default function TasksManager() {
             </div>
           </div>
 
+          {taskPhases.length > 0 && (
+            <StatusPhaseBar
+              counts={statusCounts}
+              phases={taskPhases}
+              selectedKeys={statusSelection}
+              onChange={setStatusSelection}
+              labelByKey={taskStatusLabelByKey}
+              ariaLabel="Filter tasks by status"
+            />
+          )}
+
           <div className="company-panel__toolbar company-panel__toolbar--filters">
             <TableFilterToolbar
               search={{
@@ -385,6 +428,9 @@ export default function TasksManager() {
               pagination={pagination}
               serverPaged
               canManage={canUpdate('tasks_followups') || canDelete('tasks_followups')}
+              canDuplicate={canCreate('tasks_followups')}
+              onDuplicate={handleDuplicate}
+              canSaveTemplate={canCreate('tasks_followups')}
               onDelete={canDelete('tasks_followups') ? handleDelete : undefined}
               deleting={deleting}
               paginationResetKey={filterResetKey}

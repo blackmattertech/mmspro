@@ -15,12 +15,15 @@ import AssignedToCell from './AssignedToCell'
 import PersonChip from '../shared/PersonChip'
 import EditIcon from '../ui/EditIcon'
 import TrashIcon from '../ui/TrashIcon'
+import DuplicateRowButton from '../ui/DuplicateRowButton'
+import SaveAsTemplateButton from '../templates/SaveAsTemplateButton'
 import { TableColumnHead } from '../shared/ListTableChrome'
 import RecordPdfButton from '../shared/RecordPdfButton'
 import { ColumnPickerPortal } from '../shared/ColumnPickerSlot'
 import { VirtualTableBody } from '../shared/VirtualTableBody'
 import TableEmptyRow from '../shared/TableEmptyRow'
 import TruncatedText from '../shared/TruncatedText'
+import { plainTextFromRich } from '../../lib/richText'
 import '../shared/ListTableChrome.css'
 import { resolveProgressPercent } from '../../lib/statusProgress'
 import { formatWorkOrderStatusLabel } from '../../lib/workOrderStatusLabel'
@@ -108,7 +111,7 @@ function sourceLabel(value) {
 }
 
 function textCell(value) {
-  const text = String(value || '').trim()
+  const text = plainTextFromRich(value)
   if (!text) return '—'
   return (
     <TruncatedText className="company-table__name" text={text}>
@@ -138,6 +141,10 @@ const WorkOrderTableRow = memo(function WorkOrderTableRow({
   approvingId,
   canEdit,
   onEdit,
+  canDuplicate,
+  onDuplicate,
+  canSaveTemplate = false,
+  templateModuleKey = 'work_orders_manual',
   canDelete,
   onDelete,
 }) {
@@ -195,6 +202,21 @@ const WorkOrderTableRow = memo(function WorkOrderTableRow({
               <EditIcon />
             </button>
           )}
+          {canDuplicate && onDuplicate && (
+            <DuplicateRowButton
+              onClick={() => onDuplicate(order)}
+              label={`Duplicate ${order.wo_number || 'work order'}`}
+            />
+          )}
+          {canSaveTemplate ? (
+            <SaveAsTemplateButton
+              moduleKey={templateModuleKey}
+              sourceRecordId={order.id}
+              defaultName={order.short_description || order.wo_number || 'Work order'}
+              className="company-btn company-btn--secondary company-btn--compact"
+              label="Template"
+            />
+          ) : null}
           {canDelete && (
             <button
               type="button"
@@ -225,8 +247,12 @@ export default function WorkOrdersTable({
   onApprove,
   onEdit,
   onDelete,
+  onDuplicate,
   canApproveOrder,
   canEdit = false,
+  canDuplicate = false,
+  canSaveTemplate = false,
+  templateModuleKey = 'work_orders_manual',
   canDelete = false,
   approvingId = null,
   paginationResetKey = '',
@@ -450,6 +476,10 @@ export default function WorkOrdersTable({
                 approvingId={approvingId}
                 canEdit={canEdit}
                 onEdit={onEdit}
+                canDuplicate={canDuplicate}
+                onDuplicate={onDuplicate}
+                canSaveTemplate={canSaveTemplate}
+                templateModuleKey={templateModuleKey}
                 canDelete={canDelete}
                 onDelete={onDelete}
               />

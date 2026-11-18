@@ -1,5 +1,6 @@
 import { supabaseAdmin } from '../services/supabase.js'
 import { DEFAULT_STATUSES, DEFAULT_PRIORITIES } from './taskDefaults.js'
+import { enforceNestedCloneOrThrow, loadNestedCloneSource } from './nestedClone.js'
 
 export async function ensureTaskMetaForOrg(orgId) {
   const { count: statusCount, error: statusCountError } = await supabaseAdmin
@@ -71,6 +72,12 @@ function trimOrNull(value) {
 export async function createTaskStatus(orgId, body) {
   const name = trimOrNull(body.name)
   if (!name) throw Object.assign(new Error('Status name is required'), { status: 400 })
+
+  await enforceNestedCloneOrThrow({
+    body,
+    kind: 'task_status',
+    loadSource: (id) => loadNestedCloneSource({ table: 'task_statuses', orgId, id }),
+  })
 
   const { data, error } = await supabaseAdmin
     .from('task_statuses')
@@ -152,6 +159,12 @@ export async function reorderTaskStatuses(orgId, orderedIds) {
 export async function createTaskPriority(orgId, body) {
   const name = trimOrNull(body.name)
   if (!name) throw Object.assign(new Error('Priority name is required'), { status: 400 })
+
+  await enforceNestedCloneOrThrow({
+    body,
+    kind: 'task_priority',
+    loadSource: (id) => loadNestedCloneSource({ table: 'task_priorities', orgId, id }),
+  })
 
   const { data, error } = await supabaseAdmin
     .from('task_priorities')

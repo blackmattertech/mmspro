@@ -1,4 +1,6 @@
 import { orderedHierarchyFields } from './assetHierarchy'
+
+export { canResetMeter, cumulativeFromOffset } from '../../../shared/meterCycle.js'
 import { formatDisplayDate, formatDisplayDateTime, formatDisplayTime } from './displayDate'
 import { canonicalLabel, formatPickerValue } from './pickerFields'
 
@@ -37,6 +39,7 @@ export function meterListColumns(assetFields) {
     ...identity,
     ...placement,
     { id: 'last_reading', label: 'Last reading' },
+    { id: 'cumulative_reading', label: 'Cumm. Reading' },
     { id: 'date', label: 'Date' },
     { id: 'time', label: 'Time' },
     { id: 'logged_by', label: 'Logged by' },

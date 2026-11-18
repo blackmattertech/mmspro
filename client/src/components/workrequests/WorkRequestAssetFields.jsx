@@ -107,6 +107,7 @@ function AssetFieldInput({
           <span className="wo-manual__intro" style={{ margin: '0 0 6px', fontSize: 12 }}>{hint}</span>
         )}
         <SpellcheckInput
+          richText
           multiline
           className="company-form__input company-form__textarea"
           rows={3}
@@ -276,19 +277,27 @@ export default function WorkRequestAssetFields({
       seededEquipmentRef.current = ''
       return
     }
-    if (seededEquipmentRef.current === equipmentId) return
-    const hasValues = Object.values(fieldValues || {}).some((value) => {
+    // Wait until hierarchy fields exist — otherwise we mark seeded with {} and never refill.
+    if (!allFields.length) return
+    const row = (equipment || []).find((item) => item.id === equipmentId)
+    if (!row) return
+
+    const seeded = fieldValuesFromEquipment(row, allFields)
+    const hasHierarchyValues = Object.values(fieldValues || {}).some((value) => {
       if (Array.isArray(value)) return value.length > 0
       return String(value ?? '').trim() !== ''
     })
-    if (hasValues) {
+    // Re-seed when this equipment has not been applied yet, or when values are still empty
+    // after a late catalog/sections load (template / clone / edit hydrate).
+    if (seededEquipmentRef.current === equipmentId && hasHierarchyValues) return
+    if (!Object.keys(seeded).length && hasHierarchyValues) {
       seededEquipmentRef.current = equipmentId
       return
     }
-    const row = (equipment || []).find((item) => item.id === equipmentId)
-    if (!row) return
     seededEquipmentRef.current = equipmentId
-    onFieldValuesChange(fieldValuesFromEquipment(row, allFields))
+    if (Object.keys(seeded).length) {
+      onFieldValuesChange(seeded)
+    }
   }, [equipmentId, equipment, allFields, fieldValues, onFieldValuesChange])
 
   // Do not clear equipmentId when the row is briefly missing from the catalog

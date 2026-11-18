@@ -27,25 +27,62 @@ function sectionHasContent(layout, section) {
   return isAssetLayoutSection(section.id, section, layout)
 }
 
-export function manualWorkOrderSteps(layout) {
+export function manualWorkOrderSections(layout) {
   return sortLayoutItems(layout?.sections || [])
     .filter((section) => sectionHasContent(layout, section))
-    .map((section, index) => ({
-      id: index + 1,
-      key: section.id,
-      sectionId: section.id,
-      label: section.label || `Section ${index + 1}`,
-    }))
+}
+
+/** Flat one-section steps (legacy helper). Prefer manualWorkOrderPages for the wizard UI. */
+export function manualWorkOrderSteps(layout) {
+  return manualWorkOrderSections(layout).map((section, index) => ({
+    id: index + 1,
+    key: section.id,
+    sectionId: section.id,
+    sectionIds: [section.id],
+    label: section.label || `Section ${index + 1}`,
+  }))
+}
+
+/**
+ * Group layout sections into wizard pages (default: 2 sections per page).
+ * Labels join section titles with " · " so the stepper stays readable.
+ */
+export function manualWorkOrderPages(layout, { sectionsPerPage = 2 } = {}) {
+  const sections = manualWorkOrderSections(layout)
+  const size = Math.max(1, Number(sectionsPerPage) || 2)
+  const pages = []
+  for (let i = 0; i < sections.length; i += size) {
+    const chunk = sections.slice(i, i + size)
+    const sectionIds = chunk.map((section) => section.id)
+    pages.push({
+      id: pages.length + 1,
+      key: sectionIds.join('+'),
+      sectionIds,
+      sectionId: sectionIds[0],
+      label: chunk
+        .map((section) => section.label || section.id)
+        .filter(Boolean)
+        .join(' · ') || `Step ${pages.length + 1}`,
+    })
+  }
+  return pages
+}
+
+export function layoutForSections(layout, sectionIds = []) {
+  if (!layout) return layout
+  const ids = new Set((sectionIds || []).filter(Boolean))
+  if (!ids.size) return layout
+  return {
+    ...layout,
+    sections: (layout.sections || []).filter((section) => ids.has(section.id)),
+    fields: (layout.fields || []).filter((field) => ids.has(field.sectionId)),
+    groups: (layout.groups || []).filter((group) => ids.has(group.sectionId)),
+  }
 }
 
 export function layoutForSection(layout, sectionId) {
   if (!layout || !sectionId) return layout
-  return {
-    ...layout,
-    sections: (layout.sections || []).filter((section) => section.id === sectionId),
-    fields: (layout.fields || []).filter((field) => field.sectionId === sectionId),
-    groups: (layout.groups || []).filter((group) => group.sectionId === sectionId),
-  }
+  return layoutForSections(layout, [sectionId])
 }
 
 function normalizeLabel(value) {

@@ -10,6 +10,7 @@ import {
 import PageBack from '../shared/PageBack'
 import NavIcon from '../layout/NavIcon'
 import EquipmentMasterFields from './EquipmentMasterFields'
+import OrgResetPanel from './OrgResetPanel'
 import GooToggle from '../ui/GooToggle'
 import '../company/CompanyShared.css'
 import './CreateOrgModal.css'
@@ -35,6 +36,12 @@ const HOME_CARDS = [
     label: 'Modules',
     text: 'Choose which modules this company can use.',
     icon: 'shieldLock',
+  },
+  {
+    id: 'reset',
+    label: 'Reset',
+    text: 'Clear module data for this company.',
+    icon: 'arrowSwap',
   },
 ]
 
@@ -73,7 +80,9 @@ export default function OrgConfigureModal({ org, onClose, onOrgUpdated }) {
         ? 'Assets'
         : screen === 'modules'
           ? 'Modules'
-          : 'Configure'
+          : screen === 'reset'
+            ? 'Reset'
+            : 'Configure'
   const back = screen === 'equipment'
     ? { label: 'Masters', onClick: () => setScreen('masters') }
     : screen === 'home'
@@ -133,6 +142,9 @@ export default function OrgConfigureModal({ org, onClose, onOrgUpdated }) {
           )}
           {screen === 'equipment' && (
             <EquipmentMasterFields orgId={org?.id} fieldsState={equipmentFieldsState} />
+          )}
+          {screen === 'reset' && (
+            <OrgResetPanel org={org} />
           )}
         </div>
       </div>

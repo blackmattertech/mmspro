@@ -4,6 +4,7 @@ import PageBack from '../shared/PageBack'
 import FilterableSelect from '../ui/FilterableSelect'
 import GooToggle from '../ui/GooToggle'
 import SpellcheckInput from '../shared/SpellcheckInput'
+import { normalizeRichTextValue } from '../../lib/richText'
 import EditIcon from '../ui/EditIcon'
 import TrashIcon from '../ui/TrashIcon'
 import {
@@ -76,7 +77,7 @@ export default function ChecklistBuilderModal({
     try {
       await onSaveTemplate({
         name: form.name.trim(),
-        description: form.description.trim() || null,
+        description: normalizeRichTextValue(form.description) || null,
         is_active: form.is_active,
       })
     } catch (err) {
@@ -205,6 +206,7 @@ export default function ChecklistBuilderModal({
               <label className="company-form__field company-form__field--full">
                 <span className="company-form__label">Description</span>
                 <SpellcheckInput
+                  richText
                   multiline
                   className="company-form__input company-form__textarea"
                   rows={2}

@@ -270,6 +270,28 @@
   resize: none;
 }
 
+/* TipTap owns its own chrome — do not treat the editor shell like a plain textarea. */
+.wr-create-form .rich-text-editor.company-form__input,
+.wr-create-form .rich-text-editor.company-form__textarea {
+  display: flex !important;
+  flex-direction: column;
+  height: auto !important;
+  min-height: 0 !important;
+  padding: 0 !important;
+  white-space: normal;
+  overflow: hidden;
+  resize: none;
+}
+
+.wr-create-form .rich-text-editor__toolbar {
+  display: flex !important;
+  flex-shrink: 0;
+}
+
+.wr-create-form .rich-text-editor__content {
+  min-height: 88px;
+}
+
 .wr-create-form .company-form__input:disabled,
 .wr-create-form .filterable-select__input:disabled,
 .wr-create-form .wr-form__input-readonly {
@@ -832,16 +854,26 @@
   padding: 0;
   overflow: hidden;
   display: flex;
+  flex-direction: column;
+  gap: 4px;
   align-items: center;
   justify-content: center;
   border: 1px solid var(--color-light-gray-1);
   border-radius: var(--radius-sm);
   background: var(--color-white);
-  cursor: default;
+  cursor: zoom-in;
 }
 
-.wr-attach-files__box:has(img:not(.wr-attach-files__icon)) {
-  cursor: zoom-in;
+.wr-attach-files__clip {
+  width: 28px;
+  height: 28px;
+  background: var(--color-gray-blue);
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
 }
 
 .wr-attach-files__box img {

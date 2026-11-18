@@ -2,6 +2,12 @@ import { supabaseAdmin } from '../services/supabase.js'
 import { notifyUser } from '../services/notifications.js'
 import { notifyTaskAssigned } from './taskNotifyRecipients.js'
 import { getEmployeeByProfile } from './workRequestService.js'
+import {
+  enforceWorkRecordClone,
+  toTaskCloneComparable,
+  TASK_CLONE_COMPARE_KEYS,
+  TASK_CLONE_UNIQUE_KEYS,
+} from './workRecordClone.js'
 import { ensureTaskMetaForOrg, listTaskStatuses, listTaskPriorities } from './taskMetaService.js'
 import { ensureTaskCategoriesForOrg } from './taskCategoryService.js'
 import { syncTaskTagAssignments, loadTagsForTasks } from './taskTagService.js'
@@ -863,6 +869,15 @@ export async function getTaskDetail(orgId, taskId, profileId) {
 }
 
 export async function createTask(orgId, profileId, body) {
+  // Duplicate → prefilled create: block saves that are unchanged copies of the source.
+  await enforceWorkRecordClone({
+    body,
+    loadSource: (sourceId) => getTaskDetail(orgId, sourceId, profileId),
+    toComparable: toTaskCloneComparable,
+    uniqueKeys: TASK_CLONE_UNIQUE_KEYS,
+    compareKeys: TASK_CLONE_COMPARE_KEYS,
+  })
+
   await ensureTaskMetaForOrg(orgId)
   await ensureTaskCategoriesForOrg(orgId)
   const { statusId, priorityId } = await getDefaultStatusAndPriority(orgId)

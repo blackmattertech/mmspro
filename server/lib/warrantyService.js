@@ -8,6 +8,12 @@ import { applyMappedFilters, ilikePattern, listEnvelope } from './listQuery.js'
 import { NO_MATCH_ID, restrictToIds } from './relationFilters.js'
 import { attachFormFieldValueMaps } from './orgFormLayouts.js'
 import { clipTrimmedToLimit, getTextFieldLimitsMap } from './textFieldLimits.js'
+import {
+  enforceWorkRecordClone,
+  toWarrantyCloneComparable,
+  WARRANTY_CLONE_COMPARE_KEYS,
+  WARRANTY_CLONE_UNIQUE_KEYS,
+} from './workRecordClone.js'
 
 const WARRANTY_SELECT = `
   id, org_id, serial_number,
@@ -655,6 +661,15 @@ export async function getWarrantyDetail(orgId, id) {
 }
 
 export async function createWarranty(orgId, body) {
+  // Duplicate → prefilled create: block saves that are unchanged copies of the source.
+  await enforceWorkRecordClone({
+    body,
+    loadSource: (sourceId) => getWarrantyDetail(orgId, sourceId),
+    toComparable: toWarrantyCloneComparable,
+    uniqueKeys: WARRANTY_CLONE_UNIQUE_KEYS,
+    compareKeys: WARRANTY_CLONE_COMPARE_KEYS,
+  })
+
   const vendorPayload = await resolveVendorFields(orgId, normalizeWarrantyPayload(body))
   const fieldLimits = await getTextFieldLimitsMap(orgId)
   const items = normalizeItems(body.items, fieldLimits)

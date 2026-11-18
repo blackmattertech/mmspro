@@ -9,7 +9,7 @@ import { layoutWithoutCatalogFields } from '../../lib/formLayoutIds'
 import OrderedFormLayout from '../forms/OrderedFormLayout'
 import { isAllowedImageFile, resolveImageMime } from '../../lib/imageFiles'
 import { readFileAsDataUrl } from '../../config/warrantyDocuments'
-import { formatMeterStamp, formatMeterValue } from '../../lib/meterReading'
+import { cumulativeFromOffset, formatMeterStamp, formatMeterValue } from '../../lib/meterReading'
 import { formatCalendarDate, formatDisplayDateTime } from '../../lib/displayDate'
 import PersonChip from '../shared/PersonChip'
 import './EquipmentDetail.css'
@@ -97,6 +97,15 @@ function detailFacts(equipment) {
         formatMeterStamp(equipment.last_meter_reading_at),
       ].filter(Boolean)
     facts.push({ label: 'Last meter reading', value: parts.join(' · ') })
+    if (equipment.last_meter_reading != null) {
+      facts.push({
+        label: 'Cumm. Reading',
+        value: formatMeterValue(cumulativeFromOffset(
+          equipment.meter_reading_offset,
+          equipment.last_meter_reading,
+        )),
+      })
+    }
     const loggerName = equipment.logged_by_person?.name || equipment.last_meter_logged_by_name
     if (loggerName) {
       const subtitle = [

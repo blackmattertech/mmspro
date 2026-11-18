@@ -278,7 +278,7 @@ async function workOrderSection(orgId, session, locationId, aggregatePromise = n
   return {
     id: 'work_orders',
     label: 'Work Orders',
-    href: 'work-orders/received',
+    href: 'work-orders/all',
     kpis: [
       kpi('total', 'Total', total),
       kpi('open', 'Active', open),

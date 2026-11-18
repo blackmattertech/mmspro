@@ -23,6 +23,14 @@ const EMPLOYEE_COLUMNS = [
   'Location', 'Department', 'Login Required', 'Access Role',
 ]
 
+/** Included in the downloadable template; optional so older files still import. */
+const EMPLOYEE_OPTIONAL_COLUMNS = ['Manager']
+
+const EMPLOYEE_TEMPLATE_COLUMNS = [
+  'Employee ID', 'Name', 'Mobile', 'Email',
+  'Location', 'Department', 'Manager', 'Login Required', 'Access Role',
+]
+
 function chunk(items, size) {
   const groups = []
   for (let i = 0; i < items.length; i += size) groups.push(items.slice(i, i + size))
@@ -78,6 +86,7 @@ function employeeImportUnchanged(existing, incoming) {
     && sameId(existing.location_id, incoming.location_id)
     && sameId(existing.department_id, incoming.department_id)
     && sameId(existing.access_role_id, incoming.access_role_id)
+    && sameId(existing.manager_id, incoming.manager_id)
 }
 
 function mergeEmployeeImport(existing, incoming) {
@@ -89,7 +98,49 @@ function mergeEmployeeImport(existing, incoming) {
     location_id: incoming.location_id || existing.location_id || null,
     department_id: incoming.department_id || existing.department_id || null,
     access_role_id: incoming.access_role_id || existing.access_role_id || null,
+    manager_id: incoming.manager_id || existing.manager_id || null,
   }
+}
+
+/**
+ * Resolve a Manager cell to an employee id.
+ * Accepts Employee ID, name, or "EMP-001 — Name" dropdown values.
+ */
+export function resolveEmployeeManagerRef(managerRaw, employees, { selfEmpId, selfId } = {}) {
+  const raw = String(managerRaw || '').trim()
+  if (!raw) return null
+
+  // Only split "EMP-001 — Name" style labels (spaces around the dash), never EMP-001 itself.
+  const token = String(raw).split(/\s+[—–−-]\s+/)[0].trim()
+  const tokenKey = normalizeName(token)
+  const rawKey = normalizeName(raw)
+  const list = employees || []
+
+  const byCode = list.filter((row) => normalizeName(row.emp_id) === tokenKey)
+  if (byCode.length === 1) {
+    const manager = byCode[0]
+    if ((selfId && manager.id === selfId) || (selfEmpId && normalizeName(manager.emp_id) === normalizeName(selfEmpId))) {
+      throw new Error('Employee cannot be their own manager')
+    }
+    return manager.id
+  }
+
+  const byName = list.filter((row) => {
+    const nameKey = normalizeName(row.name)
+    return nameKey === tokenKey || nameKey === rawKey
+  })
+  if (byName.length === 1) {
+    const manager = byName[0]
+    if ((selfId && manager.id === selfId) || (selfEmpId && normalizeName(manager.emp_id) === normalizeName(selfEmpId))) {
+      throw new Error('Employee cannot be their own manager')
+    }
+    return manager.id
+  }
+  if (byName.length > 1) {
+    throw new Error(`Manager "${raw}" matches more than one employee — use Employee ID`)
+  }
+
+  throw new Error(`Unknown manager "${raw}"`)
 }
 
 function cellToString(value) {
@@ -117,7 +168,7 @@ async function buildWorkbook(templateColumns, validColumns) {
   return createImportWorkbook(templateColumns, validColumns)
 }
 
-function readTemplateRows(workbook, expectedColumns) {
+function readTemplateRows(workbook, expectedColumns, { optionalColumns = [] } = {}) {
   const sheet = workbook.getWorksheet(TEMPLATE_SHEET) || workbook.worksheets[0]
   if (!sheet) throw Object.assign(new Error('No worksheet found in file'), { status: 400 })
 
@@ -137,22 +188,29 @@ function readTemplateRows(workbook, expectedColumns) {
     }
   }
 
+  const columnsToRead = [...expectedColumns]
+  for (const col of optionalColumns) {
+    if (!columnByHeader.has(normalizeName(col))) continue
+    if (columnsToRead.some((existing) => normalizeName(existing) === normalizeName(col))) continue
+    columnsToRead.push(col)
+  }
+
   const rows = []
   for (let rowNumber = 2; rowNumber <= sheet.rowCount; rowNumber++) {
     const row = sheet.getRow(rowNumber)
     const rowValues = {}
-    for (const col of expectedColumns) {
+    for (const col of columnsToRead) {
       const colNumber = columnByHeader.get(normalizeName(col))
-      rowValues[col] = cellToString(row.getCell(colNumber).value)
+      rowValues[col] = colNumber ? cellToString(row.getCell(colNumber).value) : ''
     }
-    if (!expectedColumns.some((c) => rowValues[c])) continue
+    if (!columnsToRead.some((c) => rowValues[c])) continue
     rows.push({ rowNumber, rowValues })
   }
   return rows
 }
 
 async function loadOrgMasters(orgId) {
-  const [locations, departments, roles] = await Promise.all([
+  const [locations, departments, roles, employees] = await Promise.all([
     supabaseAdmin
       .from('org_locations')
       .select('id, name, code, is_active')
@@ -168,16 +226,23 @@ async function loadOrgMasters(orgId) {
       .select('id, name, is_active')
       .eq('org_id', orgId)
       .order('name'),
+    supabaseAdmin
+      .from('org_employees')
+      .select('id, emp_id, name, is_active')
+      .eq('org_id', orgId)
+      .order('emp_id'),
   ])
 
   if (locations.error) throw locations.error
   if (departments.error) throw departments.error
   if (roles.error) throw roles.error
+  if (employees.error) throw employees.error
 
   return {
     locations: (locations.data || []).filter((l) => l.is_active !== false),
     departments: (departments.data || []).filter((d) => d.is_active !== false),
     roles: (roles.data || []).filter((r) => r.is_active !== false),
+    employees: (employees.data || []).filter((e) => e.is_active !== false),
   }
 }
 
@@ -374,8 +439,8 @@ export async function bulkImportDepartments(orgId, buffer) {
 // ─── Employees ───────────────────────────────────────────────
 
 export async function buildEmployeesTemplate(orgId) {
-  const { locations, departments, roles } = await loadOrgMasters(orgId)
-  return buildWorkbook(EMPLOYEE_COLUMNS, [
+  const { locations, departments, roles, employees } = await loadOrgMasters(orgId)
+  return buildWorkbook(EMPLOYEE_TEMPLATE_COLUMNS, [
     {
       header: 'Location',
       values: locations.map((l) => l.name),
@@ -383,6 +448,10 @@ export async function buildEmployeesTemplate(orgId) {
     {
       header: 'Department',
       values: departments.map((d) => d.name),
+    },
+    {
+      header: 'Manager',
+      values: employees.map((e) => `${e.emp_id} — ${e.name}`),
     },
     {
       header: 'Login Required',
@@ -395,11 +464,61 @@ export async function buildEmployeesTemplate(orgId) {
   ])
 }
 
+async function applyImportedEmployeeManagers(orgId, items, results) {
+  const needed = (items || []).filter((item) => String(item.managerRaw || '').trim())
+  if (!needed.length) return
+
+  const { data: employees, error } = await supabaseAdmin
+    .from('org_employees')
+    .select('id, emp_id, name, manager_id')
+    .eq('org_id', orgId)
+  if (error) throw error
+
+  const byEmpId = new Map()
+  for (const emp of employees || []) {
+    const key = normalizeName(emp.emp_id)
+    if (key) byEmpId.set(key, emp)
+  }
+
+  for (const item of needed) {
+    const self = byEmpId.get(normalizeName(item.row.emp_id))
+    if (!self) continue
+    try {
+      const managerId = resolveEmployeeManagerRef(item.managerRaw, employees, {
+        selfId: self.id,
+        selfEmpId: self.emp_id,
+      })
+      if (sameId(self.manager_id, managerId)) continue
+      const { error: updateError } = await supabaseAdmin
+        .from('org_employees')
+        .update({
+          manager_id: managerId,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', self.id)
+        .eq('org_id', orgId)
+      if (updateError) throw updateError
+      self.manager_id = managerId
+      if (item.countManagerUpdate) {
+        results.updated += 1
+        if (results.preview.length < 250) results.preview.push(item.preview)
+      }
+    } catch (err) {
+      results.errors.push({
+        row: item.rowNumber,
+        message: err.message || 'Could not set manager',
+      })
+    }
+  }
+}
+
 export async function bulkImportEmployees(orgId, buffer) {
   const options = await loadOrgMasters(orgId)
   const workbook = new ExcelJS.Workbook()
   await workbook.xlsx.load(buffer)
-  const rows = readTemplateRows(workbook, EMPLOYEE_COLUMNS)
+  const rows = readTemplateRows(workbook, EMPLOYEE_COLUMNS, {
+    optionalColumns: EMPLOYEE_OPTIONAL_COLUMNS,
+  })
   const results = { created: 0, updated: 0, failed: 0, errors: [], preview: [] }
   const MAX_PREVIEW = 250
 
@@ -458,8 +577,11 @@ export async function bulkImportEmployees(orgId, buffer) {
         normalizedMobile = normalizePhoneE164(mobileRaw)
       }
 
+      const managerRaw = String(rowValues.Manager || '').trim()
+
       pending.push({
         rowNumber,
+        managerRaw,
         row: {
           org_id: orgId,
           emp_id: empId,
@@ -469,6 +591,7 @@ export async function bulkImportEmployees(orgId, buffer) {
           location_id: locationId,
           department_id: departmentId,
           access_role_id: accessRoleId,
+          manager_id: null,
           login_required: false,
           is_active: true,
         },
@@ -478,6 +601,7 @@ export async function bulkImportEmployees(orgId, buffer) {
           code: empId,
           location: locRaw || '',
           department: deptRaw || '',
+          manager: managerRaw || '',
         },
       })
     } catch (err) {
@@ -488,7 +612,7 @@ export async function bulkImportEmployees(orgId, buffer) {
 
   const { data: existingEmployees, error: existingError } = await supabaseAdmin
     .from('org_employees')
-    .select('id, emp_id, name, mobile, email, location_id, department_id, access_role_id')
+    .select('id, emp_id, name, mobile, email, location_id, department_id, access_role_id, manager_id')
     .eq('org_id', orgId)
   if (existingError) throw existingError
 
@@ -500,18 +624,24 @@ export async function bulkImportEmployees(orgId, buffer) {
 
   const creates = []
   const updates = []
+  const managerItems = []
   for (const item of pending) {
     const key = normalizeName(item.row.emp_id)
     const found = byEmpId.get(key)
     if (!found) {
       creates.push(item)
+      managerItems.push(item)
       byEmpId.set(key, { type: 'create', item })
       continue
     }
 
     const current = found.type === 'create' ? found.item.row : found.emp
     const merged = mergeEmployeeImport(current, item.row)
-    if (employeeImportUnchanged(current, merged)) {
+    // Ignore manager_id here — managers are applied after creates so same-file refs work.
+    const coreCurrent = { ...current, manager_id: null }
+    const coreMerged = { ...merged, manager_id: null }
+    const unchangedCore = employeeImportUnchanged(coreCurrent, coreMerged)
+    if (unchangedCore && !item.managerRaw) {
       results.failed += 1
       results.errors.push({
         row: item.rowNumber,
@@ -524,11 +654,17 @@ export async function bulkImportEmployees(orgId, buffer) {
     if (found.type === 'create') {
       found.item.row = merged
       found.item.preview = item.preview
+      found.item.managerRaw = item.managerRaw
       continue
     }
 
-    updates.push({ id: found.emp.id, item: nextItem })
-    byEmpId.set(key, { type: 'db', emp: { ...found.emp, ...merged } })
+    if (!unchangedCore) {
+      updates.push({ id: found.emp.id, item: nextItem })
+      byEmpId.set(key, { type: 'db', emp: { ...found.emp, ...merged } })
+    } else {
+      nextItem.countManagerUpdate = true
+    }
+    managerItems.push(nextItem)
   }
 
   await assertBulkCreatesAllowed(orgId, 'employee', creates.length)
@@ -561,6 +697,8 @@ export async function bulkImportEmployees(orgId, buffer) {
     results.updated += 1
     if (results.preview.length < MAX_PREVIEW) results.preview.push(item.preview)
   }
+
+  await applyImportedEmployeeManagers(orgId, managerItems, results)
 
   return results
 }

@@ -1,17 +1,21 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Navigate, useNavigate, useParams } from 'react-router-dom'
+import { Link, Navigate, useNavigate, useParams } from 'react-router-dom'
 import ReportsLayout from '../../../components/reports/ReportsLayout'
 import ReportsFilters, { countActiveReportFilters } from '../../../components/reports/ReportsFilters'
 import ReportScheduleModal from '../../../components/reports/ReportScheduleModal'
 import ReportSendNowModal from '../../../components/reports/ReportSendNowModal'
 import { useOrg } from '../../../hooks/useOrg'
 import { usePermissions } from '../../../hooks/usePermissions'
+import { useCatalogFields } from '../../../hooks/useCatalogFields'
 import { useTableColumnPrefs } from '../../../hooks/useTableColumnPrefs'
+import { mergePickerColumns } from '../../../lib/pickerFields'
+import { orgPath } from '../../../config/navigation'
 import {
   createCustomReport,
   deleteCustomReport,
   downloadReportCsv,
   downloadReportPdf,
+  generateReadyReport,
   getCustomReport,
   getReport,
   getReportFilters,
@@ -34,7 +38,9 @@ import {
   REPORT_TITLES,
   REPORT_TYPE_OPTIONS,
   UNIFIED_REPORT_KEY,
+  WORK_REQUEST_REPORT_KEY,
 } from '../../../lib/reportColumns'
+import TableColumnPicker from '../../../components/shared/TableColumnPicker'
 import TableEmptyRow from '../../../components/shared/TableEmptyRow'
 import TruncatedText from '../../../components/shared/TruncatedText'
 import { VirtualTableBody } from '../../../components/shared/VirtualTableBody'
@@ -182,7 +188,13 @@ export default function ReportPage() {
   const [reportKey, setReportKey] = useState(initialReportKey)
   const reportKind = kindForReportKey(reportKey)
   const title = REPORT_TITLES[reportKey] || 'Reports'
-  const columnDefs = useMemo(() => columnsForReportKey(reportKey), [reportKey])
+  const catalogFields = useCatalogFields()
+  const columnDefs = useMemo(() => {
+    const base = columnsForReportKey(reportKey)
+    if (reportKey !== WORK_REQUEST_REPORT_KEY) return base
+    // Same dynamic catalog parents as WR list (Equipment Location, Equipment name, …).
+    return mergePickerColumns(base, catalogFields)
+  }, [reportKey, catalogFields])
   const columnTableId = useMemo(() => `report-${reportKey}`, [reportKey])
   const {
     visibleColumnIds: selectedColumnIds,
@@ -216,7 +228,9 @@ export default function ReportPage() {
   const [report, setReport] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [success, setSuccess] = useState(null)
   const [downloading, setDownloading] = useState(false)
+  const [generatingReady, setGeneratingReady] = useState(false)
   const [scheduleOpen, setScheduleOpen] = useState(false)
   const [sendNowOpen, setSendNowOpen] = useState(false)
   const [sendingNow, setSendingNow] = useState(false)
@@ -483,6 +497,7 @@ export default function ReportPage() {
   const downloadFile = async (kind) => {
     setDownloading(true)
     setError(null)
+    setSuccess(null)
     try {
       const file = kind === 'csv'
         ? await downloadReportCsv(reportKey, downloadPayload())
@@ -492,6 +507,23 @@ export default function ReportPage() {
       setError(err.message)
     } finally {
       setDownloading(false)
+    }
+  }
+
+  const generateReady = async () => {
+    setGeneratingReady(true)
+    setError(null)
+    setSuccess(null)
+    try {
+      const row = await generateReadyReport(reportKey, downloadPayload())
+      setSuccess({
+        message: `Ready report “${row.name}” was generated.`,
+        readyId: row.id,
+      })
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setGeneratingReady(false)
     }
   }
 
@@ -559,6 +591,9 @@ export default function ReportPage() {
         downloading={downloading}
         downloadDisabled={false}
         canDownload={Boolean(appliedFilters.from_date && appliedFilters.to_date)}
+        canGenerateReady
+        onGenerateReady={generateReady}
+        generatingReady={generatingReady}
         canSchedule={isOrgAdmin}
         onSchedule={() => setScheduleOpen(true)}
         canSendNow={isOrgAdmin}
@@ -569,6 +604,20 @@ export default function ReportPage() {
           appliedFilters,
           canSelectLocation ? '' : (filterOptions?.location_id || appliedFilters.facility_id),
         )}
+        columnPicker={(
+          <TableColumnPicker
+            columnDefs={columnDefs}
+            visibleColumnIds={selectedColumnIds}
+            columnOrder={columnOrder}
+            onToggle={toggleColumn}
+            onReset={resetColumns}
+            onReorder={reorderColumns}
+            onMove={moveColumn}
+            onSave={saveColumns}
+            onMakeDefault={makeDefaultColumns}
+            makingDefault={makingDefault}
+          />
+        )}
         filters={({ onApplied, onClose } = {}) => (
           <ReportsFilters
             filters={draftFilters}
@@ -576,16 +625,6 @@ export default function ReportPage() {
             options={filterOptions || {}}
             canSelectLocation={canSelectLocation}
             reportKind={reportKind}
-            columnDefs={columnDefs}
-            selectedColumnIds={selectedColumnIds}
-            columnOrder={columnOrder}
-            onToggleColumn={toggleColumn}
-            onResetColumns={resetColumns}
-            onReorderColumns={reorderColumns}
-            onMoveColumn={moveColumn}
-            onSaveColumns={saveColumns}
-            onMakeDefaultColumns={makeDefaultColumns}
-            makingDefaultColumns={makingDefault}
             activeCount={countActiveReportFilters(
               appliedFilters,
               canSelectLocation ? '' : (filterOptions?.location_id || appliedFilters.facility_id),
@@ -598,6 +637,15 @@ export default function ReportPage() {
         )}
       >
         {error && <div className="wo-alert wo-alert--error" role="alert">{error}</div>}
+        {success && (
+          <div className="wo-alert wo-alert--success" role="status">
+            {success.message}
+            {' '}
+            {org?.slug && (
+              <Link to={orgPath(org.slug, 'reports/ready')}>Open Ready Reports</Link>
+            )}
+          </div>
+        )}
 
         {loading ? (
           <div className="company-loading">Loading report…</div>

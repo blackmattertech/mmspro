@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import {
   applyUomMaster,
   isUomCodeKey,
+  normalizeUomCategory,
   normalizeUomCode,
   normalizeUomName,
 } from './uomMaster.js'
@@ -23,6 +24,13 @@ test('normalizeUomCode rejects blank and punctuation codes', () => {
 test('normalizeUomName requires a readable name', () => {
   assert.equal(normalizeUomName('  Kilo gram '), 'Kilo gram')
   assert.throws(() => normalizeUomName('   '), { status: 400 })
+})
+
+test('normalizeUomCategory trims optional text and rejects oversize values', () => {
+  assert.equal(normalizeUomCategory('  Weight Units '), 'Weight Units')
+  assert.equal(normalizeUomCategory('   '), null)
+  assert.equal(normalizeUomCategory(undefined), null)
+  assert.throws(() => normalizeUomCategory('x'.repeat(101)), { status: 400 })
 })
 
 test('applyUomMaster maps known units and keeps previously saved free text', () => {

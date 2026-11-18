@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useOrg } from '../../hooks/useOrg'
 import { useManualWorkOrderForm } from '../../hooks/useManualWorkOrderForm'
 import { useWorkOrderToolbar } from '../../hooks/useWorkOrderToolbar'
@@ -11,6 +11,15 @@ import ManualWorkOrderWizard from '../../components/workorders/ManualWorkOrderWi
 import PageBack from '../../components/shared/PageBack'
 import { findVisibleCharacterLimitError, firstCharacterLimitMessage } from '../../lib/textFieldLimits'
 import { useTextFieldLimits } from '../../hooks/useTextFieldLimits'
+import {
+  checkCloneChanged,
+  readCloneFromId,
+  toManualWorkOrderCloneComparable,
+  MANUAL_WO_CLONE_COMPARE_KEYS,
+  MANUAL_WO_CLONE_UNIQUE_KEYS,
+} from '../../lib/workRecordClone'
+import { readTemplateFromId, templateNavState } from '../../lib/recordTemplates'
+import TemplatesButton from '../../components/templates/TemplatesButton'
 import '../../components/company/CompanyShared.css'
 import '../../components/workorders/ManualWorkOrder.css'
 import '../../components/workorders/WorkOrdersPage.css'
@@ -43,9 +52,15 @@ export default function ManualWorkOrderCreate() {
   const { maxLength } = useTextFieldLimits()
   const navigate = useNavigate()
   const { workOrderId } = useParams()
+  const location = useLocation()
   const [searchParams] = useSearchParams()
-  const initialEquipmentId = workOrderId ? '' : (searchParams.get('equipment_id') || '')
   const isEdit = Boolean(workOrderId)
+  // Set by the Duplicate action on the manual work orders list.
+  const cloneFromId = isEdit ? '' : readCloneFromId(location)
+  const templateFromId = isEdit ? '' : readTemplateFromId(location)
+  const initialEquipmentId = workOrderId || cloneFromId || templateFromId
+    ? ''
+    : (searchParams.get('equipment_id') || '')
   const { org, loading: orgLoading } = useOrg()
   const { setToolbar, clearToolbar } = useWorkOrderToolbar()
   const { canCreate, canUpdate } = usePermissions()
@@ -82,6 +97,8 @@ export default function ManualWorkOrderCreate() {
   } = useManualWorkOrderForm({
     workOrderId: workOrderId || null,
     initialEquipmentId,
+    cloneFromId,
+    templateFromId,
   })
 
   const goBack = useCallback(() => {
@@ -119,6 +136,22 @@ export default function ManualWorkOrderCreate() {
     if (limitError) {
       setFormError(limitError)
       return
+    }
+    if (cloneFromId && record) {
+      const cloneCheck = checkCloneChanged({
+        source: record,
+        next: {
+          ...draft,
+          checklistTemplateId: (draft.checklistRequired || draft.checklistOn) ? draft.checklistId : null,
+        },
+        toComparable: toManualWorkOrderCloneComparable,
+        uniqueKeys: MANUAL_WO_CLONE_UNIQUE_KEYS,
+        compareKeys: MANUAL_WO_CLONE_COMPARE_KEYS,
+      })
+      if (!cloneCheck.ok) {
+        setFormError(cloneCheck.message)
+        return
+      }
     }
     submittingRef.current = true
     setBusy(true)
@@ -189,7 +222,7 @@ export default function ManualWorkOrderCreate() {
         setBusy(false)
       }
     }
-  }, [isEdit, maxLength, navigate, org?.slug, submit])
+  }, [cloneFromId, isEdit, maxLength, navigate, org?.slug, record, submit])
 
   const handleReset = useCallback(() => {
     if (submittingRef.current || busy) return
@@ -224,6 +257,20 @@ export default function ManualWorkOrderCreate() {
       ) : null,
       actions: (
         <>
+          {!isEdit && canCreateWorkOrders ? (
+            <TemplatesButton
+              moduleKey="work_orders_manual"
+              disabled={actionsLocked}
+              onSelect={(row) => {
+                if (!org?.slug) return
+                navigate(orgPath(org.slug, 'work-orders/manual/create'), {
+                  state: templateNavState(row.id),
+                  replace: true,
+                })
+                setFormKey((key) => key + 1)
+              }}
+            />
+          ) : null}
           {!isEdit && (
             <button
               type="button"
@@ -259,7 +306,18 @@ export default function ManualWorkOrderCreate() {
       ),
     })
     return clearToolbar
-  }, [actionsLocked, canManage, canUseForm, clearToolbar, existingStatus, isEdit, setToolbar])
+  }, [
+    actionsLocked,
+    canCreateWorkOrders,
+    canManage,
+    canUseForm,
+    clearToolbar,
+    existingStatus,
+    isEdit,
+    navigate,
+    org?.slug,
+    setToolbar,
+  ])
 
   if (orgLoading || loading) {
     return <div className="company-loading">Loading...</div>

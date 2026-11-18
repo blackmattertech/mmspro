@@ -84,6 +84,41 @@ export function canEditFilledBy(filledBy, actors = {}) {
   return true
 }
 
+/**
+ * Status / progress / action remarks on a work order.
+ * Assignees and Order-To department heads only (plus org admin).
+ * Work-request creators and bare module-update users are excluded.
+ */
+export function canEditWorkOrderStatusProgressRemarks(actors = {}) {
+  return Boolean(
+    actors?.isOrgAdmin
+    || actors?.isTechnician
+    || actors?.isOrderToDeptHead,
+  )
+}
+
+/** Verify / close / return-for-rework. */
+export function canEditWorkOrderSupervisorStatus(actors = {}) {
+  return Boolean(
+    actors?.isOrgAdmin
+    || actors?.isSupervisor
+    || actors?.isOrderToDeptHead,
+  )
+}
+
+export const WORK_ORDER_SUPERVISOR_STATUSES = Object.freeze([
+  'verified',
+  'closed',
+  'returned_rework',
+])
+
+export function canChangeWorkOrderStatus(actors = {}, nextStatus) {
+  if (WORK_ORDER_SUPERVISOR_STATUSES.includes(String(nextStatus || ''))) {
+    return canEditWorkOrderSupervisorStatus(actors)
+  }
+  return canEditWorkOrderStatusProgressRemarks(actors)
+}
+
 export function filledByLabel(filledBy) {
   const role = normalizeFilledBy(filledBy)
   return FILLED_BY_LABELS[role] || FILLED_BY_LABELS.any

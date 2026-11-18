@@ -127,6 +127,8 @@ async function wipeOrgStorage(orgId, memberUserIds, { dryRun = false } = {}) {
   const buckets = [
     { name: 'org-assets', prefixes: [orgId] },
     { name: 'work-order-assets', prefixes: [orgId] },
+    { name: 'support-ticket-assets', prefixes: [orgId] },
+    { name: 'report-ready-assets', prefixes: [orgId] },
     { name: 'user-assets', prefixes: memberUserIds },
   ]
 
@@ -154,6 +156,16 @@ async function wipeOrgStorage(orgId, memberUserIds, { dryRun = false } = {}) {
     }
   }
   return total
+}
+
+/**
+ * Ends the throwaway session created during password verification.
+ * Must use scope 'local' — Supabase defaults to 'global', which revokes every
+ * session for the user (including the Super Admin's browser session) and causes
+ * subsequent admin API calls to fail with "Invalid token".
+ */
+export async function endPasswordVerificationSession(authClient) {
+  await authClient.auth.signOut({ scope: 'local' })
 }
 
 /**
@@ -185,7 +197,7 @@ export async function verifySuperAdminPassword(user, password) {
   }
 
   try {
-    await authClient.auth.signOut()
+    await endPasswordVerificationSession(authClient)
   } catch {
     // ignore
   }

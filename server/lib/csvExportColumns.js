@@ -5,9 +5,7 @@ const LABEL_ALIASES = {
   jobpriority: 'priority',
   jobstatus: 'status',
   plantfacility: 'location',
-  equipmentname: 'equipment',
-  asset: 'equipment',
-  assetname: 'equipment',
+  // Equipment name / Equipment Location stay as distinct catalog columns (field:*).
 }
 
 function canonicalLabel(label) {

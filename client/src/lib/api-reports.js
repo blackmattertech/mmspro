@@ -69,6 +69,35 @@ export function downloadReportCsv(key, body) {
   })
 }
 
+export function generateReadyReport(key, body) {
+  return reportsFetch(`/${encodeURIComponent(key)}/ready`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
+export function listReadyReports({ reportKey } = {}) {
+  return reportsFetch(`/ready${listQueryParams({
+    report_key: reportKey || undefined,
+  })}`).then((data) => data?.items || [])
+}
+
+export function downloadReadyReportFile(id, format = 'pdf') {
+  return reportsFetch(`/ready/${encodeURIComponent(id)}/download${listQueryParams({
+    format,
+  })}`).then(async (file) => {
+    const { downloadBase64File } = await import('./fileDownload.js')
+    downloadBase64File(file)
+    return file
+  })
+}
+
+export function deleteReadyReport(id) {
+  return reportsFetch(`/ready/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  })
+}
+
 export function sendReportNow(key, body) {
   return reportsFetch(`/${encodeURIComponent(key)}/send`, {
     method: 'POST',

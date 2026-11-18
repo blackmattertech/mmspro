@@ -68,7 +68,7 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
   auth: { autoRefreshToken: false, persistSession: false },
 })
 
-const STORAGE_BUCKETS = ['org-assets', 'work-order-assets', 'user-assets']
+const STORAGE_BUCKETS = ['org-assets', 'work-order-assets', 'user-assets', 'support-ticket-assets', 'report-ready-assets']
 
 /**
  * Sibling tables with ON DELETE RESTRICT to departments/locations/areas/statuses.

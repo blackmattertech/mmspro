@@ -145,6 +145,32 @@
   font-size: 13px;
 }
 
+.import-status__progress {
+  margin: 4px 0 12px;
+  height: 8px;
+  max-width: 420px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.08);
+  overflow: hidden;
+}
+
+.import-status__progress-bar {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--color-primary);
+  transition: width 0.35s ease;
+}
+
+.import-status__progress-bar--indeterminate {
+  width: 40%;
+  animation: import-status-progress-slide 1.2s ease-in-out infinite;
+}
+
+@keyframes import-status-progress-slide {
+  0% { transform: translateX(-120%); }
+  100% { transform: translateX(320%); }
+}
+
 .import-status__errors {
   margin: 12px 0 0;
   padding-left: 1.25rem;

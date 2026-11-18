@@ -15,10 +15,14 @@ import {
   sendCsv,
 } from '../../lib/listQuery.js'
 import {
+  normalizeUomCategory,
   normalizeUomCode,
   normalizeUomName,
 } from '../../lib/uomMaster.js'
-import { buildUomsTemplate, importUoms } from '../../lib/uomBulkService.js'
+import { enforceMasterCloneOnCreate } from '../../lib/masterClone.js'
+import { buildUomsTemplate } from '../../lib/uomBulkService.js'
+import { bufferFromBase64Upload } from '../../lib/excelTemplate.js'
+import { enqueueOrRunBulkImport, sendBulkImportResponse, wantsSyncImport } from '../../lib/bulkImportEnqueue.js'
 
 const router = Router()
 
@@ -41,7 +45,7 @@ const canCreateUoms = requireModulePermission('uoms', 'create')
 const canUpdateUoms = requireModulePermission('uoms', 'update')
 const canDeleteUoms = requireModulePermission('uoms', 'delete')
 
-const UOM_SELECT = 'id, org_id, code, name, is_active, created_at, updated_at'
+const UOM_SELECT = 'id, org_id, code, name, category, is_active, created_at, updated_at'
 
 function parsePagination(query, { defaultLimit = 50, maxLimit = 500 } = {}) {
   const rawLimit = Number(query.limit)
@@ -80,15 +84,17 @@ router.get('/', canReadUoms, async (req, res) => {
     .eq('org_id', req.userProfile.org_id)
 
   if (activeOnly) query = query.eq('is_active', true)
-  query = applyIlikeSearch(query, req.query.search, ['code', 'name'])
+  query = applyIlikeSearch(query, req.query.search, ['code', 'name', 'category'])
   query = applyMappedFilters(query, controls.filters, {
     code: 'code',
     name: 'name',
+    category: 'category',
     status: applyUomStatus,
   })
   query = applyMappedSort(query, controls.sort, controls.sortDir, {
     code: 'code',
     name: 'name',
+    category: 'category',
     created_at: 'created_at',
   }, (sorted) => sorted.order('code'))
   query = query.range(page.offset, page.offset + page.limit - 1)
@@ -99,6 +105,7 @@ router.get('/', canReadUoms, async (req, res) => {
     sendCsv(res, 'uoms.csv', data || [], [
       { label: 'Code', value: (row) => row.code },
       { label: 'Name', value: (row) => row.name },
+      { label: 'Category', value: (row) => row.category || '' },
       { label: 'Active', value: (row) => (row.is_active === false ? 'No' : 'Yes') },
       { label: 'Created', value: (row) => row.created_at },
       { label: 'Updated', value: (row) => row.updated_at },
@@ -123,30 +130,42 @@ router.get('/template', canCreateUoms, async (req, res) => {
 
 router.post('/bulk', canCreateUoms, async (req, res) => {
   try {
-    const raw = req.body?.data
-    if (!raw || typeof raw !== 'string') {
-      return res.status(400).json({ error: 'File data is required' })
-    }
-    const base64 = raw.includes(',') ? raw.split(',').pop() : raw
-    const buffer = Buffer.from(base64, 'base64')
-    if (!buffer.length) return res.status(400).json({ error: 'File data is invalid' })
-    const result = await importUoms(req.userProfile.org_id, buffer)
-    res.json(result)
+    const buffer = bufferFromBase64Upload(req.body?.data)
+    const outcome = await enqueueOrRunBulkImport({
+      orgId: req.userProfile.org_id,
+      userId: req.userProfile.id,
+      templateKey: 'uoms',
+      fileName: 'uoms.xlsx',
+      buffer,
+      forceSync: wantsSyncImport(req),
+    })
+    sendBulkImportResponse(res, outcome)
   } catch (err) {
     sendUomError(res, err)
   }
 })
 
 router.post('/', canCreateUoms, async (req, res) => {
+  if (!(await enforceMasterCloneOnCreate({
+    res,
+    orgId: req.userProfile.org_id,
+    body: req.body,
+    kind: 'uom',
+    table: 'org_uoms',
+    select: UOM_SELECT,
+  }))) return
+
   try {
     const code = normalizeUomCode(req.body?.code)
     const name = normalizeUomName(req.body?.name)
+    const category = normalizeUomCategory(req.body?.category)
     const { data, error } = await supabaseAdmin
       .from('org_uoms')
       .insert({
         org_id: req.userProfile.org_id,
         code,
         name,
+        category,
         is_active: req.body?.is_active === undefined ? true : Boolean(req.body.is_active),
       })
       .select(UOM_SELECT)
@@ -163,6 +182,7 @@ router.patch('/:id', canUpdateUoms, assertOrgOwnership('org_uoms'), async (req, 
     const updates = { updated_at: new Date().toISOString() }
     if (req.body?.code !== undefined) updates.code = normalizeUomCode(req.body.code)
     if (req.body?.name !== undefined) updates.name = normalizeUomName(req.body.name)
+    if (req.body?.category !== undefined) updates.category = normalizeUomCategory(req.body.category)
     if (req.body?.is_active !== undefined) updates.is_active = Boolean(req.body.is_active)
 
     const { data, error } = await supabaseAdmin

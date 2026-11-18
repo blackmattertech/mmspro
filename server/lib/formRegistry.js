@@ -239,7 +239,7 @@ const WORK_ORDERS_MANUAL = form(
   {
     permissionKey: 'work_orders_manual',
     catalogMode: 'all',
-    info: 'Filled after work is already done. Shown as a single form. There is no assignment workflow.',
+    info: 'Filled after work is already done. Shown as a stagewise form (two sections per page). There is no assignment workflow.',
   },
 )
 

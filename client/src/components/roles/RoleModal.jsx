@@ -13,6 +13,8 @@ const EMPTY = {
 
 export default function RoleModal({
   role,
+  cloneDraft = null,
+  cloneSourceName = null,
   saving,
   onClose,
   onSave,
@@ -22,17 +24,18 @@ export default function RoleModal({
   const [error, setError] = useState(null)
 
   useEffect(() => {
-    if (role) {
+    const seed = role || cloneDraft
+    if (seed) {
       setForm({
-        name: role.name || '',
-        description: role.description || '',
+        name: seed.name || '',
+        description: seed.description || '',
       })
-      setPermissions(role.permissions || emptyPermissions())
+      setPermissions(seed.permissions || emptyPermissions())
     } else {
       setForm(EMPTY)
       setPermissions(emptyPermissions())
     }
-  }, [role])
+  }, [role, cloneDraft])
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -64,7 +67,7 @@ export default function RoleModal({
       <div className="company-modal__header">
         <div className="modal__header-main">
           {onClose && <PageBack onClick={onClose} className="page-back--header" label="Roles & Access" />}
-          <h2>{role ? 'Update Role' : 'Create Role'}</h2>
+          <h2>{role ? 'Update Role' : cloneDraft ? 'Duplicate Role' : 'Create Role'}</h2>
         </div>
         {onClose && (
           <button type="button" className="company-modal__close" onClick={onClose} aria-label="Close">×</button>
@@ -95,6 +98,12 @@ export default function RoleModal({
             />
           </label>
 
+          {cloneDraft && !role && (
+            <p className="company-modal__hint">
+              Duplicating “{cloneSourceName}”. Permissions are copied; employee assignments are not.
+              Change the role name and at least one other detail before saving.
+            </p>
+          )}
           <p className="company-modal__hint">
             Roles apply to all locations. Assigned employees still only access their own location.
           </p>

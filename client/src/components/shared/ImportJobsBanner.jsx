@@ -3,6 +3,18 @@ import { orgPath } from '../../config/navigation'
 import { useImportJobs } from '../../hooks/useImportJobs'
 import './ImportJobsBanner.css'
 
+function progressLabel(job) {
+  const done = Number(job.progressDone || 0)
+  const total = Number(job.progressTotal || 0)
+  if (total > 0) {
+    const pct = job.progressPercent != null
+      ? job.progressPercent
+      : Math.min(100, Math.round((done / total) * 100))
+    return `${done} / ${total} rows (${pct}%)`
+  }
+  return 'Preparing…'
+}
+
 function jobMessage(job) {
   if (job.status === 'running') {
     return `Importing ${job.fileName} (${job.templateLabel})…`
@@ -29,42 +41,66 @@ export default function ImportJobsBanner() {
 
   return (
     <div className="import-jobs-banner" role="region" aria-label="Background imports">
-      {bannerJobs.map((job) => (
-        <div
-          key={job.id}
-          className={`import-jobs-banner__item import-jobs-banner__item--${job.status}`}
-        >
-          <div className="import-jobs-banner__body">
-            {job.status === 'running' && (
-              <span className="import-jobs-banner__spinner" aria-hidden="true" />
-            )}
-            <div>
-              <p className="import-jobs-banner__text">{jobMessage(job)}</p>
+      {bannerJobs.map((job) => {
+        const total = Number(job.progressTotal || 0)
+        const pct = total > 0
+          ? (job.progressPercent != null
+            ? job.progressPercent
+            : Math.min(100, Math.round((Number(job.progressDone || 0) / total) * 100)))
+          : null
+
+        return (
+          <div
+            key={job.id}
+            className={`import-jobs-banner__item import-jobs-banner__item--${job.status}`}
+          >
+            <div className="import-jobs-banner__body">
               {job.status === 'running' && (
-                <p className="import-jobs-banner__hint">
-                  Running in the background — you can keep working in the app.
-                </p>
+                <span className="import-jobs-banner__spinner" aria-hidden="true" />
+              )}
+              <div className="import-jobs-banner__content">
+                <p className="import-jobs-banner__text">{jobMessage(job)}</p>
+                {job.status === 'running' && (
+                  <>
+                    <p className="import-jobs-banner__hint">
+                      {progressLabel(job)} — you can keep working in the app.
+                    </p>
+                    <div
+                      className="import-jobs-banner__progress"
+                      role="progressbar"
+                      aria-valuemin={0}
+                      aria-valuemax={100}
+                      aria-valuenow={pct ?? 0}
+                      aria-label="Import progress"
+                    >
+                      <div
+                        className={`import-jobs-banner__progress-bar${pct == null ? ' import-jobs-banner__progress-bar--indeterminate' : ''}`}
+                        style={pct != null ? { width: `${pct}%` } : undefined}
+                      />
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+            <div className="import-jobs-banner__actions">
+              {importPath && job.status !== 'running' && (
+                <Link to={importPath} className="import-jobs-banner__link">
+                  View details
+                </Link>
+              )}
+              {job.status !== 'running' && (
+                <button
+                  type="button"
+                  className="import-jobs-banner__dismiss"
+                  onClick={() => dismissJobBanner(job.id)}
+                >
+                  Dismiss
+                </button>
               )}
             </div>
           </div>
-          <div className="import-jobs-banner__actions">
-            {importPath && job.status !== 'running' && (
-              <Link to={importPath} className="import-jobs-banner__link">
-                View details
-              </Link>
-            )}
-            {job.status !== 'running' && (
-              <button
-                type="button"
-                className="import-jobs-banner__dismiss"
-                onClick={() => dismissJobBanner(job.id)}
-              >
-                Dismiss
-              </button>
-            )}
-          </div>
-        </div>
-      ))}
+        )
+      })}
       {runningCount > 1 && (
         <p className="import-jobs-banner__footer">{runningCount} imports in progress</p>
       )}

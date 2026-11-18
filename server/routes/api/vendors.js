@@ -15,8 +15,10 @@ import {
   deleteVendor,
   previewNextVendorCode,
 } from '../../lib/vendorService.js'
-import { buildVendorsTemplate, bulkImportVendors } from '../../lib/vendorBulkService.js'
-import { attachFailedFileToResult } from '../../lib/importErrorWorkbook.js'
+import { enforceMasterCloneOnCreate } from '../../lib/masterClone.js'
+import { buildVendorsTemplate } from '../../lib/vendorBulkService.js'
+import { bufferFromBase64Upload } from '../../lib/excelTemplate.js'
+import { enqueueOrRunBulkImport, sendBulkImportResponse, wantsSyncImport } from '../../lib/bulkImportEnqueue.js'
 import { parseListControls, sendCsv } from '../../lib/listQuery.js'
 
 const router = Router()
@@ -107,18 +109,16 @@ router.get('/template', canCreate, async (req, res) => {
 
 router.post('/bulk', canCreate, async (req, res) => {
   try {
-    const raw = req.body?.data
-    if (!raw || typeof raw !== 'string') {
-      return res.status(400).json({ error: 'File data is required' })
-    }
-    const base64 = raw.includes(',') ? raw.split(',').pop() : raw
-    const buffer = Buffer.from(base64, 'base64')
-    if (!buffer.length) {
-      return res.status(400).json({ error: 'File data is invalid' })
-    }
-    const result = await bulkImportVendors(req.userProfile.org_id, buffer)
-    const payload = await attachFailedFileToResult(result, buffer, 'vendor-master-import-failed-rows.xlsx')
-    res.json(payload)
+    const buffer = bufferFromBase64Upload(req.body?.data)
+    const outcome = await enqueueOrRunBulkImport({
+      orgId: req.userProfile.org_id,
+      userId: req.userProfile.id,
+      templateKey: 'vendors',
+      fileName: 'vendors.xlsx',
+      buffer,
+      forceSync: wantsSyncImport(req),
+    })
+    sendBulkImportResponse(res, outcome)
   } catch (err) {
     res.status(err.status || 400).json({ error: err.message })
   }
@@ -135,6 +135,14 @@ router.get('/:id', canReadVendors, assertOrgOwnership('vendors'), async (req, re
 })
 
 router.post('/', canCreate, async (req, res) => {
+  if (!(await enforceMasterCloneOnCreate({
+    res,
+    orgId: req.userProfile.org_id,
+    body: req.body,
+    kind: 'vendor',
+    loadSource: (id) => getVendorDetail(req.userProfile.org_id, id),
+  }))) return
+
   try {
     const row = await createVendor(req.userProfile.org_id, req.body)
     res.status(201).json(row)

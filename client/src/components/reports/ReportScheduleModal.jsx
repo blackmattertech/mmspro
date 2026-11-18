@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import {
   createReportSchedule,
   deleteReportSchedule,
@@ -7,6 +8,7 @@ import {
   sendReportScheduleNow,
   updateReportSchedule,
 } from '../../lib/api-reports'
+import { REPORT_TITLES } from '../../lib/reportColumns'
 import { asListArray } from '../../lib/listResponse'
 import {
   SCHEDULE_FREQUENCIES,
@@ -20,6 +22,8 @@ import { useBackdropClose } from '../../hooks/useBackdropClose'
 import { useConfirmDelete } from '../../hooks/useConfirmDelete'
 import SpellcheckInput from '../shared/SpellcheckInput'
 import EditIcon from '../ui/EditIcon'
+import DuplicateRowButton from '../ui/DuplicateRowButton'
+import { createNestedClone, prepareNestedCloneCreate } from '../../lib/nestedClone'
 import TrashIcon from '../ui/TrashIcon'
 import '../company/CompanyShared.css'
 import './ReportsLayout.css'
@@ -67,18 +71,28 @@ function customReportName(row, customReports) {
 }
 
 export default function ReportScheduleModal({
-  reportKey,
+  reportKey = '',
   title,
   customReports = [],
   defaultCustomId = '',
   initialSchedule = null,
+  cloneFrom = null,
+  builderPath = '',
+  createOnly = false,
   onClose,
 }) {
   const { requestDelete, deleteModal } = useConfirmDelete()
   const [schedules, setSchedules] = useState([])
-  const [form, setForm] = useState(() => (
-    initialSchedule ? formFromSchedule(initialSchedule) : emptyForm(defaultCustomId || initialSchedule?.custom_report_id)
-  ))
+  // Duplicate → prefilled create: `clone.source` is the original, `clone.draft` the id-less prefill.
+  const [clone, setClone] = useState(() => (cloneFrom ? createNestedClone('report_schedule', cloneFrom) : null))
+  const [form, setForm] = useState(() => {
+    if (initialSchedule) return formFromSchedule(initialSchedule)
+    if (cloneFrom) {
+      const next = createNestedClone('report_schedule', cloneFrom)
+      if (next) return formFromSchedule(next.draft)
+    }
+    return emptyForm(defaultCustomId || initialSchedule?.custom_report_id)
+  })
   const [editingId, setEditingId] = useState(initialSchedule?.id || null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -90,12 +104,21 @@ export default function ReportScheduleModal({
 
   const hours = useMemo(() => Array.from({ length: 24 }, (_, hour) => hour), [])
   const handleBackdropClick = useBackdropClose(onClose)
+  const selectedCustom = customReports.find((item) => item.id === form.custom_report_id) || null
+  const activeReportKey = selectedCustom?.report_key || reportKey || initialSchedule?.report_key || ''
+  const heading = title
+    || (activeReportKey ? (REPORT_TITLES[activeReportKey] || activeReportKey) : 'report')
 
   async function reload() {
+    if (!activeReportKey || createOnly) {
+      setSchedules([])
+      setLoading(false)
+      return
+    }
     setLoading(true)
     setError(null)
     try {
-      const data = await listReportSchedules(reportKey)
+      const data = await listReportSchedules(activeReportKey)
       setSchedules(asListArray(data))
     } catch (err) {
       setError(err.message)
@@ -106,12 +129,24 @@ export default function ReportScheduleModal({
 
   useEffect(() => {
     reload()
-  }, [reportKey])
+  }, [activeReportKey, createOnly])
 
   const setField = (key, value) => setForm((prev) => ({ ...prev, [key]: value }))
 
+  const startDuplicate = (row) => {
+    const next = createNestedClone('report_schedule', row)
+    if (!next) return
+    setError(null)
+    setEditingId(null)
+    setClone(next)
+    setForm(formFromSchedule(next.draft))
+    setPreviewHtml('')
+    setPreviewSubject('')
+  }
+
   const resetForm = () => {
     setEditingId(null)
+    setClone(null)
     setForm(emptyForm(defaultCustomId))
     setPreviewHtml('')
     setPreviewSubject('')
@@ -134,10 +169,14 @@ export default function ReportScheduleModal({
   })
 
   const runPreview = async () => {
+    if (!activeReportKey) {
+      setError('Select a custom report first')
+      return
+    }
     setPreviewing(true)
     setError(null)
     try {
-      const data = await previewReportEmail(reportKey, {
+      const data = await previewReportEmail(activeReportKey, {
         custom_report_id: form.custom_report_id || undefined,
         date_window: form.date_window,
         email_body_text: form.email_body_text,
@@ -153,6 +192,10 @@ export default function ReportScheduleModal({
 
   const save = async (event) => {
     event.preventDefault()
+    if (!activeReportKey) {
+      setError('Select a custom report first')
+      return
+    }
     setSaving(true)
     setError(null)
     const body = schedulePayload()
@@ -160,7 +203,11 @@ export default function ReportScheduleModal({
       if (editingId) {
         await updateReportSchedule(editingId, body)
       } else {
-        await createReportSchedule(reportKey, body)
+        await createReportSchedule(activeReportKey, prepareNestedCloneCreate('report_schedule', clone, body))
+      }
+      if (createOnly) {
+        onClose?.({ created: true })
+        return
       }
       resetForm()
       await reload()
@@ -181,7 +228,9 @@ export default function ReportScheduleModal({
         aria-labelledby="report-schedule-title"
       >
         <div className="company-modal__header">
-          <h2 id="report-schedule-title">Schedule {title}</h2>
+          <h2 id="report-schedule-title">
+            {createOnly ? (clone ? 'Duplicate schedule' : 'New schedule') : `Schedule ${heading}`}
+          </h2>
           <button type="button" className="company-modal__close" onClick={onClose} aria-label="Close">
             ×
           </button>
@@ -191,6 +240,12 @@ export default function ReportScheduleModal({
           <p className="company-modal__hint">
             Emails go out in UTC with PDF and CSV of the selected custom report.
           </p>
+          {clone && !editingId && (
+            <p className="company-modal__hint">
+              Duplicating the schedule for “{customReportName(clone.source, customReports)}”.
+              Change at least one detail (report, recipients, timing, window or email body) before saving.
+            </p>
+          )}
           {error && <div className="company-alert" role="alert">{error}</div>}
 
           <div className="company-form__field company-form__field--full">
@@ -204,11 +259,27 @@ export default function ReportScheduleModal({
             >
               <option value="">Select a custom report</option>
               {customReports.map((item) => (
-                <option key={item.id} value={item.id}>{item.name}</option>
+                <option key={item.id} value={item.id}>
+                  {item.report_key && createOnly
+                    ? `${item.name} (${REPORT_TITLES[item.report_key] || item.report_key})`
+                    : item.name}
+                </option>
               ))}
             </select>
             {customReports.length === 0 ? (
-              <p className="company-modal__hint">Save a custom report on this page first.</p>
+              <p className="company-modal__hint">
+                {builderPath ? (
+                  <>
+                    No saved reports yet.{' '}
+                    <Link to={builderPath} onClick={() => onClose?.()}>
+                      Create one in Report Builder
+                    </Link>
+                    .
+                  </>
+                ) : (
+                  'Save a custom report on this page first.'
+                )}
+              </p>
             ) : null}
           </div>
 
@@ -361,9 +432,9 @@ export default function ReportScheduleModal({
           </label>
 
           <div className="company-modal__actions">
-            {editingId && (
+            {(editingId || clone) && (
               <button type="button" className="company-btn company-btn--secondary" onClick={resetForm}>
-                Cancel edit
+                {editingId ? 'Cancel edit' : 'Cancel duplicate'}
               </button>
             )}
             <button
@@ -399,6 +470,8 @@ export default function ReportScheduleModal({
             </div>
           ) : null}
 
+          {!createOnly ? (
+          <>
           <h3 className="company-form__label" style={{ marginTop: 8 }}>Existing schedules</h3>
           {loading ? (
             <p className="company-modal__hint">Loading schedules…</p>
@@ -445,6 +518,7 @@ export default function ReportScheduleModal({
                       type="button"
                       className="company-btn company-btn--secondary company-btn--compact company-btn--icon"
                       onClick={() => {
+                        setClone(null)
                         setEditingId(row.id)
                         setForm(formFromSchedule(row))
                       }}
@@ -453,6 +527,11 @@ export default function ReportScheduleModal({
                     >
                       <EditIcon />
                     </button>
+                    <DuplicateRowButton
+                      onClick={() => startDuplicate(row)}
+                      disabled={saving}
+                      label="Duplicate schedule"
+                    />
                     <button
                       type="button"
                       className="company-btn company-btn--secondary company-btn--compact"
@@ -493,6 +572,8 @@ export default function ReportScheduleModal({
               ))}
             </div>
           )}
+          </>
+          ) : null}
         </form>
       </div>
       {deleteModal}

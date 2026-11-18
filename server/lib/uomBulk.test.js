@@ -3,9 +3,24 @@ import assert from 'node:assert/strict'
 import { parseUomActive, parseUomBulkRow } from './uomBulkService.js'
 
 test('parseUomBulkRow accepts the template columns', () => {
-  assert.deepEqual(parseUomBulkRow({ Code: ' nos ', Name: ' Numbers ', Active: 'Yes' }), {
-    code: 'NOS',
-    name: 'Numbers',
+  assert.deepEqual(
+    parseUomBulkRow({
+      Code: ' nos ',
+      Name: ' Numbers ',
+      Category: ' Count Units ',
+      Active: 'Yes',
+    }),
+    {
+      code: 'NOS',
+      name: 'Numbers',
+      category: 'Count Units',
+      is_active: true,
+    },
+  )
+  assert.deepEqual(parseUomBulkRow({ Code: 'KG', Name: 'Kilogram', Active: 'Yes' }), {
+    code: 'KG',
+    name: 'Kilogram',
+    category: null,
     is_active: true,
   })
   assert.equal(parseUomActive(''), true)

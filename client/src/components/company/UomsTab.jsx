@@ -23,6 +23,8 @@ import { ExportCsvButton } from '../shared/ListTableChrome'
 import GooToggle from '../ui/GooToggle'
 import TrashIcon from '../ui/TrashIcon'
 import EditIcon from '../ui/EditIcon'
+import DuplicateRowButton from '../ui/DuplicateRowButton'
+import { createMasterClone, prepareMasterCloneCreate } from '../../lib/masterClone'
 import UomModal from './UomModal'
 import { MasterBulkActions, MasterBulkResult, useMasterBulkUpload } from './MasterBulkUpload'
 import '../shared/ListTableChrome.css'
@@ -88,6 +90,7 @@ export default function UomsTab({ canManage }) {
   const {
     bulkInputRef,
     bulkBusy,
+    bulkProgress,
     bulkError,
     bulkResult,
     handleDownloadTemplate,
@@ -103,28 +106,43 @@ export default function UomsTab({ canManage }) {
   const filterFields = useMemo(() => ([
     selectFilterField('code', 'Code', uniqueNameOptions(uoms, (row) => row.code), 'All codes'),
     selectFilterField('name', 'Name', uniqueNameOptions(uoms), 'All names'),
+    selectFilterField('category', 'Category', uniqueNameOptions(uoms, (row) => row.category), 'All categories'),
     ACTIVE_STATUS_FILTER,
   ]), [uoms])
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState(null)
+  const [clone, setClone] = useState(null)
   const [togglingId, setTogglingId] = useState(null)
 
   useEffect(() => { setListTotal(total) }, [total])
 
   const openCreate = () => {
     setEditing(null)
+    setClone(null)
     setModalOpen(true)
+  }
+
+  const openDuplicate = (row) => {
+    setEditing(null)
+    setClone(createMasterClone('uom', row))
+    setModalOpen(true)
+  }
+
+  const closeModal = () => {
+    setModalOpen(false)
+    setClone(null)
   }
 
   const openEdit = (row) => {
     setEditing(row)
+    setClone(null)
     setModalOpen(true)
   }
 
   const handleSave = async (payload) => {
     if (editing) await update(editing.id, payload)
-    else await create(payload)
-    setModalOpen(false)
+    else await create(prepareMasterCloneCreate('uom', clone, payload))
+    closeModal()
   }
 
   const handleDelete = async (row) => {
@@ -184,6 +202,7 @@ export default function UomsTab({ canManage }) {
                 <MasterBulkActions
                   onDownload={handleDownloadTemplate}
                   bulkBusy={bulkBusy}
+                    bulkProgress={bulkProgress}
                   bulkInputRef={bulkInputRef}
                   onFileChange={handleBulkFile}
                   addLabel="+ Add UOM"
@@ -214,13 +233,14 @@ export default function UomsTab({ canManage }) {
                   <tr>
                     <th>Code</th>
                     <th>Name</th>
+                    <th>Category</th>
                     {canManage && <th>Active</th>}
                     {canManage && <th>Actions</th>}
                   </tr>
                 </thead>
                 <tbody>
                   {uoms.length === 0 ? (
-                    <TableEmptyRow colSpan={canManage ? 4 : 2}>
+                    <TableEmptyRow colSpan={canManage ? 5 : 3}>
                       {debouncedSearch
                         ? 'No units match your search.'
                         : 'No units yet. Add the units this company uses, such as NOS, KG, or MTR.'}
@@ -231,6 +251,7 @@ export default function UomsTab({ canManage }) {
                       <tr key={row.id} className={!isActive ? 'company-table__row--inactive' : undefined}>
                         <td><code className="company-code">{row.code}</code></td>
                         <td><span className="company-table__name">{row.name}</span></td>
+                        <td>{row.category || '—'}</td>
                         {canManage && (
                           <td>
                             <GooToggle
@@ -252,6 +273,11 @@ export default function UomsTab({ canManage }) {
                             >
                               <EditIcon size={14} />
                             </button>
+                            <DuplicateRowButton
+                              onClick={() => openDuplicate(row)}
+                              disabled={saving}
+                              label={`Duplicate ${row.code}`}
+                            />
                             <button
                               type="button"
                               className="company-btn company-btn--danger company-btn--compact company-btn--icon"
@@ -286,9 +312,10 @@ export default function UomsTab({ canManage }) {
 
       {modalOpen && (
         <UomModal
-          uom={editing}
+          key={editing?.id ?? (clone ? `clone-${clone.source.id}` : 'new')}
+          uom={editing || clone?.draft || null}
           saving={saving}
-          onClose={() => setModalOpen(false)}
+          onClose={closeModal}
           onSave={handleSave}
         />
       )}

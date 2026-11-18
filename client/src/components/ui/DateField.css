@@ -62,9 +62,14 @@
   color: var(--color-gray-blue);
 }
 
-.date-field__nav-btn:hover {
+.date-field__nav-btn:hover:not(:disabled) {
   background: var(--color-light-gray-1);
   color: var(--color-dark-navy);
+}
+
+.date-field__nav-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
 }
 
 .date-field__weekdays,
@@ -92,12 +97,24 @@
   border-radius: var(--radius-sm);
 }
 
-.date-field__day:hover {
+.date-field__day:hover:not(:disabled) {
   background: var(--color-light-pink-2);
 }
 
 .date-field__day--muted {
   color: var(--color-light-gray-3);
+}
+
+.date-field__day--disabled,
+.date-field__day:disabled {
+  color: var(--color-light-gray-3);
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.date-field__day--disabled:hover,
+.date-field__day:disabled:hover {
+  background: transparent;
 }
 
 .date-field__day--today {

@@ -13,10 +13,7 @@ import SpellcheckInput from '../shared/SpellcheckInput'
 import FilterableSelect from '../ui/FilterableSelect'
 import { masterFieldLimit } from '../../lib/textFieldLimits'
 import ImageCropModal from '../shared/ImageCropModal'
-import {
-  departmentManagerScopeIds,
-  departmentsForEmployeeLocation,
-} from '../../lib/departmentLocation'
+import { departmentsForEmployeeLocation } from '../../lib/departmentLocation'
 import { validatePhoneE164 } from '../../lib/validation'
 import { isLocationHeadEmployee } from '../../lib/employeeRoles'
 import { IMAGE_ACCEPT, isSvgFile, resolveImageMime } from '../../lib/imageFiles'
@@ -72,6 +69,8 @@ export default function EmployeeModal({
   onCreateDepartment,
   onLimitExceeded,
 }) {
+  // A duplicate draft has no id, so it behaves as a create.
+  const isEdit = Boolean(employee?.id)
   const [form, setForm] = useState(EMPTY)
   const [error, setError] = useState(null)
   const [photoFile, setPhotoFile] = useState(null)
@@ -84,20 +83,16 @@ export default function EmployeeModal({
 
   const activeLocations = locations.filter((l) => l.is_active !== false)
   const activeDepartments = departments.filter((d) => d.is_active !== false)
-  const managerDepartmentIds = useMemo(
-    () => departmentManagerScopeIds(departments, form.department_id),
-    [departments, form.department_id],
-  )
+  // Manager may be from the same or any other department (same location when set).
   const managerOptions = useMemo(() => (
     (employees || []).filter((e) =>
       e
       && e.id
       && e.is_active !== false
       && e.id !== employee?.id
-      && (!form.location_id || e.location_id === form.location_id)
-      && (!form.department_id || managerDepartmentIds.has(e.department_id)),
+      && (!form.location_id || e.location_id === form.location_id),
     )
-  ), [employees, employee?.id, form.location_id, form.department_id, managerDepartmentIds])
+  ), [employees, employee?.id, form.location_id])
 
   const departmentsForLocation = useMemo(
     () => departmentsForEmployeeLocation(activeDepartments, form.location_id),
@@ -112,7 +107,7 @@ export default function EmployeeModal({
     () => availableAccessRoles.find((role) => role.id === form.access_role_id) || null,
     [availableAccessRoles, form.access_role_id],
   )
-  const showLocationHeadPill = isLocationHeadEmployee(employee, {
+  const showLocationHeadPill = isLocationHeadEmployee(isEdit ? employee : null, {
     accessRoleName: selectedAccessRole?.name,
   })
 
@@ -162,19 +157,19 @@ export default function EmployeeModal({
 
   useEffect(() => {
     // When roles load after opening create modal, default to User if still empty.
-    if (employee || form.access_role_id) return
+    if (isEdit || form.access_role_id) return
     const defaultRole = findDefaultUserRole(availableAccessRoles)
     if (!defaultRole) return
     setForm((prev) => (prev.access_role_id ? prev : { ...prev, access_role_id: defaultRole.id }))
-  }, [employee, availableAccessRoles, form.access_role_id])
+  }, [isEdit, availableAccessRoles, form.access_role_id])
 
   useEffect(() => {
-    if (employee || !defaultLocationId) return
+    if (isEdit || !defaultLocationId) return
     setForm((prev) => (prev.location_id ? prev : { ...prev, location_id: defaultLocationId }))
-  }, [employee, defaultLocationId])
+  }, [isEdit, defaultLocationId])
 
   useEffect(() => {
-    if (!lockLocation || !defaultLocationId || employee) return
+    if (!lockLocation || !defaultLocationId || isEdit) return
     if (form.location_id === defaultLocationId) return
     setForm((prev) => ({
       ...prev,
@@ -182,7 +177,7 @@ export default function EmployeeModal({
       department_id: prev.location_id === defaultLocationId ? prev.department_id : '',
       manager_id: prev.location_id === defaultLocationId ? prev.manager_id : '',
     }))
-  }, [lockLocation, defaultLocationId, employee, form.location_id])
+  }, [lockLocation, defaultLocationId, isEdit, form.location_id])
 
 
   useEffect(() => {
@@ -381,7 +376,7 @@ export default function EmployeeModal({
           <div className="company-modal__header">
             <div className="modal__header-main">
               <PageBack onClick={onClose} className="page-back--header" label="Employees" />
-              <h2 id="employee-modal-title">{employee ? 'Edit Employee' : 'Add Employee'}</h2>
+              <h2 id="employee-modal-title">{isEdit ? 'Edit Employee' : 'Add Employee'}</h2>
             </div>
             <button type="button" className="company-modal__close" onClick={onClose} aria-label="Close">×</button>
           </div>
@@ -560,7 +555,6 @@ export default function EmployeeModal({
               onChange={(department_id) => setForm({
                 ...form,
                 department_id,
-                manager_id: '',
               })}
               options={departmentsForLocation}
               getOptionValue={(dept) => dept.id}
@@ -577,8 +571,9 @@ export default function EmployeeModal({
               value={form.manager_id}
               onChange={(manager_id) => setForm({ ...form, manager_id })}
               options={managerOptions}
-              placeholder={form.department_id ? 'None' : 'Select department first'}
-              disabled={!form.department_id}
+              placeholder={form.location_id ? 'None' : 'Select location first'}
+              searchPlaceholder="Search by name, EMP ID, or department…"
+              disabled={!form.location_id}
             />
 
             <label className="company-form__field">

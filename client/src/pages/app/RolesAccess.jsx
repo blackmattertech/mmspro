@@ -11,6 +11,8 @@ import AssignEmployeesModal from '../../components/roles/AssignEmployeesModal'
 import EmployeeAvatar from '../../components/company/EmployeeAvatar'
 import TrashIcon from '../../components/ui/TrashIcon'
 import EditIcon from '../../components/ui/EditIcon'
+import DuplicateRowButton from '../../components/ui/DuplicateRowButton'
+import { createNestedClone, prepareNestedCloneCreate } from '../../lib/nestedClone'
 import TablePagination from '../../components/shared/TablePagination'
 import TableEmptyRow from '../../components/shared/TableEmptyRow'
 import TableColumnPicker from '../../components/shared/TableColumnPicker'
@@ -72,6 +74,7 @@ export default function RolesAccess() {
   const [columnFilters, setColumnFilters] = useState({})
   const [sortBy, setSortBy] = useState('name_asc')
   const [editorMode, setEditorMode] = useState(null)
+  const [roleClone, setRoleClone] = useState(null)
   const [assignOpen, setAssignOpen] = useState(false)
   const [permDraft, setPermDraft] = useState(null)
   const [permSaving, setPermSaving] = useState(false)
@@ -222,13 +225,31 @@ export default function RolesAccess() {
     if (!canOpenCreate) return
     setSelectedId(null)
     setPermDraft(null)
+    setRoleClone(null)
+    setEditorMode('create')
+  }
+
+  // Duplicate → prefilled create: copies name, description and permissions, never employee assignments.
+  const openDuplicate = (role) => {
+    if (!canOpenCreate) return
+    const next = createNestedClone('role', role)
+    if (!next) return
+    setSelectedId(null)
+    setPermDraft(null)
+    setRoleClone(next)
     setEditorMode('create')
   }
 
   const openEdit = (role) => {
     if (!canUpdate || !canManageRole(role)) return
     setSelectedId(role.id)
+    setRoleClone(null)
     setEditorMode('edit')
+  }
+
+  const closeEditor = () => {
+    setEditorMode(null)
+    setRoleClone(null)
   }
 
   const editing = editorMode === 'edit' ? selectedRole : null
@@ -239,9 +260,10 @@ export default function RolesAccess() {
     if (editorMode === 'edit' && editing) {
       await update(editing.id, payload)
     } else {
-      await create(payload)
+      await create(prepareNestedCloneCreate('role', roleClone, payload))
     }
     setEditorMode(null)
+    setRoleClone(null)
     setSelectedId(null)
     setPermDraft(null)
   }
@@ -310,10 +332,12 @@ export default function RolesAccess() {
 
         {showEditor && canShowEditor && (
           <RoleModal
-            key={editing?.id ?? 'new'}
+            key={editing?.id ?? (roleClone ? `clone-${roleClone.source.id}` : 'new')}
             role={editing}
+            cloneDraft={editing ? null : roleClone?.draft}
+            cloneSourceName={editing ? null : roleClone?.source?.name}
             saving={saving}
-            onClose={() => setEditorMode(null)}
+            onClose={closeEditor}
             onSave={handleSaveRole}
           />
         )}
@@ -507,6 +531,13 @@ export default function RolesAccess() {
                                   >
                                     <EditIcon />
                                   </button>
+                                )}
+                                {canCreate && (
+                                  <DuplicateRowButton
+                                    onClick={() => openDuplicate(role)}
+                                    disabled={saving}
+                                    label={`Duplicate ${role.name}`}
+                                  />
                                 )}
                                 {canDelete && canManageRole(role) && (
                                   <button

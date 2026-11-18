@@ -15,6 +15,8 @@ import { invalidateReferenceCache } from '../../lib/referenceDataCache'
 import GooToggle from '../ui/GooToggle'
 import TrashIcon from '../ui/TrashIcon'
 import EditIcon from '../ui/EditIcon'
+import DuplicateRowButton from '../ui/DuplicateRowButton'
+import { createMasterClone, prepareMasterCloneCreate } from '../../lib/masterClone'
 import EmployeeAvatar from './EmployeeAvatar'
 import EmployeeModal from './EmployeeModal'
 import LimitExceededCard from '../shared/LimitExceededCard'
@@ -71,6 +73,7 @@ export default function EmployeesTab({ canManage }) {
   const [employeeTotal, setEmployeeTotal] = useState(0)
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState(null)
+  const [clone, setClone] = useState(null)
   const [viewing, setViewing] = useState(null)
   const [togglingId, setTogglingId] = useState(null)
   const [deleteError, setDeleteError] = useState(null)
@@ -116,6 +119,7 @@ export default function EmployeesTab({ canManage }) {
   const {
     bulkInputRef,
     bulkBusy,
+    bulkProgress,
     bulkError,
     bulkResult,
     handleDownloadTemplate,
@@ -263,13 +267,30 @@ export default function EmployeesTab({ canManage }) {
       return
     }
     setEditing(null)
+    setClone(null)
     setModalOpen(true)
+  }
+
+  const openDuplicate = (employee) => {
+    if (atEmployeeLimit) {
+      triggerLimit('Employee')
+      return
+    }
+    setEditing(null)
+    setClone(createMasterClone('employee', employee))
+    setModalOpen(true)
+  }
+
+  const closeModal = () => {
+    setModalOpen(false)
+    setClone(null)
   }
 
   const openView = (employee) => setViewing(employee)
 
   const openEdit = (employee) => {
     setEditing(employee)
+    setClone(null)
     setModalOpen(true)
   }
 
@@ -289,10 +310,12 @@ export default function EmployeesTab({ canManage }) {
   }, [employees, viewing])
 
   const handleSave = async (payload, photoFile, { removePhoto = false } = {}) => {
+    // Duplicate check runs before the try so its message surfaces in the modal.
+    const createPayload = editing ? payload : prepareMasterCloneCreate('employee', clone, payload)
     try {
       let saved
       if (editing) saved = await update(editing.id, payload)
-      else saved = await create(payload)
+      else saved = await create(createPayload)
 
       if (photoFile && org?.id) {
         const path = await uploadEmployeePhoto(org.id, saved.id, photoFile)
@@ -476,6 +499,7 @@ export default function EmployeesTab({ canManage }) {
               <MasterBulkActions
               onDownload={handleDownloadTemplate}
               bulkBusy={bulkBusy}
+                    bulkProgress={bulkProgress}
               bulkInputRef={bulkInputRef}
               onFileChange={handleBulkFile}
               addLabel="+ Add Employee"
@@ -685,6 +709,11 @@ export default function EmployeesTab({ canManage }) {
                             >
                               <EditIcon />
                             </button>
+                            <DuplicateRowButton
+                              onClick={() => openDuplicate(employee)}
+                              disabled={saving}
+                              label={`Duplicate ${employee.name}`}
+                            />
                             <button
                               type="button"
                               className="company-btn company-btn--danger company-btn--compact company-btn--icon"
@@ -755,8 +784,8 @@ export default function EmployeesTab({ canManage }) {
 
       {modalOpen && (
         <EmployeeModal
-          key={editing?.id ?? 'new'}
-          employee={editing}
+          key={editing?.id ?? (clone ? `clone-${clone.source.id}` : 'new')}
+          employee={editing || clone?.draft || null}
           employees={employeeOptions}
           locations={locations}
           departments={departments}
@@ -765,7 +794,7 @@ export default function EmployeesTab({ canManage }) {
           nestedSaving={nestedSaving}
           defaultLocationId={defaultCreateLocationId}
           lockLocation={lockCreateLocation}
-          onClose={() => setModalOpen(false)}
+          onClose={closeModal}
           onSave={handleSave}
           onCreateLocation={canSelectAnyLocation ? handleCreateLocation : undefined}
           onCreateDepartment={handleCreateDepartment}

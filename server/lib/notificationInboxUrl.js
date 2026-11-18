@@ -3,7 +3,8 @@ import { canManageOrg } from './accountRoles.js'
 
 const WO_TABS = [
   ['assigned', 'work_orders_assigned'],
-  ['received', 'work_orders_received'],
+  ['all', 'work_orders_received'],
+  ['unassigned', 'work_orders_received'],
   ['manual', 'work_orders_manual'],
   ['scheduled', 'work_orders_scheduled'],
 ]
@@ -48,7 +49,7 @@ export function fallbackInboxUrl(slug, { url, data = {} } = {}) {
   if (!slug) return url || '/'
   if (data.task_id) return `/${slug}/tasks-and-followups/${data.task_id}`
   if (data.pm_plan_id && !data.work_order_id) return `/${slug}/work-orders/scheduled`
-  if (data.work_order_id) return pathWithOpen(slug, 'work-orders/received', data.work_order_id)
+  if (data.work_order_id) return pathWithOpen(slug, 'work-orders/all', data.work_order_id)
   if (data.work_request_id) return pathWithOpen(slug, 'work-request/incoming', data.work_request_id)
   return `/${slug}/dashboard`
 }
@@ -82,10 +83,41 @@ async function loadReadableModules(userId, orgId) {
   return new Set((perms || []).filter((row) => row.can_read).map((row) => row.module_key))
 }
 
-function workOrderSegmentForUser(userId, workOrder, readable) {
-  const isOutgoing = workOrder.created_by === userId || workOrder.requester_id === userId
-  const preferred = isOutgoing ? 'assigned' : 'received'
-  return pickSegment(readable, preferred, WO_TABS, 'work-orders')
+async function loadAssigneeWorkOrderIds(orgId, userId, workOrderIds) {
+  if (!orgId || !userId || !workOrderIds?.length) return new Set()
+  const { data: employee } = await supabaseAdmin
+    .from('org_employees')
+    .select('id')
+    .eq('org_id', orgId)
+    .eq('profile_id', userId)
+    .eq('is_active', true)
+    .maybeSingle()
+  if (!employee?.id) return new Set()
+  const { data, error } = await supabaseAdmin
+    .from('manual_work_order_assignees')
+    .select('work_order_id')
+    .eq('org_id', orgId)
+    .eq('employee_id', employee.id)
+    .in('work_order_id', workOrderIds)
+  if (error) throw error
+  return new Set((data || []).map((row) => row.work_order_id))
+}
+
+/**
+ * Assignees → Assigned to Me; Order To / others with WO access → All.
+ * Requesters/creators who are not assignees are routed to the linked Work Request when present.
+ */
+function workOrderSegmentForUser(userId, workOrder, readable, assigneeWoIds) {
+  if (assigneeWoIds.has(workOrder.id)) {
+    return pickSegment(readable, 'assigned', WO_TABS, 'work-orders')
+  }
+
+  const isRequesterOrCreator = workOrder.created_by === userId || workOrder.requester_id === userId
+  if (isRequesterOrCreator && workOrder.work_request_id) {
+    return pickSegment(readable, 'my', WR_TABS, 'work-request')
+  }
+
+  return pickSegment(readable, 'all', WO_TABS, 'work-orders')
 }
 
 function workRequestSegmentForUser(userId, workRequest, readable) {
@@ -95,7 +127,6 @@ function workRequestSegmentForUser(userId, workRequest, readable) {
 
 /**
  * Build the in-app / push URL for one recipient from notification data.
- * Work the user requested or created opens Assigned; incoming work opens Received.
  */
 export async function resolveInboxUrl(userId, orgId, slug, { url, data = {} } = {}) {
   if (url && url !== '/') return url
@@ -112,17 +143,21 @@ export async function resolveInboxUrl(userId, orgId, slug, { url, data = {} } = 
   if (payload.work_order_id) {
     const { data: workOrder } = await supabaseAdmin
       .from('manual_work_orders')
-      .select('id, created_by, requester_id')
+      .select('id, created_by, requester_id, work_request_id')
       .eq('id', payload.work_order_id)
       .maybeSingle()
 
     if (workOrder) {
-      const segment = workOrderSegmentForUser(userId, workOrder, readable)
-      return pathWithOpen(slug, segment, payload.work_order_id)
+      const assigneeWoIds = await loadAssigneeWorkOrderIds(orgId, userId, [workOrder.id])
+      const segment = workOrderSegmentForUser(userId, workOrder, readable, assigneeWoIds)
+      const openId = segment.startsWith('work-request/')
+        ? (workOrder.work_request_id || payload.work_request_id)
+        : payload.work_order_id
+      return pathWithOpen(slug, segment, openId)
     }
     return pathWithOpen(
       slug,
-      pickSegment(readable, 'received', WO_TABS, 'work-orders'),
+      pickSegment(readable, 'all', WO_TABS, 'work-orders'),
       payload.work_order_id,
     )
   }
@@ -182,7 +217,7 @@ export async function enrichNotificationUrls(userId, orgId, slug, rows) {
     woIds.length
       ? supabaseAdmin
         .from('manual_work_orders')
-        .select('id, created_by, requester_id')
+        .select('id, created_by, requester_id, work_request_id')
         .in('id', woIds)
       : Promise.resolve({ data: [] }),
     wrIds.length
@@ -195,6 +230,7 @@ export async function enrichNotificationUrls(userId, orgId, slug, rows) {
 
   const workOrders = new Map((workOrdersResult.data || []).map((row) => [row.id, row]))
   const workRequests = new Map((workRequestsResult.data || []).map((row) => [row.id, row]))
+  const assigneeWoIds = await loadAssigneeWorkOrderIds(orgId, userId, woIds)
 
   return items.map((row) => {
     const data = row.data
@@ -207,10 +243,19 @@ export async function enrichNotificationUrls(userId, orgId, slug, rows) {
       nextUrl = `/${resolvedSlug}/tasks-and-followups/${data.task_id}`
     } else if (data.work_order_id) {
       const workOrder = workOrders.get(data.work_order_id)
-      const segment = workOrder
-        ? workOrderSegmentForUser(userId, workOrder, readable)
-        : pickSegment(readable, 'received', WO_TABS, 'work-orders')
-      nextUrl = pathWithOpen(resolvedSlug, segment, data.work_order_id)
+      if (workOrder) {
+        const segment = workOrderSegmentForUser(userId, workOrder, readable, assigneeWoIds)
+        const openId = segment.startsWith('work-request/')
+          ? (workOrder.work_request_id || data.work_request_id)
+          : data.work_order_id
+        nextUrl = pathWithOpen(resolvedSlug, segment, openId)
+      } else {
+        nextUrl = pathWithOpen(
+          resolvedSlug,
+          pickSegment(readable, 'all', WO_TABS, 'work-orders'),
+          data.work_order_id,
+        )
+      }
     } else if (data.work_request_id) {
       const workRequest = workRequests.get(data.work_request_id)
       const segment = workRequest

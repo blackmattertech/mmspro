@@ -13,6 +13,7 @@ import {
   restrictToIds,
 } from './listQuery.js'
 import { countExactStatuses, countStatusesViaRpc } from './statusCounts.js'
+import { applyWorkRequestDisplayStatusFilter } from './workRequestStatusFilter.js'
 import { createTtlCache } from './ttlCache.js'
 import { loadTimelineActors } from './timelineActors.js'
 import { getSignedUrls } from './signedUrlCache.js'
@@ -47,6 +48,12 @@ import {
   shouldSkipTechnicianAcceptance,
 } from './formSkips.js'
 import { workOrderFormIdForSource } from './workOrderForms.js'
+import {
+  enforceWorkRecordClone,
+  toWorkRequestCloneComparable,
+  WORK_REQUEST_CLONE_COMPARE_KEYS,
+  WORK_REQUEST_CLONE_UNIQUE_KEYS,
+} from './workRecordClone.js'
 import {
   resolveJobNatureChoiceList,
   resolveWorkCenterChoiceList,
@@ -767,9 +774,25 @@ export async function loadWorkRequestAssignmentOptions(orgId) {
   }
 }
 
+/** Only company / org admins may change Order From; others use their employee department. */
+export function isOrderFromSelectable(isOrgAdmin) {
+  return Boolean(isOrgAdmin)
+}
+
+export function resolveOrderFromDepartmentId({
+  isOrgAdmin = false,
+  employeeDepartmentId = null,
+  requestedOrderFromId = null,
+} = {}) {
+  if (!isOrderFromSelectable(isOrgAdmin)) {
+    return employeeDepartmentId || null
+  }
+  return requestedOrderFromId || employeeDepartmentId || null
+}
+
 export async function getWorkRequestFormContext(orgId, profileId, email, { isOrgAdmin = false } = {}) {
   const employee = await getEmployeeByProfile(orgId, profileId, { email })
-  const orderFromSelectable = Boolean(isOrgAdmin && !employee?.department_id)
+  const orderFromSelectable = isOrderFromSelectable(isOrgAdmin)
 
   if (!employee?.department_id && !isOrgAdmin) {
     const err = new Error('Your account is not linked to a department. Contact your administrator.')
@@ -913,6 +936,24 @@ async function assertDepartmentInOrg(orgId, departmentId, label = 'Department', 
 }
 
 export async function createWorkRequest(orgId, profileId, email, body, { isOrgAdmin = false } = {}) {
+  // Duplicate → prefilled create: block saves that are unchanged copies of the source.
+  await enforceWorkRecordClone({
+    body,
+    loadSource: async (sourceId) => {
+      const { data: source, error: sourceError } = await supabaseAdmin
+        .from('work_requests')
+        .select('*')
+        .eq('org_id', orgId)
+        .eq('id', sourceId)
+        .maybeSingle()
+      if (sourceError) throw sourceError
+      return source || null
+    },
+    toComparable: toWorkRequestCloneComparable,
+    uniqueKeys: WORK_REQUEST_CLONE_UNIQUE_KEYS,
+    compareKeys: WORK_REQUEST_CLONE_COMPARE_KEYS,
+  })
+
   const employee = await getEmployeeByProfile(orgId, profileId, { email })
 
   if (!employee?.department_id && !isOrgAdmin) {
@@ -936,7 +977,11 @@ export async function createWorkRequest(orgId, profileId, email, body, { isOrgAd
   }
 
   let orderToId = body?.order_to_department_id || null
-  let orderFromId = body?.order_from_department_id || employee?.department_id || null
+  let orderFromId = resolveOrderFromDepartmentId({
+    isOrgAdmin,
+    employeeDepartmentId: employee?.department_id || null,
+    requestedOrderFromId: body?.order_from_department_id || null,
+  })
 
   if (!orderFromId && isOrgAdmin && requireField('order_from_department_id', true)) {
     const err = new Error('Order from department is required.')
@@ -1148,57 +1193,353 @@ export async function createWorkRequest(orgId, profileId, email, body, { isOrgAd
   )
 
   if (!isDraft) {
+    return finalizeSubmittedWorkRequest(orgId, profileId, row, {
+      employeeId: employee?.id || null,
+    })
+  }
+
+  return enrichWorkRequest(row)
+}
+
+async function finalizeSubmittedWorkRequest(orgId, profileId, row, { employeeId = null } = {}) {
+  const requestNumber = row.request_number
+  const shortDescription = row.short_description || ''
+  try {
+    await notifyWorkRequestInbox(orgId, row, {
+      title: 'New work request',
+      body: requestNumber,
+      data: {
+        work_request_id: row.id,
+        type: 'work_request_created',
+        actor_id: profileId,
+        message: shortDescription,
+      },
+      url: '/',
+    })
+  } catch {
+    // non-blocking
+  }
+
+  if (row.status !== 'submitted') {
+    return enrichWorkRequest(row)
+  }
+
+  // Spec: Intra / User Self / Manual (and Inter when approval disabled) auto-convert to WO
+  try {
+    const disabledModules = await loadOrgDisabledModules(orgId)
+    if (!isProductModuleEnabled(disabledModules, 'work_orders')) {
+      return enrichWorkRequest(row)
+    }
+    const { updated, workOrder, woNumber } = await createLinkedWorkOrderFromRequest(
+      orgId,
+      profileId,
+      row,
+      {
+        autoApproved: true,
+        assigneeIds: row.request_type === 'user_self' && employeeId ? [employeeId] : [],
+      },
+    )
     try {
       await notifyWorkRequestInbox(orgId, row, {
-        title: 'New work request',
-        body: requestNumber,
-        data: { work_request_id: row.id, type: 'work_request_created', actor_id: profileId, message: shortDescription },
+        title: 'Work order generated',
+        body: `${requestNumber} → ${woNumber}`,
+        data: {
+          work_request_id: row.id,
+          work_order_id: workOrder.id,
+          type: 'work_order_generated',
+          actor_id: profileId,
+        },
         url: '/',
       })
     } catch {
       // non-blocking
     }
-  }
-
-  // Spec: Intra / User Self / Manual (and Inter when approval disabled) auto-convert to WO
-  if (!isDraft && status === 'submitted') {
-    try {
-      const disabledModules = await loadOrgDisabledModules(orgId)
-      if (!isProductModuleEnabled(disabledModules, 'work_orders')) {
-        return enrichWorkRequest(row)
-      }
-      const { updated, workOrder, woNumber } = await createLinkedWorkOrderFromRequest(
-        orgId,
-        profileId,
-        row,
-        {
-          autoApproved: true,
-          assigneeIds: requestType === 'user_self' && employee?.id ? [employee.id] : [],
-        },
-      )
-      try {
-        await notifyWorkRequestInbox(orgId, row, {
-          title: 'Work order generated',
-          body: `${requestNumber} → ${woNumber}`,
-          data: {
-            work_request_id: row.id,
-            work_order_id: workOrder.id,
-            type: 'work_order_generated',
-            actor_id: profileId,
-          },
-          url: '/',
-        })
-      } catch {
-        // non-blocking
-      }
-      return enrichWorkRequest(updated)
-    } catch (convertError) {
-      // Request is saved; conversion failure should not hide the WR
-      console.error('Auto WO conversion failed:', convertError.message)
-    }
+    return enrichWorkRequest(updated)
+  } catch (convertError) {
+    // Request is saved; conversion failure should not hide the WR
+    console.error('Auto WO conversion failed:', convertError.message)
   }
 
   return enrichWorkRequest(row)
+}
+
+/**
+ * Submit an existing draft work request (assign number, leave draft, run post-submit flow).
+ */
+export async function submitWorkRequestDraft(orgId, profileId, email, workRequestId, { isOrgAdmin = false } = {}) {
+  const { data: wr, error } = await supabaseAdmin
+    .from('work_requests')
+    .select('*')
+    .eq('org_id', orgId)
+    .eq('id', workRequestId)
+    .maybeSingle()
+
+  if (error) throw error
+  if (!wr) {
+    const err = new Error('Work request not found.')
+    err.status = 404
+    throw err
+  }
+  if (wr.status !== 'draft') {
+    const err = new Error('Only draft work requests can be submitted.')
+    err.status = 400
+    throw err
+  }
+  if (!isOrgAdmin && wr.requested_by !== profileId) {
+    const err = new Error('Only the requester can submit this draft.')
+    err.status = 403
+    throw err
+  }
+
+  const employee = await getEmployeeByProfile(orgId, profileId, { email })
+  const layout = await loadRuntimeFormLayout(orgId, 'work_request.create')
+  const requireField = (key, whenNoLayout) => shouldRequire(layout, systemId(key), whenNoLayout)
+
+  const orderFromId = wr.order_from_department_id
+  const orderToId = wr.order_to_department_id
+  const requestType = wr.request_type
+  const equipmentId = wr.equipment_id || null
+
+  if (!orderFromId || !orderToId) {
+    const err = new Error('Order from and Order to departments are required before submitting.')
+    err.status = 400
+    throw err
+  }
+
+  if (requireField('asset_picker', true) && !equipmentId) {
+    const err = new Error('An asset selection is required before submitting.')
+    err.status = 400
+    throw err
+  }
+
+  const jobNatureField = await resolveJobNatureField(orgId)
+  const jobNatureOptions = (await resolveJobNatureChoiceList(orgId)).map((row) => row.value)
+  const jobNature = String(wr.job_nature || '').trim() || null
+  if (jobNatureField?.is_required && requireField('job_nature', true) && !jobNature) {
+    const err = new Error('Job nature is required before submitting.')
+    err.status = 400
+    throw err
+  }
+  if (!jobNature && jobNatureOptions.length && requireField('job_nature', true)) {
+    const err = new Error('Job nature is required before submitting.')
+    err.status = 400
+    throw err
+  }
+
+  await assertChecklistSelected(orgId, 'work_request.create', wr.checklist_template_id || null)
+  await assertChecklistSelected(
+    orgId,
+    workOrderFormIdForSource(mapRequestTypeToSource(requestType)),
+    wr.checklist_template_id || null,
+  )
+
+  const moduleApprovals = await loadModuleApprovals(orgId)
+  const approvalRequired = moduleApprovals.work_request !== false
+  const status = resolveInitialStatus(requestType, approvalRequired)
+  const requestNumber = await generateWorkRequestNumber(orgId, orderToId)
+  const now = new Date().toISOString()
+
+  const { data: updated, error: updateError } = await supabaseAdmin
+    .from('work_requests')
+    .update({
+      status,
+      request_number: requestNumber,
+      request_date: now,
+      updated_at: now,
+    })
+    .eq('id', workRequestId)
+    .eq('org_id', orgId)
+    .eq('status', 'draft')
+    .select('*')
+    .single()
+
+  if (updateError) throw updateError
+  if (!updated) {
+    const err = new Error('Draft was already submitted or removed.')
+    err.status = 409
+    throw err
+  }
+
+  await addTimelineEvent(
+    orgId,
+    updated.id,
+    'created',
+    `Work request ${requestNumber} submitted.`,
+    profileId,
+    { status },
+  )
+
+  return finalizeSubmittedWorkRequest(orgId, profileId, updated, {
+    employeeId: employee?.id || null,
+  })
+}
+
+/**
+ * Update an existing draft (creator or org admin). Optionally submit after save.
+ */
+export async function updateWorkRequestDraft(orgId, profileId, email, workRequestId, body = {}, {
+  isOrgAdmin = false,
+} = {}) {
+  const { data: wr, error } = await supabaseAdmin
+    .from('work_requests')
+    .select('*')
+    .eq('org_id', orgId)
+    .eq('id', workRequestId)
+    .maybeSingle()
+
+  if (error) throw error
+  if (!wr) {
+    const err = new Error('Work request not found.')
+    err.status = 404
+    throw err
+  }
+  if (wr.status !== 'draft') {
+    const err = new Error('Only draft work requests can be edited.')
+    err.status = 400
+    throw err
+  }
+  if (!isOrgAdmin && wr.requested_by !== profileId) {
+    const err = new Error('Only the requester can edit this draft.')
+    err.status = 403
+    throw err
+  }
+
+  const employee = await getEmployeeByProfile(orgId, profileId, { email })
+  const layout = await loadRuntimeFormLayout(orgId, 'work_request.create')
+  const requireField = (key, whenNoLayout) => shouldRequire(layout, systemId(key), whenNoLayout)
+
+  let requestType = body?.request_type || wr.request_type
+  const validTypes = new Set(REQUEST_TYPE_OPTIONS.map((opt) => opt.value))
+  if (!validTypes.has(requestType)) requestType = wr.request_type || 'inter_department'
+
+  let orderFromId = resolveOrderFromDepartmentId({
+    isOrgAdmin,
+    employeeDepartmentId: employee?.department_id || wr.order_from_department_id || null,
+    requestedOrderFromId: body?.order_from_department_id ?? wr.order_from_department_id,
+  })
+  let orderToId = body?.order_to_department_id ?? wr.order_to_department_id ?? null
+
+  if (requestType === 'intra_department' || requestType === 'user_self') {
+    orderToId = orderFromId
+  }
+  if (!orderToId) orderToId = orderFromId
+
+  if (orderFromId) {
+    await assertDepartmentInOrg(orgId, orderFromId, 'Order from department', {
+      locationId: isOrgAdmin ? null : (employee?.location_id || null),
+    })
+  }
+  if (orderToId) {
+    await assertDepartmentInOrg(orgId, orderToId, 'Order to department', {
+      locationId: isOrgAdmin ? null : (employee?.location_id || null),
+    })
+  }
+
+  const fieldLimits = await getTextFieldLimitsMap(orgId)
+  const equipmentId = body?.equipment_id !== undefined ? (body.equipment_id || null) : wr.equipment_id
+  if (equipmentId && orderToId) {
+    await assertEquipmentInDepartment(orgId, equipmentId, orderToId)
+  }
+
+  const maintenanceFormSchema = await buildManualWorkOrderFormSchema(orgId)
+  const formFieldValues = clipDynamicFieldValues(
+    fieldLimits,
+    maintenanceFormSchema,
+    body?.form_field_values && typeof body.form_field_values === 'object'
+      ? body.form_field_values
+      : (wr.form_field_values || {}),
+  )
+
+  const jobNatureOptions = (await resolveJobNatureChoiceList(orgId)).map((row) => row.value)
+  let jobNature = body?.job_nature !== undefined
+    ? (String(body.job_nature || '').trim() || null)
+    : (wr.job_nature || null)
+  if (jobNature && jobNatureOptions.length && !jobNatureOptions.includes(jobNature)) {
+    const err = new Error('Selected job nature is not valid.')
+    err.status = 400
+    throw err
+  }
+
+  let checklistTemplateId = body?.checklist_template_id !== undefined
+    ? (body.checklist_template_id || null)
+    : (wr.checklist_template_id || null)
+  let checklistSnapshot = wr.checklist_snapshot || {}
+  if (body?.checklist_template_id) {
+    const template = await assertChecklistForForm(orgId, body.checklist_template_id, 'work_request.create')
+    checklistTemplateId = template.id
+    checklistSnapshot = await snapshotChecklistTemplate(orgId, template.id) || {}
+  } else if (body?.checklist_template_id === null) {
+    checklistTemplateId = null
+    checklistSnapshot = {}
+  }
+
+  const now = new Date().toISOString()
+  const updates = {
+    request_type: requestType,
+    order_from_department_id: orderFromId,
+    order_to_department_id: orderToId,
+    equipment_id: equipmentId,
+    asset_hierarchy: equipmentId ? await buildAssetHierarchy(orgId, equipmentId) : [],
+    short_description: clipTrimmedToLimit(
+      fieldLimits,
+      'short_description',
+      body?.short_description !== undefined ? body.short_description : wr.short_description,
+    ) || '',
+    problem_description: clipTrimmedToLimit(
+      fieldLimits,
+      'problem_description',
+      body?.problem_description !== undefined ? body.problem_description : wr.problem_description,
+    ) || '',
+    job_nature: jobNature,
+    is_breakdown: jobNature
+      ? isBreakdownJobNature(jobNature)
+      : Boolean(body?.is_breakdown ?? wr.is_breakdown),
+    priority: canonicalWorkRequestPriority(
+      body?.priority !== undefined ? body.priority : wr.priority,
+      'medium',
+    ),
+    remarks: clipTrimmedToLimit(
+      fieldLimits,
+      'remarks',
+      body?.remarks !== undefined ? body.remarks : wr.remarks,
+    ),
+    attachments: Array.isArray(body?.attachments) ? body.attachments : (wr.attachments || []),
+    form_field_values: formFieldValues,
+    checklist_template_id: checklistTemplateId,
+    checklist_snapshot: checklistSnapshot,
+    updated_at: now,
+  }
+
+  // Soft validation for required routing when saving draft (still allow incomplete drafts)
+  if (!orderFromId && requireField('order_from_department_id', true) && isOrgAdmin) {
+    // keep null — draft may be incomplete
+  }
+
+  const { data: updated, error: updateError } = await supabaseAdmin
+    .from('work_requests')
+    .update(updates)
+    .eq('id', workRequestId)
+    .eq('org_id', orgId)
+    .eq('status', 'draft')
+    .select('*')
+    .single()
+
+  if (updateError) throw updateError
+
+  await addTimelineEvent(
+    orgId,
+    updated.id,
+    'draft_saved',
+    'Work request draft updated.',
+    profileId,
+    { status: 'draft' },
+  )
+
+  if (body?.save_as === 'submit') {
+    return submitWorkRequestDraft(orgId, profileId, email, workRequestId, { isOrgAdmin })
+  }
+
+  return enrichWorkRequest(updated)
 }
 
 async function syncWorkOrderAssignees(orgId, workOrderId, employeeIds) {
@@ -1936,8 +2277,15 @@ export function workRequestMatchesLocation(wr, locationId) {
   return false
 }
 
-export function assertWorkRequestAccessible(wr, { profileId, locationId } = {}) {
+export function assertWorkRequestAccessible(wr, { profileId, locationId, isOrgAdmin = false } = {}) {
   if (!wr) {
+    const err = new Error('Work request not found.')
+    err.status = 404
+    throw err
+  }
+  if (wr.status === 'draft') {
+    if (isOrgAdmin) return wr
+    if (profileId && wr.requested_by === profileId) return wr
     const err = new Error('Work request not found.')
     err.status = 404
     throw err
@@ -2350,12 +2698,29 @@ function textOnlyFilters(filters = {}) {
   )
 }
 
-async function scopeWorkRequestQuery(query, orgId, filter, { profileId, departmentId, locationId, search }) {
+async function scopeWorkRequestQuery(query, orgId, filter, {
+  profileId,
+  departmentId,
+  locationId,
+  search,
+  isOrgAdmin = false,
+}) {
   let next = query
-  if (filter === 'my' && profileId) next = next.eq('requested_by', profileId)
-  else if (filter === 'outgoing' && departmentId) next = next.eq('order_from_department_id', departmentId)
-  else if (filter === 'incoming' && departmentId) next = next.eq('order_to_department_id', departmentId)
-  if (filter !== 'my') {
+  if (filter === 'drafts') {
+    // Drafts are private to the creator; company/org admins can see all.
+    if (!isOrgAdmin) {
+      next = profileId
+        ? next.eq('requested_by', profileId)
+        : next.eq('requested_by', EMPTY_UUID)
+    }
+  } else if (filter === 'my' && profileId) {
+    next = next.eq('requested_by', profileId)
+  } else if (filter === 'outgoing' && departmentId) {
+    next = next.eq('order_from_department_id', departmentId)
+  } else if (filter === 'incoming' && departmentId) {
+    next = next.eq('order_to_department_id', departmentId)
+  }
+  if (filter !== 'my' && filter !== 'drafts') {
     const scoped = await applyWorkRequestLocationScope(next, orgId, locationId)
     next = scoped.query
   }
@@ -2366,6 +2731,7 @@ export async function countWorkRequestTabs(orgId, {
   profileId,
   departmentId,
   locationId = null,
+  isOrgAdmin = false,
 } = {}) {
   const tabs = ['my', 'incoming', 'outgoing', 'all', 'drafts']
   const entries = await Promise.all(tabs.map(async (filter) => {
@@ -2379,7 +2745,12 @@ export async function countWorkRequestTabs(orgId, {
     query = filter === 'drafts'
       ? query.eq('status', 'draft')
       : query.neq('status', 'draft')
-    query = (await scopeWorkRequestQuery(query, orgId, filter, { profileId, departmentId, locationId })).query
+    query = (await scopeWorkRequestQuery(query, orgId, filter, {
+      profileId,
+      departmentId,
+      locationId,
+      isOrgAdmin,
+    })).query
     const { count, error } = await query
     if (error) throw error
     return [filter, count || 0]
@@ -2391,6 +2762,7 @@ export async function listWorkRequests(orgId, filter, {
   profileId,
   departmentId,
   locationId = null,
+  isOrgAdmin = false,
   search = null,
   limit = 50,
   offset = 0,
@@ -2406,25 +2778,29 @@ export async function listWorkRequests(orgId, filter, {
     .eq('org_id', orgId)
 
   query = (await scopeWorkRequestQuery(query, orgId, filter, {
-    profileId, departmentId, locationId, search,
+    profileId, departmentId, locationId, search, isOrgAdmin,
   })).query
   query = applyMappedFilters(query, textOnlyFilters(filters), { ...WR_TEXT_FILTERS, ...WR_RANGE_FILTERS })
   query = (await applyWorkRequestRelationFilters(query, orgId, filters)).query
   if (filter === 'drafts') {
     query = query.eq('status', 'draft')
   } else {
-    query = applyStatusSelection(query, {
-      statuses,
-      excludeStatuses,
-      defaultExclude: ['draft'],
-    })
+    const displayFilter = applyWorkRequestDisplayStatusFilter(query, statuses)
+    query = displayFilter.query
+    if (!displayFilter.applied) {
+      query = applyStatusSelection(query, {
+        statuses,
+        excludeStatuses,
+        defaultExclude: ['draft'],
+      })
+    }
   }
   query = applyMappedSort(query, sort, sortDir, WR_SORT_COLUMNS, (sorted) => (
     sorted.order('request_date', { ascending: false })
   ))
   query = query.range(offset, offset + limit - 1)
 
-  const WR_LIST_STATUSES = [
+  const WR_EFFECTIVE_STATUSES = [
     'draft',
     'submitted',
     'pending_approval',
@@ -2434,12 +2810,24 @@ export async function listWorkRequests(orgId, filter, {
     'rejected',
     'cancelled',
     'converted',
+    'work_order_generated',
+    'technician_assigned',
+    'accepted',
+    'started',
+    'in_progress',
+    'waiting_material',
+    'waiting_shutdown',
+    'on_hold',
+    'completed',
+    'verified',
+    'closed',
+    'returned_rework',
   ]
 
   const [{ data, error, count }, status_counts] = await Promise.all([
     query,
     countStatusesViaRpc(
-      'count_work_request_statuses',
+      'count_work_request_effective_statuses',
       {
         p_org_id: orgId,
         p_filter: filter || 'all',
@@ -2454,12 +2842,16 @@ export async function listWorkRequests(orgId, filter, {
             .from('work_requests')
             .select('id', { count: 'exact', head: true })
             .eq('org_id', orgId)
-          if (filter === 'drafts') q = q.eq('status', 'draft')
-          else if (filter === 'my' && profileId) q = q.eq('requested_by', profileId)
+          if (filter === 'drafts') {
+            q = q.eq('status', 'draft')
+            if (!isOrgAdmin) {
+              q = profileId ? q.eq('requested_by', profileId) : q.eq('requested_by', EMPTY_UUID)
+            }
+          } else if (filter === 'my' && profileId) q = q.eq('requested_by', profileId)
           else if (filter === 'outgoing' && departmentId) q = q.eq('order_from_department_id', departmentId)
           else if (filter === 'incoming' && departmentId) q = q.eq('order_to_department_id', departmentId)
           return (async () => {
-            if (filter !== 'my') {
+            if (filter !== 'my' && filter !== 'drafts') {
               const scoped = await applyWorkRequestLocationScope(q, orgId, locationId)
               q = scoped.query
             }
@@ -2468,7 +2860,7 @@ export async function listWorkRequests(orgId, filter, {
             }
           })()
         },
-        WR_LIST_STATUSES,
+        WR_EFFECTIVE_STATUSES,
       ),
     ),
   ])

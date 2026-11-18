@@ -42,6 +42,13 @@ export function addMeterReading(equipmentId, reading) {
   })
 }
 
+export function resetMeterReading(equipmentId) {
+  return apiFetch(`/api/logbook/${equipmentId}/reset`, {
+    method: 'POST',
+    body: JSON.stringify({}),
+  })
+}
+
 export function deleteMeterReading(readingId) {
   return apiFetch(`/api/logbook/readings/${readingId}`, { method: 'DELETE' })
 }

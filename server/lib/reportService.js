@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { supabaseAdmin } from '../services/supabase.js'
+import { cumulativeFromOffset } from '../../shared/meterCycle.js'
 import { sanitizeDailyLogMaterials, rollupMaterialsFromLogs } from './workOrderDailyLogService.js'
 import { displayWorkOrderNumber } from './workOrderService.js'
 import { resolveLivePlanStatus } from './pmSchedule.js'
@@ -8,6 +9,8 @@ import { loadOrgFields } from './equipmentFieldService.js'
 import { listOrgStatuses } from './orgStatusService.js'
 import { resolveJobNatureChoiceList } from './formFieldMasters.js'
 import { loadTimelineActors } from './timelineActors.js'
+import { attachFormFieldValueMaps, loadOrgCatalogFields } from './orgFormLayouts.js'
+import { catalogCellValue } from './csvExportColumns.js'
 import {
   agingDays,
   columnsForReport,
@@ -1159,16 +1162,50 @@ async function buildWorkRequestReport(orgId, filters) {
   const rejected = rows.filter((row) => row.status === 'rejected' || row.status === 'cancelled').length
   const open = rows.filter((row) => openStatuses.has(row.status)).length
 
-  return {
-    rows: rows.map(({
+  // Attach org-layout extras + catalog parents (Equipment Location, Equipment name, …)
+  // so report column prefs can use the same field:<uuid> ids as the WR list picker.
+  const [withFormValues, catalogFields] = await Promise.all([
+    attachFormFieldValueMaps(orgId, 'work_request.create', rows),
+    loadOrgCatalogFields(orgId).catch(() => []),
+  ])
+  const parentFields = (catalogFields || []).filter((field) => (
+    field?.id
+    && field?.name
+    && field.is_active !== false
+    && field.field_type !== 'file'
+    && field.field_type !== 'image'
+    && (!field.kind || field.kind === 'parent')
+  ))
+  const enrichedRows = withFormValues.map((row) => {
+    const equipmentValues = row._equipment_id
+      ? (valuesByEquipment.get(row._equipment_id) || {})
+      : {}
+    const fieldValues = {
+      ...(typeof row.field_values === 'object' && row.field_values && !Array.isArray(row.field_values)
+        ? row.field_values
+        : {}),
+      ...equipmentValues,
+    }
+    const withValues = { ...row, field_values: fieldValues }
+    const dynamic = {}
+    for (const field of parentFields) {
+      dynamic[`field:${field.id}`] = catalogCellValue(withValues, field)
+    }
+    const {
       _order_from_id,
       _order_to_id,
       _area_id,
       _plant_id,
       _equipment_id,
       _reported_by,
-      ...row
-    }) => row),
+      field_values: _fieldValues,
+      ...publicRow
+    } = withValues
+    return { ...publicRow, ...dynamic }
+  })
+
+  return {
+    rows: enrichedRows,
     kpis: [
       { key: 'total', label: 'Work requests', value: rows.length },
       { key: 'open', label: 'Open', value: open },
@@ -1549,7 +1586,7 @@ async function buildMeterReadingReport(orgId, filters) {
   const readings = await fetchAllPages(() => {
     let query = supabaseAdmin
       .from('equipment_meter_readings')
-      .select('id, equipment_id, reading, reading_at, logged_by, logged_by_name, logged_by_department, logged_by_designation, created_at')
+      .select('id, equipment_id, reading, reading_at, is_reset, cycle_offset, logged_by, logged_by_name, logged_by_department, logged_by_designation, created_at')
       .eq('org_id', orgId)
     if (filters.dateFrom) query = query.gte('reading_at', `${filters.dateFrom}T00:00:00.000Z`)
     if (filters.dateTo) query = query.lte('reading_at', `${filters.dateTo}T23:59:59.999Z`)
@@ -1574,6 +1611,8 @@ async function buildMeterReadingReport(orgId, filters) {
       id: row.id,
       reading_at: row.reading_at || '',
       reading: row.reading ?? '',
+      cumulative_reading: cumulativeFromOffset(row.cycle_offset, row.reading) ?? '',
+      is_reset: row.is_reset ? 'Yes' : 'No',
       equipment: equipment?.name || '',
       equipment_code: equipment?.code || '',
       area: area?.name || '',
@@ -1599,6 +1638,7 @@ async function buildMeterReadingReport(orgId, filters) {
       row.plant,
       row.logged_by,
       row.reading,
+      row.cumulative_reading,
     ].some((value) => matchesSearch(value, filters.search))
   })
 
@@ -1755,7 +1795,7 @@ async function buildEquipmentReport(orgId, filters) {
   const assets = await fetchAllPages(() => {
     let query = supabaseAdmin
       .from('equipment')
-      .select('id, name, code, location_id, area_id, department_id, reading_required, last_meter_reading, last_meter_reading_at, is_active, created_at')
+      .select('id, name, code, location_id, area_id, department_id, reading_required, last_meter_reading, meter_reading_offset, last_meter_reading_at, is_active, created_at')
       .eq('org_id', orgId)
     if (filters.locationId) query = query.eq('location_id', filters.locationId)
     if (filters.areaId) query = query.eq('area_id', filters.areaId)
@@ -1790,6 +1830,9 @@ async function buildEquipmentReport(orgId, filters) {
       equipment_tag: (roleFields.tag && values[roleFields.tag.id]) || '',
       reading_required: row.reading_required ? 'Yes' : 'No',
       last_meter_reading: row.last_meter_reading ?? '',
+      cumulative_reading: row.last_meter_reading == null
+        ? ''
+        : (cumulativeFromOffset(row.meter_reading_offset, row.last_meter_reading) ?? ''),
       last_meter_reading_at: row.last_meter_reading_at || '',
       is_active: row.is_active === false ? 'No' : 'Yes',
       created_at: row.created_at || '',

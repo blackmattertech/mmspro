@@ -1,5 +1,6 @@
 import { supabaseAdmin } from '../services/supabase.js'
 import { DEFAULT_TAGS } from './taskDefaults.js'
+import { enforceNestedCloneOrThrow, loadNestedCloneSource } from './nestedClone.js'
 
 function trimOrNull(value) {
   const text = String(value ?? '').trim()
@@ -46,6 +47,12 @@ export async function listTaskTags(orgId, { includeInactive = false } = {}) {
 export async function createTaskTag(orgId, body) {
   const name = trimOrNull(body.name)
   if (!name) throw Object.assign(new Error('Tag name is required'), { status: 400 })
+
+  await enforceNestedCloneOrThrow({
+    body,
+    kind: 'task_tag',
+    loadSource: (id) => loadNestedCloneSource({ table: 'task_tags', orgId, id }),
+  })
 
   const { data, error } = await supabaseAdmin
     .from('task_tags')

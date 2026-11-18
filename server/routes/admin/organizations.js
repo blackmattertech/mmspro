@@ -11,6 +11,10 @@ import {
   verifySuperAdminPassword,
 } from '../../lib/deleteOrganization.js'
 import {
+  listOrgResetTargets,
+  resetOrgModuleData,
+} from '../../lib/orgDataReset.js'
+import {
   PLAN_DEFAULTS,
   limitsForPlan,
   parseLimitUpdates,
@@ -508,6 +512,34 @@ router.patch('/:id', async (req, res) => {
     owner_email: ownerLoginSync?.ownerEmail || null,
     owner_email_sent: Boolean(ownerLoginSync?.emailSent),
   })
+})
+
+router.get('/:id/reset-targets', async (req, res) => {
+  try {
+    const targets = await listOrgResetTargets(req.params.id)
+    res.json({ targets })
+  } catch (err) {
+    console.error('reset-targets failed:', err?.message || err)
+    res.status(err.status || 500).json({
+      error: err.message || err.details || 'Failed to load reset targets',
+    })
+  }
+})
+
+router.post('/:id/reset-module', async (req, res) => {
+  try {
+    await verifySuperAdminPassword(req.user, req.body?.password)
+    const targetId = req.body?.targetId || req.body?.target_id
+    const result = await resetOrgModuleData(req.params.id, targetId, {
+      actor: { id: req.user?.id, role: 'super_admin' },
+    })
+    res.json({ success: true, ...result })
+  } catch (err) {
+    console.error('reset-module failed:', err?.message || err)
+    res.status(err.status || 500).json({
+      error: err.message || err.details || 'Failed to reset module data',
+    })
+  }
 })
 
 router.delete('/:id', async (req, res) => {

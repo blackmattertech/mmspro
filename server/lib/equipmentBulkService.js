@@ -13,7 +13,8 @@ import {
   applyTemplateDropdowns,
 } from './excelTemplate.js'
 
-const PLACEMENT_COLUMNS = ['Location', 'Department', 'Area']
+/** Built-in placement columns. Area is catalog-only (super-admin Asset Master field). */
+const PLACEMENT_COLUMNS = ['Location', 'Department']
 const NATIVE_COLUMNS = ['Reading required', 'Active']
 const YES_NO_VALUES = ['Yes', 'No']
 const OPTION_FIELD_TYPES = new Set(['dropdown', 'radio', 'checkbox'])
@@ -25,8 +26,16 @@ function unusedHeaders(parents, headers) {
 }
 
 /** Placement columns already represented by a super-admin parent field are omitted. */
-function extraPlacementColumns(parents) {
+export function extraPlacementColumns(parents) {
   return unusedHeaders(parents, PLACEMENT_COLUMNS)
+}
+
+export function hasCatalogAreaField(parents) {
+  return (parents || []).some((field) => (
+    field
+    && field.is_active !== false
+    && normalizeMasterName(field.name) === 'area'
+  ))
 }
 
 function extraNativeColumns(parents) {
@@ -125,7 +134,7 @@ export async function buildEquipmentTemplate(orgId, { locationId } = {}) {
   }
   pushValid('Location', locations.map((l) => l.name))
   pushValid('Department', departments.map((d) => d.name))
-  if (extraPlacementColumns(parents).includes('Area')) {
+  if (hasCatalogAreaField(parents)) {
     pushValid('Area', [...new Set(areas.map((area) => area.name).filter(Boolean))])
   }
   pushValid('Reading required', YES_NO_VALUES)
@@ -261,6 +270,21 @@ export async function bulkImportEquipment(orgId, buffer, { locationId } = {}) {
 
   const results = { created: 0, failed: 0, errors: [], preview: [] }
   const MAX_PREVIEW = 250
+  const { emitImportProgress } = await import('./importProgressContext.js')
+  let processed = 0
+  let totalRows = 0
+  for (let rowNumber = 2; rowNumber <= sheet.rowCount; rowNumber++) {
+    const row = sheet.getRow(rowNumber)
+    let hasText = false
+    for (const { colNumber } of columns) {
+      if (cellToString(row.getCell(colNumber).value)) {
+        hasText = true
+        break
+      }
+    }
+    if (hasText) totalRows += 1
+  }
+  emitImportProgress(0, totalRows)
 
   for (let rowNumber = 2; rowNumber <= sheet.rowCount; rowNumber++) {
     const row = sheet.getRow(rowNumber)
@@ -273,7 +297,9 @@ export async function bulkImportEquipment(orgId, buffer, { locationId } = {}) {
 
     try {
       const placement = resolvePlacement(cells, options)
-      const areaId = await resolveArea(orgId, cells, placement, options)
+      const areaId = hasCatalogAreaField(parents)
+        ? await resolveArea(orgId, cells, placement, options)
+        : null
       const readingRequired = parseYesNo(
         firstFilledCell(cells, 'Reading required').text,
         'Reading required',
@@ -328,6 +354,8 @@ export async function bulkImportEquipment(orgId, buffer, { locationId } = {}) {
       results.failed += 1
       results.errors.push({ row: rowNumber, message: err.message })
     }
+    processed += 1
+    emitImportProgress(processed, totalRows)
   }
 
   return results

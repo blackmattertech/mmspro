@@ -206,6 +206,40 @@
   color: var(--color-gray-blue);
 }
 
+.master-bulk-modal__progress {
+  margin-top: 12px;
+}
+
+.master-bulk-modal__progress-text {
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: var(--color-gray-blue);
+}
+
+.master-bulk-modal__progress-track {
+  height: 8px;
+  border-radius: 999px;
+  background: #e2e8f0;
+  overflow: hidden;
+}
+
+.master-bulk-modal__progress-bar {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--color-primary);
+  transition: width 0.35s ease;
+}
+
+.master-bulk-modal__progress-bar--indeterminate {
+  width: 40%;
+  animation: master-bulk-progress-slide 1.2s ease-in-out infinite;
+}
+
+@keyframes master-bulk-progress-slide {
+  0% { transform: translateX(-120%); }
+  100% { transform: translateX(320%); }
+}
+
 .master-bulk-example {
   margin-top: 10px;
   padding: 10px 12px;
@@ -387,6 +421,22 @@
   gap: 6px;
 }
 
+.company-form__field--invalid {
+  border-radius: var(--radius-sm);
+  outline: 2px solid color-mix(in srgb, var(--color-primary) 70%, white);
+  outline-offset: 4px;
+  background: color-mix(in srgb, var(--color-primary) 6%, white);
+  padding: 8px;
+  margin: -8px;
+}
+
+.company-form__field--invalid .company-form__input,
+.company-form__field--invalid .company-form__input--select,
+.company-form__field--invalid .filterable-select__input,
+.company-form__field--invalid .spellcheck-field__input {
+  border-color: var(--color-primary) !important;
+}
+
 .company-form__field--full {
   grid-column: 1 / -1;
 }
@@ -420,6 +470,12 @@
 .company-form__grid--12 .company-form__field--w-100,
 .company-form__grid--12 .company-form__field--full {
   grid-column: 1 / -1;
+}
+
+/* Photo/file panels need at least half a row or the drop zones overlap. */
+.company-form__grid--12 > .company-form__field.company-form__field--w-25:has(.ae-panel),
+.company-form__grid--12 > .company-form__field.company-form__field--w-33:has(.ae-panel) {
+  grid-column: span 6;
 }
 
 .company-form__layout-section + .company-form__layout-section {
@@ -543,6 +599,16 @@ textarea.company-form__input {
   overflow-wrap: anywhere;
   word-break: break-word;
   line-height: 1.45;
+}
+
+/* Rich text replaces plain inputs; never keep the 40px single-line height. */
+.company-form__field .rich-text-editor.company-form__input,
+.company-form__field .rich-text-editor.company-form__textarea,
+.rich-text-editor.company-form__input,
+.rich-text-editor.company-form__textarea {
+  height: auto !important;
+  min-height: 0 !important;
+  padding: 0 !important;
 }
 
 .company-form__actions {
@@ -914,6 +980,12 @@ textarea.company-form__input {
   gap: 12px;
   flex-wrap: nowrap;
   white-space: nowrap;
+}
+
+.meter-reading-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .company-table__actions .company-link {
@@ -1421,34 +1493,71 @@ textarea.company-form__input {
 .company-employee-select__menu {
   position: fixed;
   z-index: 1400;
+  display: flex;
+  flex-direction: column;
   box-sizing: border-box;
   margin: 0;
   padding: 6px;
-  list-style: none;
   background: var(--color-white);
   border: 1px solid var(--color-light-gray-2);
   border-radius: var(--radius-sm);
   box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+
+.company-employee-select__search {
+  flex-shrink: 0;
+  padding: 2px 2px 8px;
+}
+
+.company-employee-select__search-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--color-dark-navy);
+  background: var(--color-off-white, #f8fafc);
+  border: 1px solid var(--color-light-gray-2);
+  border-radius: var(--radius-sm);
+}
+
+.company-employee-select__search-input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  background: var(--color-white);
+}
+
+.company-employee-select__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
   overflow-x: hidden;
-  overflow-y: scroll;
+  overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
   scrollbar-width: auto;
   scrollbar-color: #6b7280 #eef0f4;
 }
 
-.company-employee-select__menu::-webkit-scrollbar {
+.company-employee-select__list::-webkit-scrollbar {
   width: 10px;
 }
 
-.company-employee-select__menu::-webkit-scrollbar-track {
+.company-employee-select__list::-webkit-scrollbar-track {
   background: #eef0f4;
   border-radius: 8px;
 }
 
-.company-employee-select__menu::-webkit-scrollbar-thumb {
+.company-employee-select__list::-webkit-scrollbar-thumb {
   background: #6b7280;
   border-radius: 8px;
+}
+
+.company-employee-select__empty {
+  padding: 12px 10px;
+  font-size: 13px;
+  color: var(--color-gray-blue);
 }
 
 .company-employee-select__menu .company-employee-select__name,

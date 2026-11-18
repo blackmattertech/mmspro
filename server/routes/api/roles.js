@@ -16,6 +16,7 @@ import {
 import { filterAccessGroupsByEntitlements, normalizeDisabledModules } from '../../lib/orgModules.js'
 import { getSignedUrl } from '../../lib/signedUrlCache.js'
 import { invalidatePermissionsCache } from '../../lib/requestCache.js'
+import { enforceNestedCloneOrThrow, loadNestedCloneSource } from '../../lib/nestedClone.js'
 
 const router = Router()
 
@@ -329,6 +330,31 @@ router.post('/', requireCapability('create'), async (req, res) => {
 
   if (!name?.trim()) {
     return res.status(400).json({ error: 'Role name is required' })
+  }
+
+  // Duplicate → prefilled create: copies name/description/permissions only (never employee assignments).
+  try {
+    await enforceNestedCloneOrThrow({
+      body: {
+        ...req.body,
+        permissions: permissions !== undefined ? normalizePermissionsInput(permissions) : emptyPermissions(),
+      },
+      kind: 'role',
+      loadSource: async (id) => {
+        const row = await loadNestedCloneSource({
+          table: 'org_access_roles',
+          orgId,
+          id,
+          select: 'id, name, description',
+        })
+        return { ...row, permissions: await getPermissionsForRole(row.id) }
+      },
+    })
+  } catch (cloneError) {
+    return res.status(cloneError.status || 500).json({
+      error: cloneError.message,
+      ...(cloneError.code === 'CLONE_UNCHANGED' ? { code: cloneError.code } : {}),
+    })
   }
 
   // Access roles are org-wide. Employees are limited by their own location.

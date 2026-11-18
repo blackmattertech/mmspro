@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import {
   deleteReportSchedule,
   listAllCustomReports,
@@ -14,10 +15,13 @@ import {
   scheduleFrequencyLabel,
   scheduleWindowLabel,
 } from '../../../lib/reportScheduleLabels'
+import { useOrg } from '../../../hooks/useOrg'
 import { usePermissions } from '../../../hooks/usePermissions'
 import { useConfirmDelete } from '../../../hooks/useConfirmDelete'
+import { orgPath } from '../../../config/navigation'
 import PageBreadcrumbs from '../../../components/shared/PageBreadcrumbs'
 import ReportScheduleModal from '../../../components/reports/ReportScheduleModal'
+import DuplicateRowButton from '../../../components/ui/DuplicateRowButton'
 import '../../../components/company/CompanyShared.css'
 import '../../../components/workorders/WorkOrdersPage.css'
 import '../../../components/reports/ReportsLayout.css'
@@ -32,6 +36,7 @@ function customName(row) {
 }
 
 export default function ReportSchedulesPage() {
+  const { org } = useOrg()
   const { isOrgAdmin } = usePermissions()
   const { requestDelete, deleteModal } = useConfirmDelete()
   const [schedules, setSchedules] = useState([])
@@ -43,6 +48,9 @@ export default function ReportSchedulesPage() {
   const [previewLoadingId, setPreviewLoadingId] = useState(null)
   const [sendingId, setSendingId] = useState(null)
   const [editSchedule, setEditSchedule] = useState(null)
+  const [createOpen, setCreateOpen] = useState(false)
+  const [cloneSchedule, setCloneSchedule] = useState(null)
+  const builderPath = org?.slug ? orgPath(org.slug, 'reports') : ''
 
   const reload = useCallback(async () => {
     setLoading(true)
@@ -109,11 +117,22 @@ export default function ReportSchedulesPage() {
       <header className="wo-page__top">
         <div className="wo-page__intro">
           <PageBreadcrumbs />
-          <h1 className="wo-page__title">Scheduled reports</h1>
+          <h1 className="wo-page__title">Scheduled Reports</h1>
           <p className="wo-page__subtitle">
             All report email schedules for this organization, including each custom email body (auto-formatted for sending).
           </p>
         </div>
+        {isOrgAdmin ? (
+          <div className="wo-page__actions">
+            <button
+              type="button"
+              className="company-btn company-btn--primary"
+              onClick={() => { setCloneSchedule(null); setCreateOpen(true) }}
+            >
+              New schedule
+            </button>
+          </div>
+        ) : null}
       </header>
 
       <div className="wo-page__content report-schedules-page__content">
@@ -124,7 +143,25 @@ export default function ReportSchedulesPage() {
         ) : schedules.length === 0 ? (
           <div className="company-panel report-schedules-page__empty">
             <h2>No schedules yet</h2>
-            <p>Open a report, save a custom view, then use Schedule to create one.</p>
+            <p>
+              {customReports.length
+                ? 'Create a schedule from an existing saved report.'
+                : 'Save a custom report in Report Builder first, then schedule it here.'}
+            </p>
+            {isOrgAdmin && customReports.length ? (
+              <button
+                type="button"
+                className="company-btn company-btn--primary"
+                onClick={() => { setCloneSchedule(null); setCreateOpen(true) }}
+              >
+                New schedule
+              </button>
+            ) : null}
+            {builderPath && !customReports.length ? (
+              <Link className="company-btn company-btn--secondary" to={builderPath}>
+                Open Report Builder
+              </Link>
+            ) : null}
           </div>
         ) : (
           <div className="report-schedules-page__list">
@@ -208,6 +245,10 @@ export default function ReportSchedulesPage() {
                           >
                             Edit
                           </button>
+                          <DuplicateRowButton
+                            onClick={() => { setCloneSchedule(row); setCreateOpen(true) }}
+                            label={`Duplicate schedule for ${customName(row)}`}
+                          />
                           <button
                             type="button"
                             className="company-btn company-btn--secondary company-btn--compact"
@@ -275,6 +316,20 @@ export default function ReportSchedulesPage() {
           </div>
         )}
       </div>
+
+      {createOpen ? (
+        <ReportScheduleModal
+          createOnly
+          cloneFrom={cloneSchedule}
+          customReports={customReports}
+          builderPath={builderPath}
+          onClose={async (result) => {
+            setCreateOpen(false)
+            setCloneSchedule(null)
+            if (result?.created) await reload()
+          }}
+        />
+      ) : null}
 
       {editSchedule ? (
         <ReportScheduleModal

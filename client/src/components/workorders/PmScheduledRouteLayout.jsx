@@ -1,5 +1,12 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Outlet } from 'react-router-dom'
+import StatusPhaseBar, { resolveStatusFilters } from '../shared/StatusPhaseBar'
+import {
+  WORK_ORDER_PHASES,
+  PM_PLAN_PHASES,
+  WO_STATUS_LABELS,
+} from '../../lib/statusPhases'
+import { tallyStatusCounts } from '../../lib/statusCounts'
 import { useLocations } from '../../hooks/useLocations'
 import { useEmployees } from '../../hooks/useEmployees'
 import { uniqueNameOptions } from '../../lib/tableFilters'
@@ -47,7 +54,15 @@ function PmScheduledLayoutInner() {
   const [advancedRules, setAdvancedRules] = useState([createPmPlanFilterRule()])
   const [columnFilters, setColumnFilters] = useState({})
   const [headerSort, setHeaderSort] = useState(null)
-  const [statusFilters] = useState([])
+  const [statusSelection, setStatusSelection] = useState([])
+  const [orderStatusCounts, setOrderStatusCounts] = useState([])
+  const statusFilters = useMemo(
+    () => resolveStatusFilters(statusSelection, view === 'plans' ? PM_PLAN_PHASES : WORK_ORDER_PHASES),
+    [statusSelection, view],
+  )
+  const reportStatusCounts = useCallback((rows) => {
+    setOrderStatusCounts(Array.isArray(rows) ? rows : [])
+  }, [])
   const [exporting, setExporting] = useState(false)
   const [planRows, setPlanRows] = useState([])
   const [activityTypes, setActivityTypes] = useState([])
@@ -72,6 +87,20 @@ function PmScheduledLayoutInner() {
   }, [])
 
   const isPlansView = view === 'plans'
+  const statusPhases = isPlansView ? PM_PLAN_PHASES : WORK_ORDER_PHASES
+  const planStatusCounts = useMemo(
+    () => tallyStatusCounts(planRows, (row) => row.status),
+    [planRows],
+  )
+  const statusCounts = isPlansView ? planStatusCounts : orderStatusCounts
+  const statusLabelByKey = isPlansView
+    ? { inactive: 'Inactive', active: 'Active', overdue: 'Overdue' }
+    : WO_STATUS_LABELS
+
+  useEffect(() => {
+    setStatusSelection([])
+  }, [view])
+
   const scheduleTabs = [
     { id: 'plans', label: 'PM Plans', icon: 'plans' },
     { id: 'orders', label: 'Scheduled work orders', icon: 'clipboard' },
@@ -260,7 +289,8 @@ function PmScheduledLayoutInner() {
     headerSort,
     setHeaderSort,
     statusFilters,
-  }), [view, search, locationFilter, sortBy, advancedRules, activeLocations, pmVisibleColumnIds, columnFilters, headerSort, statusFilters])
+    reportStatusCounts,
+  }), [view, search, locationFilter, sortBy, advancedRules, activeLocations, pmVisibleColumnIds, columnFilters, headerSort, statusFilters, reportStatusCounts])
 
   const exportRows = async () => {
     setExporting(true)
@@ -361,6 +391,15 @@ function PmScheduledLayoutInner() {
 
       <div className="wo-page__content">
         <div className="company-panel">
+          <StatusPhaseBar
+            counts={statusCounts}
+            phases={statusPhases}
+            selectedKeys={statusSelection}
+            onChange={setStatusSelection}
+            labelByKey={statusLabelByKey}
+            flat={isPlansView}
+            ariaLabel={isPlansView ? 'Filter PM plans by status' : 'Filter scheduled work orders by status'}
+          />
           <Outlet context={outletContext} />
         </div>
       </div>

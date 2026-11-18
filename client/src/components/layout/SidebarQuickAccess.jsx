@@ -101,144 +101,143 @@ export default function SidebarQuickAccess({
       ref={rootRef}
       className={`sidebar-quick ${collapsed ? 'sidebar-quick--collapsed' : ''}`}
     >
-      {!collapsed && (
-        <div className="sidebar-quick__header">
-          <span className="sidebar-quick__title">Quick access</span>
-          <span className="sidebar-quick__count">{pinned.length}/{max}</span>
-        </div>
-      )}
-
-      <div className="sidebar-quick__row" role="toolbar" aria-label="Quick access">
-        {pinned.map((item) => {
-          const title = shortcutTitle(item)
-          return (
-            <div
-              key={item.id}
-              className="sidebar-quick__slot"
-              onMouseEnter={() => setHoverTitle(title)}
-              onMouseLeave={() => setHoverTitle('')}
-              onFocus={() => setHoverTitle(title)}
-              onBlur={() => setHoverTitle('')}
-            >
-              <NavLink
-                to={item.path}
-                end
-                className={({ isActive }) =>
-                  `sidebar-quick__btn ${isActive ? 'sidebar-quick__btn--active' : ''}`
-                }
-                aria-label={title}
-              >
-                <NavIcon name={item.icon} />
-                {collapsed && (
-                  <span className="sidebar-quick__tooltip" aria-hidden="true">{title}</span>
-                )}
-              </NavLink>
-              <button
-                type="button"
-                className="sidebar-quick__remove"
-                aria-label={`Remove ${title} shortcut`}
-                onClick={() => remove(item.id)}
-              >
-                ×
-              </button>
-            </div>
-          )
-        })}
-
-        {canAdd && (
-          <div
-            className="sidebar-quick__slot"
-            onMouseEnter={() => setHoverTitle('Add shortcut')}
-            onMouseLeave={() => setHoverTitle('')}
-            onFocus={() => setHoverTitle('Add shortcut')}
-            onBlur={() => setHoverTitle('')}
-          >
-            <button
-              type="button"
-              className={`sidebar-quick__btn sidebar-quick__btn--add ${pickerOpen ? 'sidebar-quick__btn--open' : ''}`}
-              aria-label="Add shortcut"
-              aria-expanded={pickerOpen}
-              onClick={() => {
-                if (pickerOpen) closePicker()
-                else {
-                  setMenuStack([])
-                  setPickerOpen(true)
-                }
-              }}
-            >
-              <NavIcon name="addSquare" />
-              {collapsed && (
-                <span className="sidebar-quick__tooltip" aria-hidden="true">Add shortcut</span>
-              )}
-            </button>
-          </div>
+      <button
+        type="button"
+        className={`sidebar-quick__trigger ${pickerOpen ? 'sidebar-quick__trigger--open' : ''}`}
+        aria-label="Quick access"
+        aria-haspopup="dialog"
+        aria-expanded={pickerOpen}
+        aria-controls="sidebar-quick-panel"
+        onClick={() => {
+          if (pickerOpen) closePicker()
+          else {
+            setMenuStack([])
+            setPickerOpen(true)
+          }
+        }}
+      >
+        <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+          <path d="M8 3.25v9.5M3.25 8h9.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+        </svg>
+        {collapsed && (
+          <span className="sidebar__tooltip" aria-hidden="true">Quick access</span>
         )}
-      </div>
-
-      {!collapsed && (
-        <div
-          className={`sidebar-quick__label ${hoverTitle ? 'sidebar-quick__label--visible' : ''}`}
-          aria-live="polite"
-        >
-          {hoverTitle || '\u00A0'}
-        </div>
-      )}
+      </button>
 
       {pickerOpen && (
-        <div className="sidebar-quick__picker" role="dialog" aria-label="Add shortcut">
-          <div className="sidebar-quick__picker-head">
-            {activeParent ? (
-              <button
-                type="button"
-                className="sidebar-quick__picker-back"
-                onClick={() => setMenuStack((stack) => stack.slice(0, -1))}
-                aria-label={`Back to ${menuStack.length > 1 ? menuStack[menuStack.length - 2].label : 'menu'}`}
-              >
-                <NavIcon name="chevron" />
-                <span>{activeParent.label}</span>
-              </button>
-            ) : (
-              <span>Add shortcut</span>
-            )}
-            {!canAdd && <span className="sidebar-quick__picker-hint">Limit reached</span>}
+        <div
+          id="sidebar-quick-panel"
+          className="sidebar-quick__panel"
+          role="dialog"
+          aria-label="Quick access"
+        >
+          <div className="sidebar-quick__header">
+            <span className="sidebar-quick__title">Quick access</span>
+            <span className="sidebar-quick__count">{pinned.length}/{max}</span>
           </div>
-          {visibleItems.length === 0 ? (
-            <p className="sidebar-quick__picker-empty">
-              {canAdd ? 'No more pages to pin.' : 'Remove a shortcut to add another.'}
-            </p>
-          ) : (
-            <ul className="sidebar-quick__picker-list">
-              {visibleItems.map((option) => {
-                const isFolder = Boolean(option.children?.length)
+
+          {pinned.length > 0 && (
+            <div className="sidebar-quick__row" role="toolbar" aria-label="Pinned shortcuts">
+              {pinned.map((item) => {
+                const title = shortcutTitle(item)
                 return (
-                  <li key={option.id}>
+                  <div
+                    key={item.id}
+                    className="sidebar-quick__slot"
+                    onMouseEnter={() => setHoverTitle(title)}
+                    onMouseLeave={() => setHoverTitle('')}
+                    onFocus={() => setHoverTitle(title)}
+                    onBlur={() => setHoverTitle('')}
+                  >
+                    <NavLink
+                      to={item.path}
+                      end
+                      className={({ isActive }) =>
+                        `sidebar-quick__btn ${isActive ? 'sidebar-quick__btn--active' : ''}`
+                      }
+                      aria-label={title}
+                      onClick={closePicker}
+                    >
+                      <NavIcon name={item.icon} />
+                    </NavLink>
                     <button
                       type="button"
-                      className={`sidebar-quick__picker-item ${isFolder ? 'sidebar-quick__picker-item--folder' : ''}`}
-                      onClick={() => {
-                        if (isFolder) {
-                          setMenuStack((stack) => [...stack, option])
-                          return
-                        }
-                        add(option.id)
-                        closePicker()
-                      }}
+                      className="sidebar-quick__remove"
+                      aria-label={`Remove ${title} shortcut`}
+                      onClick={() => remove(item.id)}
                     >
-                      <NavIcon name={option.icon} />
-                      <span className="sidebar-quick__picker-label">
-                        <span>{option.label}</span>
-                      </span>
-                      {isFolder && (
-                        <span className="sidebar-quick__picker-chevron" aria-hidden="true">
-                          <NavIcon name="chevron" />
-                        </span>
-                      )}
+                      ×
                     </button>
-                  </li>
+                  </div>
                 )
               })}
-            </ul>
+            </div>
           )}
+
+          {pinned.length > 0 && (
+            <div
+              className={`sidebar-quick__label ${hoverTitle ? 'sidebar-quick__label--visible' : ''}`}
+              aria-live="polite"
+            >
+              {hoverTitle || '\u00A0'}
+            </div>
+          )}
+
+          <div className="sidebar-quick__picker">
+            <div className="sidebar-quick__picker-head">
+              {activeParent ? (
+                <button
+                  type="button"
+                  className="sidebar-quick__picker-back"
+                  onClick={() => setMenuStack((stack) => stack.slice(0, -1))}
+                  aria-label={`Back to ${menuStack.length > 1 ? menuStack[menuStack.length - 2].label : 'menu'}`}
+                >
+                  <NavIcon name="chevron" />
+                  <span>{activeParent.label}</span>
+                </button>
+              ) : (
+                <span>Add shortcut</span>
+              )}
+              {!canAdd && <span className="sidebar-quick__picker-hint">Limit reached</span>}
+            </div>
+            {visibleItems.length === 0 ? (
+              <p className="sidebar-quick__picker-empty">
+                {canAdd ? 'No more pages to pin.' : 'Remove a shortcut to add another.'}
+              </p>
+            ) : (
+              <ul className="sidebar-quick__picker-list">
+                {visibleItems.map((option) => {
+                  const isFolder = Boolean(option.children?.length)
+                  return (
+                    <li key={option.id}>
+                      <button
+                        type="button"
+                        className={`sidebar-quick__picker-item ${isFolder ? 'sidebar-quick__picker-item--folder' : ''}`}
+                        onClick={() => {
+                          if (isFolder) {
+                            setMenuStack((stack) => [...stack, option])
+                            return
+                          }
+                          add(option.id)
+                          closePicker()
+                        }}
+                      >
+                        <NavIcon name={option.icon} />
+                        <span className="sidebar-quick__picker-label">
+                          <span>{option.label}</span>
+                        </span>
+                        {isFolder && (
+                          <span className="sidebar-quick__picker-chevron" aria-hidden="true">
+                            <NavIcon name="chevron" />
+                          </span>
+                        )}
+                      </button>
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
+          </div>
         </div>
       )}
     </div>

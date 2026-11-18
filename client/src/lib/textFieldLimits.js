@@ -6,6 +6,7 @@ export const MASTER_TEXT_FIELD_LIMITS = {
   name: 100,
   title: 100,
   code: 40,
+  category: 100,
   description: 500,
   address_line1: 200,
   address_line2: 200,
@@ -43,7 +44,23 @@ export const TEXT_FIELD_LIMIT_LABELS = {
 export function characterLimitError(value, maxLength) {
   const limit = Number(maxLength)
   if (!Number.isFinite(limit) || limit <= 0) return null
-  if (String(value ?? '').length <= limit) return null
+  const raw = String(value ?? '')
+  // Rich-text HTML must count visible characters, not markup.
+  const length = /<\/?[a-z][\s\S]*>/i.test(raw)
+    ? raw
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<\/(p|li|div|h[1-6])>/gi, '\n')
+      .replace(/<[^>]+>/g, '')
+      .replace(/&nbsp;/gi, ' ')
+      .replace(/&amp;/gi, '&')
+      .replace(/&lt;/gi, '<')
+      .replace(/&gt;/gi, '>')
+      .replace(/&quot;/gi, '"')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .length
+    : raw.length
+  if (length <= limit) return null
   return 'Character exceeds'
 }
 
@@ -116,7 +133,7 @@ const LABEL_LIMIT_RULES = [
   [/short description/, 'short_description'],
   [/problem description/, 'problem_description'],
   [/detailed description/, 'problem_description'],
-  [/\bremarks\b/, 'remarks'],
+  [/\bremarks?\b/, 'remarks'],
   [/\bdo s\b|\bdonts\b|\bdon ts\b/, 'dos_and_donts'],
   [/^address line 1$/, 'address_line1'],
   [/^address line 2$/, 'address_line2'],
@@ -158,6 +175,32 @@ export function limitKeyFromField(fieldOrName) {
     if (key) return key
   }
   return null
+}
+
+/** Long-form module fields that should use TipTap, even if Form Builder saved them as text. */
+const RICH_TEXT_LIMIT_KEYS = new Set([
+  'problem_description',
+  'remarks',
+  'job_description',
+  'root_cause',
+  'action_taken',
+  'special_tools_used',
+  'safety_precautions',
+  'lessons_learned',
+  'dos_and_donts',
+  'material_consumed',
+])
+
+/**
+ * Whether a catalog/layout field should render as rich text.
+ * Org layouts sometimes store description/remarks as `text`; those still need TipTap.
+ */
+export function isRichTextFormField(field, fieldType) {
+  const type = String(fieldType || field?.field_type || field?.fieldType || '').toLowerCase()
+  if (type === 'textarea') return true
+  const key = limitKeyFromField(field)
+  if (!key || key === 'short_description') return false
+  return RICH_TEXT_LIMIT_KEYS.has(key)
 }
 
 export function limitsFromFields(fields) {

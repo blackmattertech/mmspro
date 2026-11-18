@@ -16,7 +16,7 @@ const ORG_ASSETS_BUCKET = 'org-assets'
 const EQUIPMENT_SELECT = `
   id, org_id, location_id, department_id, area_id,
   name, code, qr_code, image_path, is_active, reading_required,
-  last_meter_reading, last_meter_reading_at, last_meter_logged_by, last_meter_logged_by_name,
+  last_meter_reading, last_meter_reading_at, meter_reading_offset, last_meter_logged_by, last_meter_logged_by_name,
   last_meter_logged_by_department, last_meter_logged_by_designation,
   created_at, updated_at,
   org_locations(id, name, code),
@@ -80,7 +80,7 @@ export function hierarchyParentFields(fields) {
  * The stored name is the first filled level. The stored code is the last
  * filled level. Neither depends on the field being named name, code, or area.
  */
-function deriveEquipmentIdentity(fields, valuesInput) {
+export function deriveEquipmentIdentity(fields, valuesInput) {
   const parents = hierarchyParentFields(fields)
   const valueByField = new Map()
   for (const item of valuesInput || []) {
@@ -887,4 +887,4 @@ export async function ensureEquipmentQrCodes(orgId, rows) {
   return rows
 }
 
-export { orderedParentFields, deriveEquipmentIdentity }
+export { orderedParentFields }

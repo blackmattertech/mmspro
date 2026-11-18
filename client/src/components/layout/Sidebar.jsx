@@ -3,12 +3,10 @@ import { NavLink, useLocation } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
 import { useOrg } from '../../hooks/useOrg'
 import { usePermissions } from '../../hooks/usePermissions'
-import { useReportNavShortcuts } from '../../hooks/useReportNavShortcuts'
 import { getNavItems, getShortcutOptions } from '../../config/navigation'
 import { orgQuickAccessScope } from '../../hooks/useQuickAccess'
 import { formatAccountRole } from '../../lib/accountRoles'
 import { assetUrl } from '../../lib/assets'
-import { REPORT_MODULE_KEYS } from '../../lib/accessModules'
 import NavIcon from './NavIcon'
 import SidebarUserFooter from './SidebarUserFooter'
 import SidebarQuickAccess from './SidebarQuickAccess'
@@ -29,15 +27,10 @@ export default function Sidebar({ collapsed = false, onToggle, mobileOpen = fals
   const { org, orgRole } = useOrg()
   const { canRead, loading: permsLoading, accessRole, isOrgAdmin } = usePermissions()
   const location = useLocation()
-  const canReadReports = !permsLoading && (
-    canRead('reports') || REPORT_MODULE_KEYS.some((key) => canRead(key))
-  )
-  const reportShortcuts = useReportNavShortcuts({ enabled: Boolean(org) && canReadReports })
   const navItems = org && !permsLoading
     ? getNavItems(org.slug, {
       canRead,
       disabledModules: org.disabled_modules,
-      reportShortcuts,
     })
     : []
   const quickAccessScope = org ? orgQuickAccessScope(org.id) : null
@@ -56,10 +49,9 @@ export default function Sidebar({ collapsed = false, onToggle, mobileOpen = fals
     const items = getNavItems(org.slug, {
       canRead,
       disabledModules: org.disabled_modules,
-      reportShortcuts,
     })
     setOpenMenu(findActiveParentId(items, location.pathname))
-  }, [location.pathname, org, canRead, permsLoading, reportShortcuts])
+  }, [location.pathname, org, canRead, permsLoading])
 
   const toggleMenu = (id) => {
     if (visualCollapsed) return
@@ -89,27 +81,37 @@ export default function Sidebar({ collapsed = false, onToggle, mobileOpen = fals
             <span className="sidebar__brand-tag">Maintenance Solution</span>
           </div>
         )}
-        <button
-          type="button"
-          className="sidebar__toggle sidebar__toggle--collapse"
-          onClick={onToggle}
-          aria-label={visualCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-        >
-          <NavIcon name={visualCollapsed ? 'sidebarExpand' : 'sidebarCollapse'} />
-          {visualCollapsed && (
-            <span className="sidebar__tooltip" aria-hidden="true">Expand sidebar</span>
-          )}
-        </button>
-        {onMobileClose && (
+        <div className="sidebar__brand-actions">
           <button
             type="button"
-            className="sidebar__toggle sidebar__toggle--close"
-            onClick={onMobileClose}
-            aria-label="Close navigation"
+            className="sidebar__toggle sidebar__toggle--collapse"
+            onClick={onToggle}
+            aria-label={visualCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           >
-            <NavIcon name="close" />
+            <NavIcon name={visualCollapsed ? 'sidebarExpand' : 'sidebarCollapse'} />
+            {visualCollapsed && (
+              <span className="sidebar__tooltip" aria-hidden="true">Expand sidebar</span>
+            )}
           </button>
-        )}
+          {org && (
+            <SidebarQuickAccess
+              collapsed={visualCollapsed}
+              scope={quickAccessScope}
+              options={quickAccessOptions}
+              catalog={shortcutCatalog}
+            />
+          )}
+          {onMobileClose && (
+            <button
+              type="button"
+              className="sidebar__toggle sidebar__toggle--close"
+              onClick={onMobileClose}
+              aria-label="Close navigation"
+            >
+              <NavIcon name="close" />
+            </button>
+          )}
+        </div>
       </div>
 
       <nav className="sidebar__nav">
@@ -187,9 +189,12 @@ export default function Sidebar({ collapsed = false, onToggle, mobileOpen = fals
                         key={child.path}
                         to={child.path}
                         end
-                        className={({ isActive }) =>
-                          `sidebar__flyout-link ${isActive ? 'sidebar__flyout-link--active' : ''}`
-                        }
+                        className={({ isActive }) => {
+                          const active = child.isPathActive
+                            ? child.isPathActive(location.pathname)
+                            : isActive
+                          return `sidebar__flyout-link ${active ? 'sidebar__flyout-link--active' : ''}`
+                        }}
                       >
                         {child.icon && <NavIcon name={child.icon} />}
                         {child.label}
@@ -204,9 +209,12 @@ export default function Sidebar({ collapsed = false, onToggle, mobileOpen = fals
                           key={child.path}
                           to={child.path}
                           end
-                          className={({ isActive }) =>
-                            `sidebar__sublink ${isActive ? 'sidebar__sublink--active' : ''}`
-                          }
+                          className={({ isActive }) => {
+                            const active = child.isPathActive
+                              ? child.isPathActive(location.pathname)
+                              : isActive
+                            return `sidebar__sublink ${active ? 'sidebar__sublink--active' : ''}`
+                          }}
                         >
                           {child.icon && <NavIcon name={child.icon} />}
                           <span>{child.label}</span>
@@ -241,14 +249,6 @@ export default function Sidebar({ collapsed = false, onToggle, mobileOpen = fals
       </nav>
 
       <div className="sidebar__footer">
-        {org && (
-          <SidebarQuickAccess
-            collapsed={visualCollapsed}
-            scope={quickAccessScope}
-            options={quickAccessOptions}
-            catalog={shortcutCatalog}
-          />
-        )}
         <SidebarUserFooter
           collapsed={visualCollapsed}
           roleLabel={roleLabel}

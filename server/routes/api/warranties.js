@@ -19,8 +19,8 @@ import {
   buildWarrantiesTemplate,
   bulkImportWarranties,
 } from '../../lib/warrantyBulkService.js'
-import { attachFailedFileToResult } from '../../lib/importErrorWorkbook.js'
 import { bufferFromBase64Upload, excelFilePayload } from '../../lib/excelTemplate.js'
+import { enqueueOrRunBulkImport, sendBulkImportResponse, wantsSyncImport } from '../../lib/bulkImportEnqueue.js'
 import { parseListControls, sendCsv } from '../../lib/listQuery.js'
 
 const router = Router()
@@ -99,12 +99,22 @@ router.post('/import', canCreate, async (req, res) => {
   try {
     const buffer = bufferFromBase64Upload(req.body?.data)
     const dryRun = req.body?.dry_run === true
-    const result = await bulkImportWarranties(req.userProfile.org_id, buffer, { dryRun })
+    // Preview stays synchronous for the confirm UX
     if (dryRun) {
+      const result = await bulkImportWarranties(req.userProfile.org_id, buffer, { dryRun: true })
       res.json(result)
       return
     }
-    res.json(await attachFailedFileToResult(result, buffer, 'warranties-import-failed-rows.xlsx'))
+    const outcome = await enqueueOrRunBulkImport({
+      orgId: req.userProfile.org_id,
+      userId: req.userProfile.id,
+      templateKey: 'warranties',
+      fileName: 'warranties.xlsx',
+      buffer,
+      context: { dryRun: false },
+      forceSync: wantsSyncImport(req),
+    })
+    sendBulkImportResponse(res, outcome)
   } catch (err) {
     res.status(err.status || 400).json({ error: err.message })
   }

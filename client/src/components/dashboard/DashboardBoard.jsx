@@ -730,7 +730,7 @@ export default function DashboardBoard({
       ) : null}
 
       {show('work_orders') ? (
-        <Panel title="Work Orders" tone="green" icon="document" to={pathFor('work-orders/received')} className="board-panel--split">
+        <Panel title="Work Orders" tone="green" icon="document" to={pathFor('work-orders/all')} className="board-panel--split">
           <div className="split-panel">
             <MiniStats items={[
               { label: 'Total', value: moduleKpi(modules, 'work_orders', 'total'), tone: 'blue', icon: 'document' },
@@ -899,7 +899,7 @@ export default function DashboardBoard({
             </Panel>
           ) : null}
           {show('work_orders') ? (
-            <Panel title="Overdue Work Orders" tone="red" icon="alert" to={pathFor('work-orders/received')}>
+            <Panel title="Overdue Work Orders" tone="red" icon="alert" to={pathFor('work-orders/all')}>
               <div className="dash-table-wrap">
                 <table className="board-table">
                   <thead>

@@ -10,6 +10,7 @@ import orgAssetFieldsRoutes from './orgAssetFields.js'
 import orgEquipmentFieldsRoutes from './orgEquipmentFields.js'
 import orgFormLayoutsRoutes from './orgFormLayouts.js'
 import defaultsRoutes from './defaults.js'
+import supportTicketRoutes from './supportTickets.js'
 import { loadSubscriptionDashboard, scheduleSubscriptionSync } from '../../lib/platformSubscriptions.js'
 import { getSignedUrls } from '../../lib/signedUrlCache.js'
 
@@ -180,6 +181,7 @@ router.use('/organizations/:orgId/asset-fields', orgAssetFieldsRoutes)
 router.use('/organizations/:orgId/equipment-fields', orgEquipmentFieldsRoutes)
 router.use('/organizations/:orgId/form-layouts', orgFormLayoutsRoutes)
 router.use('/organizations', organizationRoutes)
+router.use('/support', supportTicketRoutes)
 
 router.get('/users', async (req, res) => {
   const { limit, offset } = parsePagination(req.query)

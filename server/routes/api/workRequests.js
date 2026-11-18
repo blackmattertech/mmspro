@@ -21,17 +21,16 @@ import {
   requestMoreInfo,
   replyToWorkRequest,
   saveWorkRequestChecklist,
+  submitWorkRequestDraft,
+  updateWorkRequestDraft,
   listEquipmentForDepartment,
   listEquipmentCatalogForDepartment,
   getEmployeeByProfile,
 } from '../../lib/workRequestService.js'
 import { canViewAssociatedWorkRecord, getScopedLocationId } from '../../lib/orgPermissions.js'
-import {
-  buildWorkRequestsTemplate,
-  bulkImportWorkRequests,
-} from '../../lib/workRequestBulkService.js'
-import { attachFailedFileToResult } from '../../lib/importErrorWorkbook.js'
+import { buildWorkRequestsTemplate } from '../../lib/workRequestBulkService.js'
 import { bufferFromBase64Upload, excelFilePayload } from '../../lib/excelTemplate.js'
+import { enqueueOrRunBulkImport, sendBulkImportResponse, wantsSyncImport } from '../../lib/bulkImportEnqueue.js'
 import { parseListControls, sendCsv } from '../../lib/listQuery.js'
 import { withCatalogColumns } from '../../lib/csvExportColumns.js'
 
@@ -81,6 +80,7 @@ async function loadAccessibleWorkRequest(req) {
   assertWorkRequestAccessible(row, {
     profileId: req.userProfile.id,
     locationId: scopedLocationId(req),
+    isOrgAdmin: Boolean(req.orgPermissions?.is_org_admin),
   })
   return row
 }
@@ -172,14 +172,20 @@ router.get('/template', canCreate, async (req, res) => {
 router.post('/import', canCreate, async (req, res) => {
   try {
     const buffer = bufferFromBase64Upload(req.body?.data)
-    const result = await bulkImportWorkRequests(
-      req.userProfile.org_id,
-      req.userProfile.id,
-      req.userProfile.email,
+    const outcome = await enqueueOrRunBulkImport({
+      orgId: req.userProfile.org_id,
+      userId: req.userProfile.id,
+      templateKey: 'work_requests',
+      fileName: 'work-requests.xlsx',
       buffer,
-      { isOrgAdmin: canCreateWorkRequestWithoutEmployeeDepartment(req.orgPermissions) },
-    )
-    res.json(await attachFailedFileToResult(result, buffer, 'work-requests-import-failed-rows.xlsx'))
+      context: {
+        profileId: req.userProfile.id,
+        email: req.userProfile.email,
+        isOrgAdmin: canCreateWorkRequestWithoutEmployeeDepartment(req.orgPermissions),
+      },
+      forceSync: wantsSyncImport(req),
+    })
+    sendBulkImportResponse(res, outcome)
   } catch (err) {
     sendError(res, err)
   }
@@ -226,6 +232,7 @@ router.get('/tab-counts', async (req, res) => {
       profileId: req.userProfile.id,
       departmentId: employee?.department_id || null,
       locationId: getScopedLocationId(req.orgPermissions),
+      isOrgAdmin: Boolean(req.orgPermissions?.is_org_admin),
     })
     res.json(counts)
   } catch (err) {
@@ -267,6 +274,7 @@ router.get('/', async (req, res, next) => {
       profileId: req.userProfile.id,
       departmentId: employee?.department_id || null,
       locationId: scopedLocationId(req),
+      isOrgAdmin: Boolean(req.orgPermissions?.is_org_admin),
       search: req.query.search || null,
       limit: controls.exportCsv ? 5000 : Math.max(1, Math.min(200, Number(req.query.limit) || 50)),
       offset: controls.exportCsv ? 0 : Math.max(0, Number(req.query.offset) || 0),
@@ -314,14 +322,24 @@ router.patch('/:id/checklist', canReadAny, async (req, res) => {
 router.get('/:id', requireWorkRecordView, async (req, res) => {
   try {
     const row = await getWorkRequestById(req.userProfile.org_id, req.params.id)
-    assertWorkRequestAccessible(row, { profileId: req.userProfile.id, locationId: null })
+    assertWorkRequestAccessible(row, {
+      profileId: req.userProfile.id,
+      locationId: null,
+      isOrgAdmin: Boolean(req.orgPermissions?.is_org_admin),
+    })
     const assignmentOptions = await loadWorkRequestAssignmentOptions(req.userProfile.org_id)
+    const canEditDraft = row.status === 'draft' && (
+      row.requested_by === req.userProfile.id
+      || Boolean(req.orgPermissions?.is_org_admin)
+    )
     res.json({
       ...row,
       can_reply: row.status === 'need_info' && (
         row.requested_by === req.userProfile.id
         || Boolean(req.orgPermissions?.is_org_admin)
       ),
+      can_edit_draft: canEditDraft,
+      can_submit_draft: canEditDraft,
       work_center_options: assignmentOptions.work_centers,
       priority_options: assignmentOptions.priorities,
     })
@@ -392,6 +410,49 @@ router.post('/:id/reply', canReadAny, async (req, res) => {
     res.json({
       ...result,
       can_reply: false,
+    })
+  } catch (err) {
+    sendError(res, err)
+  }
+})
+
+router.patch('/:id', canCreate, async (req, res) => {
+  const orgId = req.userProfile.org_id
+  try {
+    await loadAccessibleWorkRequest(req)
+    const result = await updateWorkRequestDraft(
+      orgId,
+      req.userProfile.id,
+      req.userProfile.email,
+      req.params.id,
+      req.body || {},
+      { isOrgAdmin: canCreateWorkRequestWithoutEmployeeDepartment(req.orgPermissions) },
+    )
+    res.json({
+      ...result,
+      can_edit_draft: result.status === 'draft',
+      can_submit_draft: result.status === 'draft',
+    })
+  } catch (err) {
+    sendError(res, err)
+  }
+})
+
+router.post('/:id/submit', canCreate, async (req, res) => {
+  const orgId = req.userProfile.org_id
+  try {
+    await loadAccessibleWorkRequest(req)
+    const result = await submitWorkRequestDraft(
+      orgId,
+      req.userProfile.id,
+      req.userProfile.email,
+      req.params.id,
+      { isOrgAdmin: canCreateWorkRequestWithoutEmployeeDepartment(req.orgPermissions) },
+    )
+    res.json({
+      ...result,
+      can_edit_draft: false,
+      can_submit_draft: false,
     })
   } catch (err) {
     sendError(res, err)

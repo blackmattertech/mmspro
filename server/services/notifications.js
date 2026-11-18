@@ -1,6 +1,7 @@
 import { getFirebaseMessaging, isFirebaseAdminConfigured } from './firebase.js'
 import { supabaseAdmin } from './supabase.js'
 import { runInBackground } from '../lib/jobQueue.js'
+import { enqueueNotifyUsersJob } from '../lib/queues.js'
 import { getPublicAppUrl } from '../lib/appUrl.js'
 import { fallbackInboxUrl, resolveInboxUrl } from '../lib/notificationInboxUrl.js'
 import { loadTimelineActors } from '../lib/timelineActors.js'
@@ -453,11 +454,24 @@ export const notifyUser = async (userId, { title, body, data = {}, url = '/' }) 
   return saved
 }
 
+/** Deliver notifications immediately (used by workers / sync fallback). */
+export async function deliverNotifyUsers(userIds, payload) {
+  const ids = [...new Set((userIds || []).filter(Boolean))]
+  if (!ids.length) return
+  await Promise.all(ids.map((id) => notifyUser(id, payload)))
+}
+
 export async function notifyUsers(userIds, payload) {
   const ids = [...new Set((userIds || []).filter(Boolean))]
   if (!ids.length) return
+  try {
+    const job = await enqueueNotifyUsersJob({ userIds: ids, payload })
+    if (job) return
+  } catch (err) {
+    console.warn('[notifications] BullMQ enqueue failed — in-process fallback:', err.message)
+  }
   runInBackground(async () => {
-    await Promise.all(ids.map((id) => notifyUser(id, payload)))
+    await deliverNotifyUsers(ids, payload)
   })
 }
 

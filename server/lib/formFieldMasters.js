@@ -210,6 +210,11 @@ export async function applyCompanyOptionsToLayout(orgId, formId, layout, extra =
     ? extra.jobNatureField
     : (formId === JOB_NATURE_FORM_ID ? await resolveJobNatureField(orgId) : null)
   const catalogById = extra.catalogById || new Map()
+  const workCenterChoice = extra.workCenterChoice !== undefined
+    ? extra.workCenterChoice
+    : (formUsesWorkCenterList(formDef)
+      ? await resolveWorkCenterChoiceList(orgId, overlays, formId)
+      : null)
   const next = cloneLayout(layout)
   for (const field of next.fields || []) {
     const meta = describeConfigurableField(field, formDef, catalogById)
@@ -220,7 +225,15 @@ export async function applyCompanyOptionsToLayout(orgId, formId, layout, extra =
       catalogById,
       jobNatureField,
     })
-    if (resolved.options.length) field.options = resolved.options
+    let options = resolved.options
+    if (
+      meta.systemKey === 'work_center'
+      && !options.length
+      && workCenterChoice?.options?.length
+    ) {
+      options = workCenterChoice.options
+    }
+    if (options.length) field.options = options
   }
   return next
 }

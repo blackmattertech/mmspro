@@ -623,6 +623,42 @@
   color: var(--color-gray-blue);
 }
 
+.wo-field-upload__chip-ext {
+  flex-shrink: 0;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  background: var(--color-soft-gray, #eef1f6);
+  color: var(--color-gray-blue, #6b7a90);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.wo-field-upload__attach-icon {
+  flex-shrink: 0;
+  color: var(--color-gray-blue, #6b7a90);
+}
+
+.wo-field-upload__chip-preview--file {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 2px 4px;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+}
+
+.wo-field-upload__chip-preview--file:disabled {
+  cursor: default;
+}
+
 .wo-field-upload__chip-name {
   font-size: 12px;
   font-weight: 500;
@@ -1344,9 +1380,10 @@
 .wo-status-actions__progress {
   width: 40%;
   max-width: 100%;
-  margin-top: 12px;
-  padding-top: 12px;
-  border-top: 1px solid var(--color-light-gray-1);
+  margin-top: 4px;
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--color-light-gray-1);
 }
 
 @media (max-width: 720px) {
@@ -2297,4 +2334,41 @@
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+
+.wo-manual-form__steps {
+  margin: 0 0 4px;
+}
+
+.wo-manual-form__step {
+  padding: 0;
+  border: none;
+  background: none;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.wo-manual-form__step:disabled {
+  cursor: default;
+}
+
+.wo-manual-form__actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 8px;
+  padding-top: 8px;
+}
+
+@media (max-width: 720px) {
+  .wo-manual-form__steps {
+    overflow-x: auto;
+    flex-wrap: nowrap;
+  }
+
+  .wo-manual-form__step {
+    flex: 0 0 auto;
+  }
 }

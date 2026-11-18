@@ -22,7 +22,8 @@ const WorkOrdersRouteLayout = lazyPage(() => import('./components/workorders/Wor
 const PmScheduledRouteLayout = lazyPage(() => import('./components/workorders/PmScheduledRouteLayout'))
 const ManualWorkOrders = lazyPage(() => import('./pages/app/ManualWorkOrders'))
 const ManualWorkOrderCreate = lazyPage(() => import('./pages/app/ManualWorkOrderCreate'))
-const ReceivedWorkOrders = lazyPage(() => import('./pages/app/ReceivedWorkOrders'))
+const AllWorkOrders = lazyPage(() => import('./pages/app/AllWorkOrders'))
+const UnassignedWorkOrders = lazyPage(() => import('./pages/app/UnassignedWorkOrders'))
 const AssignedWorkOrders = lazyPage(() => import('./pages/app/AssignedWorkOrders'))
 const ScheduledWorkOrders = lazyPage(() => import('./pages/app/ScheduledWorkOrders'))
 const PlaceholderPage = lazyPage(() => import('./pages/app/PlaceholderPage'))
@@ -30,6 +31,7 @@ const OrgSettings = lazyPage(() => import('./pages/app/OrgSettings'))
 const Approvals = lazyPage(() => import('./pages/app/Approvals'))
 const ReportPage = lazyPage(() => import('./pages/app/reports/ReportPage'))
 const ReportSchedulesPage = lazyPage(() => import('./pages/app/reports/ReportSchedulesPage'))
+const ReportReadyPage = lazyPage(() => import('./pages/app/reports/ReportReadyPage'))
 const TasksRouteLayout = lazyPage(() => import('./components/tasks/TasksRouteLayout'))
 const TasksManager = lazyPage(() => import('./pages/app/TasksManager'))
 const TaskDetailPage = lazyPage(() => import('./pages/app/TaskDetailPage'))
@@ -65,6 +67,11 @@ const AdminIntegrations = lazyPage(() => import('./pages/admin/Integrations'))
 const AdminPlans = lazyPage(() => import('./pages/admin/Plans'))
 const AdminReports = lazyPage(() => import('./pages/admin/Reports'))
 const AdminDefaults = lazyPage(() => import('./pages/admin/Defaults'))
+const SupportCenter = lazyPage(() => import('./pages/app/SupportCenter'))
+const SupportTicketDetail = lazyPage(() => import('./pages/app/SupportTicketDetail'))
+const SupportManagement = lazyPage(() => import('./pages/admin/SupportManagement'))
+const AdminSupportTicketDetail = lazyPage(() => import('./pages/admin/AdminSupportTicketDetail'))
+const SupportSla = lazyPage(() => import('./pages/admin/SupportSla'))
 
 const masterRoutes = ['order', 'activity']
 const companyPageModules = ['company', 'locations', 'departments', 'employees']
@@ -129,6 +136,9 @@ export default function App() {
               <Route path="plans" element={withSuspense(<AdminPlans />)} />
               <Route path="reports" element={withSuspense(<AdminReports />)} />
               <Route path="default" element={withSuspense(<AdminDefaults />)} />
+              <Route path="support" element={withSuspense(<SupportManagement />)} />
+              <Route path="support/sla" element={withSuspense(<SupportSla />)} />
+              <Route path="support/:ticketId" element={withSuspense(<AdminSupportTicketDetail />)} />
             </Route>
 
             <Route path="/:orgSlug" element={<OrgRoute>{withSuspense(<AppLayout />)}</OrgRoute>}>
@@ -141,6 +151,7 @@ export default function App() {
               >
                 <Route index element={<Navigate to="incoming" replace />} />
                 <Route path="create" element={withSuspense(<WorkRequestCreate />)} />
+                <Route path=":requestId/edit" element={withSuspense(<WorkRequestCreate />)} />
                 <Route
                   path="my"
                   element={withSuspense(
@@ -204,6 +215,8 @@ export default function App() {
                 <Route path=":taskId/edit" element={withSuspense(<TaskFormPage />)} />
                 <Route path=":taskId" element={withSuspense(<TaskDetailPage />)} />
               </Route>
+              <Route path="support" element={withModule('support_tickets', <SupportCenter />)} />
+              <Route path="support/:ticketId" element={withModule('support_tickets', <SupportTicketDetail />)} />
               <Route path="masters" element={withModule(MASTER_HUB_MODULE_KEYS, <Masters />)} />
               <Route
                 path="masters/forms/status/:entityType"
@@ -252,8 +265,10 @@ export default function App() {
                 <Route index element={withSuspense(<ScheduledWorkOrders />)} />
               </Route>
               <Route path="work-orders" element={withModule(workOrderModules, <WorkOrdersRouteLayout />)}>
-                <Route index element={<Navigate to="received" replace />} />
-                <Route path="received" element={withSuspense(<ReceivedWorkOrders />)} />
+                <Route index element={<Navigate to="all" replace />} />
+                <Route path="all" element={withSuspense(<AllWorkOrders />)} />
+                <Route path="unassigned" element={withSuspense(<UnassignedWorkOrders />)} />
+                <Route path="received" element={<Navigate to="../all" replace />} />
                 <Route path="assigned" element={withSuspense(<AssignedWorkOrders />)} />
                 <Route path="manual" element={withSuspense(<ManualWorkOrders />)} />
                 <Route path="manual/create" element={withSuspense(<ManualWorkOrderCreate />)} />
@@ -262,6 +277,10 @@ export default function App() {
               <Route
                 path="reports/schedules"
                 element={withModule(REPORT_MODULE_KEYS, <ReportSchedulesPage />)}
+              />
+              <Route
+                path="reports/ready"
+                element={withModule(REPORT_MODULE_KEYS, <ReportReadyPage />)}
               />
               <Route
                 path="reports"

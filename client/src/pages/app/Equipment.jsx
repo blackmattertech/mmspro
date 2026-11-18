@@ -22,6 +22,8 @@ import EquipmentModal from '../../components/equipment/EquipmentModal'
 import GooToggle from '../../components/ui/GooToggle'
 import TrashIcon from '../../components/ui/TrashIcon'
 import EditIcon from '../../components/ui/EditIcon'
+import DuplicateRowButton from '../../components/ui/DuplicateRowButton'
+import { buildMasterCloneDraft, EQUIPMENT_CLONE_OMIT } from '../../lib/masterClone'
 import TablePagination from '../../components/shared/TablePagination'
 import TableEmptyRow from '../../components/shared/TableEmptyRow'
 import TableColumnPicker from '../../components/shared/TableColumnPicker'
@@ -193,6 +195,8 @@ export default function Equipment() {
   const pagedItems = items
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState(null)
+  // Duplicate: `source` is the full original asset, `draft` the id-less prefill (no QR / image).
+  const [clone, setClone] = useState(null)
   const [viewing, setViewing] = useState(null)
   const [selected, setSelected] = useState(() => new Set())
   const [bulkDeleting, setBulkDeleting] = useState(false)
@@ -214,6 +218,7 @@ export default function Equipment() {
   const {
     bulkInputRef,
     bulkBusy,
+    bulkProgress,
     bulkError,
     bulkResult,
     handleDownloadTemplate,
@@ -230,7 +235,27 @@ export default function Equipment() {
 
   const openCreate = () => {
     setEditing(null)
+    setClone(null)
     setModalOpen(true)
+  }
+
+  const openDuplicate = async (row) => {
+    try {
+      const detail = await getEquipment(row.id)
+      setEditing(null)
+      setClone({
+        source: detail,
+        draft: buildMasterCloneDraft('equipment', detail, { omit: EQUIPMENT_CLONE_OMIT }),
+      })
+      setModalOpen(true)
+    } catch (err) {
+      window.alert(err.message)
+    }
+  }
+
+  const closeModal = () => {
+    setModalOpen(false)
+    setClone(null)
   }
 
   const openView = async (row) => {
@@ -247,6 +272,7 @@ export default function Equipment() {
     try {
       const detail = await getEquipment(row.id)
       setEditing(detail)
+      setClone(null)
       setModalOpen(true)
     } catch (err) {
       window.alert(err.message)
@@ -254,8 +280,9 @@ export default function Equipment() {
   }
 
   const handleSave = async (payload) => {
+    // Duplicates arrive with clone_of_id (set + checked in EquipmentModal).
     const saved = editing?.id ? await update(editing.id, payload) : await create(payload)
-    setModalOpen(false)
+    closeModal()
     if (viewing?.id && editing?.id === viewing.id && saved) setViewing(saved)
     return saved
   }
@@ -414,6 +441,7 @@ export default function Equipment() {
                       <MasterBulkActions
                         onDownload={handleDownloadTemplate}
                         bulkBusy={bulkBusy}
+                    bulkProgress={bulkProgress}
                         bulkInputRef={bulkInputRef}
                         onFileChange={handleBulkFile}
                         addLabel="+ Add Asset"
@@ -550,6 +578,13 @@ export default function Equipment() {
                                     >
                                       <EditIcon />
                                     </button>
+                                    {canCreate('equipment') && (
+                                      <DuplicateRowButton
+                                        onClick={() => openDuplicate(row)}
+                                        disabled={saving}
+                                        label={`Duplicate ${row.name}`}
+                                      />
+                                    )}
                                     <button
                                       type="button"
                                       className="company-btn company-btn--danger company-btn--compact company-btn--icon"
@@ -628,11 +663,13 @@ export default function Equipment() {
             )}
             {modalOpen && (
               <EquipmentModal
-                equipment={editing}
+                key={editing?.id ?? (clone ? `clone-${clone.source.id}` : 'new')}
+                equipment={editing || clone?.draft || null}
+                cloneSource={clone?.source || null}
                 saving={saving}
                 defaultLocationId={scopedLocationId || ''}
                 lockLocation={Boolean(scopedLocationId)}
-                onClose={() => setModalOpen(false)}
+                onClose={closeModal}
                 onSave={handleSave}
               />
             )}

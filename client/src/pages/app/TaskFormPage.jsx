@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useOrg } from '../../hooks/useOrg'
 import { usePermissions } from '../../hooks/usePermissions'
 import { useTaskMeta } from '../../hooks/useTaskMeta'
@@ -17,7 +17,22 @@ import { syncTaskAttachments, attachmentsFromTask } from '../../lib/taskAttachme
 import { validateTaskForm, buildTaskPayload } from '../../lib/taskFormSchema'
 import { firstCharacterLimitMessage, findVisibleCharacterLimitError } from '../../lib/textFieldLimits'
 import { useTextFieldLimits } from '../../hooks/useTextFieldLimits'
+import {
+  checkCloneChanged,
+  readCloneFromId,
+  toTaskCloneComparable,
+  TASK_CLONE_COMPARE_KEYS,
+  TASK_CLONE_UNIQUE_KEYS,
+} from '../../lib/workRecordClone'
+import { readTemplateFromId, templateNavState, filesFromTemplateAttachments } from '../../lib/recordTemplates'
+import { applyRecordTemplate } from '../../lib/api-record-templates'
+import {
+  inferWarrantyDocumentContentType,
+  isWarrantyImageDocument,
+  readFileAsDataUrl,
+} from '../../config/warrantyDocuments'
 import PageBack from '../../components/shared/PageBack'
+import TemplatesButton from '../../components/templates/TemplatesButton'
 import TaskForm, { EMPTY_TASK_FORM } from '../../components/tasks/TaskForm'
 import {
   useMasterBulkUpload,
@@ -68,8 +83,88 @@ function taskToForm(task) {
   }
 }
 
+/**
+ * Duplicate: same fields as edit, minus anything that must not be copied —
+ * task number, status, completion remarks, attachments, and reminder row ids.
+ */
+function taskToCloneForm(task) {
+  return {
+    ...taskToForm(task),
+    task_number: '',
+    status_id: '',
+    completion_remarks: '',
+    reminders: (task?.task_reminders || []).map((reminder) => ({
+      reminder_type: reminder.reminder_type,
+      custom_minutes_before: reminder.custom_minutes_before ?? null,
+    })),
+    attachments: [],
+    removedAttachmentIds: [],
+  }
+}
+
+function makePendingAttachmentId() {
+  return typeof crypto !== 'undefined' && crypto.randomUUID
+    ? `pending-${crypto.randomUUID()}`
+    : `pending-${Date.now()}-${Math.random().toString(16).slice(2)}`
+}
+
+async function pendingAttachmentsFromTemplate(attachments = []) {
+  const downloaded = await filesFromTemplateAttachments(attachments)
+  const pending = []
+  for (const item of downloaded) {
+    const file = item.file
+    if (!file) continue
+    const data = await readFileAsDataUrl(file)
+    const content_type = inferWarrantyDocumentContentType(file.name, item.mime_type || file.type)
+    pending.push({
+      id: makePendingAttachmentId(),
+      file_name: file.name,
+      content_type,
+      file_size: file.size,
+      data,
+      preview_url: isWarrantyImageDocument(content_type) ? data : null,
+      isPending: true,
+    })
+  }
+  return pending
+}
+
+function taskFormFromTemplatePayload(payload = {}, attachments = []) {
+  return {
+    ...EMPTY_TASK_FORM,
+    title: payload.title || '',
+    short_description: payload.short_description || '',
+    detailed_description: payload.detailed_description || '',
+    visibility_type: payload.visibility_type || 'self',
+    task_type: payload.task_type === 'recurring' ? 'one_time' : (payload.task_type || 'one_time'),
+    status_id: '',
+    priority_id: payload.priority_id || '',
+    category_id: payload.category_id || '',
+    vendor_id: payload.vendor_id || '',
+    start_date: payload.start_date || '',
+    start_time: payload.start_time || '',
+    due_date: payload.due_date || '',
+    due_time: payload.due_time || '',
+    department_id: payload.department_id || '',
+    location_id: payload.location_id || '',
+    assignee_employee_ids: Array.isArray(payload.assignee_employee_ids)
+      ? payload.assignee_employee_ids.map(String)
+      : [],
+    tag_ids: Array.isArray(payload.tag_ids) ? payload.tag_ids.map(String) : [],
+    reminders: Array.isArray(payload.reminder_types)
+      ? payload.reminder_types.map((type) => ({ reminder_type: type }))
+      : (Array.isArray(payload.reminders) ? payload.reminders : []),
+    follow_up_remarks: payload.follow_up_remarks || '',
+    next_action: payload.next_action || '',
+    completion_remarks: '',
+    attachments,
+    removedAttachmentIds: [],
+  }
+}
+
 export default function TaskFormPage() {
   const { taskId } = useParams()
+  const location = useLocation()
   const [searchParams] = useSearchParams()
   const prefillEquipmentId = searchParams.get('equipment_id') || ''
   const prefillWorkOrderId = searchParams.get('work_order_id') || ''
@@ -80,6 +175,10 @@ export default function TaskFormPage() {
   const prefillDepartmentId = searchParams.get('department_id') || ''
   const prefillStartDate = searchParams.get('start_date') || ''
   const isEdit = Boolean(taskId)
+  // Set by the Duplicate action on the tasks list.
+  const cloneFromId = isEdit ? '' : readCloneFromId(location)
+  const templateFromId = isEdit ? '' : readTemplateFromId(location)
+  const [cloneSource, setCloneSource] = useState(null)
   const navigate = useNavigate()
   const { org } = useOrg()
   const { user } = useAuth()
@@ -87,6 +186,7 @@ export default function TaskFormPage() {
   const { canCreate, canUpdate } = usePermissions()
   const { maxLength } = useTextFieldLimits()
   const canSave = isEdit ? canUpdate('tasks_followups') : canCreate('tasks_followups')
+  const canCreateTasks = canCreate('tasks_followups')
   const {
     activeStatuses,
     activePriorities,
@@ -100,12 +200,13 @@ export default function TaskFormPage() {
   const { items: vendors } = useVendors()
 
   const [values, setValues] = useState(() => ({ ...EMPTY_TASK_FORM }))
-  const [loading, setLoading] = useState(isEdit)
+  const [loading, setLoading] = useState(isEdit || Boolean(cloneFromId) || Boolean(templateFromId))
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
   const {
     bulkInputRef,
     bulkBusy,
+    bulkProgress,
     bulkError,
     bulkResult,
     handleDownloadTemplate,
@@ -136,7 +237,51 @@ export default function TaskFormPage() {
   }, [isEdit, taskId])
 
   useEffect(() => {
-    if (isEdit || !prefillWorkOrderId) return undefined
+    if (!cloneFromId || templateFromId) return undefined
+    let cancelled = false
+    async function loadSource() {
+      setLoading(true)
+      setError(null)
+      try {
+        const task = await getTask(cloneFromId)
+        if (cancelled) return
+        setCloneSource(task)
+        setValues(taskToCloneForm(task))
+      } catch (err) {
+        if (!cancelled) setError(err.message)
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }
+    loadSource()
+    return () => { cancelled = true }
+  }, [cloneFromId, templateFromId])
+
+  useEffect(() => {
+    if (!templateFromId) return undefined
+    let cancelled = false
+    async function loadTemplate() {
+      setLoading(true)
+      setError(null)
+      try {
+        const applied = await applyRecordTemplate(templateFromId)
+        if (cancelled) return
+        setCloneSource(null)
+        const pending = await pendingAttachmentsFromTemplate(applied.attachments || [])
+        if (cancelled) return
+        setValues(taskFormFromTemplatePayload(applied.payload || {}, pending))
+      } catch (err) {
+        if (!cancelled) setError(err.message)
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }
+    loadTemplate()
+    return () => { cancelled = true }
+  }, [templateFromId])
+
+  useEffect(() => {
+    if (isEdit || templateFromId || !prefillWorkOrderId) return undefined
     const short = String(prefillShortDescription || '').trim()
     const woNumber = String(prefillWoNumber || '').trim()
     const woDate = String(prefillWoDate || '').trim()
@@ -164,6 +309,7 @@ export default function TaskFormPage() {
     return undefined
   }, [
     isEdit,
+    templateFromId,
     prefillWorkOrderId,
     prefillWoNumber,
     prefillWoDate,
@@ -173,7 +319,7 @@ export default function TaskFormPage() {
   ])
 
   useEffect(() => {
-    if (isEdit || !prefillEquipmentId) return undefined
+    if (isEdit || templateFromId || !prefillEquipmentId) return undefined
     let cancelled = false
     getEquipment(prefillEquipmentId)
       .then((row) => {
@@ -196,16 +342,16 @@ export default function TaskFormPage() {
       })
       .catch(() => {})
     return () => { cancelled = true }
-  }, [isEdit, prefillEquipmentId, prefillWorkOrderId])
+  }, [isEdit, templateFromId, prefillEquipmentId, prefillWorkOrderId])
 
   useEffect(() => {
-    if (isEdit || !prefillStartDate) return undefined
+    if (isEdit || templateFromId || !prefillStartDate) return undefined
     setValues((prev) => ({
       ...prev,
       start_date: prev.start_date || prefillStartDate,
     }))
     return undefined
-  }, [isEdit, prefillStartDate])
+  }, [isEdit, templateFromId, prefillStartDate])
 
   const currentEmployee = useMemo(() => {
     const fromList = employees.find((e) => e.profile_id === user?.id)
@@ -258,6 +404,19 @@ export default function TaskFormPage() {
       setError(limitError)
       return
     }
+    if (cloneSource) {
+      const cloneCheck = checkCloneChanged({
+        source: cloneSource,
+        next: values,
+        toComparable: toTaskCloneComparable,
+        uniqueKeys: TASK_CLONE_UNIQUE_KEYS,
+        compareKeys: TASK_CLONE_COMPARE_KEYS,
+      })
+      if (!cloneCheck.ok) {
+        setError(cloneCheck.message)
+        return
+      }
+    }
 
     setSaving(true)
     setError(null)
@@ -269,6 +428,7 @@ export default function TaskFormPage() {
       } = values
 
       const taskPayload = buildTaskPayload(formValues, { isEdit })
+      if (cloneSource?.id && !isEdit) taskPayload.clone_of_id = cloneSource.id
 
       let task
       if (isEdit) {
@@ -297,18 +457,34 @@ export default function TaskFormPage() {
         <div className="company-page__header-bar">
           <div className="company-page__header-main">
             <PageBack onClick={goBack} label="Tasks & Follow-ups" />
-            <h1 className="company-page__title">{isEdit ? 'Edit Task' : 'Create Task'}</h1>
+            <h1 className="company-page__title">
+              {isEdit
+                ? 'Edit Task'
+                : (cloneFromId ? 'Duplicate Task' : (templateFromId ? 'Create Task from template' : 'Create Task'))}
+            </h1>
             <p className="company-page__subtitle">
               {isEdit
                 ? 'Update task details per the Tasks & Follow-ups specification.'
                 : 'Create a task with category, assignment, schedule, references, and attachments.'}
             </p>
           </div>
-          {!isEdit && canCreate('tasks_followups') && (
+          {!isEdit && canCreateTasks && (
             <div className="company-page__header-actions">
+              <TemplatesButton
+                moduleKey="tasks_followups"
+                disabled={saving || loading}
+                onSelect={(row) => {
+                  if (!org?.slug) return
+                  navigate(orgPath(org.slug, 'tasks-and-followups/create'), {
+                    state: templateNavState(row.id),
+                    replace: true,
+                  })
+                }}
+              />
               <MasterBulkActions
                 onDownload={handleDownloadTemplate}
                 bulkBusy={bulkBusy}
+                bulkProgress={bulkProgress}
                 bulkInputRef={bulkInputRef}
                 onFileChange={handleBulkFile}
                 title="Import tasks"

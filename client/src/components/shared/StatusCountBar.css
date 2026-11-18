@@ -23,14 +23,40 @@
   cursor: pointer;
 }
 
+.status-count-bar__item--button:focus,
+.status-count-bar__item--button:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
 .status-count-bar__item--button:hover {
   border-color: var(--color-gray-blue);
 }
 
 .status-count-bar__item--active {
-  background: var(--color-white);
-  border-color: var(--color-dark-navy);
-  box-shadow: 0 0 0 1px var(--color-dark-navy);
+  color: var(--color-white);
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  box-shadow: none;
+}
+
+.status-count-bar__item--active .status-count-bar__label,
+.status-count-bar__item--active .status-count-bar__count {
+  color: var(--color-white);
+}
+
+.status-count-bar__item--active .status-count-bar__count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.4em;
+  padding: 0 6px;
+  border-radius: var(--radius-pill);
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.status-count-bar__item--active .status-count-bar__dot {
+  box-shadow: 0 0 0 1.5px rgba(255, 255, 255, 0.85);
 }
 
 .status-count-bar__dot {
