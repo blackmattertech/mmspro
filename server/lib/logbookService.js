@@ -8,7 +8,7 @@ import {
   cumulativeFromOffset,
   resetCycleOffset,
   roundMeter,
-} from '../../shared/meterCycle.js'
+} from '../shared/meterCycle.js'
 
 const LIST_CAP = 5000
 

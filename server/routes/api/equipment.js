@@ -36,7 +36,7 @@ import { buildEquipmentTemplate } from '../../lib/equipmentBulkService.js'
 import { bufferFromBase64Upload } from '../../lib/excelTemplate.js'
 import { enqueueOrRunBulkImport, sendBulkImportResponse, wantsSyncImport } from '../../lib/bulkImportEnqueue.js'
 import { parseListControls, sendCsv } from '../../lib/listQuery.js'
-import { cumulativeFromOffset } from '../../../shared/meterCycle.js'
+import { cumulativeFromOffset } from '../../shared/meterCycle.js'
 import { listEquipmentPickerCatalog } from '../../lib/workRequestService.js'
 
 const router = Router()

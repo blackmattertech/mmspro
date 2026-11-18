@@ -13,7 +13,7 @@ import {
   validateSlaSettings,
   validateSupportAttachments,
   validateTicketDraft,
-} from '../../shared/supportTickets.js'
+} from '../shared/supportTickets.js'
 
 const NOW = new Date('2026-11-05T10:00:00.000Z')
 

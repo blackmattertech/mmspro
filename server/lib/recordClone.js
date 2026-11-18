@@ -13,7 +13,7 @@ import {
   buildCloneDraft,
   CloneUnchangedError,
   throwIfCloneUnchanged,
-} from '../../shared/recordClone.js'
+} from '../shared/recordClone.js'
 
 export {
   CLONE_UNCHANGED_MESSAGE,

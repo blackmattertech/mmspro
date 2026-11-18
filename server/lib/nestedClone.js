@@ -5,7 +5,7 @@ import {
   nestedCloneCompareKeys,
   resolveNestedCloneUniqueKeys,
   toNestedCloneComparable,
-} from '../../shared/nestedClone.js'
+} from '../shared/nestedClone.js'
 
 export function cloneSourceNotFound() {
   const err = new Error('Source record for duplicate was not found.')

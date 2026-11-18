@@ -7,7 +7,7 @@ import {
   recordTemplateModule,
   RECORD_TEMPLATE_MODULE_KEYS,
   RECORD_TEMPLATE_MAX_PER_MODULE,
-} from '../../shared/recordTemplates.js'
+} from '../shared/recordTemplates.js'
 import {
   buildPmPlanTemplatePayload,
   buildWorkRequestTemplatePayload,

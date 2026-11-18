@@ -4,13 +4,13 @@ import {
   masterCloneCompareKeys,
   resolveMasterCloneUniqueKeys,
   toMasterCloneComparable,
-} from '../../shared/masterClone.js'
+} from '../shared/masterClone.js'
 
 import {
   EQUIPMENT_CLONE_COMPARE_KEYS,
   EQUIPMENT_CLONE_UNIQUE_KEYS,
   toEquipmentCloneComparable,
-} from '../../shared/masterClone.js'
+} from '../shared/masterClone.js'
 
 /**
  * 2C duplicate guard for POST /equipment. Asset `code` is derived from the submitted

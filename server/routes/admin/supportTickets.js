@@ -2,7 +2,7 @@ import { Router } from 'express'
 import { supabaseAdmin } from '../../services/supabase.js'
 import { sendCsv } from '../../lib/listQuery.js'
 import { plainTextFromRich } from '../../lib/richText.js'
-import { TICKET_STATUSES } from '../../../shared/supportTickets.js'
+import { TICKET_STATUSES } from '../../shared/supportTickets.js'
 import {
   addMessage,
   changeTicket,

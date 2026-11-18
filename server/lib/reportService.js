@@ -1,6 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { supabaseAdmin } from '../services/supabase.js'
-import { cumulativeFromOffset } from '../../shared/meterCycle.js'
+import { cumulativeFromOffset } from '../shared/meterCycle.js'
 import { sanitizeDailyLogMaterials, rollupMaterialsFromLogs } from './workOrderDailyLogService.js'
 import { displayWorkOrderNumber } from './workOrderService.js'
 import { resolveLivePlanStatus } from './pmSchedule.js'

@@ -18,7 +18,7 @@ import {
   validateSupportAttachments,
   validateSupportUploadRequest,
   validateTicketDraft,
-} from '../../shared/supportTickets.js'
+} from '../shared/supportTickets.js'
 import { enforceNestedCloneOrThrow, loadNestedCloneSource } from './nestedClone.js'
 
 export const SUPPORT_ASSETS_BUCKET = 'support-ticket-assets'
