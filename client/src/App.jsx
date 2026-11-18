@@ -89,13 +89,21 @@ const workOrderModules = [
 function PrefetchAuthenticatedShell() {
   const { user, role } = useAuth()
   useEffect(() => {
-    if (!user) return
-    if (role === 'super_admin') {
-      import('./layouts/AdminLayout')
-      return
+    if (!user) return undefined
+    const run = () => {
+      if (role === 'super_admin') {
+        import('./layouts/AdminLayout')
+        return
+      }
+      import('./layouts/AppLayout')
+      import('./pages/app/Dashboard')
     }
-    import('./layouts/AppLayout')
-    import('./pages/app/Dashboard')
+    if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+      const id = window.requestIdleCallback(run, { timeout: 2500 })
+      return () => window.cancelIdleCallback(id)
+    }
+    const id = window.setTimeout(run, 200)
+    return () => window.clearTimeout(id)
   }, [user, role])
   return null
 }

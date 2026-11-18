@@ -160,6 +160,9 @@ export default defineConfig(({ mode }) => {
         output: {
           manualChunks(id) {
             if (id.includes('node_modules')) {
+              // TipTap BEFORE /react/ — `@tiptap/react` would otherwise match
+              // vendor-react and force ~388KB tip tap onto every page including login.
+              if (id.includes('@tiptap') || id.includes('prosemirror')) return 'vendor-tiptap'
               if (id.includes('firebase')) return 'vendor-firebase'
               if (id.includes('@supabase')) return 'vendor-supabase'
               if (
@@ -169,7 +172,6 @@ export default defineConfig(({ mode }) => {
               ) return 'vendor-react'
               if (id.includes('@lottiefiles')) return 'vendor-lottie'
               if (id.includes('nspell')) return 'vendor-spellcheck'
-              if (id.includes('@tiptap') || id.includes('prosemirror')) return 'vendor-tiptap'
             }
           },
         },

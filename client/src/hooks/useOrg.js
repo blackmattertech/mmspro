@@ -79,10 +79,23 @@ export function OrgProvider({ children }) {
       if (cached.me) setMe((prev) => prev ?? cached.me)
     }
 
+    const scheduleBootstrap = () => {
+      // Don't compete with /api/session / dashboard on the critical path.
+      if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+        window.requestIdleCallback(() => {
+          loadOrgBootstrap().catch(() => {})
+        }, { timeout: 4000 })
+      } else {
+        setTimeout(() => {
+          loadOrgBootstrap().catch(() => {})
+        }, 750)
+      }
+    }
+
     // Login + OrgProvider share fetchSession inflight. When a fresh usable
     // snapshot already exists (peek / sessionStorage TTL), skip a second GET.
     if (hasSnapshot) {
-      loadOrgBootstrap().catch(() => {})
+      scheduleBootstrap()
       setFetching(false)
       return
     }
@@ -92,7 +105,7 @@ export function OrgProvider({ children }) {
     try {
       const data = await fetchSession(userId)
       applyBootstrap(userId, data)
-      loadOrgBootstrap().catch(() => {})
+      scheduleBootstrap()
     } catch (err) {
       console.error('[OrgProvider] session bootstrap failed:', err.message)
       setError(err.message)
