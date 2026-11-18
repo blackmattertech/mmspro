@@ -1,7 +1,9 @@
 .env
 *-firebase-adminsdk-*.json
-/node_modules
+node_modules/
 /dist
 /docs
 # server/shared is committed (synced from ../shared) so Vercel Root Directory=server
 # always has the modules even if postinstall is skipped.
+.vercel
+.env*
