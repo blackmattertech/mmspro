@@ -3,5 +3,5 @@
 /node_modules
 /dist
 /docs
-# Vendored from ../shared by scripts/vendor-shared.js (required for Vercel Root Directory=server)
-/shared
+# server/shared is committed (synced from ../shared) so Vercel Root Directory=server
+# always has the modules even if postinstall is skipped.
