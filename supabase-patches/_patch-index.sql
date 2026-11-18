@@ -85,6 +85,10 @@
 
 --   76-pm-plan-overdue-status.sql                     → 76-pm-plan-overdue-status — Overdue status for PM plans
 --   77-report-schedules.sql                           → 77-report-schedules — Scheduled report email delivery
+--   79-report-custom-reports.sql                       → 79-report-custom-reports — Named custom reports
+--   80-report-schedule-frequencies.sql                 → 80-report-schedule-frequencies — Extra report schedule frequencies
+--   81-org-text-field-limits.sql                       → 81-org-text-field-limits — Configurable text field character limits
+--   82-report-logs-key.sql                             → 82-report-logs-key — Unified logs report key
 --   78-department-code.sql                            → 78-department-code — Department codes
 --   79-org-disabled-modules.sql                       → 79-org-disabled-modules — Super Admin module entitlements
 --   80-org-form-layouts.sql                           → 80-org-form-layouts — Per-module Super Admin form layouts
@@ -118,6 +122,10 @@
 --   114-exclude-pm-from-regular-wo-lists.sql       → 114-exclude-pm-from-regular-wo-lists — PM WOs only on Scheduled
 --   115-org-table-column-defaults.sql              → 115-org-table-column-defaults — Saved table column layouts
 --   116-org-checklist-enabled-forms.sql            → 116-org-checklist-enabled-forms — Org forms that may use checklists
+--   116-report-entity-keys.sql                     → 116-report-entity-keys — Extra report entity keys
+--   117-report-more-entity-keys.sql                → 117-report-more-entity-keys — Additional report entity keys
+--   118-report-schedule-email-body.sql             → 118-report-schedule-email-body — Custom schedule email body
+--   119-report-schedule-email-body-len.sql         → 119-report-schedule-email-body-len — Longer schedule email body
 --   120-warranty-status-counts.sql                 → 120-warranty-status-counts — Warranty status bucket RPC
 --   121-wr-location-scope-and-indexes.sql          → 121-wr-location-scope-and-indexes — WR location scope + indexes
 --   122-uom-master.sql                           → 122-uom-master — Unit of measure master

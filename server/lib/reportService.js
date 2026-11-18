@@ -31,6 +31,7 @@ import {
   workOrderDueAt,
 } from './reportConstants.js'
 import { resolveProgressPercent } from './statusProgress.js'
+import { preparePdfLogo } from './pdfLogo.js'
 import { tallyStatusCounts } from './statusCounts.js'
 
 const LOG_SELECT = 'id, org_id, work_order_id, log_date, started_at, ended_at, day_status, work_done, remarks, labour_count, materials, field_snapshot, updated_at'
@@ -252,6 +253,32 @@ async function loadOrgName(orgId) {
   return data?.name || 'Organization'
 }
 
+/** PDFKit accepts PNG/JPEG/GIF buffers — reject anything else before doc.image. */
+function isPdfSafeImageBuffer(buf) {
+  if (!Buffer.isBuffer(buf) || buf.length < 8) return false
+  // PNG
+  if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) return true
+  // JPEG
+  if (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return true
+  // GIF
+  if (buf[0] === 0x47 && buf[1] === 0x49 && buf[2] === 0x46) return true
+  return false
+}
+
+async function withTimeout(promise, ms, label) {
+  let timer
+  try {
+    return await Promise.race([
+      promise,
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)
+      }),
+    ])
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
+}
+
 export async function loadOrgLetterhead(orgId) {
   const { data, error } = await supabaseAdmin
     .from('organizations')
@@ -269,13 +296,21 @@ export async function loadOrgLetterhead(orgId) {
   let logo = null
   if (data?.logo_url) {
     try {
-      const downloaded = await supabaseAdmin.storage.from('org-assets').download(data.logo_url)
+      const downloaded = await withTimeout(
+        supabaseAdmin.storage.from('org-assets').download(data.logo_url),
+        5000,
+        'org logo download',
+      )
       if (!downloaded.error && downloaded.data) {
         const raw = downloaded.data
         if (Buffer.isBuffer(raw)) logo = raw
         else if (typeof raw.arrayBuffer === 'function') logo = Buffer.from(await raw.arrayBuffer())
         else logo = Buffer.from(raw)
-        if (!logo.length) logo = null
+        if (!logo.length || !isPdfSafeImageBuffer(logo)) {
+          logo = null
+        } else {
+          logo = await preparePdfLogo(logo)
+        }
       }
     } catch {
       logo = null

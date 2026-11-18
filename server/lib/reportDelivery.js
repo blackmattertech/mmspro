@@ -33,6 +33,8 @@ export async function buildReportExport({
   filters = {},
   columns: requestedColumns = [],
   now = new Date(),
+  /** @type {Array<'pdf'|'csv'>} */
+  formats = ['pdf', 'csv'],
 }) {
   const catalog = getReportCatalog(reportKey)
   if (!catalog) throw new Error(`Unknown report ${reportKey}`)
@@ -53,6 +55,8 @@ export async function buildReportExport({
     columns = columnsForReport(catalog.kind).map((col) => col.id)
   }
 
+  const needLetterhead = formats.includes('pdf')
+  const needFilterLabels = formats.includes('pdf')
   const [report, letterhead, filterOptions] = await Promise.all([
     getReportData(orgId, session, reportKey, {
       date_from: dateFrom,
@@ -64,38 +68,48 @@ export async function buildReportExport({
       for_export: true,
       max_rows: 10000,
     }, now),
-    loadOrgLetterhead(orgId),
-    catalog.kind === 'unified' ? getReportFilterOptions(orgId, session) : Promise.resolve({}),
+    needLetterhead ? loadOrgLetterhead(orgId) : Promise.resolve({ name: null, address: '', logo: null }),
+    needFilterLabels
+      ? getReportFilterOptions(orgId, session).catch(() => ({}))
+      : Promise.resolve({}),
   ])
 
   const period = periodLabel(report.filters.date_from, report.filters.date_to)
-  const activityFilters = buildActivityFilterValues({
-    date_from: report.filters.date_from,
-    date_to: report.filters.date_to,
-    ...filters,
-    facility_id: filters.facility_id || resolvedLocation,
-    location_id: resolvedLocation,
-  }, filterOptions)
-  const pdf = await buildReportPdfBuffer({
-    orgName: letterhead.name || report.org_name,
-    address: letterhead.address,
-    department: activityFilters.orderTo !== 'All' ? activityFilters.orderTo : 'MAINTENANCE',
-    logo: letterhead.logo,
-    activityFilters,
-    title,
-    periodLabel: period,
-    generatedAt: formatGeneratedAt(report.generated_at),
-    locationLabel: report.filters.location_name,
-    kpis: report.kpis,
-    columns,
-    rows: report.rows,
-    kind: report.kind,
-  })
-  const csv = buildReportCsv({
-    kind: report.kind,
-    columns,
-    rows: report.rows,
-  })
+  const wantPdf = formats.includes('pdf')
+  const wantCsv = formats.includes('csv')
+  const activityFilters = wantPdf
+    ? buildActivityFilterValues({
+      date_from: report.filters.date_from,
+      date_to: report.filters.date_to,
+      ...filters,
+      facility_id: filters.facility_id || resolvedLocation,
+      location_id: resolvedLocation,
+    }, filterOptions)
+    : null
+  const pdf = wantPdf
+    ? await buildReportPdfBuffer({
+      orgName: letterhead.name || report.org_name,
+      address: letterhead.address,
+      department: activityFilters.orderTo !== 'All' ? activityFilters.orderTo : 'MAINTENANCE',
+      logo: letterhead.logo,
+      activityFilters,
+      title,
+      periodLabel: period,
+      generatedAt: formatGeneratedAt(report.generated_at),
+      locationLabel: report.filters.location_name,
+      kpis: report.kpis,
+      columns,
+      rows: report.rows,
+      kind: report.kind,
+    })
+    : null
+  const csv = wantCsv
+    ? buildReportCsv({
+      kind: report.kind,
+      columns,
+      rows: report.rows,
+    })
+    : ''
 
   return {
     report,
