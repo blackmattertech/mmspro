@@ -8,6 +8,7 @@ import { findLinkedEmployee, loadMyProfileBundle, loadUserProfile } from './prof
 import { loadOrgCatalogFields } from '../../lib/orgFormLayouts.js'
 import { listOrgStatusesByEntityTypes } from '../../lib/orgStatusService.js'
 import { ORG_STATUS_ENTITY_TYPES } from '../../lib/orgStatusDefaults.js'
+import { listStatusPhaseMapsByEntity } from '../../lib/statusPhaseMapService.js'
 import { countWorkRequestTabs, getEmployeeByProfile } from '../../lib/workRequestService.js'
 import { countWorkOrderTabs } from './workOrders.js'
 
@@ -99,6 +100,7 @@ router.get('/bootstrap', verifyAuth, requireOrgAccess, async (req, res) => {
         work_centers: [],
         catalog_fields: [],
         org_statuses: {},
+        status_phase_maps: {},
         tab_counts: {},
       })
     }
@@ -141,12 +143,13 @@ router.get('/bootstrap', verifyAuth, requireOrgAccess, async (req, res) => {
       email: req.userProfile.email,
     }).catch(() => null)
 
-    const [locations, departments, workCenters, catalog, statusesByType, employee] = await Promise.all([
+    const [locations, departments, workCenters, catalog, statusesByType, phaseMaps, employee] = await Promise.all([
       locationsQuery,
       departmentsQuery,
       workCentersQuery,
       loadOrgCatalogFields(orgId).catch(() => []),
       listOrgStatusesByEntityTypes(orgId, statusKeys, { includeInactive: true }).catch(() => ({})),
+      listStatusPhaseMapsByEntity(orgId).catch(() => ({})),
       employeePromise,
     ])
 
@@ -180,6 +183,7 @@ router.get('/bootstrap', verifyAuth, requireOrgAccess, async (req, res) => {
       work_centers: workCenters.data || [],
       catalog_fields,
       org_statuses: statusesByType,
+      status_phase_maps: phaseMaps || {},
       tab_counts: { work_requests: wrTabs, work_orders: woTabs },
     })
   } catch (err) {

@@ -58,3 +58,18 @@ test('buildWorkRequestFilterFields can omit status for drafts', () => {
   assert.ok(!withoutStatus.some((field) => field.id === 'status'))
   assert.equal(withStatus.find((field) => field.id === 'wr_number').options.length, 1)
 })
+
+test('work request description filters strip rich-text tags', () => {
+  const fields = buildWorkRequestFilterFields({
+    pageRows: [{
+      request_number: 'WR-2',
+      short_description: '<p><span style="font-size: 18px">Pump seal</span></p>',
+    }],
+    departments: [],
+    priorityOptions: [],
+    statusOptions: [],
+    includeStatus: false,
+  })
+  const problem = fields.find((field) => field.id === 'problem')
+  assert.deepEqual(problem.options, [{ value: 'Pump seal', label: 'Pump seal' }])
+})

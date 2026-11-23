@@ -75,6 +75,15 @@ export const MASTERS_HUB_ITEMS = [
     moduleKey: 'assets',
     icon: 'list',
   },
+  {
+    id: 'status_filters',
+    label: 'Status Filter',
+    title: 'Status Filter',
+    description: 'Map module statuses to list pill filters (Open, In progress, Waiting, Done, Closed).',
+    segment: 'masters/status-filters',
+    moduleKey: 'others',
+    icon: 'alarmCheck',
+  },
 ]
 
 export const MASTER_HUB_MODULE_KEYS = [

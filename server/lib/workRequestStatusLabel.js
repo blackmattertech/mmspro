@@ -37,6 +37,26 @@ function hasTechnician(row) {
   return (row?.assigned_technicians || []).some((tech) => tech?.id || tech?.employee_id || tech?.name)
 }
 
+/**
+ * SQL-aligned effective status (count_work_request_effective_statuses).
+ * Prefer this for pill counts so they match the RPC.
+ */
+export function workRequestEffectiveStatusKeyFromColumns(status, executionStatus) {
+  const requestStatus = String(status || '').trim() || 'submitted'
+  if (requestStatus !== 'approved') return requestStatus
+  const exec = String(executionStatus || '').trim()
+  if (!exec || exec === 'draft' || exec === 'created') return 'work_order_generated'
+  if (exec === 'assigned') return 'technician_assigned'
+  return exec
+}
+
+export function workRequestEffectiveStatusKey(row) {
+  return workRequestEffectiveStatusKeyFromColumns(
+    row?.status,
+    row?.linked_work_order?.status || row?.execution_status,
+  )
+}
+
 export function workRequestStatusDisplay(row, { requestLabels = null, workOrderLabels = null } = {}) {
   const requestStatus = String(row?.status || '').trim() || 'submitted'
   const hasWorkOrder = Boolean(row?.manual_work_order_id || row?.linked_work_order?.id)

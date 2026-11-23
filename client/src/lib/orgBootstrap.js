@@ -44,6 +44,12 @@ function applyBootstrap(payload) {
     seedReferenceData('org-statuses', { entityType }, rows || [])
   }
 
+  const phaseMaps = payload.status_phase_maps || {}
+  seedReferenceData('status-phase-maps', {}, phaseMaps)
+  for (const [entityType, rows] of Object.entries(phaseMaps)) {
+    seedReferenceData('status-phase-maps', { entityType }, rows || [])
+  }
+
   if (payload.tab_counts?.work_requests) {
     seedReferenceData('tab-counts', { module: 'work_requests' }, payload.tab_counts.work_requests)
   }

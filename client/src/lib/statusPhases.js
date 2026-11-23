@@ -1,5 +1,21 @@
 /** Lifecycle phase catalogs for status pill filters. */
 
+import {
+  MODULE_PHASE_CATALOGS,
+  DEFAULT_STATUS_PHASE_MAPS,
+  buildPhasesFromMaps,
+  defaultTaskMapsFromStatuses,
+  mappingsToObject,
+} from '../../../shared/statusPhaseMaps.js'
+
+export {
+  MODULE_PHASE_CATALOGS,
+  DEFAULT_STATUS_PHASE_MAPS,
+  buildPhasesFromMaps,
+  defaultTaskMapsFromStatuses,
+  mappingsToObject,
+}
+
 export const WO_STATUS_LABELS = {
   draft: 'Draft',
   assigned: 'Assigned',
@@ -35,51 +51,17 @@ export const WR_DISPLAY_STATUS_LABELS = {
   ...WO_STATUS_LABELS,
 }
 
-const PHASE = (id, label, statuses, color) => ({ id, label, statuses, color })
+/** @deprecated Prefer buildPhasesFromMaps with org maps; kept as default fallback. */
+export const WORK_ORDER_PHASES = buildPhasesFromMaps('work_order', DEFAULT_STATUS_PHASE_MAPS.work_order)
 
-/** Work order lifecycle phases (draft usually excluded by list default). */
-export const WORK_ORDER_PHASES = [
-  PHASE('open', 'Open', ['assigned', 'accepted'], '#3B82F6'),
-  PHASE('in_progress', 'In progress', ['started', 'in_progress'], '#8B5CF6'),
-  PHASE('waiting', 'Waiting', ['waiting_material', 'waiting_shutdown', 'on_hold', 'returned_rework'], '#F59E0B'),
-  PHASE('done', 'Done', ['completed', 'verified'], '#10B981'),
-  PHASE('closed', 'Closed', ['closed'], '#6B7280'),
-]
+/** @deprecated Prefer buildPhasesFromMaps with org maps; kept as default fallback. */
+export const WORK_REQUEST_PHASES = buildPhasesFromMaps('work_request', DEFAULT_STATUS_PHASE_MAPS.work_request)
 
-/**
- * Work request phases use display/effective keys (request status OR execution keys).
- * Matches Status column after approval.
- */
-export const WORK_REQUEST_PHASES = [
-  PHASE('open', 'Open', [
-    'submitted',
-    'pending_approval',
-    'need_info',
-    'info_provided',
-    'work_order_generated',
-    'technician_assigned',
-    'accepted',
-  ], '#3B82F6'),
-  PHASE('in_progress', 'In progress', ['started', 'in_progress'], '#8B5CF6'),
-  PHASE('waiting', 'Waiting', ['waiting_material', 'waiting_shutdown', 'on_hold', 'returned_rework'], '#F59E0B'),
-  PHASE('done', 'Done', ['completed', 'verified'], '#10B981'),
-  PHASE('closed', 'Closed', ['rejected', 'cancelled', 'closed'], '#6B7280'),
-]
+/** @deprecated Prefer buildPhasesFromMaps with org maps; kept as default fallback. */
+export const PM_PLAN_PHASES = buildPhasesFromMaps('pm_plan', DEFAULT_STATUS_PHASE_MAPS.pm_plan)
 
-/** PM plans — flat (each phase is one status). */
-export const PM_PLAN_PHASES = [
-  PHASE('inactive', 'Inactive', ['inactive'], '#94A3B8'),
-  PHASE('active', 'Active', ['active'], '#10B981'),
-  PHASE('overdue', 'Overdue', ['overdue'], '#EF4444'),
-]
-
-/** Warranty tabs as phase pills. */
-export const WARRANTY_PHASES = [
-  PHASE('in_warranty', 'In warranty', ['in_warranty', 'active'], '#10B981'),
-  PHASE('expiring_soon', 'Expiring soon', ['expiring_soon'], '#F59E0B'),
-  PHASE('expired', 'Expired', ['expired'], '#EF4444'),
-  PHASE('out_of_warranty', 'Out of warranty', ['out_of_warranty'], '#6B7280'),
-]
+/** @deprecated Prefer buildPhasesFromMaps with org maps; kept as default fallback. */
+export const WARRANTY_PHASES = buildPhasesFromMaps('warranty', DEFAULT_STATUS_PHASE_MAPS.warranty)
 
 export const PHASE_KEY_PREFIX = 'phase:'
 
@@ -150,6 +132,7 @@ export function resolveStatusFilters(selection, phases) {
 function phaseFullySelected(selection, phase) {
   const set = new Set(selection || [])
   if (set.has(phaseSelectionKey(phase.id))) return true
+  if (!phase.statuses?.length) return false
   return phase.statuses.every((status) => set.has(status))
 }
 
@@ -237,34 +220,14 @@ export function partitionWorkRequestStatusFilters(statuses = []) {
 }
 
 /**
- * Build task phases from org status rows ({ id|key, name, is_done, sort_order, color }).
+ * Build task phases from org status rows — falls back to heuristic when maps missing.
+ * Prefer buildPhasesFromMaps('task', maps) with org Status Filter maps.
  */
-export function buildTaskPhases(statuses = []) {
-  const rows = (statuses || []).map((row, index) => ({
-    key: String(row.id || row.key || ''),
-    label: row.name || row.label || 'Status',
-    color: row.color || '#94A3B8',
-    isDone: Boolean(row.is_done || row.is_terminal || /done|closed|complete/i.test(String(row.name || row.label || ''))),
-    sort: row.sort_order ?? index,
-  })).filter((row) => row.key)
-
-  const open = rows.filter((row) => !row.isDone).sort((a, b) => a.sort - b.sort)
-  const done = rows.filter((row) => row.isDone).sort((a, b) => a.sort - b.sort)
-
-  const phases = []
-  if (open.length) {
-    const mid = Math.ceil(open.length / 2)
-    const first = open.slice(0, mid)
-    const second = open.slice(mid)
-    phases.push(PHASE('open', 'Open', first.map((r) => r.key), first[0]?.color || '#3B82F6'))
-    if (second.length) {
-      phases.push(PHASE('in_progress', 'In progress', second.map((r) => r.key), second[0]?.color || '#8B5CF6'))
-    }
+export function buildTaskPhases(statuses = [], mappings = null) {
+  if (mappings) {
+    return buildPhasesFromMaps('task', mappings)
   }
-  if (done.length) {
-    phases.push(PHASE('done', 'Done', done.map((r) => r.key), done[0]?.color || '#10B981'))
-  }
-  return phases
+  return buildPhasesFromMaps('task', defaultTaskMapsFromStatuses(statuses))
 }
 
 export function taskLabelByKey(statuses = []) {
@@ -274,4 +237,21 @@ export function taskLabelByKey(statuses = []) {
     if (key) map[key] = row.name || row.label || key
   }
   return map
+}
+
+/** Resolve phases for a module from bootstrap/API maps, with catalog defaults. */
+export function phasesForEntity(entityType, mapsByEntity = {}) {
+  const maps = mapsByEntity?.[entityType]
+  if (Array.isArray(maps) && maps.length) {
+    return buildPhasesFromMaps(entityType, maps)
+  }
+  if (maps && typeof maps === 'object' && !Array.isArray(maps) && Object.keys(maps).length) {
+    return buildPhasesFromMaps(entityType, maps)
+  }
+  const defaults = DEFAULT_STATUS_PHASE_MAPS[entityType]
+  if (defaults) return buildPhasesFromMaps(entityType, defaults)
+  return MODULE_PHASE_CATALOGS[entityType]?.map((phase) => ({
+    ...phase,
+    statuses: [],
+  })) || []
 }

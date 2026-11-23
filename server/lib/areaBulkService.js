@@ -9,6 +9,7 @@ import {
   TEMPLATE_SHEET,
   VALID_VALUES_SHEET,
   applyTemplateDropdowns,
+  loadExcelWorkbook,
 } from './excelTemplate.js'
 
 const TEMPLATE_COLUMNS = ['Name', 'Code', 'Location', 'Department']
@@ -197,8 +198,7 @@ async function upsertAreaRow(orgId, { name, code, location_id, department_id }, 
 export async function bulkImportAreas(orgId, buffer, { locationId } = {}) {
   const options = scopePlacementOptions(await loadPlacementOptions(orgId), locationId)
 
-  const workbook = new ExcelJS.Workbook()
-  await workbook.xlsx.load(buffer)
+  const workbook = await loadExcelWorkbook(buffer)
   const sheet = workbook.getWorksheet(TEMPLATE_SHEET) || workbook.worksheets[0]
   if (!sheet) throw Object.assign(new Error('No worksheet found in file'), { status: 400 })
 

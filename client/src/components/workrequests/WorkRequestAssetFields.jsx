@@ -5,6 +5,7 @@ import {
   fieldValuesFromEquipment,
   filterEquipmentByValues,
   flattenAssetSections,
+  mergeBlankHierarchyValues,
 } from '../../lib/workRequestAssetPicker'
 import {
   applyHierarchyFieldChange,
@@ -233,7 +234,8 @@ export default function WorkRequestAssetFields({
   required = false,
 }) {
   const allFields = useMemo(() => flattenAssetSections(sections), [sections])
-  const seededEquipmentRef = useRef('')
+  const userEditedRef = useRef(new Set())
+  const hierarchyEquipmentRef = useRef('')
   const [fetchedQr, setFetchedQr] = useState('')
   const hierarchyFields = useMemo(() => orderedHierarchyFields(allFields), [allFields])
   const selected = useMemo(
@@ -256,6 +258,7 @@ export default function WorkRequestAssetFields({
   }, [allFields, equipment, equipmentId, onEquipmentIdChange])
 
   const handleFieldChange = (field, nextValue) => {
+    userEditedRef.current.add(field.id)
     const nextValues = fillUniqueHierarchyValues(
       applyHierarchyFieldChange(field.id, nextValue, fieldValues, allFields),
       equipment,
@@ -273,31 +276,17 @@ export default function WorkRequestAssetFields({
   }, [loading, disabled, equipment, allFields, fieldValues, equipmentId, onFieldValuesChange, syncEquipmentFromValues])
 
   useEffect(() => {
-    if (!equipmentId) {
-      seededEquipmentRef.current = ''
-      return
+    if (hierarchyEquipmentRef.current !== (equipmentId || '')) {
+      hierarchyEquipmentRef.current = equipmentId || ''
+      userEditedRef.current = new Set()
     }
-    // Wait until hierarchy fields exist — otherwise we mark seeded with {} and never refill.
-    if (!allFields.length) return
+    if (!equipmentId || !allFields.length) return
     const row = (equipment || []).find((item) => item.id === equipmentId)
     if (!row) return
-
     const seeded = fieldValuesFromEquipment(row, allFields)
-    const hasHierarchyValues = Object.values(fieldValues || {}).some((value) => {
-      if (Array.isArray(value)) return value.length > 0
-      return String(value ?? '').trim() !== ''
-    })
-    // Re-seed when this equipment has not been applied yet, or when values are still empty
-    // after a late catalog/sections load (template / clone / edit hydrate).
-    if (seededEquipmentRef.current === equipmentId && hasHierarchyValues) return
-    if (!Object.keys(seeded).length && hasHierarchyValues) {
-      seededEquipmentRef.current = equipmentId
-      return
-    }
-    seededEquipmentRef.current = equipmentId
-    if (Object.keys(seeded).length) {
-      onFieldValuesChange(seeded)
-    }
+    if (!Object.keys(seeded).length) return
+    const next = mergeBlankHierarchyValues(fieldValues, seeded, userEditedRef.current)
+    if (next !== fieldValues) onFieldValuesChange(next)
   }, [equipmentId, equipment, allFields, fieldValues, onFieldValuesChange])
 
   // Do not clear equipmentId when the row is briefly missing from the catalog

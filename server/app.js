@@ -18,6 +18,7 @@ import workRequestsRoutes from './routes/api/workRequests.js'
 import warrantiesRoutes from './routes/api/warranties.js'
 import vendorsRoutes from './routes/api/vendors.js'
 import orgStatusesRoutes from './routes/api/orgStatuses.js'
+import statusFiltersRoutes from './routes/api/statusFilters.js'
 import textFieldLimitsRoutes from './routes/api/textFieldLimits.js'
 import tasksRoutes from './routes/api/tasks.js'
 import profileRoutes from './routes/api/profile.js'
@@ -167,6 +168,7 @@ app.use('/api/work-requests', workRequestsRoutes)
 app.use('/api/warranties', warrantiesRoutes)
 app.use('/api/vendors', vendorsRoutes)
 app.use('/api/org-statuses', orgStatusesRoutes)
+app.use('/api/status-filters', statusFiltersRoutes)
 app.use('/api/text-field-limits', textFieldLimitsRoutes)
 app.use('/api/tasks', tasksRoutes)
 app.use('/api/profile', profileRoutes)

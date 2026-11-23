@@ -9,6 +9,7 @@ import {
   RECORD_TEMPLATE_MAX_PER_MODULE,
 } from '../shared/recordTemplates.js'
 import {
+  assetFieldValuesFromValueRows,
   buildPmPlanTemplatePayload,
   buildWorkRequestTemplatePayload,
   collectJsonFiles,
@@ -123,6 +124,21 @@ test('WR template payload omits identity, status, and approval fields', () => {
   assert.equal(Object.prototype.hasOwnProperty.call(payload, 'status'), false)
   assert.equal(Object.prototype.hasOwnProperty.call(payload, 'requester_id'), false)
   assert.equal(Object.prototype.hasOwnProperty.call(payload, 'id'), false)
+})
+
+test('asset field values keep parent text used to prefill Equipment Location', () => {
+  const values = assetFieldValuesFromValueRows([
+    { field_id: 'loc', value_text: 'Admin' },
+    { field_id: 'name', value_text: '  ELEDB-10  ' },
+    { field_id: 'empty', value_text: '   ' },
+    { field_id: 'tags', value_text: '', value_json: { values: ['A', 'B'] } },
+    { field_id: '', value_text: 'skip' },
+  ])
+  assert.deepEqual(values, {
+    loc: 'Admin',
+    name: 'ELEDB-10',
+    tags: 'A, B',
+  })
 })
 
 test('PM template payload resets status and omits generation bookkeeping', () => {

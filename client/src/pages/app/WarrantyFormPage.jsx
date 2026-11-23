@@ -254,8 +254,8 @@ export default function WarrantyFormPage() {
 
   const pageTitle = useMemo(
     () => {
-      if (isEdit) return `Edit Warranty ${serialNumber ?? ''}`
-      return cloneFromId ? 'Duplicate Warranty' : 'New Warranty'
+      if (isEdit) return `Edit Warranty ${serialNumber ?? ''}`.trim()
+      return cloneFromId ? 'Duplicate Warranty Registration' : 'New Warranty Registration'
     },
     [isEdit, serialNumber, cloneFromId],
   )
@@ -272,7 +272,7 @@ export default function WarrantyFormPage() {
             <PageBack onClick={goBack} label="Warranty Manager" />
             <h1 className="company-page__title">{pageTitle}</h1>
             <p className="company-page__subtitle">
-              Register a warranty and keep every document, date, and vendor detail in one place.
+              Fields marked <span className="warranty-create__required">*</span> are mandatory
             </p>
           </div>
           {!isEdit && canCreate('warranty_manager') && (

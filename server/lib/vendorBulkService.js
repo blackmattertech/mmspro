@@ -5,6 +5,7 @@ import {
   TEMPLATE_SHEET,
   VALID_VALUES_SHEET,
   applyTemplateDropdowns,
+  loadExcelWorkbook,
 } from './excelTemplate.js'
 
 const TEMPLATE_COLUMNS = [
@@ -131,8 +132,7 @@ export async function buildVendorsTemplate() {
 }
 
 export async function bulkImportVendors(orgId, buffer) {
-  const workbook = new ExcelJS.Workbook()
-  await workbook.xlsx.load(buffer)
+  const workbook = await loadExcelWorkbook(buffer)
   const sheet = workbook.getWorksheet(TEMPLATE_SHEET) || workbook.worksheets[0]
   if (!sheet) throw Object.assign(new Error('No worksheet found in file'), { status: 400 })
 

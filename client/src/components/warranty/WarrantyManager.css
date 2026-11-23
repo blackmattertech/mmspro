@@ -631,18 +631,43 @@ button.wr-page__create-tab {
 .warranty-create__card {
   background: var(--color-white);
   border: 1px solid var(--color-light-gray-1);
-  border-radius: var(--radius-md);
+  border-radius: 12px;
   box-shadow: var(--shadow-xs);
-  padding: 18px 18px 16px;
+  padding: 0;
+  overflow: hidden;
   scroll-margin-top: 140px;
 }
 
 .warranty-create__card-head {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 14px;
+  margin: 0;
+  padding: 14px 18px;
+  background: #f4f6f8;
+  border-bottom: 1px solid var(--color-light-gray-1);
+}
+
+.warranty-create__card-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.warranty-create__section-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  border-radius: 999px;
+  background: var(--color-primary);
+  color: var(--color-white);
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .warranty-create__card-head h2 {
@@ -657,6 +682,75 @@ button.wr-page__create-tab {
   font-size: 12px;
   line-height: 1.45;
   color: var(--color-gray-blue);
+}
+
+.warranty-create__card-body {
+  padding: 18px;
+}
+
+.warranty-create__required {
+  color: var(--color-primary, #e53935);
+  font-weight: 700;
+  margin-left: 2px;
+}
+
+.warranty-create__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 16px;
+}
+
+.warranty-create__grid--2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.warranty-create__field--full {
+  grid-column: 1 / -1;
+}
+
+.warranty-create__period {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.warranty-create__period-suffix {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-gray-blue);
+  white-space: nowrap;
+}
+
+.warranty-create__items-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 4px 2px;
+}
+
+.warranty-create__items-toolbar p {
+  margin: 0;
+  font-size: 12px;
+  color: var(--color-gray-blue);
+}
+
+.warranty-create__item-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.warranty-create__item-stack.is-multi {
+  padding: 14px;
+  border: 1px solid var(--color-light-gray-1);
+  border-radius: 12px;
+  background: var(--color-off-white);
+}
+
+.warranty-create__item-stack.is-multi .warranty-create__card {
+  box-shadow: none;
 }
 
 .warranty-create__serial {
@@ -703,7 +797,7 @@ button.wr-page__create-tab {
 
 .warranty-create__contacts {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px 14px;
 }
 
@@ -771,14 +865,14 @@ button.wr-page__create-tab {
 .warranty-create__items {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 16px;
 }
 
 .warranty-create__item {
-  padding: 14px;
-  border: 1px solid var(--color-light-gray-1);
-  border-radius: 10px;
-  background: var(--color-off-white);
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
 }
 
 .warranty-create__item-head {
@@ -846,20 +940,20 @@ button.wr-page__create-tab {
 
 .warranty-create__item-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px 14px;
 }
 
 .warranty-create__item-foot {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 14px;
-  margin-top: 14px;
+  margin-top: 0;
   align-items: start;
 }
 
 .warranty-create__item-foot .company-form__textarea {
-  min-height: 148px;
+  min-height: 120px;
 }
 
 .warranty-create__count {
@@ -1198,8 +1292,15 @@ button.wr-page__create-tab {
 
   .warranty-create__item-grid,
   .warranty-create__contacts,
-  .warranty-create__item-foot {
+  .warranty-create__item-foot,
+  .warranty-create__grid,
+  .warranty-create__grid--2 {
     grid-template-columns: 1fr;
+  }
+
+  .warranty-create__items-toolbar {
+    flex-direction: column;
+    align-items: stretch;
   }
 
   .warranty-steps {

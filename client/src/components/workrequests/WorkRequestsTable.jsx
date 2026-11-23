@@ -22,13 +22,14 @@ import { useTablePagination } from '../../hooks/useTablePagination'
 import { useDebouncedValue } from '../../hooks/useDebouncedValue'
 import { WORK_REQUEST_COLUMNS } from './workRequestColumns'
 import { readCatalogText } from '../../lib/pickerFields'
-import { workRequestStatusDisplay } from '../../lib/workRequestStatusLabel'
+import { workRequestStatusDisplay, tallyWorkRequestStatusCounts } from '../../lib/workRequestStatusLabel'
 import EmployeeAvatar from '../company/EmployeeAvatar'
 import './WorkRequests.css'
 import '../company/CompanyShared.css'
 import { VirtualTableBody } from '../shared/VirtualTableBody'
 import TableEmptyRow from '../shared/TableEmptyRow'
 import TruncatedText from '../shared/TruncatedText'
+import { plainTextFromRich } from '../../lib/richText'
 
 function formatDate(value) {
   if (!value) return '—'
@@ -217,8 +218,13 @@ function cellClassName(columnId) {
   return 'wr-table__cell'
 }
 
+function cellPlainText(value) {
+  const text = plainTextFromRich(value)
+  return text || '—'
+}
+
 function showText(value) {
-  const text = value && value !== '—' ? value : '—'
+  const text = cellPlainText(value)
   return (
     <TruncatedText className="wr-table__full" text={text}>
       {text}
@@ -227,7 +233,7 @@ function showText(value) {
 }
 
 function clampText(value, className = 'wr-table__clamp') {
-  const text = value && value !== '—' ? value : '—'
+  const text = cellPlainText(value)
   return (
     <TruncatedText className={className} text={text}>
       {text}
@@ -428,7 +434,16 @@ export default function WorkRequestsTable({
     onRows: reportFilterRows,
   })
   useEffect(() => { setListTotal(total) }, [total])
-  useEffect(() => { reportStatusCounts?.(statusCounts) }, [statusCounts, reportStatusCounts])
+  // Prefer server status_counts (full tab scope). If empty (RPC missing / mis-scoped),
+  // tally the loaded page so StatusPhaseBar still shows counts and click-to-filter works.
+  useEffect(() => {
+    if (!reportStatusCounts) return
+    if (Array.isArray(statusCounts) && statusCounts.length) {
+      reportStatusCounts(statusCounts)
+      return
+    }
+    reportStatusCounts(tallyWorkRequestStatusCounts(requests))
+  }, [statusCounts, requests, reportStatusCounts])
   useEffect(() => {
     if (loading) return undefined
     notifyTabCountsChanged('work_requests')

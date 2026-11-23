@@ -87,6 +87,7 @@ export default function ManualWorkOrderCreate() {
     setAssignedEmployeeIds,
     existingStatus,
     record,
+    values,
     loading,
     saving,
     error,
@@ -344,6 +345,7 @@ export default function ManualWorkOrderCreate() {
         draftRef={draftRef}
         saving={actionsLocked}
         record={record}
+        layoutValues={record && !record.id ? values : null}
         initialEquipmentId={initialEquipmentId || record?.equipment_id || ''}
         initialAssigneeIds={assignedEmployeeIds}
         onAssigneeIdsChange={setAssignedEmployeeIds}

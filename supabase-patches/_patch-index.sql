@@ -141,6 +141,8 @@
 --   132-support-rich-text-storage.sql            → 132-support-rich-text-storage — Rich text storage limits
 --   133-import-job-progress.sql                  → 133-import-job-progress — Row progress for background imports
 --   134-record-templates.sql                     → 134-record-templates — Org-shared record templates + storage
+--   135-org-status-phase-maps.sql                → 135-org-status-phase-maps — Status Filter pill mappings
+--   136-wr-status-count-filter-align.sql         → 136-wr-status-count-filter-align — WR pill counts match list scope
 
 --
 -- OTHER:

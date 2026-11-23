@@ -73,13 +73,14 @@ export default function StatusPhaseBar({
           const canExpand = !flat && phase.statuses.length > 1
           const expanded = expandedPhaseId === phase.id
           const muted = phase.count === 0
+          const canSelect = Array.isArray(phase.statuses) && phase.statuses.length > 0
           return (
             <li key={phase.id} className="status-phase-bar__phase">
               <button
                 type="button"
                 className={`status-count-bar__item status-count-bar__item--button${active ? ' status-count-bar__item--active' : ''}${muted ? ' status-phase-bar__item--muted' : ''}`}
                 aria-pressed={active}
-                disabled={muted && !active}
+                disabled={!canSelect && !active}
                 onClick={() => handlePhase(phase)}
               >
                 <span

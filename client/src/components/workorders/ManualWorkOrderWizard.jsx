@@ -11,6 +11,7 @@ import { layoutRequiresChecklist } from '../../lib/formSkips'
 import { validateRepeatableGroups } from '../../lib/formFillership'
 import { persistFormFileValues } from '../../lib/workOrderFileValues'
 import { parseLayoutId } from '../../lib/formLayoutIds'
+import { templateAssetFieldValues } from '../../lib/recordTemplates'
 import {
   canonicalPriority,
   findLayoutFieldByHint,
@@ -106,6 +107,7 @@ export default function ManualWorkOrderWizard({
   draftRef,
   saving = false,
   record = null,
+  layoutValues = null,
   initialEquipmentId = '',
   initialAssigneeIds = [],
   onAssigneeIdsChange,
@@ -187,6 +189,14 @@ export default function ManualWorkOrderWizard({
   useEffect(() => {
     if (!record || seededRef.current || extras.loading) return
     seededRef.current = true
+    const templateLayout = !record.id && layoutValues && typeof layoutValues === 'object'
+      ? layoutValues
+      : (!record.id && record.form_values && typeof record.form_values === 'object'
+        ? record.form_values
+        : null)
+    if (templateLayout) extras.setValues(templateLayout)
+    const assetValues = templateAssetFieldValues(record)
+    if (Object.keys(assetValues).length) setAssetFieldValues(assetValues)
     if (record.equipment_id) setEquipmentId(record.equipment_id)
     if (record.assigned_department_id) setAssignedDepartmentId(record.assigned_department_id)
     if (record.assigned_department) setAssignedDepartment(record.assigned_department)
@@ -219,7 +229,7 @@ export default function ManualWorkOrderWizard({
     }
     if (record.work_start_at) setWorkStartAt(record.work_start_at)
     if (record.work_end_at) setWorkEndAt(record.work_end_at)
-  }, [record, extras.loading])
+  }, [record, layoutValues, extras.loading, extras.setValues])
 
   const orderToFromLayout = readFieldValue(displayLayout, extras.values, ['order_to_department_id', 'orderto'])
   useEffect(() => {

@@ -151,8 +151,25 @@ export default function AssetPickerField({
     const rows = (() => {
       if (!pinned) return equipment
       const shaped = catalogRowFromEquipmentDetail(pinned)
-      if (equipment.some((row) => row.id === pinned.id)) return equipment
-      return shaped ? [shaped, ...equipment] : equipment
+      if (!shaped) return equipment
+      const index = equipment.findIndex((row) => row.id === pinned.id)
+      if (index === -1) return [shaped, ...equipment]
+      const current = equipment[index]
+      const values = { ...(shaped.values || {}) }
+      for (const [key, value] of Object.entries(current.values || {})) {
+        if (value != null && String(value).trim() !== '') values[key] = value
+      }
+      const next = equipment.slice()
+      next[index] = {
+        ...shaped,
+        ...current,
+        qr_code: current.qr_code || shaped.qr_code,
+        code: current.code || shaped.code,
+        name: current.name || shaped.name,
+        values,
+        field_values: current.field_values?.length ? current.field_values : shaped.field_values,
+      }
+      return next
     })()
     if (sections.some((section) => (section.fields || []).length > 0)) return rows
     return rows.map(withNameValue)

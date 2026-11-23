@@ -2,23 +2,14 @@ import { useEffect, useMemo, useState } from 'react'
 import { EditorContent, useEditor } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Underline from '@tiptap/extension-underline'
-import Link from '@tiptap/extension-link'
-import Highlight from '@tiptap/extension-highlight'
-import { FontSize, TextStyle } from '@tiptap/extension-text-style'
 import Placeholder from '@tiptap/extension-placeholder'
 import {
+  isRichTextEmpty,
   normalizeRichTextValue,
   richTextLength,
   sanitizeRichText,
 } from '../../lib/richText'
 import './RichTextEditor.css'
-
-const FONT_SIZES = [
-  { label: 'Small', value: '12px' },
-  { label: 'Normal', value: '14px' },
-  { label: 'Large', value: '18px' },
-  { label: 'XL', value: '22px' },
-]
 
 function emitChange(onChange, nextValue, name) {
   if (!onChange) return
@@ -71,24 +62,6 @@ function IconOrdered() {
   )
 }
 
-function IconHighlight() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
-      <path d="M3 12.5 9.2 3.4a1.2 1.2 0 0 1 1.8-.2l1.3 1.3a1.2 1.2 0 0 1-.1 1.8L6 14.5H3v-2Z" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
-      <path d="M2.5 14.5h11" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-    </svg>
-  )
-}
-
-function IconLink() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
-      <path d="M7.2 8.8a2.8 2.8 0 0 0 4 0l1.6-1.6a2.8 2.8 0 1 0-4-4L7.6 4.4" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-      <path d="M8.8 7.2a2.8 2.8 0 0 0-4 0L3.2 8.8a2.8 2.8 0 1 0 4 4l1.2-1.2" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-    </svg>
-  )
-}
-
 export default function RichTextEditor({
   value = '',
   onChange,
@@ -117,18 +90,6 @@ export default function RichTextEditor({
       strike: false,
     }),
     Underline,
-    Highlight.configure({ multicolor: false }),
-    TextStyle,
-    FontSize,
-    Link.configure({
-      openOnClick: false,
-      autolink: true,
-      linkOnPaste: true,
-      HTMLAttributes: {
-        rel: 'noopener noreferrer',
-        target: '_blank',
-      },
-    }),
     Placeholder.configure({
       placeholder: placeholder || '',
     }),
@@ -148,12 +109,24 @@ export default function RichTextEditor({
         'aria-label': placeholder || 'Text',
       },
     },
+    onCreate: ({ editor: current }) => {
+      // Empty docs should not keep sticky bold/italic from a prior focus.
+      if (isRichTextEmpty(current.getHTML())) {
+        current.commands.unsetAllMarks()
+      }
+    },
     onUpdate: ({ editor: current }) => {
       const html = normalizeRichTextValue(current.getHTML())
       emitChange(onChange, html, name)
       setTick((n) => n + 1)
     },
     onSelectionUpdate: () => setTick((n) => n + 1),
+    onFocus: ({ editor: current }) => {
+      if (isRichTextEmpty(current.getHTML())) {
+        current.commands.unsetAllMarks()
+        setTick((n) => n + 1)
+      }
+    },
   })
 
   useEffect(() => {
@@ -169,31 +142,17 @@ export default function RichTextEditor({
     // Avoid clobbering while typing the same logical content.
     if (normalizeRichTextValue(next) === current) return
     editor.commands.setContent(next || '', false)
+    if (isRichTextEmpty(next)) {
+      editor.commands.unsetAllMarks()
+    }
   }, [editor, value])
 
   const used = editor ? richTextLength(editor.getHTML()) : richTextLength(value)
   const exceeded = hasLimit && used > limit
   const countVisible = hasLimit && showCount !== false
-
-  const setLink = () => {
-    if (!editor) return
-    // Toggle off if the selection is already a link — no dialog.
-    if (editor.isActive('link')) {
-      editor.chain().focus().extendMarkRange('link').unsetLink().run()
-      return
-    }
-    const { from, to, empty } = editor.state.selection
-    if (empty) return
-    const selected = String(editor.state.doc.textBetween(from, to, ' ') || '').trim()
-    if (!selected) return
-    // Selected text becomes the link target (typed URL / domain / path).
-    const href = /^(https?:\/\/|mailto:|tel:)/i.test(selected)
-      ? selected
-      : `https://${selected.replace(/^\/+/, '')}`
-    editor.chain().focus().extendMarkRange('link').setLink({ href }).run()
-  }
-
-  const fontSizeValue = editor?.getAttributes('textStyle')?.fontSize || ''
+  const boldActive = Boolean(editor?.isActive('bold'))
+  const italicActive = Boolean(editor?.isActive('italic'))
+  const underlineActive = Boolean(editor?.isActive('underline'))
 
   return (
     <div
@@ -211,7 +170,7 @@ export default function RichTextEditor({
           <ToolbarButton
             title="Bold"
             className="rich-text-editor__btn--bold"
-            active={editor?.isActive('bold')}
+            active={boldActive}
             disabled={!editable}
             onClick={() => editor?.chain().focus().toggleBold().run()}
           >
@@ -220,7 +179,7 @@ export default function RichTextEditor({
           <ToolbarButton
             title="Italic"
             className="rich-text-editor__btn--italic"
-            active={editor?.isActive('italic')}
+            active={italicActive}
             disabled={!editable}
             onClick={() => editor?.chain().focus().toggleItalic().run()}
           >
@@ -229,7 +188,7 @@ export default function RichTextEditor({
           <ToolbarButton
             title="Underline"
             className="rich-text-editor__btn--underline"
-            active={editor?.isActive('underline')}
+            active={underlineActive}
             disabled={!editable}
             onClick={() => editor?.chain().focus().toggleUnderline().run()}
           >
@@ -242,7 +201,7 @@ export default function RichTextEditor({
         <div className="rich-text-editor__group">
           <ToolbarButton
             title="Bullet list"
-            active={editor?.isActive('bulletList')}
+            active={Boolean(editor?.isActive('bulletList'))}
             disabled={!editable}
             onClick={() => editor?.chain().focus().toggleBulletList().run()}
           >
@@ -250,54 +209,11 @@ export default function RichTextEditor({
           </ToolbarButton>
           <ToolbarButton
             title="Numbered list"
-            active={editor?.isActive('orderedList')}
+            active={Boolean(editor?.isActive('orderedList'))}
             disabled={!editable}
             onClick={() => editor?.chain().focus().toggleOrderedList().run()}
           >
             <IconOrdered />
-          </ToolbarButton>
-        </div>
-
-        <span className="rich-text-editor__sep" aria-hidden="true" />
-
-        <div className="rich-text-editor__group">
-          <ToolbarButton
-            title="Highlight"
-            active={editor?.isActive('highlight')}
-            disabled={!editable}
-            onClick={() => editor?.chain().focus().toggleHighlight().run()}
-          >
-            <IconHighlight />
-          </ToolbarButton>
-          <select
-            className="rich-text-editor__select"
-            title="Text size"
-            aria-label="Text size"
-            disabled={!editable}
-            value={fontSizeValue}
-            onChange={(e) => {
-              const next = e.target.value
-              if (!next) editor?.chain().focus().unsetFontSize().run()
-              else editor?.chain().focus().setFontSize(next).run()
-            }}
-          >
-            <option value="">Size</option>
-            {FONT_SIZES.map((size) => (
-              <option key={size.value} value={size.value}>{size.label}</option>
-            ))}
-          </select>
-        </div>
-
-        <span className="rich-text-editor__sep" aria-hidden="true" />
-
-        <div className="rich-text-editor__group">
-          <ToolbarButton
-            title="Link selected text"
-            active={editor?.isActive('link')}
-            disabled={!editable}
-            onClick={setLink}
-          >
-            <IconLink />
           </ToolbarButton>
         </div>
       </div>

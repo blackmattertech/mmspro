@@ -62,6 +62,7 @@ import { applyRecordTemplate } from '../../lib/api-record-templates'
 import {
   filesFromTemplateAttachments,
   readTemplateFromId,
+  templateAssetFieldValues,
   templateNavState,
 } from '../../lib/recordTemplates'
 import TemplatesButton from '../../components/templates/TemplatesButton'
@@ -307,8 +308,8 @@ export default function WorkRequestCreate() {
           )
           setRequestType(payload.request_type || 'inter_department')
           setOrderToId(payload.order_to_department_id || '')
-          // Clear hierarchy so AssetPicker reseeds Equipment Location / name from equipment_id.
-          setAssetFieldValues({})
+          // Equipment Location and the other asset levels come from the asset itself.
+          setAssetFieldValues(templateAssetFieldValues(payload))
           setPinnedEquipment(null)
           setEquipmentId(payload.equipment_id || '')
           setShortDescription(payload.short_description || '')

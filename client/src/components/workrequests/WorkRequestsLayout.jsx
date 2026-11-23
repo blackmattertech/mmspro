@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useDebouncedValue } from '../../hooks/useDebouncedValue'
 import { NavLink, Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import StatusPhaseBar, { resolveStatusFilters } from '../shared/StatusPhaseBar'
-import { WORK_REQUEST_PHASES, WR_DISPLAY_STATUS_LABELS } from '../../lib/statusPhases'
+import { WR_DISPLAY_STATUS_LABELS } from '../../lib/statusPhases'
+import { useStatusPhaseMaps } from '../../hooks/useStatusPhaseMaps'
 import { useOrg } from '../../hooks/useOrg'
 import { usePermissions } from '../../hooks/usePermissions'
 import { useTableColumnPrefs } from '../../hooks/useTableColumnPrefs'
@@ -54,9 +55,10 @@ export default function WorkRequestsLayout() {
   const [headerSort, setHeaderSort] = useState(null)
   const [statusSelection, setStatusSelection] = useState([])
   const [statusCounts, setStatusCounts] = useState([])
+  const { phases: workRequestPhases } = useStatusPhaseMaps('work_request')
   const statusFilters = useMemo(
-    () => resolveStatusFilters(statusSelection, WORK_REQUEST_PHASES),
-    [statusSelection],
+    () => resolveStatusFilters(statusSelection, workRequestPhases),
+    [statusSelection, workRequestPhases],
   )
   const reportStatusCounts = useCallback((rows) => {
     setStatusCounts(Array.isArray(rows) ? rows : [])
@@ -91,6 +93,10 @@ export default function WorkRequestsLayout() {
   const draftTab = tabs.find((tab) => tab.id === 'drafts') || null
   const activeTab = getWorkRequestActiveTab(location.pathname)
   const listFilter = activeTab && activeTab !== 'create' ? activeTab : null
+  useEffect(() => {
+    setStatusCounts([])
+    setStatusSelection([])
+  }, [listFilter])
   const isEditPage = /\/work-request\/[^/]+\/edit(?:\/|$)/.test(location.pathname)
   const isCreatePage = activeTab === 'create' || isEditPage
   const isListPage = Boolean(listFilter)
@@ -417,7 +423,7 @@ export default function WorkRequestsLayout() {
             {listFilter && listFilter !== 'drafts' && (
               <StatusPhaseBar
                 counts={statusCounts}
-                phases={WORK_REQUEST_PHASES}
+                phases={workRequestPhases}
                 selectedKeys={statusSelection}
                 onChange={setStatusSelection}
                 labelByKey={WR_DISPLAY_STATUS_LABELS}

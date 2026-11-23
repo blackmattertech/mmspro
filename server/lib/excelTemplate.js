@@ -1,10 +1,78 @@
 import ExcelJS from 'exceljs'
+import JSZip from 'jszip'
 import { parseToIsoDate } from './displayDate.js'
 
 export const TEMPLATE_SHEET = 'Template'
 export const VALID_VALUES_SHEET = 'Valid values'
 const XLSX_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
 const DEFAULT_DROPDOWN_ROWS = 1000
+
+/** Excel often writes these without the cp: prefix; ExcelJS CoreXform rejects that. */
+const UNPREFIXED_CORE_PROPS = [
+  'lastModifiedBy',
+  'keywords',
+  'category',
+  'contentStatus',
+  'revision',
+  'version',
+]
+
+function looksLikeZip(buffer) {
+  return Buffer.isBuffer(buffer) && buffer.length >= 4 && buffer[0] === 0x50 && buffer[1] === 0x4b
+}
+
+/**
+ * Normalize docProps/core.xml so ExcelJS can load workbooks re-saved by Excel / Sheets / Numbers.
+ * Import paths only need sheet data — drop core props if still unreadable.
+ */
+export async function sanitizeXlsxBuffer(buffer) {
+  if (!looksLikeZip(buffer)) return buffer
+
+  const zip = await JSZip.loadAsync(buffer)
+  const coreEntry = zip.file('docProps/core.xml')
+  if (!coreEntry) return buffer
+
+  let core = await coreEntry.async('string')
+  const original = core
+  for (const name of UNPREFIXED_CORE_PROPS) {
+    core = core.replace(new RegExp(`</?${name}\\b`, 'g'), (match) => match.replace(name, `cp:${name}`))
+  }
+  core = core.replace(/cp:cp:/g, 'cp:')
+  if (core === original) return buffer
+
+  zip.file('docProps/core.xml', core)
+  return Buffer.from(await zip.generateAsync({ type: 'uint8array' }))
+}
+
+async function stripCoreProps(buffer) {
+  if (!looksLikeZip(buffer)) return buffer
+  const zip = await JSZip.loadAsync(buffer)
+  if (!zip.file('docProps/core.xml')) return buffer
+  zip.remove('docProps/core.xml')
+  return Buffer.from(await zip.generateAsync({ type: 'uint8array' }))
+}
+
+function isCorePropsParseError(err) {
+  const message = String(err?.message || '')
+  return /Unexpected xml node in parseOpen/i.test(message)
+    || /lastModifiedBy/i.test(message)
+    || /coreProperties/i.test(message)
+}
+
+/** Load an .xlsx buffer, tolerating Excel-saved core.xml that stock ExcelJS rejects. */
+export async function loadExcelWorkbook(buffer) {
+  const workbook = new ExcelJS.Workbook()
+  const sanitized = await sanitizeXlsxBuffer(buffer)
+  try {
+    await workbook.xlsx.load(sanitized)
+    return workbook
+  } catch (err) {
+    if (!isCorePropsParseError(err)) throw err
+    const stripped = await stripCoreProps(sanitized)
+    await workbook.xlsx.load(stripped)
+    return workbook
+  }
+}
 
 export function normalizeName(value) {
   return String(value ?? '').trim().toLowerCase()
@@ -216,8 +284,7 @@ export function readTemplateRows(workbook, expectedColumns, { extraColumns = [],
 }
 
 export async function countExcelDataRows(buffer) {
-  const workbook = new ExcelJS.Workbook()
-  await workbook.xlsx.load(buffer)
+  const workbook = await loadExcelWorkbook(buffer)
   const sheet = workbook.getWorksheet(TEMPLATE_SHEET) || workbook.worksheets[0]
   if (!sheet) return 0
   let count = 0
@@ -233,8 +300,7 @@ export async function countExcelDataRows(buffer) {
 }
 
 export async function runBulkImport(buffer, columns, importRow, options = {}) {
-  const workbook = new ExcelJS.Workbook()
-  await workbook.xlsx.load(buffer)
+  const workbook = await loadExcelWorkbook(buffer)
   const rows = readTemplateRows(workbook, columns, options)
   const results = { created: 0, failed: 0, errors: [], preview: [] }
   const chunkSize = Math.max(1, Number(options.chunkSize) || 20)

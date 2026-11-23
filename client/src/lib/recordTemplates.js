@@ -8,6 +8,43 @@ export {
   validateTemplateName,
 } from '../../../shared/recordTemplates.js'
 
+const FIELD_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+function templateScalar(value) {
+  if (value == null || typeof value === 'object') return ''
+  return String(value).trim()
+}
+
+function hierarchyFieldId(key) {
+  const id = String(key || '')
+  if (id.startsWith('catalog:') || id.startsWith('field:')) return id.slice(id.indexOf(':') + 1)
+  if (FIELD_UUID.test(id)) return id
+  return ''
+}
+
+/**
+ * Hierarchy values to put on the asset picker when a template is applied.
+ * Catalog layout ids (`catalog:<fieldId>`) map onto the picker field id.
+ * Live equipment values win when both are present.
+ */
+export function templateAssetFieldValues(payload) {
+  const out = {}
+  for (const [key, raw] of Object.entries(payload?.form_values || {})) {
+    const fieldId = hierarchyFieldId(key)
+    const text = templateScalar(raw)
+    if (!fieldId || !text) continue
+    out[fieldId] = text
+  }
+  const fromEquipment = payload?.asset_field_values
+  if (fromEquipment && typeof fromEquipment === 'object' && !Array.isArray(fromEquipment)) {
+    for (const [fieldId, raw] of Object.entries(fromEquipment)) {
+      const text = templateScalar(raw)
+      if (fieldId && text) out[fieldId] = text
+    }
+  }
+  return out
+}
+
 /** `navigate(path, { state: templateNavState(id) })` */
 export function templateNavState(templateFromId) {
   return { templateFromId }

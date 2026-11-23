@@ -38,11 +38,35 @@ import {
   equipmentCatalogParents,
   prefillValuesForFields,
 } from '../../lib/equipmentLayoutFields'
+import { templateAssetFieldValues } from '../../lib/recordTemplates'
 import AssetPickerField from '../forms/AssetPickerField'
 import { resolveFormActors, validateRepeatableGroups } from '../../lib/formFillership'
 import { useAuth } from '../../hooks/useAuth'
 import '../company/CompanyShared.css'
+import '../workrequests/WorkRequests.css'
 import './Pm.css'
+
+function PmFormSection({ id, title, hint = null, badge = null, children }) {
+  const titleId = id ? `${id}-title` : undefined
+  return (
+    <section
+      className="wr-form-section"
+      data-section-id={id || undefined}
+      aria-labelledby={title ? titleId : undefined}
+    >
+      {(title || badge) ? (
+        <header className="wr-form-section__head" id={title ? titleId : undefined}>
+          {title ? <h3 className="wr-form-section__title">{title}</h3> : null}
+          {badge}
+        </header>
+      ) : null}
+      <div className="wr-form-section__body">
+        {hint ? <p className="pm-section__hint">{hint}</p> : null}
+        {children}
+      </div>
+    </section>
+  )
+}
 
 const STEPS = [
   { id: 1, label: 'Plan details' },
@@ -211,7 +235,7 @@ export default function PmPlanModal({ plan, saving, onClose, onSave }) {
     setForm(formFromPlan(plan))
     setStep(1)
     setError(null)
-    setAssetFieldValues({})
+    setAssetFieldValues(templateAssetFieldValues(plan))
   }, [plan])
 
   const equipmentSeedKey = useRef('')
@@ -804,7 +828,12 @@ export default function PmPlanModal({ plan, saving, onClose, onSave }) {
           ])}
         </nav>
 
-        <form className="company-modal__form" ref={formRef} onSubmit={handleSubmit} noValidate>
+        <form
+          className="company-modal__form wo-form wr-create-form pm-plan-form"
+          ref={formRef}
+          onSubmit={handleSubmit}
+          noValidate
+        >
           {hasLayout && stepLayout && (
             <OrderedFormLayout
               formId="pm.plan"
@@ -838,21 +867,14 @@ export default function PmPlanModal({ plan, saving, onClose, onSave }) {
                 const nodes = (children || []).filter(Boolean)
                 if (!nodes.length) return null
                 return (
-                  <section
+                  <PmFormSection
                     key={sectionId}
-                    data-section-id={sectionId}
-                    className="company-form__layout-section wo-section"
+                    id={sectionId}
+                    title={section.label || null}
+                    badge={section.badge || null}
                   >
-                    {(section.label || section.badge) ? (
-                      <div className="wo-section__header company-form__layout-section-head">
-                        {section.label ? <h3 className="wo-section__title">{section.label}</h3> : null}
-                        {section.badge}
-                      </div>
-                    ) : null}
-                    <div className="wo-section__body company-form__layout-section-body">
-                      <div className="company-form__grid company-form__grid--12">{nodes}</div>
-                    </div>
-                  </section>
+                    <div className="company-form__grid company-form__grid--12">{nodes}</div>
+                  </PmFormSection>
                 )
               }}
               renderField={(key, meta) => {
@@ -971,8 +993,7 @@ export default function PmPlanModal({ plan, saving, onClose, onSave }) {
           )}
           {!hasLayout && step === 1 && (
           <>
-          <section className="pm-section">
-            <h3 className="pm-section__title">Section A — General information</h3>
+          <PmFormSection id="pm-general" title="Section A — General information">
             <div className="company-form__grid company-form__grid--2">
               {isVisible('name') && (
               <label className={fieldClass('name')} id="pm-field-name">
@@ -1052,11 +1073,13 @@ export default function PmPlanModal({ plan, saving, onClose, onSave }) {
               </div>
               )}
             </div>
-          </section>
+          </PmFormSection>
 
-          <section className="pm-section">
-            <h3 className="pm-section__title">Section B — Asset selection</h3>
-            <p className="pm-section__hint">Choose the plant and the asset this plan maintains.</p>
+          <PmFormSection
+            id="pm-asset"
+            title="Section B — Asset selection"
+            hint="Choose the plant and the asset this plan maintains."
+          >
             <div className="company-form__grid company-form__grid--2">
               {isVisible('location_id') && (
               <label className={fieldClass('location_id')}>
@@ -1077,23 +1100,22 @@ export default function PmPlanModal({ plan, saving, onClose, onSave }) {
                 required: true,
               })}
             </div>
-          </section>
+          </PmFormSection>
 
           {isVisible('schedule') && (
-          <section className="pm-section">
-            <h3 className="pm-section__title">Section C — Schedule</h3>
+          <PmFormSection id="pm-schedule" title="Section C — Schedule">
             {renderScheduleFields('company-form__field company-form__field--full')}
-          </section>
+          </PmFormSection>
           )}
           </>
           )}
 
           {!hasLayout && step === 2 && isVisible('technician_ids') && (
-          <section className="pm-section">
-            <h3 className="pm-section__title">Default technician(s)</h3>
-            <p className="pm-section__hint">
-              Assign the maintenance team that should receive work orders generated from this plan.
-            </p>
+          <PmFormSection
+            id="pm-technicians"
+            title="Default technician(s)"
+            hint="Assign the maintenance team that should receive work orders generated from this plan."
+          >
             {!selectedDepartmentId ? (
               <p className="pm-section__hint">Select a department on Plan details to see technicians for that department.</p>
             ) : (
@@ -1111,15 +1133,15 @@ export default function PmPlanModal({ plan, saving, onClose, onSave }) {
                 />
               </div>
             )}
-          </section>
+          </PmFormSection>
           )}
 
           {!hasLayout && step === 3 && (
-          <section className="pm-section">
-            <h3 className="pm-section__title">Checklist</h3>
-            <p className="pm-section__hint">
-              Attach a checklist template to include inspection items on generated work orders.
-            </p>
+          <PmFormSection
+            id="pm-checklist"
+            title="Checklist"
+            hint="Attach a checklist template to include inspection items on generated work orders."
+          >
             {isVisible('checklist_template_id') && (
             <ChecklistOptIn
               embedded
@@ -1140,7 +1162,7 @@ export default function PmPlanModal({ plan, saving, onClose, onSave }) {
               onChange={extras.setFieldValue}
               disabled={saving}
             />
-          </section>
+          </PmFormSection>
           )}
 
           {error && <p className="company-alert">{error}</p>}

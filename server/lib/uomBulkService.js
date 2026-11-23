@@ -1,6 +1,5 @@
-import ExcelJS from 'exceljs'
 import { supabaseAdmin } from '../services/supabase.js'
-import { buildWorkbook, readTemplateRows } from './excelTemplate.js'
+import { buildWorkbook, loadExcelWorkbook, readTemplateRows } from './excelTemplate.js'
 import {
   lookupUomKey,
   normalizeUomCategory,
@@ -48,8 +47,7 @@ export function buildUomsTemplate() {
 }
 
 export async function importUoms(orgId, buffer) {
-  const workbook = new ExcelJS.Workbook()
-  await workbook.xlsx.load(buffer)
+  const workbook = await loadExcelWorkbook(buffer)
   const rows = readTemplateRows(workbook, TEMPLATE_COLUMNS, {
     extraColumns: TEMPLATE_EXTRA_COLUMNS,
   })
