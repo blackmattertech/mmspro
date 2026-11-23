@@ -59,40 +59,24 @@
   margin-inline: auto;
 }
 
-.pm-plan-page .company-modal__form {
+.pm-plan-page .company-modal__form,
+.pm-plan-page .pm-plan-form {
   align-self: center;
   padding: 20px 0 28px;
   gap: 20px;
 }
 
-/* OrderedFormLayout cards: match work-request create spacing */
-.pm-plan-page .company-form__layout-section.wo-section {
-  box-shadow: none;
-  border: none;
-  background: transparent;
-  overflow: visible;
+/* Same section cards / field chrome as work-request create (wr-form-section). */
+.pm-plan-page .pm-plan-form .wr-form-section + .wr-form-section {
+  margin-top: 0;
 }
 
-.pm-plan-page .company-form__layout-section .wo-section__header.company-form__layout-section-head {
-  padding: 0 0 12px;
-  cursor: default;
+.pm-plan-page .pm-plan-form .pm-section__hint {
+  margin: 0 0 12px;
 }
 
-.pm-plan-page .company-form__layout-section .wo-section__header:hover {
-  background: transparent;
-}
-
-.pm-plan-page .company-form__layout-section .wo-section__body.company-form__layout-section-body {
-  padding: 8px 0 8px;
-  border-top: none;
-}
-
-.pm-plan-page .company-form__layout-section-body--flush {
-  padding-top: 8px;
-}
-
-.pm-plan-page .company-form__layout-section .company-form__grid--12 {
-  gap: 16px 20px;
+.pm-plan-page .pm-plan-form .company-modal__actions {
+  margin-top: 4px;
 }
 
 .pm-modal .wr-asset-sections {
@@ -229,27 +213,24 @@
   flex-shrink: 0;
 }
 
-.pm-section {
+.pm-modal:not(.pm-plan-page) .company-modal__form {
+  padding-top: 24px;
+}
+
+/* Compact section chrome for smaller PM popups (activity types / checklist builder). */
+.pm-modal:not(.pm-plan-page) .pm-section {
   display: grid;
   gap: 12px;
   padding: 20px 0;
   border-top: 1px solid var(--color-light-gray-1);
 }
 
-.pm-section:first-of-type {
-  border-top: none;
-  padding-top: 8px;
-}
-
-.pm-modal:not(.pm-plan-page) .company-modal__form {
-  padding-top: 24px;
-}
-
 .pm-modal:not(.pm-plan-page) .pm-section:first-of-type {
+  border-top: none;
   padding-top: 4px;
 }
 
-.pm-section__title {
+.pm-modal:not(.pm-plan-page) .pm-section__title {
   margin: 0;
   font-size: 13px;
   font-weight: 700;

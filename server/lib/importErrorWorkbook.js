@@ -1,4 +1,5 @@
 import ExcelJS from 'exceljs'
+import { loadExcelWorkbook } from './excelTemplate.js'
 
 const TEMPLATE_SHEET = 'Template'
 export const IMPORT_ERROR_COLUMN = 'Import errors'
@@ -19,8 +20,7 @@ function cellToString(value) {
 export async function buildFailedRowsWorkbook(sourceBuffer, errors) {
   if (!errors?.length) return null
 
-  const sourceWb = new ExcelJS.Workbook()
-  await sourceWb.xlsx.load(sourceBuffer)
+  const sourceWb = await loadExcelWorkbook(sourceBuffer)
   const sourceSheet = sourceWb.getWorksheet(TEMPLATE_SHEET) || sourceWb.worksheets[0]
   if (!sourceSheet) return null
 

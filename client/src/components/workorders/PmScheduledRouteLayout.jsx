@@ -1,11 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Outlet } from 'react-router-dom'
 import StatusPhaseBar, { resolveStatusFilters } from '../shared/StatusPhaseBar'
-import {
-  WORK_ORDER_PHASES,
-  PM_PLAN_PHASES,
-  WO_STATUS_LABELS,
-} from '../../lib/statusPhases'
+import { WO_STATUS_LABELS } from '../../lib/statusPhases'
+import { useStatusPhaseMaps } from '../../hooks/useStatusPhaseMaps'
 import { tallyStatusCounts } from '../../lib/statusCounts'
 import { useLocations } from '../../hooks/useLocations'
 import { useEmployees } from '../../hooks/useEmployees'
@@ -56,9 +53,11 @@ function PmScheduledLayoutInner() {
   const [headerSort, setHeaderSort] = useState(null)
   const [statusSelection, setStatusSelection] = useState([])
   const [orderStatusCounts, setOrderStatusCounts] = useState([])
+  const { phases: pmPlanPhases } = useStatusPhaseMaps('pm_plan')
+  const { phases: workOrderPhases } = useStatusPhaseMaps('work_order')
   const statusFilters = useMemo(
-    () => resolveStatusFilters(statusSelection, view === 'plans' ? PM_PLAN_PHASES : WORK_ORDER_PHASES),
-    [statusSelection, view],
+    () => resolveStatusFilters(statusSelection, view === 'plans' ? pmPlanPhases : workOrderPhases),
+    [statusSelection, view, pmPlanPhases, workOrderPhases],
   )
   const reportStatusCounts = useCallback((rows) => {
     setOrderStatusCounts(Array.isArray(rows) ? rows : [])
@@ -87,7 +86,7 @@ function PmScheduledLayoutInner() {
   }, [])
 
   const isPlansView = view === 'plans'
-  const statusPhases = isPlansView ? PM_PLAN_PHASES : WORK_ORDER_PHASES
+  const statusPhases = isPlansView ? pmPlanPhases : workOrderPhases
   const planStatusCounts = useMemo(
     () => tallyStatusCounts(planRows, (row) => row.status),
     [planRows],

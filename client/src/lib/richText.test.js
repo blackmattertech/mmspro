@@ -5,6 +5,7 @@ import {
   looksLikeHtml,
   plainTextFromRich,
   richTextLength,
+  sanitizeRichText,
 } from './richText.js'
 
 test('looksLikeHtml detects markup', () => {
@@ -22,4 +23,28 @@ test('rich text emptiness and length ignore markup', () => {
   assert.equal(isRichTextEmpty('<p></p>'), true)
   assert.equal(isRichTextEmpty('<p><br></p>'), true)
   assert.equal(richTextLength('<p>abc</p>'), 3)
+})
+
+test('sanitizeRichText keeps basic marks and strips link highlight and size', () => {
+  const input = [
+    '<p>',
+    '<strong>Bold</strong> ',
+    '<em>Italic</em> ',
+    '<u>Under</u> ',
+    '<a href="https://example.com">Link</a> ',
+    '<mark>Highlight</mark> ',
+    '<span style="font-size: 22px">Large</span>',
+    '</p>',
+  ].join('')
+  const cleaned = sanitizeRichText(input)
+  assert.match(cleaned, /<strong>Bold<\/strong>/)
+  assert.match(cleaned, /<em>Italic<\/em>/)
+  assert.match(cleaned, /<u>Under<\/u>/)
+  assert.doesNotMatch(cleaned, /<a\b/i)
+  assert.doesNotMatch(cleaned, /<mark\b/i)
+  assert.doesNotMatch(cleaned, /font-size/i)
+  assert.doesNotMatch(cleaned, /<span\b/i)
+  assert.match(cleaned, /Link/)
+  assert.match(cleaned, /Highlight/)
+  assert.match(cleaned, /Large/)
 })

@@ -1,11 +1,10 @@
-import ExcelJS from 'exceljs'
 import {
   appendWarrantyItems,
   createWarranty,
   findPurchaseWarranty,
   getWarrantyDetail,
 } from './warrantyService.js'
-import { buildWorkbook, readTemplateRows } from './excelTemplate.js'
+import { buildWorkbook, loadExcelWorkbook, readTemplateRows } from './excelTemplate.js'
 import { loadFormMasters, optionalMatch } from './formBulkLookups.js'
 import {
   WARRANTY_IMPORT_COLUMNS,
@@ -135,8 +134,7 @@ function previewRow(group) {
 }
 
 export async function bulkImportWarranties(orgId, buffer, { dryRun = false } = {}) {
-  const workbook = new ExcelJS.Workbook()
-  await workbook.xlsx.load(buffer)
+  const workbook = await loadExcelWorkbook(buffer)
   const rows = readTemplateRows(workbook, WARRANTY_IMPORT_COLUMNS)
   const masters = await loadFormMasters(orgId)
   const plan = planWarrantyImport(rows, (value) => (

@@ -1,4 +1,9 @@
 import { uniqueNameOptions } from './tableFilters.js'
+import { plainTextFromRich } from './richText.js'
+
+function descriptionOption(value) {
+  return plainTextFromRich(value)
+}
 
 /**
  * Build work-order advanced-filter fields from masters + current page rows.
@@ -27,7 +32,9 @@ export function buildWorkOrderFilterFields({
       label: 'Short description',
       type: 'select',
       emptyLabel: 'All descriptions',
-      options: uniqueNameOptions(pageRows, (row) => row.short_description || row.summary),
+      options: uniqueNameOptions(pageRows, (row) => (
+        descriptionOption(row.short_description || row.summary)
+      )),
     },
     {
       id: 'status',
@@ -105,7 +112,9 @@ export function buildWorkRequestFilterFields({
       label: 'Short description',
       type: 'select',
       emptyLabel: 'All descriptions',
-      options: uniqueNameOptions(pageRows, (row) => row.short_description || row.problem_description),
+      options: uniqueNameOptions(pageRows, (row) => (
+        descriptionOption(row.short_description || row.problem_description)
+      )),
     },
     {
       id: 'type',

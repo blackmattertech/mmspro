@@ -87,7 +87,7 @@
 }
 
 .rich-text-editor__btn--bold {
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .rich-text-editor__btn--italic {
@@ -98,13 +98,6 @@
   text-decoration: underline;
 }
 
-.rich-text-editor__select {
-  min-width: 72px;
-  padding: 0 8px;
-  background: #fff;
-  border: 1px solid #d8dde6;
-}
-
 .rich-text-editor__content {
   min-height: 96px;
   max-height: 320px;
@@ -112,6 +105,7 @@
   padding: 10px 12px;
   font: inherit;
   font-size: 14px;
+  font-weight: 400;
   line-height: 1.45;
   color: inherit;
 }
@@ -125,6 +119,12 @@
 .rich-text-editor__content .ProseMirror {
   outline: none;
   min-height: 76px;
+  font-weight: 400;
+}
+
+.rich-text-editor__content .ProseMirror strong,
+.rich-text-editor__content .ProseMirror b {
+  font-weight: 700;
 }
 
 .rich-text-editor__content .ProseMirror ::selection,
@@ -149,17 +149,6 @@
 .rich-text-editor__content .ProseMirror ol {
   margin: 0.35em 0 0.55em;
   padding-left: 1.35em;
-}
-
-.rich-text-editor__content .ProseMirror a {
-  color: #1a5fb4;
-  text-decoration: underline;
-}
-
-.rich-text-editor__content .ProseMirror mark {
-  background: #ffe566;
-  border-radius: 2px;
-  padding: 0 0.1em;
 }
 
 .rich-text-editor__content .ProseMirror p.is-editor-empty:first-child::before {
@@ -205,15 +194,9 @@
   padding-left: 1.25em;
 }
 
-.rich-text-display a {
-  color: #1a5fb4;
-  text-decoration: underline;
-}
-
-.rich-text-display mark {
-  background: #ffe566;
-  border-radius: 2px;
-  padding: 0 0.1em;
+.rich-text-display strong,
+.rich-text-display b {
+  font-weight: 700;
 }
 
 .rich-text-display--plain {

@@ -15,6 +15,7 @@ export default function WorkRequestListPage({ filter, emptyHint }) {
     columnDefs,
     bulkReloadToken = 0,
     reportFilterRows = null,
+    reportStatusCounts = null,
   } = useOutletContext() || {}
 
   return (
@@ -33,6 +34,7 @@ export default function WorkRequestListPage({ filter, emptyHint }) {
       columnDefs={columnDefs}
       bulkReloadToken={bulkReloadToken}
       reportFilterRows={reportFilterRows}
+      reportStatusCounts={reportStatusCounts}
     />
   )
 }

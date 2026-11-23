@@ -51,6 +51,8 @@ const FormMasterStatusRedirect = lazyPage(() => import('./pages/app/FormMasterSt
 const ChecklistMastersRedirect = lazyPage(() => import('./pages/app/ChecklistMastersRedirect'))
 const OthersChecklists = lazyPage(() => import('./pages/app/OthersChecklists'))
 const OthersChecklistBuilder = lazyPage(() => import('./pages/app/OthersChecklistBuilder'))
+const StatusFilterModules = lazyPage(() => import('./pages/app/StatusFilterModules'))
+const StatusFilterManage = lazyPage(() => import('./pages/app/StatusFilterManage'))
 const ConfigurationImport = lazyPage(() => import('./pages/app/ConfigurationImport'))
 const WorkRequestCreate = lazyPage(() => import('./pages/app/WorkRequestCreate'))
 const WorkRequestListPage = lazyPage(() => import('./pages/app/WorkRequestListPage'))
@@ -237,6 +239,14 @@ export default function App() {
               <Route path="masters/forms/:formId/:section" element={withModule('assets', <FormMasters />)} />
               <Route path="masters/forms/:formId" element={withModule('assets', <FormMasters />)} />
               <Route path="masters/forms" element={withModule('assets', <FormMasters />)} />
+              <Route
+                path="masters/status-filters/:entityType"
+                element={withModule('others', <StatusFilterManage />)}
+              />
+              <Route
+                path="masters/status-filters"
+                element={withModule('others', <StatusFilterModules />)}
+              />
               <Route path="masters/company" element={withModule(companyPageModules, <Company />)} />
               <Route path="masters/work-centers" element={withModule('work_centers', <WorkCenters />)} />
               <Route path="masters/uoms" element={withModule('uoms', <Uoms />)} />

@@ -7,7 +7,7 @@ import {
 } from './contactValidation.js'
 import { ensureLocationMaintenanceDepartment } from './locationDefaults.js'
 import { assertBulkCreatesAllowed } from './orgLimits.js'
-import { buildWorkbook as createImportWorkbook, TEMPLATE_SHEET } from './excelTemplate.js'
+import { buildWorkbook as createImportWorkbook, TEMPLATE_SHEET, loadExcelWorkbook } from './excelTemplate.js'
 
 const LOCATION_COLUMNS = [
   'Name', 'Code', 'Address Line 1', 'Address Line 2',
@@ -255,8 +255,7 @@ export async function buildLocationsTemplate() {
 }
 
 export async function bulkImportLocations(orgId, buffer) {
-  const workbook = new ExcelJS.Workbook()
-  await workbook.xlsx.load(buffer)
+  const workbook = await loadExcelWorkbook(buffer)
   const rows = readTemplateRows(workbook, LOCATION_COLUMNS)
   const results = { created: 0, failed: 0, errors: [], preview: [] }
   const MAX_PREVIEW = 250
@@ -348,8 +347,7 @@ export async function buildDepartmentsTemplate(orgId) {
 
 export async function bulkImportDepartments(orgId, buffer) {
   const options = await loadOrgMasters(orgId)
-  const workbook = new ExcelJS.Workbook()
-  await workbook.xlsx.load(buffer)
+  const workbook = await loadExcelWorkbook(buffer)
   const rows = readTemplateRows(workbook, DEPARTMENT_COLUMNS)
   const results = { created: 0, failed: 0, errors: [], preview: [] }
   const MAX_PREVIEW = 250
@@ -514,8 +512,7 @@ async function applyImportedEmployeeManagers(orgId, items, results) {
 
 export async function bulkImportEmployees(orgId, buffer) {
   const options = await loadOrgMasters(orgId)
-  const workbook = new ExcelJS.Workbook()
-  await workbook.xlsx.load(buffer)
+  const workbook = await loadExcelWorkbook(buffer)
   const rows = readTemplateRows(workbook, EMPLOYEE_COLUMNS, {
     optionalColumns: EMPLOYEE_OPTIONAL_COLUMNS,
   })

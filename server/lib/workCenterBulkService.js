@@ -1,10 +1,10 @@
 import { supabaseAdmin } from '../services/supabase.js'
 import {
   buildWorkbook,
+  loadExcelWorkbook,
   readTemplateRows,
   normalizeName,
 } from './excelTemplate.js'
-import ExcelJS from 'exceljs'
 
 const TEMPLATE_COLUMNS = ['Name', 'Code', 'Location', 'Description', 'Active']
 
@@ -134,8 +134,7 @@ async function upsertWorkCenter(orgId, payload, indexes) {
 
 export async function bulkImportWorkCenters(orgId, buffer, { locationId } = {}) {
   const locations = await loadLocations(orgId, locationId)
-  const workbook = new ExcelJS.Workbook()
-  await workbook.xlsx.load(buffer)
+  const workbook = await loadExcelWorkbook(buffer)
   const rows = readTemplateRows(workbook, TEMPLATE_COLUMNS)
 
   const { data: existing, error: existingError } = await supabaseAdmin

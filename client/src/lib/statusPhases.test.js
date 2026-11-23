@@ -3,6 +3,8 @@ import assert from 'node:assert/strict'
 import {
   WORK_ORDER_PHASES,
   WORK_REQUEST_PHASES,
+  buildPhasesFromMaps,
+  phasesForEntity,
   phaseCountsFromFine,
   resolveStatusFilters,
   togglePhaseSelection,
@@ -65,4 +67,25 @@ test('work request open phase includes synthetic WO keys', () => {
   const open = WORK_REQUEST_PHASES.find((p) => p.id === 'open')
   assert.ok(open.statuses.includes('work_order_generated'))
   assert.ok(open.statuses.includes('technician_assigned'))
+})
+
+test('buildPhasesFromMaps and phasesForEntity honor org maps over defaults', () => {
+  const maps = [{ status_key: 'assigned', phase_id: 'open' }]
+  const phases = buildPhasesFromMaps('work_order', maps)
+  assert.deepEqual(phases.find((p) => p.id === 'open').statuses, ['assigned'])
+  assert.deepEqual(phases.find((p) => p.id === 'done').statuses, [])
+
+  const fromEntity = phasesForEntity('work_order', { work_order: maps })
+  assert.deepEqual(fromEntity.find((p) => p.id === 'open').statuses, ['assigned'])
+})
+
+test('resolveStatusFilters with org maps only expands mapped keys', () => {
+  const phases = buildPhasesFromMaps('work_request', [
+    { status_key: 'submitted', phase_id: 'open' },
+    { status_key: 'work_order_generated', phase_id: 'open' },
+  ])
+  assert.deepEqual(
+    resolveStatusFilters([phaseSelectionKey('open')], phases).sort(),
+    ['submitted', 'work_order_generated'].sort(),
+  )
 })

@@ -11,6 +11,7 @@ import {
   TEMPLATE_SHEET,
   VALID_VALUES_SHEET,
   applyTemplateDropdowns,
+  loadExcelWorkbook,
 } from './excelTemplate.js'
 
 /** Built-in placement columns. Area is catalog-only (super-admin Asset Master field). */
@@ -256,8 +257,7 @@ export async function bulkImportEquipment(orgId, buffer, { locationId } = {}) {
   const parents = orderedParentFields(fields)
   const options = scopePlacementOptions(await loadPlacementOptions(orgId), locationId)
 
-  const workbook = new ExcelJS.Workbook()
-  await workbook.xlsx.load(buffer)
+  const workbook = await loadExcelWorkbook(buffer)
   const sheet = workbook.getWorksheet(TEMPLATE_SHEET) || workbook.worksheets[0]
   if (!sheet) throw Object.assign(new Error('No worksheet found in file'), { status: 400 })
 

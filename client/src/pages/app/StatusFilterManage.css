@@ -1,0 +1,98 @@
+.status-filter-page .company-page__content {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.status-filter-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.status-filter-pills__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border: 1px solid color-mix(in srgb, var(--pill-color, #94a3b8) 45%, white);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--color-dark-navy, #1f2430);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.status-filter-pills__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--pill-color, #94a3b8);
+}
+
+.status-filter-warning {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #fff8e6;
+  color: #92400e;
+  font-size: 13px;
+}
+
+.status-filter-table-wrap {
+  padding: 0;
+  overflow: hidden;
+}
+
+.status-filter-table {
+  width: 100%;
+}
+
+.status-filter-table th:last-child,
+.status-filter-table td:last-child {
+  width: 220px;
+}
+
+.status-filter-table tr.is-inactive {
+  opacity: 0.65;
+}
+
+.status-filter-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.status-filter-status__dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.status-filter-status__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.status-filter-status__text strong {
+  font-size: 14px;
+  font-weight: 650;
+  color: var(--color-dark-navy, #1f2430);
+}
+
+.status-filter-status__key {
+  font-size: 12px;
+  color: var(--color-gray-blue, #64748b);
+  word-break: break-all;
+}
+
+@media (max-width: 720px) {
+  .status-filter-table th:last-child,
+  .status-filter-table td:last-child {
+    width: auto;
+  }
+}

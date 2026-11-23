@@ -12,8 +12,9 @@ import {
   listEnvelope,
   restrictToIds,
 } from './listQuery.js'
-import { countExactStatuses, countStatusesViaRpc } from './statusCounts.js'
+import { countStatusesViaRpc } from './statusCounts.js'
 import { applyWorkRequestDisplayStatusFilter } from './workRequestStatusFilter.js'
+import { workRequestEffectiveStatusKeyFromColumns } from './workRequestStatusLabel.js'
 import { createTtlCache } from './ttlCache.js'
 import { loadTimelineActors } from './timelineActors.js'
 import { getSignedUrls } from './signedUrlCache.js'
@@ -2715,10 +2716,16 @@ async function scopeWorkRequestQuery(query, orgId, filter, {
     }
   } else if (filter === 'my' && profileId) {
     next = next.eq('requested_by', profileId)
-  } else if (filter === 'outgoing' && departmentId) {
-    next = next.eq('order_from_department_id', departmentId)
-  } else if (filter === 'incoming' && departmentId) {
-    next = next.eq('order_to_department_id', departmentId)
+  } else if (filter === 'outgoing') {
+    // Match tab badges: without a department there is no outgoing queue.
+    next = departmentId
+      ? next.eq('order_from_department_id', departmentId)
+      : next.eq('id', EMPTY_UUID)
+  } else if (filter === 'incoming') {
+    // Match tab badges: without a department there is no incoming queue.
+    next = departmentId
+      ? next.eq('order_to_department_id', departmentId)
+      : next.eq('id', EMPTY_UUID)
   }
   if (filter !== 'my' && filter !== 'drafts') {
     const scoped = await applyWorkRequestLocationScope(next, orgId, locationId)
@@ -2800,69 +2807,33 @@ export async function listWorkRequests(orgId, filter, {
   ))
   query = query.range(offset, offset + limit - 1)
 
-  const WR_EFFECTIVE_STATUSES = [
-    'draft',
-    'submitted',
-    'pending_approval',
-    'need_info',
-    'info_provided',
-    'approved',
-    'rejected',
-    'cancelled',
-    'converted',
-    'work_order_generated',
-    'technician_assigned',
-    'accepted',
-    'started',
-    'in_progress',
-    'waiting_material',
-    'waiting_shutdown',
-    'on_hold',
-    'completed',
-    'verified',
-    'closed',
-    'returned_rework',
-  ]
+  const countArgs = {
+    p_org_id: orgId,
+    p_filter: filter || 'all',
+    p_profile_id: profileId || null,
+    p_department_id: departmentId || null,
+    p_location_id: locationId || null,
+    p_search: search ? String(search).trim() || null : null,
+  }
 
   const [{ data, error, count }, status_counts] = await Promise.all([
     query,
-    countStatusesViaRpc(
-      'count_work_request_effective_statuses',
-      {
-        p_org_id: orgId,
-        p_filter: filter || 'all',
-        p_profile_id: profileId || null,
-        p_department_id: departmentId || null,
-        p_location_id: locationId || null,
-        p_search: search ? String(search).trim() || null : null,
-      },
-      () => countExactStatuses(
-        () => {
-          let q = supabaseAdmin
-            .from('work_requests')
-            .select('id', { count: 'exact', head: true })
-            .eq('org_id', orgId)
-          if (filter === 'drafts') {
-            q = q.eq('status', 'draft')
-            if (!isOrgAdmin) {
-              q = profileId ? q.eq('requested_by', profileId) : q.eq('requested_by', EMPTY_UUID)
-            }
-          } else if (filter === 'my' && profileId) q = q.eq('requested_by', profileId)
-          else if (filter === 'outgoing' && departmentId) q = q.eq('order_from_department_id', departmentId)
-          else if (filter === 'incoming' && departmentId) q = q.eq('order_to_department_id', departmentId)
-          return (async () => {
-            if (filter !== 'my' && filter !== 'drafts') {
-              const scoped = await applyWorkRequestLocationScope(q, orgId, locationId)
-              q = scoped.query
-            }
-            return {
-              query: applyIlikeSearch(q, search, ['request_number', 'short_description', 'status']),
-            }
-          })()
-        },
-        WR_EFFECTIVE_STATUSES,
+    // Incoming/outgoing without a department match the empty tab badge.
+    ((filter === 'incoming' || filter === 'outgoing') && !departmentId)
+      ? Promise.resolve([])
+      : countStatusesViaRpc(
+        'count_work_request_effective_statuses',
+        countArgs,
+        () => countWorkRequestEffectiveStatusesFallback({
+          orgId,
+          filter,
+          profileId,
+          departmentId,
+          locationId,
+          search,
+          isOrgAdmin,
+        }),
       ),
-    ),
   ])
   if (error) throw error
 
@@ -2875,6 +2846,62 @@ export async function listWorkRequests(orgId, filter, {
     ),
   )
   return listEnvelope(rows, { total: count || 0, limit, offset, status_counts })
+}
+
+/** Page status+execution_status and tally SQL-aligned effective keys when RPC is missing. */
+async function countWorkRequestEffectiveStatusesFallback({
+  orgId,
+  filter,
+  profileId,
+  departmentId,
+  locationId,
+  search,
+  isOrgAdmin = false,
+}) {
+  const map = new Map()
+  const pageSize = 1000
+  let from = 0
+  for (;;) {
+    let q = supabaseAdmin
+      .from('work_requests')
+      .select('status, execution_status')
+      .eq('org_id', orgId)
+    if (filter === 'drafts') {
+      q = q.eq('status', 'draft')
+      if (!isOrgAdmin) {
+        q = profileId ? q.eq('requested_by', profileId) : q.eq('requested_by', EMPTY_UUID)
+      }
+    } else {
+      q = q.neq('status', 'draft')
+      if (filter === 'my' && profileId) q = q.eq('requested_by', profileId)
+      else if (filter === 'outgoing') {
+        q = departmentId
+          ? q.eq('order_from_department_id', departmentId)
+          : q.eq('id', EMPTY_UUID)
+      } else if (filter === 'incoming') {
+        q = departmentId
+          ? q.eq('order_to_department_id', departmentId)
+          : q.eq('id', EMPTY_UUID)
+      }
+      if (filter !== 'my') {
+        const scoped = await applyWorkRequestLocationScope(q, orgId, locationId)
+        q = scoped.query
+      }
+    }
+    q = applyIlikeSearch(q, search, ['request_number', 'short_description', 'status'])
+    const { data, error } = await q.range(from, from + pageSize - 1)
+    if (error) throw error
+    const rows = data || []
+    for (const row of rows) {
+      const key = workRequestEffectiveStatusKeyFromColumns(row.status, row.execution_status)
+      if (!key) continue
+      map.set(key, (map.get(key) || 0) + 1)
+    }
+    if (rows.length < pageSize) break
+    from += pageSize
+    if (from >= 100_000) break
+  }
+  return [...map.entries()].map(([status, count]) => ({ status, count }))
 }
 
 export async function getWorkRequestById(orgId, id) {

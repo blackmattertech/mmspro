@@ -2,10 +2,10 @@ import DOMPurify from 'dompurify'
 
 const ALLOWED_TAGS = [
   'p', 'br', 'strong', 'b', 'em', 'i', 'u',
-  'ul', 'ol', 'li', 'a', 'span', 'mark',
+  'ul', 'ol', 'li',
 ]
 
-const ALLOWED_ATTR = ['href', 'target', 'rel', 'style', 'class']
+const ALLOWED_ATTR = []
 
 /** True when the string looks like stored rich-text HTML. */
 export function looksLikeHtml(value) {
@@ -48,13 +48,27 @@ export function isRichTextEmpty(value) {
   return richTextLength(value) === 0
 }
 
+/** Node/SSR fallback when DOMPurify has no window — strips tags outside the allow list. */
+function sanitizeRichTextFallback(raw) {
+  const allowed = new Set(ALLOWED_TAGS)
+  return raw
+    .replace(/<\/?([a-z0-9]+)(\s[^>]*)?>/gi, (match, tagName) => {
+      const tag = String(tagName || '').toLowerCase()
+      if (!allowed.has(tag)) return ''
+      // Drop attributes in fallback; DOMPurify handles this in the browser.
+      if (tag === 'br') return '<br>'
+      return match.startsWith('</') ? `</${tag}>` : `<${tag}>`
+    })
+    .replace(/\s+style\s*=\s*(['"]).*?\1/gi, '')
+}
+
 /** Sanitize editor HTML for safe storage/display. Plain text passes through. */
 export function sanitizeRichText(value) {
   const raw = String(value ?? '')
   if (!raw) return ''
   if (!looksLikeHtml(raw)) return raw
   if (typeof window === 'undefined') {
-    return raw
+    return sanitizeRichTextFallback(raw)
   }
   return DOMPurify.sanitize(raw, {
     ALLOWED_TAGS,

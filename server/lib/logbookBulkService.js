@@ -1,6 +1,5 @@
-import ExcelJS from 'exceljs'
 import { supabaseAdmin } from '../services/supabase.js'
-import { buildWorkbook, normalizeName, readTemplateRows } from './excelTemplate.js'
+import { buildWorkbook, loadExcelWorkbook, normalizeName, readTemplateRows } from './excelTemplate.js'
 import { addMeterReading, loadLogbookAssetFields } from './logbookService.js'
 
 const READING_HEADER = 'Meter reading'
@@ -158,8 +157,7 @@ export async function bulkImportMeterReadings(orgId, userId, buffer, { locationI
   ])
   const columns = identityColumns(assetFields)
   const headers = [...columns.map((column) => column.header), READING_HEADER]
-  const workbook = new ExcelJS.Workbook()
-  await workbook.xlsx.load(buffer)
+  const workbook = await loadExcelWorkbook(buffer)
   const rows = readTemplateRows(workbook, headers)
   const results = { created: 0, failed: 0, errors: [], preview: [] }
   const base = Date.now()

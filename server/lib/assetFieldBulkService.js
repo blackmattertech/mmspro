@@ -11,6 +11,7 @@ import {
   TEMPLATE_SHEET,
   VALID_VALUES_SHEET,
   applyTemplateDropdowns,
+  loadExcelWorkbook,
 } from './excelTemplate.js'
 
 const SECTION_COLUMNS = ['Name', 'Order', 'Active']
@@ -224,8 +225,7 @@ export async function buildSectionsTemplate(orgId) {
 }
 
 export async function bulkImportSections(orgId, buffer) {
-  const workbook = new ExcelJS.Workbook()
-  await workbook.xlsx.load(buffer)
+  const workbook = await loadExcelWorkbook(buffer)
   const rows = readTemplateRows(workbook, SECTION_COLUMNS)
   const results = { created: 0, updated: 0, failed: 0, errors: [], preview: [] }
   const MAX_PREVIEW = 250
@@ -299,8 +299,7 @@ export async function buildParentsTemplate(orgId) {
 }
 
 export async function bulkImportParents(orgId, buffer) {
-  const workbook = new ExcelJS.Workbook()
-  await workbook.xlsx.load(buffer)
+  const workbook = await loadExcelWorkbook(buffer)
   const rows = readTemplateRows(workbook, PARENT_COLUMNS)
   const results = { created: 0, updated: 0, failed: 0, errors: [], preview: [] }
   const MAX_PREVIEW = 250
@@ -458,8 +457,7 @@ export async function buildChildrenTemplate(orgId) {
 }
 
 export async function bulkImportChildren(orgId, buffer) {
-  const workbook = new ExcelJS.Workbook()
-  await workbook.xlsx.load(buffer)
+  const workbook = await loadExcelWorkbook(buffer)
   const rows = readTemplateRows(workbook, CHILD_COLUMNS)
   const results = { created: 0, updated: 0, failed: 0, errors: [], preview: [] }
   const MAX_PREVIEW = 250

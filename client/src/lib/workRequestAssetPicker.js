@@ -2,7 +2,7 @@ import {
   collectFieldsToClearOnChange,
   filterVisibleFields,
   isFieldDependencyMet,
-} from './assetFieldDependencies'
+} from './assetFieldDependencies.js'
 
 const EQUIPMENT_CASCADE_ROLES = new Set([
   'equipmentType',
@@ -129,14 +129,46 @@ function isNameField(field) {
   return /(^|[^a-z])name([^a-z]|$)/i.test(String(field?.name || ''))
 }
 
+function fieldValueText(item) {
+  if (!item) return ''
+  if (item.value_text) return normalizeValue(item.value_text)
+  if (Array.isArray(item.value_json?.values)) return normalizeValue(item.value_json.values)
+  return ''
+}
+
 /** Value for a master field on an equipment catalog row (includes name/code columns). */
 export function equipmentFieldValue(row, field) {
   if (!row || !field) return ''
   const fromValues = normalizeValue(row.values?.[field.id])
   if (fromValues) return fromValues
+  if (Array.isArray(row.field_values)) {
+    const match = row.field_values.find((item) => item?.field_id === field.id)
+    const fromDetail = fieldValueText(match)
+    if (fromDetail) return fromDetail
+  }
   if (isNameField(field) && row.name) return String(row.name).trim()
   if (isCodeField(field) && row.code) return String(row.code).trim()
   return ''
+}
+
+/**
+ * Fill hierarchy fields that are still blank. Existing values and fields the
+ * user already edited stay as they are, so a late equipment load cannot wipe
+ * a template prefill.
+ */
+export function mergeBlankHierarchyValues(current, seeded, lockedIds = []) {
+  const locked = new Set(lockedIds)
+  const next = { ...(current || {}) }
+  let changed = false
+  for (const [id, value] of Object.entries(seeded || {})) {
+    if (locked.has(id)) continue
+    const incoming = normalizeValue(value)
+    if (!incoming) continue
+    if (normalizeValue(next[id])) continue
+    next[id] = Array.isArray(value) ? value : incoming
+    changed = true
+  }
+  return changed ? next : current
 }
 
 /** Build form field values from a selected equipment row. */

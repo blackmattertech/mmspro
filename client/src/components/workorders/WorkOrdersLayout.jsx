@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useDebouncedValue } from '../../hooks/useDebouncedValue'
 import { NavLink, Navigate, Outlet, useNavigate, useLocation } from 'react-router-dom'
 import StatusPhaseBar, { resolveStatusFilters } from '../shared/StatusPhaseBar'
-import { WORK_ORDER_PHASES, WO_STATUS_LABELS } from '../../lib/statusPhases'
+import { WO_STATUS_LABELS } from '../../lib/statusPhases'
+import { useStatusPhaseMaps } from '../../hooks/useStatusPhaseMaps'
 import { useOrg } from '../../hooks/useOrg'
 import { useProfile } from '../../hooks/useProfile'
 import { useLocations } from '../../hooks/useLocations'
@@ -80,9 +81,10 @@ export default function WorkOrdersLayout() {
   const [headerSort, setHeaderSort] = useState(null)
   const [statusSelection, setStatusSelection] = useState([])
   const [statusCounts, setStatusCounts] = useState([])
+  const { phases: workOrderPhases } = useStatusPhaseMaps('work_order')
   const statusFilters = useMemo(
-    () => resolveStatusFilters(statusSelection, WORK_ORDER_PHASES),
-    [statusSelection],
+    () => resolveStatusFilters(statusSelection, workOrderPhases),
+    [statusSelection, workOrderPhases],
   )
   const reportStatusCounts = useCallback((rows) => {
     setStatusCounts(Array.isArray(rows) ? rows : [])
@@ -340,7 +342,7 @@ export default function WorkOrdersLayout() {
           {!isFormPage && (
             <StatusPhaseBar
               counts={statusCounts}
-              phases={WORK_ORDER_PHASES}
+              phases={workOrderPhases}
               selectedKeys={statusSelection}
               onChange={setStatusSelection}
               labelByKey={WO_STATUS_LABELS}

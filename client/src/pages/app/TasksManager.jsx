@@ -31,10 +31,8 @@ import '../../components/company/CompanyShared.css'
 import '../../components/tasks/Tasks.css'
 import { useConfirmDelete } from '../../hooks/useConfirmDelete'
 import StatusPhaseBar, { resolveStatusFilters } from '../../components/shared/StatusPhaseBar'
-import {
-  buildTaskPhases,
-  taskLabelByKey,
-} from '../../lib/statusPhases'
+import { taskLabelByKey } from '../../lib/statusPhases'
+import { useStatusPhaseMaps } from '../../hooks/useStatusPhaseMaps'
 
 const TaskVoiceAssistant = lazy(() => import('../../components/tasks/TaskVoiceAssistant'))
 const VoiceAgentIcon = lazy(() => import('../../components/ui/VoiceAgentIcon'))
@@ -145,7 +143,7 @@ export default function TasksManager() {
   } = useTasksPage(filters, {
     mode: viewMode === 'kanban' ? 'kanban' : 'list',
   })
-  const taskPhases = useMemo(() => buildTaskPhases(statuses), [statuses])
+  const { phases: taskPhases } = useStatusPhaseMaps('task')
   const statusFilters = useMemo(
     () => resolveStatusFilters(statusSelection, taskPhases),
     [statusSelection, taskPhases],

@@ -35,6 +35,37 @@ function text(value) {
   return value == null ? '' : String(value).trim()
 }
 
+function equipmentValueText(row) {
+  if (!row) return ''
+  if (Array.isArray(row.value_json?.values)) {
+    return row.value_json.values.map((value) => text(value)).filter(Boolean).join(', ')
+  }
+  return text(row.value_text)
+}
+
+/** field_id → text for an equipment's parent values. Used to prefill asset pickers. */
+export function assetFieldValuesFromValueRows(rows) {
+  const out = {}
+  for (const row of rows || []) {
+    const fieldId = text(row?.field_id)
+    const value = equipmentValueText(row)
+    if (fieldId && value) out[fieldId] = value
+  }
+  return out
+}
+
+async function assetFieldValuesForEquipment(orgId, equipmentId) {
+  const id = text(equipmentId)
+  if (!orgId || !id) return {}
+  const { data, error } = await supabaseAdmin
+    .from('equipment_values')
+    .select('field_id, value_text, value_json')
+    .eq('org_id', orgId)
+    .eq('equipment_id', id)
+  if (error) throw error
+  return assetFieldValuesFromValueRows(data)
+}
+
 function safeFileName(name) {
   return String(name || 'file').replace(/[^a-zA-Z0-9._-]/g, '_') || 'file'
 }
@@ -427,11 +458,15 @@ export async function applyRecordTemplate(orgId, templateId) {
       signed_url: signedUrl,
     })
   }
+  const payload = { ...(template.payload || {}) }
+  if (payload.equipment_id) {
+    payload.asset_field_values = await assetFieldValuesForEquipment(orgId, payload.equipment_id)
+  }
   return {
     id: template.id,
     module_key: template.module_key,
     name: template.name,
-    payload: template.payload,
+    payload,
     attachments,
   }
 }

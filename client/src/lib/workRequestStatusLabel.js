@@ -46,6 +46,37 @@ function pendingApproverLabel(row) {
 }
 
 /**
+ * SQL-aligned effective status (matches count_work_request_effective_statuses).
+ */
+export function workRequestEffectiveStatusKeyFromColumns(status, executionStatus) {
+  const requestStatus = String(status || '').trim() || 'submitted'
+  if (requestStatus !== 'approved') return requestStatus
+  const exec = String(executionStatus || '').trim()
+  if (!exec || exec === 'draft' || exec === 'created') return 'work_order_generated'
+  if (exec === 'assigned') return 'technician_assigned'
+  return exec
+}
+
+/** Prefer display key when row is enriched; else SQL-aligned columns. */
+export function workRequestEffectiveStatusKey(row) {
+  if (row?.linked_work_order || row?.assigned_technicians || row?.manual_work_order_id) {
+    return workRequestStatusDisplay(row).key
+  }
+  return workRequestEffectiveStatusKeyFromColumns(row?.status, row?.execution_status)
+}
+
+/** Aggregate list rows into { status, count }[] for StatusPhaseBar. */
+export function tallyWorkRequestStatusCounts(rows = []) {
+  const map = new Map()
+  for (const row of rows || []) {
+    const key = workRequestEffectiveStatusKey(row)
+    if (!key) continue
+    map.set(key, (map.get(key) || 0) + 1)
+  }
+  return [...map.entries()].map(([status, count]) => ({ status, count }))
+}
+
+/**
  * Status shown on a work request.
  * Before a work order exists, this is the request status.
  * After approval, it follows the work order: generated, technician assigned,

@@ -197,6 +197,38 @@ function scrollToSection(id) {
   document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 
+function RequiredMark() {
+  return <span className="warranty-create__required" aria-hidden="true">*</span>
+}
+
+function FieldLabel({ children, required = false }) {
+  return (
+    <span className="company-form__label">
+      <span className="company-form__label-text">
+        {children}
+        {required ? <RequiredMark /> : null}
+      </span>
+    </span>
+  )
+}
+
+function SectionCard({ id, number, title, children, actions = null }) {
+  return (
+    <section id={id} className="warranty-create__card" aria-labelledby={id ? `${id}-title` : undefined}>
+      <header className="warranty-create__card-head">
+        <div className="warranty-create__card-title">
+          <span className="warranty-create__section-num" aria-hidden="true">{number}</span>
+          <h2 id={id ? `${id}-title` : undefined}>{title}</h2>
+        </div>
+        {actions}
+      </header>
+      <div className="warranty-create__card-body">
+        {children}
+      </div>
+    </section>
+  )
+}
+
 function TrashIcon() {
   return (
     <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true">
@@ -204,6 +236,15 @@ function TrashIcon() {
     </svg>
   )
 }
+
+const REMINDER_DAY_OPTIONS = [
+  { value: '7', label: '7 days' },
+  { value: '15', label: '15 days' },
+  { value: '30', label: '30 days' },
+  { value: '45', label: '45 days' },
+  { value: '60', label: '60 days' },
+  { value: '90', label: '90 days' },
+]
 
 export default function WarrantyForm({
   formId = 'warranty-form',
@@ -362,208 +403,280 @@ export default function WarrantyForm({
 
   const remarksLimit = maxLength('remarks')
   const vendorDone = Boolean(String(values.vendor_id || values.vendor || '').trim())
-  const productDone = values.items.some((item) => (
-    item.product_name?.trim() && item.warranty_start && item.warranty_end
+  const purchaseDone = values.items.some((item) => (
+    item.po_number?.trim() || item.invoice_number?.trim() || item.purchase_date
   ))
+  const productDone = values.items.some((item) => item.product_name?.trim())
+  const warrantyDone = values.items.some((item) => item.warranty_start && item.warranty_end)
+  const documentsDone = values.items.some((item) => (item.documents || []).length > 0)
   const showVendorCard = isVisible('vendor_id') || isVisible('contact_name')
     || isVisible('contact_phone') || isVisible('contact_email') || isVisible('serial_number')
-  const steps = [
-    { id: 'warranty-vendor', label: 'Vendor details', done: vendorDone },
-    { id: 'warranty-products', label: 'Product & warranty', done: productDone },
-  ]
-  const currentStep = vendorDone ? 1 : 0
+  const showItems = isVisible('items')
+  const multiItem = values.items.length > 1
 
-  const itemsEditor = (
-    <div className="warranty-create__items">
-      {values.items.map((item, index) => (
-        <article key={index} className="warranty-create__item">
+  const steps = [
+    showVendorCard && { id: 'warranty-vendor', label: 'Vendor Information', done: vendorDone },
+    showItems && { id: 'warranty-purchase', label: 'Purchase Information', done: purchaseDone },
+    showItems && { id: 'warranty-product', label: 'Product Information', done: productDone },
+    showItems && { id: 'warranty-dates', label: 'Warranty Information', done: warrantyDone },
+    showItems && isVisible('documents') && {
+      id: 'warranty-documents',
+      label: 'Documents & Evidence',
+      done: documentsDone,
+    },
+  ].filter(Boolean)
+  const currentStep = Math.max(0, steps.findIndex((step) => !step.done))
+
+  const reminderOptionsFor = (item) => {
+    const current = String(item.expiry_notification_days ?? '').trim()
+    if (!current || REMINDER_DAY_OPTIONS.some((opt) => opt.value === current)) {
+      return REMINDER_DAY_OPTIONS
+    }
+    return [...REMINDER_DAY_OPTIONS, { value: current, label: `${current} days` }]
+  }
+
+  const renderItemSections = (item, index) => {
+    const purchaseId = index === 0 ? 'warranty-purchase' : `warranty-purchase-${index}`
+    const productId = index === 0 ? 'warranty-product' : `warranty-product-${index}`
+    const warrantyId = index === 0 ? 'warranty-dates' : `warranty-dates-${index}`
+    const documentsId = index === 0 ? 'warranty-documents' : `warranty-documents-${index}`
+    const reminderValue = String(item.expiry_notification_days ?? '')
+    const periodDisplay = item.warranty_period_months === '' || item.warranty_period_months == null
+      ? ''
+      : String(item.warranty_period_months)
+
+    return (
+      <div key={index} className={`warranty-create__item-stack${multiItem ? ' is-multi' : ''}`}>
+        {multiItem && (
           <div className="warranty-create__item-head">
             <div className="warranty-create__item-title">
               <span className="warranty-create__item-index">{String(index + 1).padStart(2, '0')}</span>
-              <strong>Item details</strong>
+              <strong>{item.product_name?.trim() || `Item ${index + 1}`}</strong>
             </div>
             <div className="warranty-create__item-tools">
               <button type="button" onClick={() => duplicateItemRow(index)} disabled={!canSave}>
                 Duplicate item
               </button>
-              {values.items.length > 1 && (
-                <button
-                  type="button"
-                  className="warranty-create__icon-btn"
-                  onClick={() => removeItemRow(index)}
-                  disabled={!canSave}
-                  aria-label={`Remove item ${index + 1}`}
-                >
-                  <TrashIcon />
-                </button>
-              )}
+              <button
+                type="button"
+                className="warranty-create__icon-btn"
+                onClick={() => removeItemRow(index)}
+                disabled={!canSave}
+                aria-label={`Remove item ${index + 1}`}
+              >
+                <TrashIcon />
+              </button>
             </div>
           </div>
-          <div className="warranty-create__item-grid">
-              <label className="company-form__field">
-                <FormLabel fieldType="text" limit={masterFieldLimit('name')}>Product / Material Name</FormLabel>
-                <SpellcheckInput
-                  className="company-form__input"
-                  value={item.product_name}
-                  placeholder="Enter product / material name"
-                  disabled={!canSave}
-                  onChange={(e) => setItemField(index, 'product_name', e.target.value)}
-                  maxLength={masterFieldLimit('name')}
-                />
-              </label>
-              <label className="company-form__field">
-                <FormLabel fieldType="text" limit={masterFieldLimit('code')}>Model / P.No</FormLabel>
-                <SpellcheckInput
-                  className="company-form__input"
-                  value={item.model_part_no}
-                  placeholder="Enter model or part number"
-                  disabled={!canSave}
-                  onChange={(e) => setItemField(index, 'model_part_no', e.target.value)}
-                  maxLength={masterFieldLimit('code')}
-                />
-              </label>
-              <label className="company-form__field">
-                <span className="company-form__label">Value</span>
+        )}
+
+        <SectionCard id={purchaseId} number="2" title="Purchase Information">
+          <div className="warranty-create__grid warranty-create__grid--2">
+            <label className="company-form__field">
+              <FieldLabel>PO Number</FieldLabel>
+              <input
+                type="text"
+                className="company-form__input"
+                value={item.po_number}
+                placeholder="PO Number"
+                disabled={!canSave}
+                onChange={(e) => setItemField(index, 'po_number', e.target.value)}
+              />
+            </label>
+            <label className="company-form__field">
+              <FieldLabel>PO Date</FieldLabel>
+              <DateField
+                value={item.po_date}
+                placeholder="Select date"
+                disabled={!canSave}
+                onChange={(value) => setItemField(index, 'po_date', value)}
+              />
+            </label>
+            <label className="company-form__field">
+              <FieldLabel>Invoice Number</FieldLabel>
+              <input
+                type="text"
+                className="company-form__input"
+                value={item.invoice_number}
+                placeholder="Invoice Number"
+                disabled={!canSave}
+                onChange={(e) => setItemField(index, 'invoice_number', e.target.value)}
+              />
+            </label>
+            <label className="company-form__field">
+              <FieldLabel>Invoice Date</FieldLabel>
+              <DateField
+                value={item.invoice_date}
+                placeholder="Select date"
+                disabled={!canSave}
+                onChange={(value) => setItemField(index, 'invoice_date', value)}
+              />
+            </label>
+            <label className="company-form__field">
+              <FieldLabel>Date of purchase</FieldLabel>
+              <DateField
+                value={item.purchase_date}
+                placeholder="Select date"
+                disabled={!canSave}
+                onChange={(value) => setItemField(index, 'purchase_date', value)}
+              />
+            </label>
+            <label className="company-form__field">
+              <FieldLabel>Value</FieldLabel>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                className="company-form__input"
+                value={item.value}
+                placeholder="Enter value"
+                disabled={!canSave}
+                onChange={(e) => setItemField(index, 'value', e.target.value)}
+              />
+            </label>
+          </div>
+        </SectionCard>
+
+        <SectionCard
+          id={productId}
+          number="3"
+          title="Product Information"
+          actions={(
+            !multiItem ? (
+              <button
+                type="button"
+                className="company-btn company-btn--primary company-btn--compact"
+                onClick={addItemRow}
+                disabled={!canSave}
+              >
+                + Add item
+              </button>
+            ) : null
+          )}
+        >
+          <div className="warranty-create__grid">
+            <label className="company-form__field warranty-create__field--full">
+              <FormLabel fieldType="text" limit={masterFieldLimit('name')}>
+                Product / Material Name
+                <RequiredMark />
+              </FormLabel>
+              <SpellcheckInput
+                className="company-form__input"
+                value={item.product_name}
+                placeholder="Enter product or material name"
+                disabled={!canSave}
+                onChange={(e) => setItemField(index, 'product_name', e.target.value)}
+                maxLength={masterFieldLimit('name')}
+              />
+            </label>
+            <label className="company-form__field">
+              <FormLabel fieldType="text" limit={masterFieldLimit('name')}>Make / Brand</FormLabel>
+              <SpellcheckInput
+                className="company-form__input"
+                value={item.make}
+                placeholder="Manufacturer / Brand"
+                disabled={!canSave}
+                onChange={(e) => setItemField(index, 'make', e.target.value)}
+                maxLength={masterFieldLimit('name')}
+              />
+            </label>
+            <label className="company-form__field">
+              <FormLabel fieldType="text" limit={masterFieldLimit('code')}>Model / Part Number</FormLabel>
+              <SpellcheckInput
+                className="company-form__input"
+                value={item.model_part_no}
+                placeholder="Model or part number"
+                disabled={!canSave}
+                onChange={(e) => setItemField(index, 'model_part_no', e.target.value)}
+                maxLength={masterFieldLimit('code')}
+              />
+            </label>
+          </div>
+        </SectionCard>
+
+        <SectionCard id={warrantyId} number="4" title="Warranty Information">
+          <div className="warranty-create__grid warranty-create__grid--2">
+            <label className="company-form__field">
+              <FieldLabel required>Warranty Start</FieldLabel>
+              <DateField
+                value={item.warranty_start}
+                placeholder="Start date"
+                disabled={!canSave}
+                onChange={(value) => setItemField(index, 'warranty_start', value)}
+              />
+            </label>
+            <label className="company-form__field">
+              <FieldLabel required>Warranty End</FieldLabel>
+              <DateField
+                value={item.warranty_end}
+                placeholder="End date"
+                disabled={!canSave}
+                onChange={(value) => setItemField(index, 'warranty_end', value)}
+              />
+            </label>
+            <label className="company-form__field">
+              <FieldLabel>Warranty Period</FieldLabel>
+              <div className="warranty-create__period">
                 <input
                   type="number"
                   min="0"
-                  step="0.01"
                   className="company-form__input"
-                  value={item.value}
-                  placeholder="Enter value"
+                  placeholder="Auto-calculated"
                   disabled={!canSave}
-                  onChange={(e) => setItemField(index, 'value', e.target.value)}
-                />
-              </label>
-              <label className="company-form__field">
-                <FormLabel fieldType="text" limit={masterFieldLimit('name')}>Make</FormLabel>
-                <SpellcheckInput
-                  className="company-form__input"
-                  value={item.make}
-                  placeholder="Enter make"
-                  disabled={!canSave}
-                  onChange={(e) => setItemField(index, 'make', e.target.value)}
-                  maxLength={masterFieldLimit('name')}
-                />
-              </label>
-              <label className="company-form__field">
-                <span className="company-form__label">Date of purchase</span>
-                <DateField
-                  value={item.purchase_date}
-                  disabled={!canSave}
-                  onChange={(value) => setItemField(index, 'purchase_date', value)}
-                />
-              </label>
-              <label className="company-form__field">
-                <span className="company-form__label">PO Number</span>
-                <input
-                  type="text"
-                  className="company-form__input"
-                  value={item.po_number}
-                  placeholder="Enter PO number"
-                  disabled={!canSave}
-                  onChange={(e) => setItemField(index, 'po_number', e.target.value)}
-                />
-              </label>
-              <label className="company-form__field">
-                <span className="company-form__label">PO Date</span>
-                <DateField
-                  value={item.po_date}
-                  disabled={!canSave}
-                  onChange={(value) => setItemField(index, 'po_date', value)}
-                />
-              </label>
-              <label className="company-form__field">
-                <span className="company-form__label">Invoice Number</span>
-                <input
-                  type="text"
-                  className="company-form__input"
-                  value={item.invoice_number}
-                  placeholder="Enter invoice number"
-                  disabled={!canSave}
-                  onChange={(e) => setItemField(index, 'invoice_number', e.target.value)}
-                />
-              </label>
-              <label className="company-form__field">
-                <span className="company-form__label">Invoice Date</span>
-                <DateField
-                  value={item.invoice_date}
-                  disabled={!canSave}
-                  onChange={(value) => setItemField(index, 'invoice_date', value)}
-                />
-              </label>
-              <label className="company-form__field">
-                <span className="company-form__label">Warranty Start</span>
-                <DateField
-                  value={item.warranty_start}
-                  disabled={!canSave}
-                  onChange={(value) => setItemField(index, 'warranty_start', value)}
-                />
-              </label>
-              <label className="company-form__field">
-                <span className="company-form__label">Warranty End</span>
-                <DateField
-                  value={item.warranty_end}
-                  disabled={!canSave}
-                  onChange={(value) => setItemField(index, 'warranty_end', value)}
-                />
-              </label>
-              <label className="company-form__field">
-                <span className="company-form__label">Period (months)</span>
-                <input
-                  type="number"
-                  min="0"
-                  className="company-form__input"
-                  placeholder="Auto"
-                  disabled={!canSave}
-                  value={item.warranty_period_months}
+                  value={periodDisplay}
                   onChange={(e) => setItemField(index, 'warranty_period_months', e.target.value)}
                 />
-              </label>
-              <label className="company-form__field">
-                <span className="company-form__label">Expiry notification (days)</span>
-                <input
-                  type="number"
-                  min="0"
-                  className="company-form__input"
-                  placeholder="30"
-                  disabled={!canSave}
-                  value={item.expiry_notification_days}
-                  onChange={(e) => setItemField(index, 'expiry_notification_days', e.target.value)}
-                />
-              </label>
-            </div>
-            <div className="warranty-create__item-foot">
-              <label className="company-form__field">
-                <FormLabel fieldType="textarea" limit={remarksLimit}>Remarks</FormLabel>
-                <SpellcheckInput
-                  richText
-                  multiline
-                  rows={4}
-                  className="company-form__input company-form__textarea"
-                  value={item.remarks}
-                  placeholder="Enter additional notes, terms or remarks…"
-                  disabled={!canSave}
-                  onChange={(e) => setItemField(index, 'remarks', e.target.value)}
-                  maxLength={remarksLimit}
-                />
-              </label>
-              {isVisible('documents') && (
-                <WarrantyDocumentsSection
-                  compact
-                  title="Attachments & Evidence"
-                  description="Upload product photos and supporting warranty documents."
-                  documents={item.documents || []}
-                  removedDocumentIds={item.removedDocumentIds || []}
-                  disabled={saving || !canSave}
-                  onChange={(next) => setItemDocuments(index, next)}
-                />
-              )}
-            </div>
-          </article>
-        ))}
-    </div>
-  )
+                <span className="warranty-create__period-suffix">months</span>
+              </div>
+            </label>
+            <label className="company-form__field">
+              <FieldLabel>Reminder Before Expiry</FieldLabel>
+              <select
+                className="company-form__input company-form__input--select"
+                disabled={!canSave}
+                value={reminderValue}
+                onChange={(e) => setItemField(index, 'expiry_notification_days', e.target.value)}
+              >
+                <option value="">Select days</option>
+                {reminderOptionsFor(item).map((opt) => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
+            </label>
+            <label className="company-form__field warranty-create__field--full">
+              <FormLabel fieldType="textarea" limit={remarksLimit}>Remarks</FormLabel>
+              <SpellcheckInput
+                richText
+                multiline
+                rows={4}
+                className="company-form__input company-form__textarea"
+                value={item.remarks}
+                placeholder="Enter additional notes, terms or remarks…"
+                disabled={!canSave}
+                onChange={(e) => setItemField(index, 'remarks', e.target.value)}
+                maxLength={remarksLimit}
+              />
+            </label>
+          </div>
+        </SectionCard>
+
+        {isVisible('documents') && (
+          <SectionCard id={documentsId} number="5" title="Documents & Evidence">
+            <WarrantyDocumentsSection
+              compact
+              showHeader={false}
+              title="Documents & Evidence"
+              description="Upload product photos and supporting warranty documents."
+              documents={item.documents || []}
+              removedDocumentIds={item.removedDocumentIds || []}
+              disabled={saving || !canSave}
+              onChange={(next) => setItemDocuments(index, next)}
+            />
+          </SectionCard>
+        )}
+      </div>
+    )
+  }
 
   return (
     <>
@@ -585,32 +698,30 @@ export default function WarrantyForm({
       <div className="warranty-create__body">
       <div className="warranty-create__main">
       {showVendorCard && (
-        <section id="warranty-vendor" className="warranty-create__card">
-          <header className="warranty-create__card-head">
-            <div>
-              <h2>Vendor details</h2>
-              <p>Select the vendor and add contact information.</p>
-            </div>
-            {isVisible('serial_number') && (
-              <span className="warranty-create__serial">
-                {serialNumber != null ? `S.No ${serialNumber}` : 'S.No on save'}
-              </span>
-            )}
-          </header>
+        <SectionCard
+          id="warranty-vendor"
+          number="1"
+          title="Vendor Information"
+          actions={isVisible('serial_number') ? (
+            <span className="warranty-create__serial">
+              {serialNumber != null ? `S.No ${serialNumber}` : 'S.No on save'}
+            </span>
+          ) : null}
+        >
           {isVisible('vendor_id') && (
             <div className="warranty-create__vendor-row">
               <label className="company-form__field">
-                <span className="company-form__label">Vendor</span>
+                <FieldLabel required>Vendor</FieldLabel>
                 <FilterableSelect
                   value={values.vendor_id}
                   onChange={handleVendorChange}
                   options={vendorOptions}
                   getOptionValue={(vendor) => vendor.id}
                   getOptionLabel={vendorLabel}
-                  placeholder={vendorsLoading ? 'Loading vendors…' : 'Select vendor from master…'}
+                  placeholder={vendorsLoading ? 'Loading vendors…' : 'Select Vendor'}
                   disabled={vendorsLoading || !canSave}
                   inputClassName="company-form__input company-form__input--select"
-                  emptyLabel="Select vendor…"
+                  emptyLabel="Select Vendor"
                   onCreate={onCreateVendor ? handleCreateVendorRequest : undefined}
                   createLabel="Create Vendor"
                 />
@@ -627,14 +738,14 @@ export default function WarrantyForm({
               )}
             </div>
           )}
-          <div className="warranty-create__contacts">
+          <div className="warranty-create__grid warranty-create__grid--2">
             {isVisible('contact_name') && (
               <label className="company-form__field">
-                <FormLabel fieldType="text" limit={masterFieldLimit('name')}>Contact name</FormLabel>
+                <FormLabel fieldType="text" limit={masterFieldLimit('name')}>Contact Name</FormLabel>
                 <SpellcheckInput
                   className="company-form__input"
                   value={values.contact_name}
-                  placeholder="Enter contact name"
+                  placeholder="Contact name"
                   disabled={!canSave}
                   onChange={(e) => setField('contact_name', e.target.value)}
                   maxLength={masterFieldLimit('name')}
@@ -643,52 +754,51 @@ export default function WarrantyForm({
             )}
             {isVisible('contact_phone') && (
               <label className="company-form__field">
-                <span className="company-form__label">Contact phone</span>
+                <FieldLabel>Contact Phone</FieldLabel>
                 <input
                   type="tel"
                   className="company-form__input"
                   value={values.contact_phone}
-                  placeholder="Enter phone number"
+                  placeholder="Phone number"
                   disabled={!canSave}
                   onChange={(e) => setField('contact_phone', e.target.value)}
                 />
               </label>
             )}
             {isVisible('contact_email') && (
-              <label className="company-form__field">
-                <span className="company-form__label">Contact e-mail</span>
+              <label className="company-form__field warranty-create__field--full">
+                <FieldLabel>Contact Email</FieldLabel>
                 <input
                   type="email"
                   className="company-form__input"
                   value={values.contact_email}
-                  placeholder="Enter email address"
+                  placeholder="name@company.com"
                   disabled={!canSave}
                   onChange={(e) => setField('contact_email', e.target.value)}
                 />
               </label>
             )}
           </div>
-        </section>
+        </SectionCard>
       )}
 
-      {isVisible('items') && (
-        <section id="warranty-products" className="warranty-create__card warranty-create__products">
-          <header className="warranty-create__card-head warranty-create__card-head--split">
-            <div>
-              <h2>Products & materials</h2>
-              <p>Each product keeps its own purchase, PO, invoice, and warranty details, plus its own files.</p>
+      {showItems && (
+        <div className="warranty-create__items">
+          {multiItem && (
+            <div className="warranty-create__items-toolbar">
+              <p>Each product keeps its own purchase, warranty, and documents.</p>
+              <button
+                type="button"
+                className="company-btn company-btn--primary company-btn--compact"
+                onClick={addItemRow}
+                disabled={!canSave}
+              >
+                + Add item
+              </button>
             </div>
-            <button
-              type="button"
-              className="company-btn company-btn--primary company-btn--compact"
-              onClick={addItemRow}
-              disabled={!canSave}
-            >
-              + Add item
-            </button>
-          </header>
-          {itemsEditor}
-        </section>
+          )}
+          {values.items.map((item, index) => renderItemSections(item, index))}
+        </div>
       )}
 
       {hasLayout && (
