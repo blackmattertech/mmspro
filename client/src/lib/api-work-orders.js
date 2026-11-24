@@ -197,6 +197,12 @@ export function getManualWorkOrder(id) {
   return workOrdersFetch(`/manual/orders/${id}`)
 }
 
+/** Tasks created as follow-ups from this work order (visible to the viewer). */
+export async function getWorkOrderFollowUpTasks(workOrderId) {
+  const data = await workOrdersFetch(`/manual/${workOrderId}/follow-up-tasks`)
+  return asListArray(data)
+}
+
 /** Load a work order the viewer can read, even when a list-specific endpoint hides it. */
 export async function getWorkOrderDetail(id, { prefer } = {}) {
   const loaders = []

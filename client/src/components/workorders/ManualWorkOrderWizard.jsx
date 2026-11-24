@@ -114,7 +114,9 @@ export default function ManualWorkOrderWizard({
   onSaveCompleted,
 }) {
   const { org } = useOrg()
-  const { session } = usePermissions()
+  const { session, isOrgAdmin, accessRole } = usePermissions()
+  const canChangeOrderTo = isOrgAdmin
+    || String(accessRole?.name || '').trim().toLowerCase() === 'admin'
   const form = useFormLayout('work_orders.manual', { fallbackToDefault: true })
   const extras = useFormFieldValues('work_orders.manual', record?.id || null)
   const {
@@ -237,7 +239,30 @@ export default function ManualWorkOrderWizard({
     setAssignedDepartmentId(orderToFromLayout)
   }, [orderToFromLayout, assignedDepartmentId])
 
-  const departmentIdForAssets = assignedDepartmentId || orderToFromLayout || ''
+  const homeDepartmentId = session?.department_id || ctx?.employee?.department_id || ''
+  const departmentIdForAssets = (!canChangeOrderTo && !record?.id && homeDepartmentId)
+    ? homeDepartmentId
+    : (assignedDepartmentId || orderToFromLayout || '')
+
+  useEffect(() => {
+    if (canChangeOrderTo || record?.id || !homeDepartmentId) return
+    if (assignedDepartmentId === homeDepartmentId) return
+    const department = (ctx?.departments || []).find((row) => row.id === homeDepartmentId) || null
+    setAssignedDepartmentId(homeDepartmentId)
+    setAssignedDepartment(department)
+    setAssignedLocationId(department?.location_id || session?.location_id || null)
+    const orderToField = findLayoutFieldByHint(displayLayout, ['order_to_department_id', 'orderto'])
+    if (orderToField) extras.setFieldValue(orderToField.id, homeDepartmentId)
+  }, [
+    assignedDepartmentId,
+    canChangeOrderTo,
+    ctx?.departments,
+    displayLayout,
+    extras,
+    homeDepartmentId,
+    record?.id,
+    session?.location_id,
+  ])
   const { employees, loading: employeesLoading } = useEmployees({
     departmentId: departmentIdForAssets || undefined,
     locationId: assignedLocationId || undefined,
@@ -509,13 +534,35 @@ export default function ManualWorkOrderWizard({
     />
   )
 
+  const orderFromId = readFieldValue(displayLayout, extras.values, ['order_from_department_id', 'orderfrom'])
+  const setOrderFrom = useCallback((departmentId) => {
+    const field = findLayoutFieldByHint(displayLayout, ['order_from_department_id', 'orderfrom'])
+    if (field) extras.setFieldValue(field.id, departmentId || '')
+  }, [displayLayout, extras])
+
+  const renderOrderFrom = (key, className) => (
+    <div key={key} className={className}>
+      <WorkOrderOrderToField
+        embedded
+        label="Order from"
+        hint=""
+        value={orderFromId}
+        onChange={({ departmentId }) => setOrderFrom(departmentId)}
+        disabled={saving}
+      />
+    </div>
+  )
+
   const renderOrderTo = (key, className) => (
     <div key={key} className={className}>
       <WorkOrderOrderToField
         embedded
-        value={assignedDepartmentId}
+        label="Order to"
+        hint={canChangeOrderTo ? '' : 'Locked to your department.'}
+        value={departmentIdForAssets}
         selected={assignedDepartment}
-        onChange={setDepartmentTarget}
+        onChange={canChangeOrderTo ? setDepartmentTarget : undefined}
+        readOnly={!canChangeOrderTo}
         disabled={saving}
       />
     </div>
@@ -528,9 +575,12 @@ export default function ManualWorkOrderWizard({
         {includeOrderTo ? (
           <WorkOrderOrderToField
             embedded
-            value={assignedDepartmentId}
+            label="Order to"
+            hint={canChangeOrderTo ? '' : 'Locked to your department.'}
+            value={departmentIdForAssets}
             selected={assignedDepartment}
-            onChange={setDepartmentTarget}
+            onChange={canChangeOrderTo ? setDepartmentTarget : undefined}
+            readOnly={!canChangeOrderTo}
             disabled={saving}
           />
         ) : null}
@@ -566,6 +616,9 @@ export default function ManualWorkOrderWizard({
         required: Boolean(props.required),
         field: props.field,
       })
+    }
+    if (key === 'order_from_department_id') {
+      return renderOrderFrom(key, className)
     }
     if (key === 'order_to_department_id') {
       return renderOrderTo(key, className)
@@ -761,7 +814,10 @@ export default function ManualWorkOrderWizard({
           extras.setFieldValue(id, value)
           const field = (displayLayout?.fields || []).find((row) => row.id === id)
           const label = String(field?.label || '').toLowerCase()
-          if (field?.bindKey === 'order_to_department_id' || /order\s*to/.test(label)) {
+          if (
+            canChangeOrderTo
+            && (field?.bindKey === 'order_to_department_id' || /order\s*to/.test(label))
+          ) {
             setAssignedDepartmentId(value || '')
           }
           if (field?.bindKey === 'equipment_id') setEquipmentId(value || '')

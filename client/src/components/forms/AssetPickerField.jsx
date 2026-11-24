@@ -127,8 +127,7 @@ export default function AssetPickerField({
         if (cancelled) return
         const rows = (catalog.equipment || []).filter((row) => (
           !departmentId
-          || !row.department_id
-          || String(row.department_id) === String(departmentId)
+          || String(row.department_id || '') === String(departmentId)
         ))
         setEquipment(rows)
         setSections(Array.isArray(catalog.sections) ? catalog.sections : [])

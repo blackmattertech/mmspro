@@ -108,7 +108,16 @@ export async function listVendors(orgId, { search = null, limit = 100, offset = 
       email: 'email',
       city: 'city',
       state: 'state',
+      pincode: 'pincode',
+      address_line1: 'address_line1',
+      address_line2: 'address_line2',
       gstin: 'gstin',
+      pan: 'pan',
+      bank_account_number: 'bank_account_number',
+      bank_name: 'bank_name',
+      account_name: 'account_name',
+      ifsc_code: 'ifsc_code',
+      branch: 'branch',
     })
   query = query.order('vendor_code', { ascending: true }).range(offset, offset + limit - 1)
 

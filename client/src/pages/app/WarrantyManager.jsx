@@ -36,7 +36,7 @@ import {
   exportWarranties,
 } from '../../lib/api-warranties'
 import { downloadBlobFile } from '../../lib/api'
-import { ExportCsvButton } from '../../components/shared/ListTableChrome'
+import { DataColumnHead, ExportCsvButton, updateColumnFilter } from '../../components/shared/ListTableChrome'
 import '../../components/shared/ListTableChrome.css'
 import {
   useMasterBulkUpload,
@@ -517,8 +517,17 @@ export default function WarrantyManager() {
                 <thead>
                   <tr>
                     {visibleColumnIds.map((columnId) => {
+                      if (columnId === 'actions') return <th key={columnId}>Actions</th>
                       const col = columnDefs.find((item) => item.id === columnId)
-                      return <th key={columnId}>{col?.label || columnId}</th>
+                      return (
+                        <DataColumnHead
+                          key={columnId}
+                          columnId={columnId}
+                          label={col?.label || columnId}
+                          filters={columnFilters}
+                          onFilter={(id, value) => updateColumnFilter(setColumnFilters, id, value)}
+                        />
+                      )
                     })}
                   </tr>
                 </thead>

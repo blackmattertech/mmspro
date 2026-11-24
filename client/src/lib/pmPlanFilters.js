@@ -174,6 +174,7 @@ export function applyPmPlanFilters(plans, {
   locations,
   sortBy,
   fieldFilter,
+  columnFilters = {},
 } = {}) {
   let result = plans || []
 
@@ -194,6 +195,18 @@ export function applyPmPlanFilters(plans, {
           || planLocationNames(plan).some((name) => name.toLowerCase().includes(query))
       }
       return fieldValue(plan, fieldFilter.field).includes(query)
+    })
+  }
+
+  for (const [key, raw] of Object.entries(columnFilters || {})) {
+    const query = String(raw || '').trim().toLowerCase()
+    if (!query) continue
+    result = result.filter((plan) => {
+      if (key === 'location') {
+        return planLocationIds(plan).includes(raw)
+          || planLocationNames(plan).some((name) => name.toLowerCase().includes(query))
+      }
+      return fieldValue(plan, key).includes(query)
     })
   }
 

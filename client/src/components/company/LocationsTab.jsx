@@ -20,7 +20,7 @@ import TableEmptyRow from '../shared/TableEmptyRow'
 import TableColumnPicker from '../shared/TableColumnPicker'
 import { DynamicPickerCells, DynamicPickerHeaders } from '../shared/DynamicPickerCells'
 import TableFilterToolbar from '../shared/TableFilterToolbar'
-import { AdvancedFilterMenu, ExportCsvButton, TableColumnHead } from '../shared/ListTableChrome'
+import { AdvancedFilterMenu, DataColumnHead, ExportCsvButton, TableColumnHead, updateColumnFilter } from '../shared/ListTableChrome'
 import '../shared/ListTableChrome.css'
 import { useTablePagination } from '../../hooks/useTablePagination'
 import { useTableColumnPrefs } from '../../hooks/useTableColumnPrefs'
@@ -406,14 +406,16 @@ export default function LocationsTab({ canManage }) {
                 {isLocationColumnVisible('country') && (
                   <TableColumnHead columnId="country" label="Country" sort={headerSort} onSort={setHeaderSort} filterValue={columnFilters.country || ''} onFilter={(id, value) => setColumnFilters((prev) => ({ ...prev, [id]: value }))} />
                 )}
-                {isLocationColumnVisible('location_head') && <th>Location head</th>}
-                {isLocationColumnVisible('primary') && <th>Primary</th>}
+                {isLocationColumnVisible('location_head') && <DataColumnHead columnId="location_head" label="Location head" filters={columnFilters} onFilter={(id, value) => updateColumnFilter(setColumnFilters, id, value)} />}
+                {isLocationColumnVisible('primary') && <DataColumnHead columnId="primary" label="Primary" filters={columnFilters} onFilter={(id, value) => updateColumnFilter(setColumnFilters, id, value)} />}
                 <DynamicPickerHeaders
                   visibleColumnIds={locationVisibleColumnIds}
                   columnDefs={locationPickerColumns}
                   handledIds={['name', 'code', 'city', 'country', 'location_head', 'primary', 'active', 'actions']}
+                  filters={columnFilters}
+                  onFilter={(id, value) => updateColumnFilter(setColumnFilters, id, value)}
                 />
-                {canManage && isLocationColumnVisible('active') && <th>Active</th>}
+                {canManage && isLocationColumnVisible('active') && <DataColumnHead columnId="status" label="Active" filters={columnFilters} onFilter={(id, value) => updateColumnFilter(setColumnFilters, id, value)} />}
                 {canManage && isLocationColumnVisible('actions') && <th>Actions</th>}
               </tr>
             </thead>

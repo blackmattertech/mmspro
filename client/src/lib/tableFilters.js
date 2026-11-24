@@ -148,6 +148,18 @@ export function serverFieldFilters(field, value) {
   return { [field]: text }
 }
 
+/** Client-side "contains" match for header filters. */
+export function rowMatchesColumnFilters(row, filters, getText) {
+  if (!filters || typeof getText !== 'function') return true
+  for (const [key, raw] of Object.entries(filters)) {
+    const query = String(raw ?? '').trim().toLowerCase()
+    if (!query) continue
+    const text = String(getText(row, key) ?? '').toLowerCase()
+    if (!text.includes(query)) return false
+  }
+  return true
+}
+
 export function compactFilters(values) {
   const next = {}
   for (const [key, value] of Object.entries(values || {})) {

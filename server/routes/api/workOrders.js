@@ -8,7 +8,12 @@ import {
 } from '../../middleware/modulePermission.js'
 import { supabaseAdmin } from '../../services/supabase.js'
 import { assertChecklistForForm, snapshotChecklistTemplate } from '../../lib/checklistService.js'
-import { canViewAssociatedWorkRecord, getScopedLocationId, hasModulePermission } from '../../lib/orgPermissions.js'
+import {
+  canViewAssociatedWorkRecord,
+  getScopedLocationId,
+  hasModulePermission,
+  isOrgAdminAccessRoleName,
+} from '../../lib/orgPermissions.js'
 import {
   canClaimWorkOrderAssignment,
   canPatchDepartmentTechnicianAssignment,
@@ -58,6 +63,7 @@ import {
   orderToTabOrFilter,
 } from '../../lib/workOrderTabVisibility.js'
 import { actorsFromRequest, loadFillershipRecord } from '../../lib/formFillershipRecord.js'
+import { listWorkOrderFollowUpTasks } from '../../lib/workOrderFollowUps.js'
 import { buildAssetHierarchy, ensureUserSelfCreatorAssigned } from '../../lib/workRequestService.js'
 import {
   listWorkOrderDailyLogs,
@@ -2036,9 +2042,17 @@ router.post('/manual', canCreateWorkOrders, async (req, res) => {
     const schema = buildFormSchema(fields, settingsMap)
     const allowedFields = buildAllowedFieldsMap(schema)
     const creator = await getEmployeeByProfile(orgId, userId, { email: req.userProfile.email })
+    const canChooseOrderTo = Boolean(req.orgPermissions?.is_org_admin)
+      || isOrgAdminAccessRoleName(req.orgPermissions?.access_role?.name)
+    const requestedOrderTo = canChooseOrderTo
+      ? (req.body?.assigned_department_id || creator?.department_id || null)
+      : (creator?.department_id || null)
+    if (!canChooseOrderTo && !requestedOrderTo) {
+      return res.status(400).json({ error: 'Your account is not linked to a department.' })
+    }
     let departmentAssignment = await validateAssignedDepartment(
       orgId,
-      req.body?.assigned_department_id || creator?.department_id || null,
+      requestedOrderTo,
       req.body?.assigned_location_id || creator?.location_id || null,
       { fallbackLocationId: creator?.location_id || null },
     )
@@ -2384,6 +2398,17 @@ router.patch('/manual/:id/lifecycle', canReadWorkOrders, assertOrgOwnership('man
   }
 })
 
+router.get('/manual/:id/follow-up-tasks', canReadWorkOrders, assertOrgOwnership('manual_work_orders'), async (req, res) => {
+  const orgId = req.userProfile.org_id
+  const profileId = req.userProfile.id
+  try {
+    const tasks = await listWorkOrderFollowUpTasks(orgId, profileId, req.params.id)
+    res.json({ items: tasks })
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message })
+  }
+})
+
 router.get('/manual/:id/daily-logs', canReadWorkOrders, assertOrgOwnership('manual_work_orders'), async (req, res) => {
   const orgId = req.userProfile.org_id
   try {
@@ -2479,9 +2504,13 @@ router.patch('/manual/:id', canUpdateWorkOrders, assertOrgOwnership('manual_work
     }
 
     const editor = await getEmployeeByProfile(orgId, req.userProfile.id, { email: req.userProfile.email })
-    const requestedDepartmentId = req.body?.assigned_department_id !== undefined
-      ? (req.body.assigned_department_id || null)
-      : existing.assigned_department_id
+    const canChooseOrderTo = Boolean(req.orgPermissions?.is_org_admin)
+      || isOrgAdminAccessRoleName(req.orgPermissions?.access_role?.name)
+    const requestedDepartmentId = canChooseOrderTo
+      ? (req.body?.assigned_department_id !== undefined
+        ? (req.body.assigned_department_id || null)
+        : existing.assigned_department_id)
+      : (existing.assigned_department_id || editor?.department_id || null)
     const assignedLocationId = req.body?.assigned_location_id !== undefined
       ? (req.body.assigned_location_id || null)
       : existing.assigned_location_id

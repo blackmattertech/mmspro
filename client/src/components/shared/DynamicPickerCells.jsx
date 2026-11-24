@@ -1,15 +1,32 @@
 import { formatPickerValue } from '../../lib/pickerFields'
+import { DataColumnHead } from './ListTableChrome'
 
 export function unhandledColumnIds(visibleColumnIds = [], handledIds) {
   const handled = handledIds instanceof Set ? handledIds : new Set(handledIds || [])
   return visibleColumnIds.filter((id) => !handled.has(id))
 }
 
-export function DynamicPickerHeaders({ visibleColumnIds, columnDefs, handledIds }) {
+export function DynamicPickerHeaders({
+  visibleColumnIds,
+  columnDefs,
+  handledIds,
+  filters,
+  onFilter,
+}) {
   const ids = unhandledColumnIds(visibleColumnIds, handledIds)
   return ids.map((id) => {
     const col = columnDefs.find((item) => item.id === id)
-    return <th key={id}>{col?.label || id}</th>
+    const label = col?.label || id
+    if (!onFilter) return <th key={id}>{label}</th>
+    return (
+      <DataColumnHead
+        key={id}
+        columnId={id}
+        label={label}
+        filters={filters}
+        onFilter={onFilter}
+      />
+    )
   })
 }
 

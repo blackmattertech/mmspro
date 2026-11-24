@@ -11,7 +11,7 @@ import {
   exportAreas,
   downloadBlobFile,
 } from '../../lib/api'
-import { ExportCsvButton } from '../shared/ListTableChrome'
+import { DataColumnHead, ExportCsvButton, updateColumnFilter } from '../shared/ListTableChrome'
 import '../shared/ListTableChrome.css'
 import GooToggle from '../ui/GooToggle'
 import TrashIcon from '../ui/TrashIcon'
@@ -376,16 +376,18 @@ export default function AreasTab({ canManage }) {
                     />
                   </th>
                 )}
-                {isAreaColumnVisible('name') && <th>Name</th>}
-                {isAreaColumnVisible('code') && <th>Code</th>}
-                {isAreaColumnVisible('location') && <th>Location</th>}
-                {isAreaColumnVisible('department') && <th>Department</th>}
+                {isAreaColumnVisible('name') && <DataColumnHead columnId="name" label="Name" filters={columnFilters} onFilter={(id, value) => updateColumnFilter(setColumnFilters, id, value)} />}
+                {isAreaColumnVisible('code') && <DataColumnHead columnId="code" label="Code" filters={columnFilters} onFilter={(id, value) => updateColumnFilter(setColumnFilters, id, value)} />}
+                {isAreaColumnVisible('location') && <DataColumnHead columnId="location" label="Location" filters={columnFilters} onFilter={(id, value) => updateColumnFilter(setColumnFilters, id, value)} />}
+                {isAreaColumnVisible('department') && <DataColumnHead columnId="department" label="Department" filters={columnFilters} onFilter={(id, value) => updateColumnFilter(setColumnFilters, id, value)} />}
                 <DynamicPickerHeaders
                   visibleColumnIds={areaVisibleColumnIds}
                   columnDefs={areaPickerColumns}
                   handledIds={['name', 'code', 'location', 'department', 'active', 'actions']}
+                  filters={columnFilters}
+                  onFilter={(id, value) => updateColumnFilter(setColumnFilters, id, value)}
                 />
-                {canManage && isAreaColumnVisible('active') && <th>Active</th>}
+                {canManage && isAreaColumnVisible('active') && <DataColumnHead columnId="status" label="Active" filters={columnFilters} onFilter={(id, value) => updateColumnFilter(setColumnFilters, id, value)} />}
                 {canManage && isAreaColumnVisible('actions') && <th>Actions</th>}
               </tr>
             </thead>

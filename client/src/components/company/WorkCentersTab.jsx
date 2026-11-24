@@ -10,7 +10,7 @@ import {
   getWorkCentersTemplate,
   bulkUploadWorkCenters,
 } from '../../lib/api'
-import { ExportCsvButton } from '../shared/ListTableChrome'
+import { DataColumnHead, ExportCsvButton, updateColumnFilter } from '../shared/ListTableChrome'
 import '../shared/ListTableChrome.css'
 import { invalidateReferenceCache } from '../../lib/referenceDataCache'
 import GooToggle from '../ui/GooToggle'
@@ -370,16 +370,18 @@ export default function WorkCentersTab({ canManage }) {
                     />
                   </th>
                 )}
-                {isVisible('name') && <th>Name</th>}
-                {isVisible('code') && <th>Code</th>}
-                {isVisible('location') && <th>Location</th>}
-                {isVisible('description') && <th>Description</th>}
+                {isVisible('name') && <DataColumnHead columnId="name" label="Name" filters={columnFilters} onFilter={(id, value) => updateColumnFilter(setColumnFilters, id, value)} />}
+                {isVisible('code') && <DataColumnHead columnId="code" label="Code" filters={columnFilters} onFilter={(id, value) => updateColumnFilter(setColumnFilters, id, value)} />}
+                {isVisible('location') && <DataColumnHead columnId="location" label="Location" filters={columnFilters} onFilter={(id, value) => updateColumnFilter(setColumnFilters, id, value)} />}
+                {isVisible('description') && <DataColumnHead columnId="description" label="Description" filters={columnFilters} onFilter={(id, value) => updateColumnFilter(setColumnFilters, id, value)} />}
                 <DynamicPickerHeaders
                   visibleColumnIds={visibleColumnIds}
                   columnDefs={pickerColumns}
                   handledIds={['name', 'code', 'location', 'description', 'active', 'actions']}
+                  filters={columnFilters}
+                  onFilter={(id, value) => updateColumnFilter(setColumnFilters, id, value)}
                 />
-                {canManage && isVisible('active') && <th>Active</th>}
+                {canManage && isVisible('active') && <DataColumnHead columnId="status" label="Active" filters={columnFilters} onFilter={(id, value) => updateColumnFilter(setColumnFilters, id, value)} />}
                 {canManage && isVisible('actions') && <th>Actions</th>}
               </tr>
             </thead>

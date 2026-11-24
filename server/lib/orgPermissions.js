@@ -344,11 +344,27 @@ export function getScopedLocationId(session) {
   return session.location_id || null
 }
 
+/** Non-admins are limited to their employee department when set.
+ * Org admins and access role "Admin" can use all departments.
+ */
+export function getScopedDepartmentId(session) {
+  if (!session || session.is_org_admin) return null
+  if (isOrgAdminAccessRoleName(session.access_role?.name)) return null
+  return session.department_id || null
+}
+
 /** Prefer the caller's scoped location over any requested filter. */
 export function resolveLocationFilter(session, requestedLocationId) {
   const scoped = getScopedLocationId(session)
   if (scoped) return scoped
   return requestedLocationId || null
+}
+
+/** Prefer the caller's scoped department over any requested filter. */
+export function resolveDepartmentFilter(session, requestedDepartmentId) {
+  const scoped = getScopedDepartmentId(session)
+  if (scoped) return scoped
+  return requestedDepartmentId || null
 }
 
 export function assertLocationAccess(session, locationId, message = 'You can only access records at your location') {

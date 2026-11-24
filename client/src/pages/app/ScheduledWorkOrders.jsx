@@ -310,11 +310,12 @@ export default function ScheduledWorkOrders() {
       sortBy,
       advancedRules,
       locations,
+      columnFilters,
     })
     if (!statusFilters.length) return rows
     const selected = new Set(statusFilters)
     return rows.filter((plan) => selected.has(String(plan.status || '')))
-  }, [plans, search, locationFilter, sortBy, advancedRules, locations, statusFilters])
+  }, [plans, search, locationFilter, sortBy, advancedRules, locations, statusFilters, columnFilters])
 
   const handleSavePlan = async (payload) => {
     setSaving(true)
@@ -419,6 +420,10 @@ export default function ScheduledWorkOrders() {
             onOpen={openDetailPlan}
             onEdit={setPlanModal}
             onDelete={handleDeletePlan}
+            headerSort={headerSort}
+            onHeaderSort={setHeaderSort}
+            columnFilters={columnFilters}
+            onColumnFilter={setColumnFilter}
           />
         )
       )}

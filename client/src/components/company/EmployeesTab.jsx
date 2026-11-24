@@ -38,7 +38,7 @@ import {
 } from './MasterBulkUpload'
 import { getEmployeesTemplate, bulkUploadEmployees, downloadBlobFile } from '../../lib/api'
 import { exportEmployees } from '../../lib/api-employees'
-import { ExportCsvButton } from '../shared/ListTableChrome'
+import { DataColumnHead, ExportCsvButton, updateColumnFilter } from '../shared/ListTableChrome'
 import '../shared/ListTableChrome.css'
 import '../shared/TableColumnPicker.css'
 import '../shared/TableFilterToolbar.css'
@@ -556,20 +556,22 @@ export default function EmployeesTab({ canManage }) {
                     </th>
                   )}
                   {isEmployeeColumnVisible('photo') && <th className="company-table__cell--photo">Photo</th>}
-                  {isEmployeeColumnVisible('emp_id') && <th>Emp ID</th>}
-                  {isEmployeeColumnVisible('name') && <th>Employee Name</th>}
-                  {isEmployeeColumnVisible('role') && <th>Role</th>}
-                  {isEmployeeColumnVisible('location') && <th>Location</th>}
-                  {isEmployeeColumnVisible('mobile') && <th>Mobile</th>}
-                  {isEmployeeColumnVisible('email') && <th>Email(s)</th>}
-                  {isEmployeeColumnVisible('department') && <th>Department</th>}
-                  {isEmployeeColumnVisible('manager') && <th className="company-table__cell--manager">Manager</th>}
+                  {isEmployeeColumnVisible('emp_id') && <DataColumnHead columnId="emp_id" label="Emp ID" filters={columnFilters} onFilter={(id, value) => updateColumnFilter(setColumnFilters, id, value)} />}
+                  {isEmployeeColumnVisible('name') && <DataColumnHead columnId="name" label="Employee Name" filters={columnFilters} onFilter={(id, value) => updateColumnFilter(setColumnFilters, id, value)} />}
+                  {isEmployeeColumnVisible('role') && <DataColumnHead columnId="role" label="Role" filters={columnFilters} onFilter={(id, value) => updateColumnFilter(setColumnFilters, id, value)} />}
+                  {isEmployeeColumnVisible('location') && <DataColumnHead columnId="location" label="Location" filters={columnFilters} onFilter={(id, value) => updateColumnFilter(setColumnFilters, id, value)} />}
+                  {isEmployeeColumnVisible('mobile') && <DataColumnHead columnId="mobile" label="Mobile" filters={columnFilters} onFilter={(id, value) => updateColumnFilter(setColumnFilters, id, value)} />}
+                  {isEmployeeColumnVisible('email') && <DataColumnHead columnId="email" label="Email(s)" filters={columnFilters} onFilter={(id, value) => updateColumnFilter(setColumnFilters, id, value)} />}
+                  {isEmployeeColumnVisible('department') && <DataColumnHead columnId="department" label="Department" filters={columnFilters} onFilter={(id, value) => updateColumnFilter(setColumnFilters, id, value)} />}
+                  {isEmployeeColumnVisible('manager') && <DataColumnHead columnId="manager" label="Manager" className="company-table__cell--manager" filters={columnFilters} onFilter={(id, value) => updateColumnFilter(setColumnFilters, id, value)} />}
                   <DynamicPickerHeaders
                     visibleColumnIds={employeeVisibleColumnIds}
                     columnDefs={employeePickerColumns}
                     handledIds={['photo', 'emp_id', 'name', 'role', 'location', 'mobile', 'email', 'department', 'manager', 'active', 'actions']}
+                    filters={columnFilters}
+                    onFilter={(id, value) => updateColumnFilter(setColumnFilters, id, value)}
                   />
-                  {canManage && isEmployeeColumnVisible('active') && <th>Active</th>}
+                  {canManage && isEmployeeColumnVisible('active') && <DataColumnHead columnId="status" label="Active" filters={columnFilters} onFilter={(id, value) => updateColumnFilter(setColumnFilters, id, value)} />}
                   {canManage && isEmployeeColumnVisible('actions') && <th>Actions</th>}
                 </tr>
               </thead>

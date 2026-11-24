@@ -1,7 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { useNavigate } from 'react-router-dom'
-import { createManualWorkOrder, updateWorkOrderLifecycle } from '../../lib/api-work-orders'
+import { Link, useNavigate } from 'react-router-dom'
+import {
+  createManualWorkOrder,
+  getWorkOrderFollowUpTasks,
+  updateWorkOrderLifecycle,
+} from '../../lib/api-work-orders'
 import { useFormFieldValues } from '../../hooks/useFormFieldValues'
 import {
   WORK_ORDER_SUPERVISOR_STATUSES,
@@ -370,7 +374,7 @@ export default function WorkOrderLifecyclePanel({
   const navigate = useNavigate()
   const { org } = useOrg()
   const { profile, employee } = useProfile()
-  const { isOrgAdmin, canUpdate: canUpdateModule, canCreate, session } = usePermissions()
+  const { isOrgAdmin, canUpdate: canUpdateModule, canCreate, canRead, session } = usePermissions()
   const { labelByKey: statusLabels } = useOrgStatusOptions('work_order', { includeInactive: true })
   const { maxLength } = useTextFieldLimits()
   const { requestFiles, executionFiles } = splitWorkOrderAttachments(detail?.attachments)
@@ -381,6 +385,7 @@ export default function WorkOrderLifecyclePanel({
   const [error, setError] = useState(null)
   const [showMaterialDetails, setShowMaterialDetails] = useState(false)
   const [showFollowUp, setShowFollowUp] = useState(false)
+  const [followUpTasks, setFollowUpTasks] = useState([])
   const [creatingFollowUp, setCreatingFollowUp] = useState(false)
   const [followUpError, setFollowUpError] = useState(null)
   const [followUpSuccess, setFollowUpSuccess] = useState(null)
@@ -464,6 +469,20 @@ export default function WorkOrderLifecyclePanel({
     setConfirmClose(false)
     setPendingStatus(detail?.status || '')
   }, [detail?.id, detail?.updated_at, detail?.status, dayLogs.length, todayKey])
+
+  const canReadTaskFollowUps = canRead('tasks_followups')
+
+  useEffect(() => {
+    if (!detail?.id || !canReadTaskFollowUps) {
+      setFollowUpTasks([])
+      return undefined
+    }
+    let cancelled = false
+    getWorkOrderFollowUpTasks(detail.id)
+      .then((items) => { if (!cancelled) setFollowUpTasks(Array.from(items || [])) })
+      .catch(() => { if (!cancelled) setFollowUpTasks([]) })
+    return () => { cancelled = true }
+  }, [detail?.id, detail?.updated_at, canReadTaskFollowUps])
 
   const nextStatuses = useMemo(
     () => detail?.allowed_next_statuses || [],
@@ -1363,6 +1382,28 @@ export default function WorkOrderLifecyclePanel({
           </button>
         )}
       </div>
+
+      {canReadTaskFollowUps && followUpTasks.length > 0 && (
+        <div className="wo-followup-tasks">
+          <h4 className="wo-followup-tasks__title">Follow-ups ({followUpTasks.length})</h4>
+          <ul className="wo-followup-tasks__list">
+            {followUpTasks.map((task) => (
+              <li key={task.id} className="wo-followup-tasks__item">
+                {org?.slug ? (
+                  <Link to={orgPath(org.slug, `tasks-and-followups/${task.id}`)} className="wo-followup-tasks__link">
+                    {task.task_number ? `${task.task_number} · ` : ''}{task.title || task.short_description || 'Follow-up'}
+                  </Link>
+                ) : (
+                  <span>{task.title || task.short_description || 'Follow-up'}</span>
+                )}
+                {task.status?.name && (
+                  <span className="wo-followup-tasks__status">{task.status.name}</span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {isPmScheduled && showFollowUp && (
         <div className="pm-wo-followup">

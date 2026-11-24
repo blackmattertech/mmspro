@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useOrg } from '../../hooks/useOrg'
 import { orgPath } from '../../config/navigation'
@@ -19,6 +19,9 @@ import { VirtualTableBody } from '../shared/VirtualTableBody'
 import { useTablePagination } from '../../hooks/useTablePagination'
 import { useTableColumnPrefs } from '../../hooks/useTableColumnPrefs'
 import RecordPdfButton from '../shared/RecordPdfButton'
+import { DataColumnHead, updateColumnFilter } from '../shared/ListTableChrome'
+import { rowMatchesColumnFilters } from '../../lib/tableFilters'
+import '../shared/ListTableChrome.css'
 
 const TASK_COLUMNS = [
   { id: 'task_number', label: 'Task #' },
@@ -73,9 +76,26 @@ export default function TasksTable({
     makingDefault,
   } = useTableColumnPrefs('tasks-manager', TASK_COLUMNS)
 
-  const localPagination = useTablePagination(totalCount ?? tasks.length, { resetKey: paginationResetKey })
+  const [columnFilters, setColumnFilters] = useState({})
+  const filteredTasks = useMemo(() => (tasks || []).filter((task) => rowMatchesColumnFilters(task, columnFilters, (row, key) => {
+    if (key === 'task_number') return row.task_number
+    if (key === 'title') return row.title
+    if (key === 'category') return row.category?.name
+    if (key === 'status') return row.status?.name
+    if (key === 'priority') return row.priority?.name
+    if (key === 'visibility' || key === 'task_type') return row.visibility_type || row.task_type
+    if (key === 'tags') return (row.tags || []).map((tag) => tag.name).join(' ')
+    if (key === 'vendor') return row.vendor?.name
+    if (key === 'assigned_to') return (row.assignees || []).map((person) => person.name).join(' ')
+    if (key === 'department') return row.department?.name
+    if (key === 'location') return row.location?.name
+    if (key === 'start') return row.start_at
+    if (key === 'due') return row.due_at || row.due_date
+    return ''
+  })), [tasks, columnFilters])
+  const localPagination = useTablePagination(totalCount ?? filteredTasks.length, { resetKey: paginationResetKey })
   const pagination = paginationProp || localPagination
-  const pagedTasks = serverPaged || paginationProp ? tasks : pagination.paginate(tasks)
+  const pagedTasks = serverPaged || paginationProp ? filteredTasks : pagination.paginate(filteredTasks)
 
   const openView = (task) => {
     if (!org?.slug || !task?.id) return
@@ -159,8 +179,17 @@ export default function TasksTable({
           <thead>
             <tr>
               {visibleColumnIds.map((columnId) => {
+                if (columnId === 'actions') return <th key={columnId}>Actions</th>
                 const col = TASK_COLUMNS.find((item) => item.id === columnId)
-                return <th key={columnId}>{col?.label || columnId}</th>
+                return (
+                  <DataColumnHead
+                    key={columnId}
+                    columnId={columnId}
+                    label={col?.label || columnId}
+                    filters={columnFilters}
+                    onFilter={(id, value) => updateColumnFilter(setColumnFilters, id, value)}
+                  />
+                )
               })}
             </tr>
           </thead>

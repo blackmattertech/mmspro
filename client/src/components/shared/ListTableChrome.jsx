@@ -286,6 +286,37 @@ export function AdvancedFilterMenu({
   )
 }
 
+export function updateColumnFilter(setFilters, columnId, value) {
+  setFilters((prev) => {
+    const next = { ...prev }
+    if (!String(value ?? '').trim()) delete next[columnId]
+    else next[columnId] = value
+    return next
+  })
+}
+
+export function DataColumnHead({
+  columnId,
+  label,
+  filters,
+  onFilter,
+  className = '',
+  sort = null,
+  onSort,
+}) {
+  return (
+    <TableColumnHead
+      columnId={columnId}
+      label={label}
+      className={className}
+      sort={sort}
+      onSort={onSort}
+      filterValue={filters?.[columnId] || ''}
+      onFilter={onFilter}
+    />
+  )
+}
+
 export function TableColumnHead({
   columnId,
   label,

@@ -1,7 +1,15 @@
 import { supabaseAdmin } from '../services/supabase.js'
 import { loadOrgFields } from './equipmentFieldService.js'
 import { listEquipment, getEquipmentDetail, deriveEquipmentIdentity, hierarchyParentFields } from './equipmentService.js'
-import { notifyUser, notifyEmployees, notifyByModule } from '../services/notifications.js'
+import {
+  notifyUser,
+  notifyUsers,
+  notifyEmployees,
+  notifyByModule,
+  resolveModuleRecipientIds,
+  resolveDepartmentRecipientIds,
+} from '../services/notifications.js'
+import { mergeRecipientIds } from './notificationRecipients.js'
 import { buildManualWorkOrderFormSchema } from './manualWorkOrderForm.js'
 import {
   applyIlikeSearch,
@@ -187,6 +195,55 @@ async function notifyWorkRequestInbox(orgId, wr, payload) {
   await notifyByModule(orgId, WR_INBOX_MODULES, payload, {
     ...scope,
     excludeTechnicianRoles: true,
+  })
+}
+
+/**
+ * Tell the whole "order to" department (technicians included) that a work order was
+ * generated from a request: in-app + push + email, one notification per person.
+ *
+ * - `includeInbox` also reaches approvers / request-inbox users outside the department.
+ * - The actor, and anyone in `excludeUserIds` / `excludeEmployeeIds`, are skipped because
+ *   they already get a more specific notification (e.g. "Work order assigned").
+ */
+async function notifyWorkOrderGenerated(orgId, wr, {
+  workOrder,
+  woNumber,
+  actorId = null,
+  includeInbox = false,
+  excludeUserIds = [],
+  excludeEmployeeIds = [],
+} = {}) {
+  const departmentIds = await resolveDepartmentRecipientIds(
+    orgId,
+    [wr.order_to_department_id],
+    { excludeEmployeeIds },
+  )
+  let inboxIds = []
+  if (includeInbox) {
+    const scope = await workRequestNotifyScope(orgId, {
+      orderToId: wr.order_to_department_id,
+      equipmentId: wr.equipment_id,
+    })
+    inboxIds = await resolveModuleRecipientIds(orgId, WR_INBOX_MODULES, {
+      ...scope,
+      excludeTechnicianRoles: true,
+    })
+  }
+  const recipients = mergeRecipientIds([departmentIds, inboxIds], {
+    excludeUserIds: [actorId, ...excludeUserIds],
+  })
+  if (!recipients.length) return
+  await notifyUsers(recipients, {
+    title: 'Work order generated',
+    body: `${wr.request_number} → ${woNumber}`,
+    data: {
+      work_request_id: wr.id,
+      work_order_id: workOrder.id,
+      type: 'work_order_generated',
+      actor_id: actorId,
+    },
+    url: '/',
   })
 }
 
@@ -540,25 +597,6 @@ function enrichEquipmentCatalogValues(fields, equipmentRow, valuesByFieldId) {
   return values
 }
 
-async function areaIdsWithNames(orgId, names) {
-  const unique = [...new Set(names.map((name) => String(name || '').trim()).filter(Boolean))]
-  if (!unique.length) return []
-  const clauses = unique.map((name) => {
-    const safe = name.replace(/[%_,.()]/g, '')
-    return `name.ilike."${safe}"`
-  })
-  const { data, error } = await supabaseAdmin
-    .from('areas')
-    .select('id, name')
-    .eq('org_id', orgId)
-    .or(clauses.join(','))
-  if (error) throw error
-  const wanted = new Set(unique.map((name) => name.toLowerCase()))
-  return (data || [])
-    .filter((row) => wanted.has(String(row.name || '').trim().toLowerCase()))
-    .map((row) => row.id)
-}
-
 async function shapeEquipmentCatalog(orgId, equipment, fields = null) {
   if (!equipment.length) return []
   const orgFields = fields || await loadOrgFields(orgId)
@@ -607,6 +645,7 @@ export async function listEquipmentCatalogForDepartment(orgId, departmentId, {
   offset = 0,
   locationId = null,
 } = {}) {
+  // Own-department only — do not pull other departments' assets via shared area names.
   const page = await listEquipment(orgId, {
     departmentId,
     locationId: locationId || null,
@@ -614,26 +653,16 @@ export async function listEquipmentCatalogForDepartment(orgId, departmentId, {
     limit,
     offset,
   })
-  const equipment = [...(page.items || [])]
-  const seen = new Set(equipment.map((row) => row.id))
-  const areaNames = equipment.map((row) => row.areas?.name).filter(Boolean)
-  const sharedAreaIds = (await areaIdsWithNames(orgId, areaNames))
-    .filter((areaId) => !equipment.some((row) => row.area_id === areaId))
-  for (const areaId of sharedAreaIds) {
-    const extra = await listEquipment(orgId, { areaId, locationId: locationId || null, search, limit: 200 })
-    for (const row of extra.items || []) {
-      if (seen.has(row.id)) continue
-      if (locationId && row.location_id && row.location_id !== locationId) continue
-      seen.add(row.id)
-      equipment.push(row)
-    }
-  }
+  const equipment = (page.items || []).filter((row) => (
+    !departmentId
+    || String(row.department_id || '') === String(departmentId)
+  ))
 
   const fields = await loadOrgFields(orgId)
   const sections = buildAssetFieldSections(fields)
 
   if (!equipment.length) {
-    return { equipment: [], has_assets: false, total: page.total || 0, sections }
+    return { equipment: [], has_assets: false, total: 0, sections }
   }
 
   return {
@@ -1241,19 +1270,14 @@ async function finalizeSubmittedWorkRequest(orgId, profileId, row, { employeeId 
       },
     )
     try {
-      await notifyWorkRequestInbox(orgId, row, {
-        title: 'Work order generated',
-        body: `${requestNumber} → ${woNumber}`,
-        data: {
-          work_request_id: row.id,
-          work_order_id: workOrder.id,
-          type: 'work_order_generated',
-          actor_id: profileId,
-        },
-        url: '/',
+      await notifyWorkOrderGenerated(orgId, row, {
+        workOrder,
+        woNumber,
+        actorId: profileId,
+        includeInbox: true,
       })
-    } catch {
-      // non-blocking
+    } catch (notifyError) {
+      console.warn('Work order generated notification failed:', notifyError.message)
     }
     return enrichWorkRequest(updated)
   } catch (convertError) {
@@ -2055,6 +2079,20 @@ export async function approveWorkRequest(orgId, profileId, workRequestId, body) 
     })
   } catch {
     // non-blocking
+  }
+
+  try {
+    // Requester and assignees already got "approved" / "assigned"; everyone else in the
+    // order-to department hears that a work order now exists.
+    await notifyWorkOrderGenerated(orgId, wr, {
+      workOrder,
+      woNumber,
+      actorId: profileId,
+      excludeUserIds: [wr.requested_by],
+      excludeEmployeeIds: linkedAssigneeIds?.length ? linkedAssigneeIds : assigneeIds,
+    })
+  } catch (notifyError) {
+    console.warn('Work order generated notification failed:', notifyError.message)
   }
 
   const enriched = await enrichWorkRequest(updated)
