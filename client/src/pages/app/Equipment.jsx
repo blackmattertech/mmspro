@@ -15,7 +15,7 @@ import {
   exportEquipment,
 } from '../../lib/api-equipment'
 import { downloadBlobFile } from '../../lib/api'
-import { ExportCsvButton } from '../../components/shared/ListTableChrome'
+import { ExportCsvButton, TableColumnHead } from '../../components/shared/ListTableChrome'
 import '../../components/shared/ListTableChrome.css'
 import { invalidateReferenceCache } from '../../lib/referenceDataCache'
 import EquipmentModal from '../../components/equipment/EquipmentModal'
@@ -68,6 +68,7 @@ export default function Equipment() {
     canDelete,
     isOrgAdmin,
     locationId: myLocationId,
+    departmentId: myDepartmentId,
     accessRole,
   } = usePermissions()
   const { requestDelete, deleteModal } = useConfirmDelete()
@@ -161,19 +162,38 @@ export default function Equipment() {
     fieldsState.loading ? [] : equipmentColumnDefs,
   )
   const canSelectAnyLocation = canPickAnyLocation({ isOrgAdmin, accessRole })
+  const canSelectAnyDepartment = canSelectAnyLocation
   const scopedLocationId = canSelectAnyLocation ? undefined : (myLocationId || undefined)
+  const scopedDepartmentId = canSelectAnyDepartment ? undefined : (myDepartmentId || undefined)
   const [search, setSearch] = useState('')
   const [columnFilters, setColumnFilters] = useState({})
   const [sortBy, setSortBy] = useState('name_asc')
   const debouncedSearch = useDebouncedValue(search.trim())
   const [listTotal, setListTotal] = useState(0)
-  const filterResetKey = `${debouncedSearch}|${JSON.stringify(columnFilters)}|${sortBy}|${scopedLocationId || ''}`
+  const filterResetKey = `${debouncedSearch}|${JSON.stringify(columnFilters)}|${sortBy}|${scopedLocationId || ''}|${scopedDepartmentId || ''}`
   const equipmentPagination = useTablePagination(listTotal, { resetKey: filterResetKey })
+  const setColumnFilter = (columnId, value) => {
+    const key = columnId === 'active' ? 'status' : columnId
+    setColumnFilters((prev) => {
+      const next = { ...prev }
+      const trimmed = String(value || '').trim()
+      if (!trimmed) delete next[key]
+      else next[key] = value
+      return next
+    })
+  }
+  const HEADER_FILTERABLE = useMemo(() => new Set([
+    ...hierarchyFields.map((field) => `field:${field.id}`),
+    'location',
+    'department',
+    'active',
+  ]), [hierarchyFields])
 
   const filters = useMemo(
     () => ({
       search: debouncedSearch || undefined,
       locationId: scopedLocationId,
+      departmentId: scopedDepartmentId,
       limit: equipmentPagination.pageSize,
       offset: equipmentPagination.offset,
       listFilters: compactFilters(columnFilters),
@@ -182,6 +202,7 @@ export default function Equipment() {
     [
       debouncedSearch,
       scopedLocationId,
+      scopedDepartmentId,
       equipmentPagination.pageSize,
       equipmentPagination.offset,
       columnFilters,
@@ -427,6 +448,7 @@ export default function Equipment() {
                           try {
                             const file = await exportEquipment({
                               locationId: scopedLocationId,
+                              departmentId: scopedDepartmentId,
                               search: debouncedSearch,
                               filters: compactFilters(columnFilters),
                               sortBy,
@@ -525,7 +547,17 @@ export default function Equipment() {
                         {equipmentVisibleColumnIds.map((columnId) => {
                           if (columnId === 'actions') return canManage ? <th key={columnId}>Actions</th> : null
                           const col = equipmentPickerColumns.find((item) => item.id === columnId)
-                          return <th key={columnId}>{col?.label || columnId}</th>
+                          const filterKey = columnId === 'active' ? 'status' : columnId
+                          const canFilter = HEADER_FILTERABLE.has(columnId)
+                          return (
+                            <TableColumnHead
+                              key={columnId}
+                              columnId={columnId}
+                              label={col?.label || columnId}
+                              filterValue={canFilter ? (columnFilters[filterKey] || '') : ''}
+                              onFilter={canFilter ? setColumnFilter : undefined}
+                            />
+                          )
                         })}
                       </tr>
                     </thead>

@@ -24,7 +24,7 @@ import TablePagination from '../../components/shared/TablePagination'
 import TableEmptyRow from '../../components/shared/TableEmptyRow'
 import TableColumnPicker from '../../components/shared/TableColumnPicker'
 import TableFilterToolbar from '../../components/shared/TableFilterToolbar'
-import { ExportCsvButton } from '../../components/shared/ListTableChrome'
+import { DataColumnHead, ExportCsvButton, updateColumnFilter } from '../../components/shared/ListTableChrome'
 import NavIcon from '../../components/layout/NavIcon'
 import DuplicateRowButton from '../../components/ui/DuplicateRowButton'
 import { createNestedClone, prepareNestedCloneCreate } from '../../lib/nestedClone'
@@ -132,7 +132,7 @@ export default function SupportCenter() {
     Object.entries(columnFilters).forEach(([key, value]) => {
       const needle = String(value || '').trim().toLowerCase()
       if (!needle) return
-      rows = rows.filter((row) => String(row[key] || '').toLowerCase() === needle)
+      rows = rows.filter((row) => String(row[key] || '').toLowerCase().includes(needle))
     })
     rows.sort((a, b) => {
       if (sortBy === 'oldest') return new Date(a.created_at) - new Date(b.created_at)
@@ -313,8 +313,17 @@ export default function SupportCenter() {
                 <thead>
                   <tr>
                     {visibleColumnIds.map((columnId) => {
+                      if (columnId === 'actions') return <th key={columnId}>Actions</th>
                       const col = columnDefs.find((item) => item.id === columnId)
-                      return <th key={columnId}>{col?.label || columnId}</th>
+                      return (
+                        <DataColumnHead
+                          key={columnId}
+                          columnId={columnId}
+                          label={col?.label || columnId}
+                          filters={columnFilters}
+                          onFilter={(id, value) => updateColumnFilter(setColumnFilters, id, value)}
+                        />
+                      )
                     })}
                   </tr>
                 </thead>

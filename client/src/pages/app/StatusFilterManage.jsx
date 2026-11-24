@@ -12,6 +12,8 @@ import {
 } from '../../lib/api-status-filters'
 import { seedReferenceData } from '../../lib/referenceDataCache'
 import PageBack from '../../components/shared/PageBack'
+import { DataColumnHead, updateColumnFilter } from '../../components/shared/ListTableChrome'
+import '../../components/shared/ListTableChrome.css'
 import '../../components/company/CompanyShared.css'
 import './Others.css'
 import './StatusFilterManage.css'
@@ -38,6 +40,7 @@ export default function StatusFilterManage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
+  const [columnFilters, setColumnFilters] = useState({})
   const [notice, setNotice] = useState(null)
 
   const backTo = org?.slug ? orgPath(org.slug, 'masters/status-filters') : '#'
@@ -201,12 +204,22 @@ export default function StatusFilterManage() {
           <table className="company-table status-filter-table">
             <thead>
               <tr>
-                <th>Status</th>
-                <th>Pill filter</th>
+                <DataColumnHead columnId="name" label="Status" filters={columnFilters} onFilter={(id, value) => updateColumnFilter(setColumnFilters, id, value)} />
+                <DataColumnHead columnId="phase" label="Pill filter" filters={columnFilters} onFilter={(id, value) => updateColumnFilter(setColumnFilters, id, value)} />
               </tr>
             </thead>
             <tbody>
-              {(module.statuses || []).map((row) => (
+              {(module.statuses || []).filter((row) => {
+                const nameNeedle = String(columnFilters.name || '').trim().toLowerCase()
+                const phaseNeedle = String(columnFilters.phase || '').trim().toLowerCase()
+                if (nameNeedle && !String(row.name || row.key || '').toLowerCase().includes(nameNeedle)) return false
+                if (phaseNeedle) {
+                  const phase = (module.phases || []).find((item) => item.id === draft[row.key])
+                  const label = String(phase?.label || '').toLowerCase()
+                  if (!label.includes(phaseNeedle)) return false
+                }
+                return true
+              }).map((row) => (
                 <tr key={row.key} className={row.is_active === false ? 'is-inactive' : undefined}>
                   <td>
                     <span className="status-filter-status">

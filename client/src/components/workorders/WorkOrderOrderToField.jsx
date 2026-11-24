@@ -28,6 +28,7 @@ export default function WorkOrderOrderToField({
   selected = null,
   onChange,
   disabled = false,
+  readOnly = false,
   embedded = false,
   className = '',
   hint = 'The department that attended or completed this work.',
@@ -52,23 +53,28 @@ export default function WorkOrderOrderToField({
     })
   }
 
+  const current = options.find((row) => row.id === value) || selected
   const field = (
     <>
       <label className={`company-form__field ${className}`.trim()}>
         <span className="company-form__label">{label}</span>
-        <FilterableSelect
-          className="company-form__input--select"
-          value={value || ''}
-          onChange={handleChange}
-          options={options}
-          getOptionValue={(department) => department.id}
-          getOptionLabel={departmentLabel}
-          getOptionSearchLabel={departmentSearchLabel}
-          placeholder={loading ? 'Loading departments…' : 'Select department'}
-          disabled={disabled || loading}
-          allowEmpty={false}
-          required
-        />
+        {readOnly ? (
+          <div className="wr-form__input-readonly">{current ? departmentLabel(current) : '—'}</div>
+        ) : (
+          <FilterableSelect
+            className="company-form__input--select"
+            value={value || ''}
+            onChange={handleChange}
+            options={options}
+            getOptionValue={(department) => department.id}
+            getOptionLabel={departmentLabel}
+            getOptionSearchLabel={departmentSearchLabel}
+            placeholder={loading ? 'Loading departments…' : 'Select department'}
+            disabled={disabled || loading}
+            allowEmpty={false}
+            required
+          />
+        )}
       </label>
       {hint ? <p className="wo-manual__intro">{hint}</p> : null}
     </>

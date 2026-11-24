@@ -169,6 +169,7 @@ export function PermissionsProvider({ children }) {
       session: resolvedSession,
       isOrgAdmin: Boolean(resolvedSession?.is_org_admin),
       locationId: resolvedSession?.location_id || null,
+      departmentId: resolvedSession?.department_id || null,
       accessRole: resolvedSession?.access_role || null,
       permissions,
       modules: ACCESS_MODULES,

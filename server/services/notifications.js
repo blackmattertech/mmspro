@@ -7,6 +7,7 @@ import { fallbackInboxUrl, resolveInboxUrl } from '../lib/notificationInboxUrl.j
 import { loadTimelineActors } from '../lib/timelineActors.js'
 import { getSignedUrlForEmail } from '../lib/signedUrlCache.js'
 import { isEmailConfigured, sendNotificationEmail } from './email.js'
+import { departmentProfileIds } from '../lib/notificationRecipients.js'
 import {
   buildNotificationEmailDetails,
   notificationEmailSubject,
@@ -518,12 +519,12 @@ function roleAllows(permIndex, roleId, checks) {
  * Notify org admins and employees who have any of the given module permissions.
  * Optional department / location limits keep technicians and other plants out.
  */
-export async function notifyByModule(orgId, checks, payload, {
+export async function resolveModuleRecipientIds(orgId, checks, {
   departmentId = null,
   locationId = null,
   excludeTechnicianRoles = false,
 } = {}) {
-  if (!orgId || !checks?.length) return
+  if (!orgId || !checks?.length) return []
 
   const [{ data: admins }, { data: employees }] = await Promise.all([
     supabaseAdmin
@@ -556,7 +557,32 @@ export async function notifyByModule(orgId, checks, payload, {
     }
   }
 
-  await notifyUsers([...ids], payload)
+  return [...ids]
+}
+
+export async function notifyByModule(orgId, checks, payload, options = {}) {
+  const ids = await resolveModuleRecipientIds(orgId, checks, options)
+  await notifyUsers(ids, payload)
+}
+
+/**
+ * Profile ids of every active employee in the given departments, regardless of
+ * role (technicians included). Employees in `excludeEmployeeIds` are skipped.
+ */
+export async function resolveDepartmentRecipientIds(orgId, departmentIds, {
+  excludeEmployeeIds = [],
+} = {}) {
+  const ids = [...new Set((departmentIds || []).filter(Boolean))]
+  if (!orgId || !ids.length) return []
+  const { data, error } = await supabaseAdmin
+    .from('org_employees')
+    .select('id, profile_id')
+    .eq('org_id', orgId)
+    .eq('is_active', true)
+    .in('department_id', ids)
+    .not('profile_id', 'is', null)
+  if (error) throw error
+  return departmentProfileIds(data, { excludeEmployeeIds })
 }
 
 export async function notifyWorkOrderParties(orgId, workOrder, payload, { actorId = null } = {}) {

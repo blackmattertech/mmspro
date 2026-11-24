@@ -8,6 +8,7 @@ import {
 } from '../../middleware/modulePermission.js'
 import {
   resolveLocationFilter,
+  resolveDepartmentFilter,
   assertLocationAccess,
   coerceScopedLocationId,
 } from '../../lib/orgPermissions.js'
@@ -102,9 +103,10 @@ router.get('/', canReadPicker, async (req, res) => {
     const controls = parseListControls(req.query)
     const limit = controls.exportCsv ? 5000 : page.limit
     const offset = controls.exportCsv ? 0 : page.offset
+    const departmentId = resolveDepartmentFilter(req.orgPermissions, req.query.department_id)
     const rows = await listEquipment(req.userProfile.org_id, {
       locationId,
-      departmentId: req.query.department_id || null,
+      departmentId,
       areaId: req.query.area_id || null,
       search: req.query.search || null,
       filters: controls.filters,

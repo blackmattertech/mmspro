@@ -13,7 +13,7 @@ import {
   exportDepartments,
   downloadBlobFile,
 } from '../../lib/api'
-import { ExportCsvButton } from '../shared/ListTableChrome'
+import { DataColumnHead, ExportCsvButton, updateColumnFilter } from '../shared/ListTableChrome'
 import '../shared/ListTableChrome.css'
 import { invalidateReferenceCache } from '../../lib/referenceDataCache'
 import GooToggle from '../ui/GooToggle'
@@ -30,7 +30,7 @@ import { DynamicPickerCells, DynamicPickerHeaders } from '../shared/DynamicPicke
 import TableFilterToolbar from '../shared/TableFilterToolbar'
 import { useTablePagination } from '../../hooks/useTablePagination'
 import { useTableColumnPrefs } from '../../hooks/useTableColumnPrefs'
-import { TABLE_SORT_OPTIONS, applyTableFilters, compactFilters, uniqueNameOptions, ACTIVE_STATUS_FILTER, selectFilterField } from '../../lib/tableFilters'
+import { TABLE_SORT_OPTIONS, applyTableFilters, compactFilters, uniqueNameOptions, ACTIVE_STATUS_FILTER, selectFilterField, rowMatchesColumnFilters } from '../../lib/tableFilters'
 import { stopTableRowClick, tableRowClickProps } from '../../lib/clickableTableRow'
 import RecordDetailModal from '../shared/RecordDetailModal'
 import { DepartmentDetailContent } from './CompanyRecordDetails'
@@ -115,11 +115,21 @@ export default function DepartmentsTab({ canManage }) {
   const defaultCreateLocationId = canSelectAnyLocation ? '' : (myLocationId || '')
   const lockCreateLocation = Boolean(defaultCreateLocationId)
 
+  const onHeaderFilter = (columnId, value) => updateColumnFilter(setColumnFilters, columnId, value)
   const filteredDepartments = useMemo(() => applyTableFilters(departments, {
     sortBy,
     getName: (dept) => dept.name,
     getCreatedAt: (dept) => dept.created_at,
-  }), [departments, sortBy])
+  }).filter((dept) => rowMatchesColumnFilters(dept, columnFilters, (row, key) => {
+    if (key === 'code') return row.code
+    if (key === 'name') return row.name
+    if (key === 'parent') return row.parent?.name
+    if (key === 'location') return formatDepartmentLocation(row)
+    if (key === 'headcount') return row.employee_count ?? row.headcount
+    if (key === 'description') return row.description
+    if (key === 'status' || key === 'active') return row.is_active === false ? 'inactive' : 'active'
+    return ''
+  })), [departments, sortBy, columnFilters])
 
   const pagedDepartments = filteredDepartments
   const [selected, setSelected] = useState(() => new Set())
@@ -414,18 +424,20 @@ export default function DepartmentsTab({ canManage }) {
                     />
                   </th>
                 )}
-                {isDepartmentColumnVisible('code') && <th>Code</th>}
-                {isDepartmentColumnVisible('name') && <th>Name</th>}
-                {isDepartmentColumnVisible('parent') && <th>Parent department</th>}
-                {isDepartmentColumnVisible('location') && <th>Location</th>}
-                {isDepartmentColumnVisible('headcount') && <th className="company-table__cell--num">Headcount</th>}
-                {isDepartmentColumnVisible('description') && <th>Description</th>}
+                {isDepartmentColumnVisible('code') && <DataColumnHead columnId="code" label="Code" filters={columnFilters} onFilter={onHeaderFilter} />}
+                {isDepartmentColumnVisible('name') && <DataColumnHead columnId="name" label="Name" filters={columnFilters} onFilter={onHeaderFilter} />}
+                {isDepartmentColumnVisible('parent') && <DataColumnHead columnId="parent" label="Parent department" filters={columnFilters} onFilter={onHeaderFilter} />}
+                {isDepartmentColumnVisible('location') && <DataColumnHead columnId="location" label="Location" filters={columnFilters} onFilter={onHeaderFilter} />}
+                {isDepartmentColumnVisible('headcount') && <DataColumnHead columnId="headcount" label="Headcount" className="company-table__cell--num" filters={columnFilters} onFilter={onHeaderFilter} />}
+                {isDepartmentColumnVisible('description') && <DataColumnHead columnId="description" label="Description" filters={columnFilters} onFilter={onHeaderFilter} />}
                 <DynamicPickerHeaders
                   visibleColumnIds={departmentVisibleColumnIds}
                   columnDefs={departmentPickerColumns}
                   handledIds={['code', 'name', 'parent', 'location', 'headcount', 'description', 'active', 'actions']}
+                  filters={columnFilters}
+                  onFilter={onHeaderFilter}
                 />
-                {canManage && isDepartmentColumnVisible('active') && <th>Active</th>}
+                {canManage && isDepartmentColumnVisible('active') && <DataColumnHead columnId="active" label="Active" filters={columnFilters} onFilter={onHeaderFilter} />}
                 {canManage && isDepartmentColumnVisible('actions') && <th>Actions</th>}
               </tr>
             </thead>

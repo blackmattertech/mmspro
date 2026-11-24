@@ -23,7 +23,7 @@ import MastersBack from '../../components/company/MastersBack'
 import { formatCityDisplay } from '../../lib/indiaLocations'
 import { exportVendors } from '../../lib/api-vendors'
 import { downloadBlobFile } from '../../lib/api'
-import { ExportCsvButton } from '../../components/shared/ListTableChrome'
+import { DataColumnHead, ExportCsvButton, updateColumnFilter } from '../../components/shared/ListTableChrome'
 import '../../components/shared/ListTableChrome.css'
 import '../../components/shared/TableColumnPicker.css'
 import '../../components/shared/TableFilterToolbar.css'
@@ -302,23 +302,15 @@ export default function Vendors() {
                 <table className="company-table master-table">
                   <thead>
                     <tr>
-                      {isVendorColumnVisible('vendor_code') && <th>Vendor ID</th>}
-                      {isVendorColumnVisible('name') && <th>Name</th>}
-                      {isVendorColumnVisible('contact_person') && <th>Contact Person</th>}
-                      {isVendorColumnVisible('mobile') && <th>Mobile</th>}
-                      {isVendorColumnVisible('email') && <th>Email</th>}
-                      {isVendorColumnVisible('city') && <th>City</th>}
-                      {isVendorColumnVisible('state') && <th>State</th>}
-                      {isVendorColumnVisible('pincode') && <th>Pincode</th>}
-                      {isVendorColumnVisible('address_line1') && <th>Address Line 1</th>}
-                      {isVendorColumnVisible('address_line2') && <th>Address Line 2</th>}
-                      {isVendorColumnVisible('gstin') && <th>GSTIN</th>}
-                      {isVendorColumnVisible('pan') && <th>PAN</th>}
-                      {isVendorColumnVisible('bank_account_number') && <th>Bank A/c Number</th>}
-                      {isVendorColumnVisible('bank_name') && <th>Bank Name</th>}
-                      {isVendorColumnVisible('account_name') && <th>Account Name</th>}
-                      {isVendorColumnVisible('ifsc_code') && <th>IFSC Code</th>}
-                      {isVendorColumnVisible('branch') && <th>Branch</th>}
+                      {VENDOR_COLUMNS.filter((col) => col.id !== 'actions' && isVendorColumnVisible(col.id)).map((col) => (
+                        <DataColumnHead
+                          key={col.id}
+                          columnId={col.id}
+                          label={col.label}
+                          filters={columnFilters}
+                          onFilter={(id, value) => updateColumnFilter(setColumnFilters, id, value)}
+                        />
+                      ))}
                       {canManage && isVendorColumnVisible('actions') && <th>Actions</th>}
                     </tr>
                   </thead>

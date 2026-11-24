@@ -522,3 +522,24 @@
 .form-masters-skip__reset {
   color: var(--color-gray-blue, #667085);
 }
+
+.others-status-module {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  min-width: 0;
+}
+
+.others-status-module .company-form__label {
+  margin: 0;
+  white-space: nowrap;
+  font-size: 0.8125rem;
+  color: var(--color-gray-blue, #667085);
+}
+
+.others-status-module .company-form__input {
+  min-width: 160px;
+  height: 36px;
+  padding: 6px 10px;
+}

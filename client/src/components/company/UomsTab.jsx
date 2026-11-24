@@ -19,7 +19,7 @@ import {
 import TablePagination from '../shared/TablePagination'
 import TableFilterToolbar from '../shared/TableFilterToolbar'
 import TableEmptyRow from '../shared/TableEmptyRow'
-import { ExportCsvButton } from '../shared/ListTableChrome'
+import { DataColumnHead, ExportCsvButton, updateColumnFilter } from '../shared/ListTableChrome'
 import GooToggle from '../ui/GooToggle'
 import TrashIcon from '../ui/TrashIcon'
 import EditIcon from '../ui/EditIcon'
@@ -231,10 +231,10 @@ export default function UomsTab({ canManage }) {
               <table className="company-table master-table">
                 <thead>
                   <tr>
-                    <th>Code</th>
-                    <th>Name</th>
-                    <th>Category</th>
-                    {canManage && <th>Active</th>}
+                    <DataColumnHead columnId="code" label="Code" filters={columnFilters} onFilter={(id, value) => updateColumnFilter(setColumnFilters, id, value)} />
+                    <DataColumnHead columnId="name" label="Name" filters={columnFilters} onFilter={(id, value) => updateColumnFilter(setColumnFilters, id, value)} />
+                    <DataColumnHead columnId="category" label="Category" filters={columnFilters} onFilter={(id, value) => updateColumnFilter(setColumnFilters, id, value)} />
+                    {canManage && <DataColumnHead columnId="status" label="Active" filters={columnFilters} onFilter={(id, value) => updateColumnFilter(setColumnFilters, id, value)} />}
                     {canManage && <th>Actions</th>}
                   </tr>
                 </thead>

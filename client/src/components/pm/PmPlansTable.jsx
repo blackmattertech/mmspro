@@ -13,9 +13,11 @@ import EditIcon from '../ui/EditIcon'
 import TrashIcon from '../ui/TrashIcon'
 import SaveAsTemplateButton from '../templates/SaveAsTemplateButton'
 import { VirtualTableBody } from '../shared/VirtualTableBody'
+import { TableColumnHead } from '../shared/ListTableChrome'
 import { PM_PLAN_COLUMNS, PM_PLAN_DEFAULT_COLUMN_IDS } from './pmPlanColumns'
 import { readCatalogText } from '../../lib/pickerFields'
 import { formatCalendarDate } from '../../lib/displayDate'
+import '../shared/ListTableChrome.css'
 
 function formatDate(value) {
   if (!value) return '—'
@@ -55,6 +57,10 @@ export default function PmPlansTable({
   onEdit,
   onDelete,
   onOpen,
+  headerSort = null,
+  onHeaderSort,
+  columnFilters = {},
+  onColumnFilter,
 }) {
   const visibleColumnIds = visibleColumnIdsProp?.length
     ? visibleColumnIdsProp
@@ -142,7 +148,17 @@ export default function PmPlansTable({
             <tr>
               {visibleDataColumns.map((columnId) => {
                 const col = PM_PLAN_COLUMNS.find((item) => item.id === columnId)
-                return <th key={columnId}>{col?.label || columnId}</th>
+                return (
+                  <TableColumnHead
+                    key={columnId}
+                    columnId={columnId}
+                    label={col?.label || columnId}
+                    sort={headerSort}
+                    onSort={onHeaderSort}
+                    filterValue={columnFilters[columnId] || ''}
+                    onFilter={onColumnFilter}
+                  />
+                )
               })}
               {showActions && <th>Actions</th>}
             </tr>

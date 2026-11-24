@@ -18,7 +18,7 @@ import TableEmptyRow from '../../components/shared/TableEmptyRow'
 import TableColumnPicker from '../../components/shared/TableColumnPicker'
 import { DynamicPickerCells, DynamicPickerHeaders } from '../../components/shared/DynamicPickerCells'
 import TableFilterToolbar from '../../components/shared/TableFilterToolbar'
-import { ExportCsvButton } from '../../components/shared/ListTableChrome'
+import { DataColumnHead, ExportCsvButton, updateColumnFilter } from '../../components/shared/ListTableChrome'
 import { downloadClientCsv } from '../../lib/clientCsv'
 import '../../components/shared/ListTableChrome.css'
 import { useTablePagination } from '../../hooks/useTablePagination'
@@ -129,6 +129,7 @@ export default function RolesAccess() {
     const getters = {
       name: (role) => role.name,
       description: (role) => role.description,
+      employees: (role) => (role.sample_employees || []).map((person) => person.name).join(' '),
     }
     return rows.filter((role) => Object.entries(active).every(([field, value]) => (
       matchesFieldFilter(role, field, value, getters)
@@ -410,13 +411,15 @@ export default function RolesAccess() {
                 <table className="company-table master-table">
                   <thead>
                     <tr>
-                      {isRoleColumnVisible('name') && <th>Role</th>}
-                      {isRoleColumnVisible('description') && <th>Description</th>}
-                      {isRoleColumnVisible('employees') && <th>Employees</th>}
+                      {isRoleColumnVisible('name') && <DataColumnHead columnId="name" label="Role" filters={columnFilters} onFilter={(id, value) => updateColumnFilter(setColumnFilters, id, value)} />}
+                      {isRoleColumnVisible('description') && <DataColumnHead columnId="description" label="Description" filters={columnFilters} onFilter={(id, value) => updateColumnFilter(setColumnFilters, id, value)} />}
+                      {isRoleColumnVisible('employees') && <DataColumnHead columnId="employees" label="Employees" filters={columnFilters} onFilter={(id, value) => updateColumnFilter(setColumnFilters, id, value)} />}
                       <DynamicPickerHeaders
                         visibleColumnIds={roleVisibleColumnIds}
                         columnDefs={rolePickerColumns}
                         handledIds={['name', 'description', 'employees', 'actions']}
+                        filters={columnFilters}
+                        onFilter={(id, value) => updateColumnFilter(setColumnFilters, id, value)}
                       />
                       {isRoleColumnVisible('actions') && <th>Actions</th>}
                     </tr>
