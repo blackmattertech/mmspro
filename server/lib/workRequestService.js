@@ -1769,7 +1769,8 @@ async function createLinkedWorkOrderFromRequest(orgId, profileId, wr, {
     autoApproved
       ? `Work request auto-converted. Work order ${linkedNumber} generated.`
       : `Work request approved. Work order ${linkedNumber} generated.`,
-    profileId,
+    // Auto-approval is a system action — do not attribute it to the submitter.
+    autoApproved ? null : profileId,
     { manual_work_order_id: workOrder.id, wo_number: linkedNumber, assignee_ids: resolvedAssigneeIds },
   )
   await addTimelineEvent(

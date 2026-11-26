@@ -240,6 +240,7 @@ export default function WorkOrdersTable({
   pagination: paginationProp,
   serverPaged = false,
   columns,
+  columnLabels = null,
   tableId,
   emptyTitle,
   emptyHint,
@@ -268,7 +269,7 @@ export default function WorkOrdersTable({
     const included = new Set(columns)
     const defs = columns.map((id) => ({
       id,
-      label: COLUMN_CONFIG[id]?.label || id,
+      label: columnLabels?.[id] || COLUMN_CONFIG[id]?.label || id,
     }))
     const usedLabels = new Set(defs.map((col) => canonicalLabel(col.label)))
     for (const extra of EXTRA_COLUMNS) {
@@ -288,7 +289,7 @@ export default function WorkOrdersTable({
       usedLabels.add(canonicalLabel(field.name))
     }
     return defs
-  }, [columns, formFields])
+  }, [columns, columnLabels, formFields])
   const labelById = useMemo(
     () => new Map(columnDefs.map((col) => [col.id, col.label])),
     [columnDefs],

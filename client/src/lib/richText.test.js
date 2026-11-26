@@ -25,7 +25,7 @@ test('rich text emptiness and length ignore markup', () => {
   assert.equal(richTextLength('<p>abc</p>'), 3)
 })
 
-test('sanitizeRichText keeps basic marks and strips link highlight and size', () => {
+test('sanitizeRichText keeps bold/italic/underline; strips link highlight and size', () => {
   const input = [
     '<p>',
     '<strong>Bold</strong> ',
@@ -37,7 +37,7 @@ test('sanitizeRichText keeps basic marks and strips link highlight and size', ()
     '</p>',
   ].join('')
   const cleaned = sanitizeRichText(input)
-  assert.match(cleaned, /<strong>Bold<\/strong>/)
+  assert.match(cleaned, /<(strong|b)>Bold<\/(strong|b)>/i)
   assert.match(cleaned, /<em>Italic<\/em>/)
   assert.match(cleaned, /<u>Under<\/u>/)
   assert.doesNotMatch(cleaned, /<a\b/i)

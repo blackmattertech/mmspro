@@ -305,7 +305,7 @@ export default function PmPlanDetailModal({
                         <table className="company-table master-table pm-plan-orders-table">
                           <thead>
                             <tr>
-                              <th>WO #</th>
+                              <th>SCWO #</th>
                               <th>Summary</th>
                               <th>Scheduled</th>
                               <th>Status</th>

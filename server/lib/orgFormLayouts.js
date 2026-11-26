@@ -21,6 +21,7 @@ import {
   publicFormMeta,
 } from './formRegistry.js'
 import { shouldFallbackWorkOrderLayout } from './workOrderForms.js'
+import { ensureWorkOrderReliabilityFields } from '../shared/workOrderReliabilityFields.js'
 import {
   getMasterSource,
   publicMasterSources,
@@ -273,6 +274,11 @@ function sanitizeLayoutField(field, index, { allowBindKey = true, requireSection
   const equipmentColumnId = !masterSource && typeof field.equipmentColumnId === 'string'
     ? field.equipmentColumnId.trim()
     : ''
+  const hint = typeof field.hint === 'string' ? field.hint.trim() : ''
+  const maxBound = typeof field.maxBound === 'string' ? field.maxBound.trim() : ''
+  const maxBoundFieldId = typeof field.maxBoundFieldId === 'string'
+    ? field.maxBoundFieldId.trim()
+    : ''
   return {
     id: fieldLayoutId(field),
     ...(field.sectionId ? { sectionId: fieldLayoutId({ id: field.sectionId }) } : {}),
@@ -289,6 +295,9 @@ function sanitizeLayoutField(field, index, { allowBindKey = true, requireSection
     ...(dependsOnFieldId && dependsOnOptions.length ? { dependsOnOptions } : {}),
     ...(masterSource && filterByFieldId ? { filterByFieldId } : {}),
     ...(defaultToCurrentUser ? { defaultToCurrentUser: true } : {}),
+    ...(hint ? { hint } : {}),
+    ...(maxBound ? { maxBound } : {}),
+    ...(maxBound === 'field' && maxBoundFieldId ? { maxBoundFieldId } : {}),
   }
 }
 
@@ -621,9 +630,12 @@ export async function buildFormLayoutPayload(orgId, formId) {
     getSavedFormLayout(orgId, formId),
   ])
 
+  const savedLayout = saved?.layout
+    ? ensureWorkOrderReliabilityFields(presentEquipmentLabels(saved.layout), formId)
+    : null
   return {
     form: publicFormMeta({ ...formDef, moduleId: formDef.moduleId, moduleLabel: formDef.moduleLabel }),
-    layout: presentEquipmentLabels(saved?.layout) || null,
+    layout: savedLayout,
     defaultLayout: buildDefaultLayout(formDef, catalogFields),
     updated_at: saved?.updated_at || null,
     catalog: {
@@ -842,16 +854,21 @@ export async function loadRuntimeFormLayout(orgId, formId) {
     }
     return null
   }
+  const ensured = ensureWorkOrderReliabilityFields(raw, formId)
   const { applyCompanyOptionsToLayout } = await import('./formFieldMasters.js')
   const { applyLoadedCompanySkips } = await import('./formSkips.js')
-  const withOptions = await applyCompanyOptionsToLayout(orgId, formId, raw)
+  const withOptions = await applyCompanyOptionsToLayout(orgId, formId, ensured)
   return applyLoadedCompanySkips(orgId, formId, withOptions)
 }
 
 export async function loadRuntimeFormBundle(orgId, formId) {
   const saved = await getSavedFormLayout(orgId, formId)
   if (saved?.layout) {
-    return { layout: presentEquipmentLabels(saved.layout), catalogSource: 'org', platformCatalog: [] }
+    return {
+      layout: ensureWorkOrderReliabilityFields(presentEquipmentLabels(saved.layout), formId),
+      catalogSource: 'org',
+      platformCatalog: [],
+    }
   }
   const platform = await getPlatformFormDefaultRow(formId)
   if (!platform?.layout) {
@@ -866,7 +883,7 @@ export async function loadRuntimeFormBundle(orgId, formId) {
     return { layout: null, catalogSource: 'none', platformCatalog: [] }
   }
   return {
-    layout: presentEquipmentLabels(platform.layout),
+    layout: ensureWorkOrderReliabilityFields(presentEquipmentLabels(platform.layout), formId),
     catalogSource: 'platform',
     platformCatalog: platform.catalog || [],
   }

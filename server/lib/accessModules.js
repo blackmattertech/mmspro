@@ -81,6 +81,10 @@ export const ACCESS_MODULE_GROUPS = [
     id: 'reports',
     label: 'Reports',
     modules: [
+      { key: 'reports_custom', label: 'Custom Reports', actions: ['create', 'read', 'update', 'delete'] },
+      { key: 'reports_schedules', label: 'Scheduled Reports', actions: ['create', 'read', 'update', 'delete'] },
+      { key: 'reports_ready', label: 'Ready Reports', actions: ['create', 'read', 'delete'] },
+      { key: 'reports_send', label: 'Send Reports', actions: ['create'] },
       { key: 'reports_daily_logs', label: 'Daily Logs', actions: ['read'] },
       { key: 'reports_plant_wise', label: 'Plant Wise Report', actions: ['read'] },
       { key: 'reports_open_logs', label: 'Open Logs', actions: ['read'] },
@@ -141,6 +145,10 @@ export const MODULE_LEGACY_EXPAND = {
     'work_orders_manual',
   ],
   reports: [
+    'reports_custom',
+    'reports_schedules',
+    'reports_ready',
+    'reports_send',
     'reports_daily_logs',
     'reports_plant_wise',
     'reports_open_logs',
@@ -186,6 +194,10 @@ export function permissionsHaveApproval(permissions) {
 
 export const REPORT_MODULE_KEYS = [
   'reports',
+  'reports_custom',
+  'reports_schedules',
+  'reports_ready',
+  'reports_send',
   'reports_daily_logs',
   'reports_plant_wise',
   'reports_open_logs',

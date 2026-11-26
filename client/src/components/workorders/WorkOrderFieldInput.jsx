@@ -316,6 +316,7 @@ export default function WorkOrderFieldInput({ field, value, onChange, disabled, 
   }
 
   if (type === 'number') {
+    const hint = String(field.hint || help?.hint || '').trim()
     return (
       <div className={withInvalid()} data-field-id={field.id}>
         <label className="company-form__label" htmlFor={id}>{label}</label>
@@ -326,7 +327,10 @@ export default function WorkOrderFieldInput({ field, value, onChange, disabled, 
           value={value ?? ''}
           onChange={(e) => onChange(e.target.value)}
           disabled={disabled}
+          min={0}
+          step="any"
         />
+        {hint ? <p className="company-form__hint">{hint}</p> : null}
       </div>
     )
   }

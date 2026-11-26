@@ -25,6 +25,7 @@ import { uploadWorkOrderFile } from '../../lib/workOrderAssets'
 import { useOrg } from '../../hooks/useOrg'
 import { useProfile } from '../../hooks/useProfile'
 import { usePermissions } from '../../hooks/usePermissions'
+import { canEditWorkOrderContent } from '../../lib/workOrderOrigin'
 import { useOrgStatusOptions } from '../../hooks/useOrgStatusOptions'
 import { useTextFieldLimits } from '../../hooks/useTextFieldLimits'
 import {
@@ -38,6 +39,10 @@ import { formatDisplayDateTime } from '../../lib/displayDate'
 import FilterableSelect from '../ui/FilterableSelect'
 import MasterPicker from '../forms/MasterPicker'
 import { hydrateMasterValues, splitBoundValues } from '../../lib/formFieldSources'
+import {
+  validateBreakdownReliabilityHoursRequired,
+  validateLayoutNumberMaxBounds,
+} from '../../../../shared/workOrderReliabilityFields.js'
 import WorkOrderAttachmentsField from './WorkOrderAttachmentsField'
 import WorkOrderDayTabs from './WorkOrderDayTabs'
 import WorkOrderMaterialDetailsModal from './WorkOrderMaterialDetailsModal'
@@ -367,7 +372,7 @@ function formFromDetail(detail) {
 export default function WorkOrderLifecyclePanel({
   detail,
   onUpdated,
-  canUpdate = true,
+  canUpdate: canUpdateProp = true,
   hideHeader = false,
   hideWorkRequestForm = false,
 }) {
@@ -376,6 +381,10 @@ export default function WorkOrderLifecyclePanel({
   const { profile, employee } = useProfile()
   const { isOrgAdmin, canUpdate: canUpdateModule, canCreate, canRead, session } = usePermissions()
   const { labelByKey: statusLabels } = useOrgStatusOptions('work_order', { includeInactive: true })
+  const canUpdate = Boolean(
+    canUpdateProp
+    && canEditWorkOrderContent({ status: detail?.status, isOrgAdmin }),
+  )
   const { maxLength } = useTextFieldLimits()
   const { requestFiles, executionFiles } = splitWorkOrderAttachments(detail?.attachments)
   const [form, setForm] = useState(() => formFromDetail(detail))
@@ -676,6 +685,21 @@ export default function WorkOrderLifecyclePanel({
           : []),
       ])
       if (futureDateError) throw new Error(futureDateError)
+      const reliabilityError = validateLayoutNumberMaxBounds({
+        layout: processLayout,
+        values: processExtras.values || {},
+        breakdownStartAt: form.breakdown_start_at,
+        breakdownEndAt: form.breakdown_end_at,
+      })
+      if (reliabilityError) throw new Error(reliabilityError)
+      if (['completed', 'verified', 'closed'].includes(status)) {
+        const reliabilityRequiredError = validateBreakdownReliabilityHoursRequired({
+          isBreakdown: Boolean(detail.is_breakdown),
+          status,
+          values: processExtras.values || {},
+        })
+        if (reliabilityRequiredError) throw new Error(reliabilityRequiredError)
+      }
       if (
         ['completed', 'verified', 'closed'].includes(status)
         && detail.checklist_snapshot

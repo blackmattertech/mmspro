@@ -335,6 +335,21 @@ export function canViewAssociatedWorkRecord(session) {
   ))
 }
 
+/**
+ * True when every Reports module action is granted (Roles group fully checked).
+ * Those users get org-wide Reports visibility like org admins.
+ */
+export function hasFullReportsAccess(session) {
+  if (!session) return false
+  if (session.is_org_admin) return true
+  if (isOrgAdminAccessRoleName(session.access_role?.name)) return true
+  const reportModules = ACCESS_MODULES.filter((mod) => mod.groupId === 'reports')
+  if (!reportModules.length) return false
+  return reportModules.every((mod) => (
+    mod.actions.every((action) => hasModulePermission(session, mod.key, action))
+  ))
+}
+
 /** Non-admins are limited to their employee location when set.
  * Company admins and access role "Admin" can use all locations.
  */
@@ -342,6 +357,14 @@ export function getScopedLocationId(session) {
   if (!session || session.is_org_admin) return null
   if (isOrgAdminAccessRoleName(session.access_role?.name)) return null
   return session.location_id || null
+}
+
+/** Reports location scope: full Reports access unlocks all locations like admin. */
+export function resolveReportLocationFilter(session, requestedLocationId) {
+  if (!session || session.is_org_admin || hasFullReportsAccess(session)) {
+    return requestedLocationId || null
+  }
+  return resolveLocationFilter(session, requestedLocationId)
 }
 
 /** Non-admins are limited to their employee department when set.

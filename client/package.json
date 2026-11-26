@@ -8,7 +8,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test:unit": "node --test src/lib/formLayoutIds.asset.test.js src/lib/listFilterOptions.test.js src/lib/listResponseCache.test.js src/lib/workOrderStatusLabel.test.js src/lib/fieldHelpText.test.js src/lib/uomOptions.test.js src/lib/mandatoryFields.test.js src/lib/formFieldSources.mandatory.test.js src/lib/tableColumnPrefs.test.js src/lib/dateConstraints.test.js src/lib/richText.test.js src/lib/calendarEventLabel.test.js src/lib/manualWorkOrderWizard.test.js src/lib/templateAssetPrefill.test.js src/lib/statusPhases.test.js ../shared/recordClone.test.js ../shared/displayDate.test.js ../shared/statusPhaseMaps.test.js"
+    "test:unit": "node --test src/lib/formLayoutIds.asset.test.js src/lib/listFilterOptions.test.js src/lib/listResponseCache.test.js src/lib/workOrderStatusLabel.test.js src/lib/fieldHelpText.test.js src/lib/uomOptions.test.js src/lib/mandatoryFields.test.js src/lib/formFieldSources.mandatory.test.js src/lib/tableColumnPrefs.test.js src/lib/dateConstraints.test.js src/lib/richText.test.js src/lib/calendarEventLabel.test.js src/lib/manualWorkOrderWizard.test.js src/lib/templateAssetPrefill.test.js src/lib/statusPhases.test.js src/lib/warrantyLinkedAsset.test.js src/lib/warrantyReminderLabel.test.js ../shared/recordClone.test.js ../shared/displayDate.test.js ../shared/statusPhaseMaps.test.js ../shared/workOrderReliabilityFields.test.js ../shared/reliabilityMetrics.test.js"
   },
   "type": "module",
   "dependencies": {

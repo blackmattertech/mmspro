@@ -438,6 +438,7 @@ export default function ScheduledWorkOrders() {
             pagination={pagination}
             serverPaged
             columns={SCHEDULED_COLUMNS}
+            columnLabels={{ wo_number: 'SCWO #' }}
             tableId="work-orders-scheduled"
             emptyTitle="No scheduled work orders yet."
             emptyHint="Activate a PM plan and the scheduler will generate work orders before each due date. You can also click Generate on a plan."

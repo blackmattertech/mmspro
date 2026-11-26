@@ -438,13 +438,123 @@ function emptyEquipmentActivity() {
     pm: { total: 0, upcoming: 0, overdue: 0 },
     inspection: { lastAt: null, nextDue: null },
     warranty: { status: 'none', expiresOn: null },
+    warranties: [],
+  }
+}
+
+function escapeIlike(value) {
+  return String(value || '').replace(/[%_\\]/g, (ch) => `\\${ch}`)
+}
+
+function warrantyStatusFromEnd(warrantyEnd, today) {
+  if (!warrantyEnd) return 'none'
+  return warrantyEnd >= today ? 'active' : 'expired'
+}
+
+/** Batch-load warranties linked by equipment_id, with legacy serial_number fallback. */
+async function loadEquipmentWarranties(orgId, equipment) {
+  const today = new Date().toISOString().slice(0, 10)
+  const byKey = new Map()
+
+  const warrantyItemSelectFull = `
+    id, product_name, warranty_start, warranty_end, equipment_id,
+    expiry_notification_days, reminder_mode, reminder_frequency,
+    reminder_interval, reminder_unit, reminder_weekdays, reminder_next_at,
+    warranty:warranty_id (id, serial_number, warranty_end)
+  `
+  const warrantyItemSelectBasic = `
+    id, product_name, warranty_start, warranty_end, equipment_id,
+    warranty:warranty_id (id, serial_number, warranty_end)
+  `
+
+  let linkedItems = null
+  let linkedError = null
+  ;({ data: linkedItems, error: linkedError } = await supabaseAdmin
+    .from('warranty_items')
+    .select(warrantyItemSelectFull)
+    .eq('org_id', orgId)
+    .eq('equipment_id', equipment.id))
+
+  if (linkedError && /reminder_|expiry_notification_days/i.test(linkedError.message || '')) {
+    ;({ data: linkedItems, error: linkedError } = await supabaseAdmin
+      .from('warranty_items')
+      .select(warrantyItemSelectBasic)
+      .eq('org_id', orgId)
+      .eq('equipment_id', equipment.id))
+  }
+
+  if (!linkedError) {
+    for (const item of linkedItems || []) {
+      const warranty = item.warranty
+      if (!warranty?.id) continue
+      const end = item.warranty_end || warranty.warranty_end || null
+      const key = `${warranty.id}:${item.id}`
+      byKey.set(key, {
+        id: warranty.id,
+        item_id: item.id,
+        serial_number: warranty.serial_number || null,
+        product_name: item.product_name || null,
+        warranty_start: item.warranty_start || null,
+        warranty_end: end,
+        status: warrantyStatusFromEnd(end, today),
+        expiry_notification_days: item.expiry_notification_days ?? null,
+        reminder_mode: item.reminder_mode || 'one_time',
+        reminder_frequency: item.reminder_frequency || null,
+        reminder_interval: item.reminder_interval ?? null,
+        reminder_unit: item.reminder_unit || null,
+        reminder_weekdays: Array.isArray(item.reminder_weekdays) ? item.reminder_weekdays : [],
+        reminder_next_at: item.reminder_next_at || null,
+      })
+    }
+  } else if (!/equipment_id/i.test(linkedError.message || '')) {
+    console.warn('[equipment] warranty link query failed', linkedError.message)
+  }
+
+  if (equipment.code) {
+    const { data: legacyRows, error: legacyError } = await supabaseAdmin
+      .from('warranties')
+      .select('id, serial_number, warranty_end, warranty_start')
+      .eq('org_id', orgId)
+      .ilike('serial_number', escapeIlike(equipment.code))
+      .limit(20)
+
+    if (!legacyError) {
+      for (const row of legacyRows || []) {
+        const already = [...byKey.values()].some((entry) => entry.id === row.id)
+        if (already) continue
+        byKey.set(`${row.id}:header`, {
+          id: row.id,
+          item_id: null,
+          serial_number: row.serial_number || null,
+          product_name: null,
+          warranty_start: row.warranty_start || null,
+          warranty_end: row.warranty_end || null,
+          status: warrantyStatusFromEnd(row.warranty_end, today),
+        })
+      }
+    }
+  }
+
+  const warranties = [...byKey.values()].sort((a, b) => {
+    const aEnd = a.warranty_end || ''
+    const bEnd = b.warranty_end || ''
+    return aEnd.localeCompare(bEnd)
+  })
+
+  const soonest = warranties.find((row) => row.warranty_end)?.warranty_end || null
+  return {
+    warranties,
+    summary: {
+      status: !soonest ? 'none' : warrantyStatusFromEnd(soonest, today),
+      expiresOn: soonest,
+    },
   }
 }
 
 async function loadEquipmentActivity(orgId, equipment) {
   const activity = emptyEquipmentActivity()
   const today = new Date().toISOString().slice(0, 10)
-  const [ordersResult, plansResult, warrantyResult] = await Promise.all([
+  const [ordersResult, plansResult, warrantyBundle] = await Promise.all([
     supabaseAdmin
       .from('manual_work_orders')
       .select('status, closed_at, updated_at')
@@ -455,14 +565,10 @@ async function loadEquipmentActivity(orgId, equipment) {
       .select('status, next_due_at')
       .eq('org_id', orgId)
       .eq('equipment_id', equipment.id),
-    equipment.code
-      ? supabaseAdmin
-        .from('warranties')
-        .select('warranty_end')
-        .eq('org_id', orgId)
-        .ilike('serial_number', String(equipment.code).replace(/[%_\\]/g, (ch) => `\\${ch}`))
-        .limit(1)
-      : Promise.resolve({ data: [] }),
+    loadEquipmentWarranties(orgId, equipment).catch((err) => {
+      console.warn('[equipment] warranties load failed', err.message)
+      return { warranties: [], summary: { status: 'none', expiresOn: null } }
+    }),
   ])
 
   if (!ordersResult.error) {
@@ -494,14 +600,8 @@ async function loadEquipmentActivity(orgId, equipment) {
     activity.inspection.nextDue = active.map((plan) => plan.next_due_at).sort()[0] || null
   }
 
-  if (!warrantyResult.error) {
-    const expiresOn = warrantyResult.data?.[0]?.warranty_end || null
-    activity.warranty = {
-      status: !expiresOn ? 'none' : (expiresOn >= today ? 'active' : 'expired'),
-      expiresOn,
-    }
-  }
-
+  activity.warranty = warrantyBundle.summary
+  activity.warranties = warrantyBundle.warranties
   return activity
 }
 

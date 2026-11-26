@@ -3,6 +3,7 @@ import { getReportData, getReportFilterOptions, loadOrgLetterhead } from './repo
 import { buildActivityFilterValues, buildReportPdfBuffer, reportPdfFilename } from './reportPdf.js'
 import { buildReportCsv, reportCsvFilename } from './reportCsv.js'
 import { columnsForReport, filterReportColumns, getReportCatalog, resolveDateWindow, UNIFIED_REPORT_KEY } from './reportConstants.js'
+import { resolveReportExportColumns } from './reportCatalogEnrichment.js'
 import { getCustomReport } from './reportCustomService.js'
 import { buildReportEmailContent } from './reportEmail.js'
 import { formatDisplayDate, formatDisplayDateTime } from './displayDate.js'
@@ -77,6 +78,7 @@ export async function buildReportExport({
   const period = periodLabel(report.filters.date_from, report.filters.date_to)
   const wantPdf = formats.includes('pdf')
   const wantCsv = formats.includes('csv')
+  const columnDefs = await resolveReportExportColumns(orgId, catalog.kind, columns)
   const activityFilters = wantPdf
     ? buildActivityFilterValues({
       date_from: report.filters.date_from,
@@ -98,7 +100,7 @@ export async function buildReportExport({
       generatedAt: formatGeneratedAt(report.generated_at),
       locationLabel: report.filters.location_name,
       kpis: report.kpis,
-      columns,
+      columns: columnDefs,
       rows: report.rows,
       kind: report.kind,
     })
@@ -106,7 +108,7 @@ export async function buildReportExport({
   const csv = wantCsv
     ? buildReportCsv({
       kind: report.kind,
-      columns,
+      columns: columnDefs,
       rows: report.rows,
     })
     : ''
@@ -115,7 +117,8 @@ export async function buildReportExport({
     report,
     title,
     period,
-    columns,
+    columns: columnDefs.map((col) => col.id),
+    columnDefs,
     pdf,
     csv,
     pdfFilename: reportPdfFilename(title, report.filters.date_from, report.filters.date_to),

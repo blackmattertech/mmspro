@@ -5,6 +5,7 @@ import { columnsForReport } from './reportConstants.js'
 
 const REPORT_KINDS = [
   'unified',
+  'scheduled',
   'plant',
   'overdue',
   'work_request',
@@ -41,7 +42,7 @@ test('buildActivityFilterValues resolves ids to labels and defaults to All', () 
   assert.equal(values.orderTo, 'Mechanical')
   assert.equal(values.facility, 'Plant A')
   assert.equal(values.priority, 'High')
-  assert.equal(values.area, 'All')
+  assert.equal(values.catalogSummary, 'All')
 })
 
 test('reportPdfFilename slugifies title and keeps display date range', () => {

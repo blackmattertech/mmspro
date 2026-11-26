@@ -11,8 +11,7 @@ export const EQUIPMENT_REPORT_KEY = 'equipment'
 export const REPORT_TYPE_OPTIONS = [
   { value: UNIFIED_REPORT_KEY, label: 'Work Orders', kind: 'unified', icon: 'document' },
   { value: WORK_REQUEST_REPORT_KEY, label: 'Work Requests', kind: 'work_request', icon: 'clipboard' },
-  { value: PM_PLAN_REPORT_KEY, label: 'Preventive Maintenance', kind: 'pm_plan', icon: 'alarmCheck' },
-  { value: METER_READING_REPORT_KEY, label: 'Meter Reading', kind: 'meter_reading', icon: 'logbook' },
+  { value: PM_PLAN_REPORT_KEY, label: 'Scheduled Work Order Reports', kind: 'scheduled', icon: 'alarmCheck' },
   { value: TASK_REPORT_KEY, label: 'Tasks & Follow-ups', kind: 'task', icon: 'alarmCheck' },
   { value: WARRANTY_REPORT_KEY, label: 'Warranties', kind: 'warranty', icon: 'shieldLock' },
   { value: EQUIPMENT_REPORT_KEY, label: 'Assets', kind: 'equipment', icon: 'washer' },
@@ -29,7 +28,7 @@ export const LEGACY_REPORT_KEYS = new Set([
 export const REPORT_TITLES = {
   logs: 'Work Orders',
   'work-requests': 'Work Requests',
-  'pm-plans': 'Preventive Maintenance',
+  'pm-plans': 'Scheduled Work Order Reports',
   'meter-readings': 'Meter Reading',
   tasks: 'Tasks & Follow-ups',
   warranties: 'Warranties',
@@ -49,12 +48,8 @@ export const LOGS_COLUMNS = [
   { id: 'order_type', label: 'Order Type' },
   { id: 'order_from', label: 'Order From' },
   { id: 'order_to', label: 'Order To' },
-  { id: 'area', label: 'Area' },
   { id: 'plant', label: 'Plant / Facility' },
   { id: 'equipment', label: 'Asset' },
-  { id: 'equipment_type', label: 'Asset Type' },
-  { id: 'equipment_capacity', label: 'Asset Capacity' },
-  { id: 'equipment_tag', label: 'Asset Tag' },
   { id: 'job_nature', label: 'Job Nature' },
   { id: 'priority', label: 'Job Priority' },
   { id: 'status', label: 'Job Status' },
@@ -93,6 +88,10 @@ export const LOGS_COLUMNS = [
   { id: 'lessons_learned', label: 'Lessons learned' },
   { id: 'execution_remarks', label: 'Execution remarks' },
 ]
+
+export const SCHEDULED_WO_COLUMNS = LOGS_COLUMNS.map((col) => (
+  col.id === 'wo_number' ? { ...col, label: 'SCWO #' } : col
+))
 
 export const LOG_COLUMNS = [
   { id: 'log_date', label: 'Date' },
@@ -161,13 +160,9 @@ export const WORK_REQUEST_COLUMNS = [
   { id: 'job_nature', label: 'Job Nature' },
   { id: 'order_from', label: 'Order From' },
   { id: 'order_to', label: 'Order To' },
-  { id: 'area', label: 'Area', defaultVisible: false },
   { id: 'plant', label: 'Plant / Facility', defaultVisible: false },
   // Optional summary column — prefer dynamic Equipment Location / Equipment name catalog fields.
   { id: 'equipment', label: 'Asset', defaultVisible: false },
-  { id: 'equipment_type', label: 'Asset Type', defaultVisible: false },
-  { id: 'equipment_capacity', label: 'Asset Capacity', defaultVisible: false },
-  { id: 'equipment_tag', label: 'Asset Tag', defaultVisible: false },
   { id: 'reported_by', label: 'Reported By' },
   { id: 'short_description', label: 'Short description' },
   { id: 'problem_description', label: 'Problem description' },
@@ -183,13 +178,9 @@ export const PM_PLAN_COLUMNS = [
   { id: 'priority', label: 'Priority' },
   { id: 'schedule_type', label: 'Schedule type' },
   { id: 'activity_type', label: 'Activity type' },
-  { id: 'area', label: 'Area' },
   { id: 'plant', label: 'Plant / Facility' },
   { id: 'department', label: 'Department' },
   { id: 'equipment', label: 'Asset' },
-  { id: 'equipment_type', label: 'Asset Type' },
-  { id: 'equipment_capacity', label: 'Asset Capacity' },
-  { id: 'equipment_tag', label: 'Asset Tag' },
   { id: 'work_center', label: 'Work Center' },
   { id: 'next_due_at', label: 'Next due' },
   { id: 'start_date', label: 'Start date' },
@@ -207,7 +198,6 @@ export const METER_READING_COLUMNS = [
   { id: 'is_reset', label: 'Reset' },
   { id: 'equipment', label: 'Asset' },
   { id: 'equipment_code', label: 'Asset code' },
-  { id: 'area', label: 'Area' },
   { id: 'plant', label: 'Plant / Facility' },
   { id: 'logged_by', label: 'Logged by' },
   { id: 'logged_by_department', label: 'Department' },
@@ -250,12 +240,8 @@ export const WARRANTY_COLUMNS = [
 export const EQUIPMENT_COLUMNS = [
   { id: 'code', label: 'Asset code' },
   { id: 'name', label: 'Asset name' },
-  { id: 'area', label: 'Area' },
   { id: 'plant', label: 'Plant / Facility' },
   { id: 'department', label: 'Department' },
-  { id: 'equipment_type', label: 'Asset Type' },
-  { id: 'equipment_capacity', label: 'Asset Capacity' },
-  { id: 'equipment_tag', label: 'Asset Tag' },
   { id: 'reading_required', label: 'Meter required' },
   { id: 'last_meter_reading', label: 'Last reading' },
   { id: 'cumulative_reading', label: 'Cumm. Reading' },
@@ -269,6 +255,20 @@ export function kindForReportKey(reportKey) {
     || (reportKey === 'plant-wise' ? 'plant' : reportKey === 'overdue' ? 'overdue' : 'logs')
 }
 
+/** Report kinds that attach equipment and should merge Asset Master catalog parents. */
+export function reportUsesCatalogFields(reportKey) {
+  const kind = kindForReportKey(reportKey)
+  return [
+    'unified',
+    'work_request',
+    'scheduled',
+    'equipment',
+    'meter_reading',
+    'overdue',
+    'logs',
+  ].includes(kind)
+}
+
 export function isKnownReportType(reportKey) {
   return REPORT_TYPE_OPTIONS.some((opt) => opt.value === reportKey)
 }
@@ -276,7 +276,7 @@ export function isKnownReportType(reportKey) {
 export function columnsForReportKey(reportKey) {
   if (reportKey === UNIFIED_REPORT_KEY) return LOGS_COLUMNS
   if (reportKey === WORK_REQUEST_REPORT_KEY) return WORK_REQUEST_COLUMNS
-  if (reportKey === PM_PLAN_REPORT_KEY) return PM_PLAN_COLUMNS
+  if (reportKey === PM_PLAN_REPORT_KEY) return SCHEDULED_WO_COLUMNS
   if (reportKey === METER_READING_REPORT_KEY) return METER_READING_COLUMNS
   if (reportKey === TASK_REPORT_KEY) return TASK_COLUMNS
   if (reportKey === WARRANTY_REPORT_KEY) return WARRANTY_COLUMNS
@@ -300,12 +300,9 @@ export const EMPTY_REPORT_FILTERS = {
   order_type: '',
   order_from: '',
   order_to: '',
-  area_id: '',
   facility_id: '',
   equipment_id: '',
-  equipment_type: '',
-  equipment_capacity: '',
-  equipment_tag: '',
+  catalog_filters: {},
   priority: '',
   status: '',
   job_nature: '',

@@ -12,7 +12,6 @@ export const INTERACTIVE_REPORT_KEYS = [
   UNIFIED_REPORT_KEY,
   WORK_REQUEST_REPORT_KEY,
   PM_PLAN_REPORT_KEY,
-  METER_READING_REPORT_KEY,
   TASK_REPORT_KEY,
   WARRANTY_REPORT_KEY,
   EQUIPMENT_REPORT_KEY,
@@ -54,11 +53,11 @@ export const REPORT_CATALOG = {
   'pm-plans': {
     key: PM_PLAN_REPORT_KEY,
     moduleKey: 'reports',
-    title: 'Preventive Maintenance',
-    kind: 'pm_plan',
+    title: 'Scheduled Work Order Reports',
+    kind: 'scheduled',
     dayStatus: null,
-    about: 'PM plans in the selected period, filtered by asset, priority, status, and assignee.',
-    rowMeaning: 'Each row is one PM plan.',
+    about: 'Scheduled (PM) work orders in the selected period, filtered by asset, priority, status, and assignee.',
+    rowMeaning: 'Each row is one scheduled work order.',
   },
   'meter-readings': {
     key: METER_READING_REPORT_KEY,
@@ -216,12 +215,8 @@ export const UNIFIED_COLUMNS = [
   { id: 'order_type', label: 'Order Type' },
   { id: 'order_from', label: 'Order From' },
   { id: 'order_to', label: 'Order To' },
-  { id: 'area', label: 'Area' },
   { id: 'plant', label: 'Plant / Facility' },
   { id: 'equipment', label: 'Asset' },
-  { id: 'equipment_type', label: 'Asset Type' },
-  { id: 'equipment_capacity', label: 'Asset Capacity' },
-  { id: 'equipment_tag', label: 'Asset Tag' },
   { id: 'job_nature', label: 'Job Nature' },
   { id: 'priority', label: 'Job Priority' },
   { id: 'status', label: 'Job Status' },
@@ -261,6 +256,10 @@ export const UNIFIED_COLUMNS = [
   { id: 'execution_remarks', label: 'Execution remarks' },
 ]
 
+export const SCHEDULED_WO_COLUMNS = UNIFIED_COLUMNS.map((col) => (
+  col.id === 'wo_number' ? { ...col, label: 'SCWO #' } : col
+))
+
 export const OVERDUE_COLUMNS = [
   { id: 'wo_number', label: 'WO #' },
   { id: 'short_description', label: 'Short description' },
@@ -286,13 +285,9 @@ export const WORK_REQUEST_COLUMNS = [
   { id: 'job_nature', label: 'Job Nature' },
   { id: 'order_from', label: 'Order From' },
   { id: 'order_to', label: 'Order To' },
-  { id: 'area', label: 'Area' },
   { id: 'plant', label: 'Plant / Facility' },
   // Optional — dynamic Equipment Location / Equipment name come from catalog field:* columns.
   { id: 'equipment', label: 'Asset' },
-  { id: 'equipment_type', label: 'Asset Type' },
-  { id: 'equipment_capacity', label: 'Asset Capacity' },
-  { id: 'equipment_tag', label: 'Asset Tag' },
   { id: 'reported_by', label: 'Reported By' },
   { id: 'short_description', label: 'Short description' },
   { id: 'problem_description', label: 'Problem description' },
@@ -308,13 +303,9 @@ export const PM_PLAN_COLUMNS = [
   { id: 'priority', label: 'Priority' },
   { id: 'schedule_type', label: 'Schedule type' },
   { id: 'activity_type', label: 'Activity type' },
-  { id: 'area', label: 'Area' },
   { id: 'plant', label: 'Plant / Facility' },
   { id: 'department', label: 'Department' },
   { id: 'equipment', label: 'Asset' },
-  { id: 'equipment_type', label: 'Asset Type' },
-  { id: 'equipment_capacity', label: 'Asset Capacity' },
-  { id: 'equipment_tag', label: 'Asset Tag' },
   { id: 'work_center', label: 'Work Center' },
   { id: 'next_due_at', label: 'Next due' },
   { id: 'start_date', label: 'Start date' },
@@ -332,7 +323,6 @@ export const METER_READING_COLUMNS = [
   { id: 'is_reset', label: 'Reset' },
   { id: 'equipment', label: 'Asset' },
   { id: 'equipment_code', label: 'Asset code' },
-  { id: 'area', label: 'Area' },
   { id: 'plant', label: 'Plant / Facility' },
   { id: 'logged_by', label: 'Logged by' },
   { id: 'logged_by_department', label: 'Department' },
@@ -375,12 +365,8 @@ export const WARRANTY_COLUMNS = [
 export const EQUIPMENT_COLUMNS = [
   { id: 'code', label: 'Asset code' },
   { id: 'name', label: 'Asset name' },
-  { id: 'area', label: 'Area' },
   { id: 'plant', label: 'Plant / Facility' },
   { id: 'department', label: 'Department' },
-  { id: 'equipment_type', label: 'Asset Type' },
-  { id: 'equipment_capacity', label: 'Asset Capacity' },
-  { id: 'equipment_tag', label: 'Asset Tag' },
   { id: 'reading_required', label: 'Meter required' },
   { id: 'last_meter_reading', label: 'Last reading' },
   { id: 'cumulative_reading', label: 'Cumm. Reading' },
@@ -426,6 +412,7 @@ export function columnsForReport(kind) {
   if (kind === 'plant') return PLANT_COLUMNS
   if (kind === 'overdue') return OVERDUE_COLUMNS
   if (kind === 'unified') return UNIFIED_COLUMNS
+  if (kind === 'scheduled') return SCHEDULED_WO_COLUMNS
   if (kind === 'work_request') return WORK_REQUEST_COLUMNS
   if (kind === 'pm_plan') return PM_PLAN_COLUMNS
   if (kind === 'meter_reading') return METER_READING_COLUMNS

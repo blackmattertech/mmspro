@@ -11,6 +11,7 @@ import { isAllowedImageFile, resolveImageMime } from '../../lib/imageFiles'
 import { readFileAsDataUrl } from '../../config/warrantyDocuments'
 import { cumulativeFromOffset, formatMeterStamp, formatMeterValue } from '../../lib/meterReading'
 import { formatCalendarDate, formatDisplayDateTime } from '../../lib/displayDate'
+import { formatWarrantyReminderLabel } from '../../lib/warrantyReminderLabel'
 import PersonChip from '../shared/PersonChip'
 import './EquipmentDetail.css'
 
@@ -218,6 +219,7 @@ export default function EquipmentDetail({
   const pm = activity.pm || { total: 0, upcoming: 0, overdue: 0 }
   const inspection = activity.inspection || {}
   const warranty = warrantyCopy(equipment)
+  const linkedWarranties = Array.isArray(activity.warranties) ? activity.warranties : []
   const caption = qrFieldCaption(equipment, layout)
 
   const replaceImage = async (event) => {
@@ -412,6 +414,43 @@ export default function EquipmentDetail({
           )}
         />
       </div>
+
+      {linkedWarranties.length > 0 ? (
+        <section className="equipment-detail__warranties" aria-label="Linked warranties">
+          <header className="equipment-detail__warranties-head">
+            <h2>Linked warranties</h2>
+            <span>{linkedWarranties.length}</span>
+          </header>
+          <ul className="equipment-detail__warranty-list">
+            {linkedWarranties.map((row) => {
+              const to = links.warranty ? `${String(links.warranty).replace(/\/$/, '')}/${row.id}` : undefined
+              const statusLabel = row.status === 'expired' ? 'Expired' : (row.status === 'active' ? 'Active' : 'None')
+              const CardTag = to ? Link : 'div'
+              const cardProps = to ? { to } : {}
+              return (
+                <li key={`${row.id}:${row.item_id || 'header'}`}>
+                  <CardTag className="equipment-detail__warranty-card" {...cardProps}>
+                    <span className="equipment-detail__warranty-card-title">
+                      {row.product_name || row.serial_number || 'Warranty'}
+                    </span>
+                    <span className={`equipment-detail__warranty-card-status equipment-detail__warranty-card-status--${row.status || 'none'}`}>
+                      {statusLabel}
+                    </span>
+                    <span className="equipment-detail__warranty-card-meta">
+                      {row.serial_number ? `${row.serial_number} · ` : ''}
+                      {row.warranty_start ? `${formatDate(row.warranty_start)} → ` : ''}
+                      {row.warranty_end ? formatDate(row.warranty_end) : 'No end date'}
+                    </span>
+                    <span className="equipment-detail__warranty-card-reminder">
+                      Reminder: {formatWarrantyReminderLabel(row)}
+                    </span>
+                  </CardTag>
+                </li>
+              )
+            })}
+          </ul>
+        </section>
+      ) : null}
 
       <EquipmentQrCode
         variant="panel"

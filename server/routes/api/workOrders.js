@@ -57,6 +57,8 @@ import {
   isScheduledWorkOrder,
   excludeScheduledWorkOrders,
   onlyManualOriginWorkOrders,
+  assertCanEditWorkOrderContent,
+  isWorkOrderAdminOnlyStatus,
 } from '../../lib/workOrderOrigin.js'
 import {
   isInOrderToTabScope,
@@ -747,12 +749,21 @@ async function buildAssignmentActions(orgId, detail, employee, session = null) {
   }
 
   const isLH = await isLocationHeadFor(orgId, employee, detail.assigned_location_id, session)
-  return resolveAssignmentActionFlags({
+  const flags = resolveAssignmentActionFlags({
     employee,
     detail,
     session,
     isLocationHead: isLH,
   })
+  if (isWorkOrderAdminOnlyStatus(detail.status) && !session?.is_org_admin) {
+    return {
+      ...flags,
+      can_reassign_as_location_head: false,
+      can_assign_department_technicians: false,
+      can_claim_self: false,
+    }
+  }
+  return flags
 }
 
 async function validateAssignedEmployees(orgId, rawIds, { locationId = null, departmentId = null } = {}) {
@@ -1028,6 +1039,10 @@ const WO_CSV_COLUMNS = [
   { label: 'Planned start', value: (row) => row.planned_start_at || '' },
   { label: 'Planned end', value: (row) => row.planned_end_at || '' },
 ]
+
+const SCHEDULED_WO_CSV_COLUMNS = WO_CSV_COLUMNS.map((col) => (
+  col.label === 'WO #' ? { ...col, label: 'SCWO #' } : col
+))
 
 function applyWorkOrderStatusFilter(query, status) {
   const normalized = normalizeStatusFilter(status)
@@ -2199,6 +2214,10 @@ router.patch('/manual/:id/assignment', canApproveWorkOrders, assertOrgOwnership(
 
     if (woError) throw woError
     if (!workOrder) return res.status(404).json({ error: 'Work order not found' })
+    assertCanEditWorkOrderContent({
+      status: workOrder.status,
+      isOrgAdmin: Boolean(req.orgPermissions?.is_org_admin),
+    })
     if (!isAssignableStatus(workOrder.status)) {
       return res.status(400).json({ error: 'Only assigned work orders can be reassigned' })
     }
@@ -2347,13 +2366,26 @@ router.patch('/manual/:id/assignment', canApproveWorkOrders, assertOrgOwnership(
 
     return res.status(403).json({ error: 'You do not have permission to reassign this work order' })
   } catch (err) {
-    res.status(400).json({ error: err.message })
+    res.status(err.status || 400).json({ error: err.message })
   }
 })
 
 router.patch('/manual/:id/values', canUpdateWorkOrders, assertOrgOwnership('manual_work_orders'), async (req, res) => {
   const orgId = req.userProfile.org_id
   try {
+    const { data: existing, error: loadError } = await supabaseAdmin
+      .from('manual_work_orders')
+      .select('id, status')
+      .eq('org_id', orgId)
+      .eq('id', req.params.id)
+      .maybeSingle()
+    if (loadError) throw loadError
+    if (!existing) return res.status(404).json({ error: 'Work order not found' })
+    assertCanEditWorkOrderContent({
+      status: existing.status,
+      isOrgAdmin: Boolean(req.orgPermissions?.is_org_admin),
+    })
+
     const values = req.body?.values && typeof req.body.values === 'object' ? req.body.values : {}
     const [fields, settingsMap] = await Promise.all([
       loadOrgWorkOrderFields(orgId),
@@ -2364,7 +2396,7 @@ router.patch('/manual/:id/values', canUpdateWorkOrders, assertOrgOwnership('manu
     const valueCount = await upsertWorkOrderValues(orgId, req.params.id, values, allowedFields)
     res.json({ id: req.params.id, value_count: valueCount })
   } catch (err) {
-    res.status(400).json({ error: err.message })
+    res.status(err.status || 400).json({ error: err.message })
   }
 })
 
@@ -2426,6 +2458,7 @@ router.post('/manual/:id/daily-logs/start-day', canReadWorkOrders, assertOrgOwne
     await assertWorkOrderEditor(req, req.params.id)
     await startWorkOrderDay(orgId, profileId, req.params.id, {
       timeZone: req.body?.time_zone || req.body?.timeZone,
+      isOrgAdmin: Boolean(req.orgPermissions?.is_org_admin),
     })
     const detail = await loadWorkOrderDetail(orgId, req.params.id)
     res.json(detail)
@@ -2445,6 +2478,7 @@ router.patch('/manual/:id/daily-logs/:logId', canReadWorkOrders, assertOrgOwners
       req.params.id,
       req.params.logId,
       req.body || {},
+      { isOrgAdmin: Boolean(req.orgPermissions?.is_org_admin) },
     )
     const detail = await loadWorkOrderDetail(orgId, req.params.id)
     res.json(detail)
@@ -2464,6 +2498,7 @@ router.post('/manual/:id/daily-logs/:logId/end-day', canReadWorkOrders, assertOr
       req.params.id,
       req.params.logId,
       req.body || {},
+      { isOrgAdmin: Boolean(req.orgPermissions?.is_org_admin) },
     )
     const detail = await loadWorkOrderDetail(orgId, req.params.id)
     res.json(detail)
@@ -2486,6 +2521,11 @@ router.patch('/manual/:id', canUpdateWorkOrders, assertOrgOwnership('manual_work
 
     if (loadError) throw loadError
     if (!existing) return res.status(404).json({ error: 'Work order not found' })
+
+    assertCanEditWorkOrderContent({
+      status: existing.status,
+      isOrgAdmin: Boolean(req.orgPermissions?.is_org_admin),
+    })
 
     const requestedStatus = req.body?.status
     let nextStatus = existing.status
@@ -3073,7 +3113,7 @@ router.get('/scheduled', canReadWorkOrders, async (req, res) => {
     if (error) throw error
     const rows = await buildWorkOrderListResponse(orgId, data || [])
     if (controls.exportCsv) {
-      sendCsv(res, 'scheduled-work-orders.csv', rows, await withCatalogColumns(orgId, WO_CSV_COLUMNS))
+      sendCsv(res, 'scheduled-work-orders.csv', rows, await withCatalogColumns(orgId, SCHEDULED_WO_CSV_COLUMNS))
       return
     }
     res.json(listEnvelope(rows, { total: count || 0, limit, offset, status_counts }))

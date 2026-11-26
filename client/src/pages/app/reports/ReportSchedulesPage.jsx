@@ -37,7 +37,14 @@ function customName(row) {
 
 export default function ReportSchedulesPage() {
   const { org } = useOrg()
-  const { isOrgAdmin } = usePermissions()
+  const { canCreate, canUpdate, canDelete } = usePermissions()
+  const canCreateSchedule = canCreate('reports_schedules')
+  const canUpdateSchedule = canUpdate('reports_schedules')
+  const canDeleteSchedule = canDelete('reports_schedules')
+  const canSendSchedule = canCreate('reports_send')
+  const canManageSchedule = (
+    canCreateSchedule || canUpdateSchedule || canDeleteSchedule || canSendSchedule
+  )
   const { requestDelete, deleteModal } = useConfirmDelete()
   const [schedules, setSchedules] = useState([])
   const [customReports, setCustomReports] = useState([])
@@ -122,7 +129,7 @@ export default function ReportSchedulesPage() {
             All report email schedules for this organization, including each custom email body (auto-formatted for sending).
           </p>
         </div>
-        {isOrgAdmin ? (
+        {canCreateSchedule ? (
           <div className="wo-page__actions">
             <button
               type="button"
@@ -148,7 +155,7 @@ export default function ReportSchedulesPage() {
                 ? 'Create a schedule from an existing saved report.'
                 : 'Save a custom report in Report Builder first, then schedule it here.'}
             </p>
-            {isOrgAdmin && customReports.length ? (
+            {canCreateSchedule && customReports.length ? (
               <button
                 type="button"
                 className="company-btn company-btn--primary"
@@ -217,71 +224,81 @@ export default function ReportSchedulesPage() {
                       >
                         {open ? 'Hide email' : 'View email'}
                       </button>
-                      {isOrgAdmin ? (
+                      {canManageSchedule ? (
                         <>
-                          <button
-                            type="button"
-                            className="company-btn company-btn--secondary company-btn--compact"
-                            disabled={sendingId === row.id}
-                            onClick={async () => {
-                              setSendingId(row.id)
-                              setError(null)
-                              try {
-                                await sendReportScheduleNow(row.id)
-                                await reload()
-                              } catch (err) {
-                                setError(err.message)
-                              } finally {
-                                setSendingId(null)
-                              }
-                            }}
-                          >
-                            {sendingId === row.id ? 'Sending…' : 'Send now'}
-                          </button>
-                          <button
-                            type="button"
-                            className="company-btn company-btn--secondary company-btn--compact"
-                            onClick={() => setEditSchedule(row)}
-                          >
-                            Edit
-                          </button>
-                          <DuplicateRowButton
-                            onClick={() => { setCloneSchedule(row); setCreateOpen(true) }}
-                            label={`Duplicate schedule for ${customName(row)}`}
-                          />
-                          <button
-                            type="button"
-                            className="company-btn company-btn--secondary company-btn--compact"
-                            onClick={async () => {
-                              try {
-                                await updateReportSchedule(row.id, { is_active: !row.is_active })
-                                await reload()
-                              } catch (err) {
-                                setError(err.message)
-                              }
-                            }}
-                          >
-                            {row.is_active === false ? 'Resume' : 'Pause'}
-                          </button>
-                          <button
-                            type="button"
-                            className="company-btn company-btn--danger company-btn--compact"
-                            onClick={async () => {
-                              if (!(await requestDelete({
-                                title: 'Delete schedule',
-                                message: `Delete schedule for “${customName(row)}”?`,
-                              }))) return
-                              try {
-                                await deleteReportSchedule(row.id)
-                                if (expandedId === row.id) setExpandedId(null)
-                                await reload()
-                              } catch (err) {
-                                setError(err.message)
-                              }
-                            }}
-                          >
-                            Delete
-                          </button>
+                          {canSendSchedule ? (
+                            <button
+                              type="button"
+                              className="company-btn company-btn--secondary company-btn--compact"
+                              disabled={sendingId === row.id}
+                              onClick={async () => {
+                                setSendingId(row.id)
+                                setError(null)
+                                try {
+                                  await sendReportScheduleNow(row.id)
+                                  await reload()
+                                } catch (err) {
+                                  setError(err.message)
+                                } finally {
+                                  setSendingId(null)
+                                }
+                              }}
+                            >
+                              {sendingId === row.id ? 'Sending…' : 'Send now'}
+                            </button>
+                          ) : null}
+                          {canUpdateSchedule ? (
+                            <button
+                              type="button"
+                              className="company-btn company-btn--secondary company-btn--compact"
+                              onClick={() => setEditSchedule(row)}
+                            >
+                              Edit
+                            </button>
+                          ) : null}
+                          {canCreateSchedule ? (
+                            <DuplicateRowButton
+                              onClick={() => { setCloneSchedule(row); setCreateOpen(true) }}
+                              label={`Duplicate schedule for ${customName(row)}`}
+                            />
+                          ) : null}
+                          {canUpdateSchedule ? (
+                            <button
+                              type="button"
+                              className="company-btn company-btn--secondary company-btn--compact"
+                              onClick={async () => {
+                                try {
+                                  await updateReportSchedule(row.id, { is_active: !row.is_active })
+                                  await reload()
+                                } catch (err) {
+                                  setError(err.message)
+                                }
+                              }}
+                            >
+                              {row.is_active === false ? 'Resume' : 'Pause'}
+                            </button>
+                          ) : null}
+                          {canDeleteSchedule ? (
+                            <button
+                              type="button"
+                              className="company-btn company-btn--danger company-btn--compact"
+                              onClick={async () => {
+                                if (!(await requestDelete({
+                                  title: 'Delete schedule',
+                                  message: `Delete schedule for “${customName(row)}”?`,
+                                }))) return
+                                try {
+                                  await deleteReportSchedule(row.id)
+                                  if (expandedId === row.id) setExpandedId(null)
+                                  await reload()
+                                } catch (err) {
+                                  setError(err.message)
+                                }
+                              }}
+                            >
+                              Delete
+                            </button>
+                          ) : null}
                         </>
                       ) : null}
                     </div>

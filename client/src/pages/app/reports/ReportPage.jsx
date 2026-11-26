@@ -37,8 +37,8 @@ import {
   LEGACY_REPORT_KEYS,
   REPORT_TITLES,
   REPORT_TYPE_OPTIONS,
+  reportUsesCatalogFields,
   UNIFIED_REPORT_KEY,
-  WORK_REQUEST_REPORT_KEY,
 } from '../../../lib/reportColumns'
 import TableColumnPicker from '../../../components/shared/TableColumnPicker'
 import TableEmptyRow from '../../../components/shared/TableEmptyRow'
@@ -116,7 +116,7 @@ function ReportCell({ columnId, value, row, statusLabels, reportKind }) {
     )
   }
   if (columnId === 'status') {
-    const label = reportKind === 'unified'
+    const label = reportKind === 'unified' || reportKind === 'scheduled'
       ? formatWorkOrderStatusLabel(row, statusLabels)
       : formatReportCell(columnId, value)
     return <span className={`wo-status wo-status--${row.status || 'draft'}`}>{label}</span>
@@ -146,6 +146,11 @@ function validColumnIds(columnDefs, ids) {
 }
 
 function toQuery(filters, search) {
+  const catalogFilters = filters.catalog_filters && typeof filters.catalog_filters === 'object'
+    ? Object.fromEntries(
+      Object.entries(filters.catalog_filters).filter(([, value]) => String(value || '').trim()),
+    )
+    : undefined
   return {
     dateFrom: filters.from_date || undefined,
     dateTo: filters.to_date || undefined,
@@ -155,11 +160,8 @@ function toQuery(filters, search) {
     orderType: filters.order_type || undefined,
     orderFrom: filters.order_from || undefined,
     orderTo: filters.order_to || undefined,
-    areaId: filters.area_id || undefined,
     equipmentId: filters.equipment_id || undefined,
-    equipmentType: filters.equipment_type || undefined,
-    equipmentCapacity: filters.equipment_capacity || undefined,
-    equipmentTag: filters.equipment_tag || undefined,
+    catalogFilters: catalogFilters && Object.keys(catalogFilters).length ? catalogFilters : undefined,
     priority: filters.priority || undefined,
     status: filters.status || undefined,
     jobNature: filters.job_nature || undefined,
@@ -174,7 +176,19 @@ export default function ReportPage() {
   const navigate = useNavigate()
   const { reportKey: routeReportKey, customId: routeCustomId } = useParams()
   const { org } = useOrg()
-  const { isOrgAdmin } = usePermissions()
+  const {
+    canCreate,
+    canUpdate,
+    canDelete,
+  } = usePermissions()
+  const canManageCustom = (
+    canCreate('reports_custom')
+    || canUpdate('reports_custom')
+    || canDelete('reports_custom')
+  )
+  const canSchedule = canCreate('reports_schedules')
+  const canSendNow = canCreate('reports_send')
+  const canGenerateReady = canCreate('reports_ready')
 
   const routeIsLegacy = Boolean(routeReportKey && LEGACY_REPORT_KEYS.has(routeReportKey))
   const routeIsUnknown = Boolean(
@@ -191,8 +205,8 @@ export default function ReportPage() {
   const catalogFields = useCatalogFields()
   const columnDefs = useMemo(() => {
     const base = columnsForReportKey(reportKey)
-    if (reportKey !== WORK_REQUEST_REPORT_KEY) return base
-    // Same dynamic catalog parents as WR list (Equipment Location, Equipment name, …).
+    if (!reportUsesCatalogFields(reportKey)) return base
+    // Same dynamic catalog parents as Asset Master / WR list (Equipment Location, Equipment name, …).
     return mergePickerColumns(base, catalogFields)
   }, [reportKey, catalogFields])
   const columnTableId = useMemo(() => `report-${reportKey}`, [reportKey])
@@ -243,8 +257,7 @@ export default function ReportPage() {
   const selectedCustom = customReports.find((item) => item.id === selectedCustomId) || null
   const canSelectLocation = filterOptions?.can_select_location !== false
     && Boolean(report?.filters?.can_select_location !== false)
-  const locationDirty = isOrgAdmin
-    && canSelectLocation
+  const locationDirty = canSelectLocation
     && storedLocation(appliedFilters.facility_id) !== (selectedCustom?.location_id || null)
   const customDirty = !selectedCustom
     || selectedCustom.name !== customName.trim()
@@ -478,11 +491,11 @@ export default function ReportPage() {
         order_type: appliedFilters.order_type || undefined,
         order_from: appliedFilters.order_from || undefined,
         order_to: appliedFilters.order_to || undefined,
-        area_id: appliedFilters.area_id || undefined,
         equipment_id: appliedFilters.equipment_id || undefined,
-        equipment_type: appliedFilters.equipment_type || undefined,
-        equipment_capacity: appliedFilters.equipment_capacity || undefined,
-        equipment_tag: appliedFilters.equipment_tag || undefined,
+        catalog_filters: appliedFilters.catalog_filters
+          && Object.keys(appliedFilters.catalog_filters).length
+          ? appliedFilters.catalog_filters
+          : undefined,
         priority: appliedFilters.priority || undefined,
         status: appliedFilters.status || undefined,
         job_nature: appliedFilters.job_nature || undefined,
@@ -588,7 +601,7 @@ export default function ReportPage() {
         onSelectCustom={onSelectCustom}
         customName={customName}
         onCustomNameChange={setCustomName}
-        canManageCustom={isOrgAdmin}
+        canManageCustom={canManageCustom}
         onSaveCustom={() => saveCustom()}
         onSaveAsCustom={() => saveCustom({ asNew: true })}
         onDeleteCustom={removeCustom}
@@ -600,12 +613,12 @@ export default function ReportPage() {
         downloading={downloading}
         downloadDisabled={false}
         canDownload={Boolean(appliedFilters.from_date && appliedFilters.to_date)}
-        canGenerateReady
+        canGenerateReady={canGenerateReady}
         onGenerateReady={generateReady}
         generatingReady={generatingReady}
-        canSchedule={isOrgAdmin}
+        canSchedule={canSchedule}
         onSchedule={() => setScheduleOpen(true)}
-        canSendNow={isOrgAdmin}
+        canSendNow={canSendNow}
         onSendNow={() => {
           setSendNowOpen(true)
         }}

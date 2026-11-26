@@ -145,14 +145,14 @@ function drawFilterGrid(doc, filters, x, y, width) {
     ['Order From', filters.orderFrom],
     ['Order To', filters.orderTo],
     ['To Date', filters.toDate],
-    ['Area', filters.area],
-    ['Asset Type', filters.equipmentType],
-    ['Order Type', filters.orderType],
     ['Facility', filters.facility],
-    ['Asset Capacity', filters.equipmentCapacity],
-    ['Job Nature', filters.jobNature],
     ['Asset', filters.equipment],
+    ['Order Type', filters.orderType],
+    ['Catalog', filters.catalogSummary],
+    ['Job Nature', filters.jobNature],
     ['Job Priority', filters.priority],
+    ['', ''],
+    ['', ''],
   ]
   const cols = 6
   const rows = 4
@@ -228,9 +228,15 @@ function chunkReportColumns(columns) {
   })
 }
 
-function resolveExportColumns(kind, selected = []) {
+function resolveExportColumns(kind, selected = [], extraDefs = []) {
+  if (Array.isArray(selected) && selected[0] && typeof selected[0] === 'object' && selected[0].id && selected[0].label) {
+    return selected
+  }
   const allowed = kind === 'unified' ? UNIFIED_COLUMNS : columnsForReport(kind)
   const byId = new Map(allowed.map((col) => [col.id, col]))
+  for (const col of extraDefs || []) {
+    if (col?.id) byId.set(col.id, col)
+  }
   const list = (Array.isArray(selected) ? selected : [])
     .map((item) => (typeof item === 'string' ? byId.get(item) : item))
     .filter((col) => col?.id && byId.has(col.id))
@@ -338,17 +344,31 @@ export function buildActivityFilterValues(query = {}, options = {}) {
     const hit = (list || []).find((row) => String(row.value || row.id) === text)
     return hit?.label || hit?.name || text
   }
+  let catalogFilters = query.catalog_filters
+  if (typeof catalogFilters === 'string') {
+    try {
+      catalogFilters = JSON.parse(catalogFilters)
+    } catch {
+      catalogFilters = {}
+    }
+  }
+  const catalogParts = []
+  if (catalogFilters && typeof catalogFilters === 'object') {
+    for (const field of options.catalog_fields || []) {
+      const value = catalogFilters[field.id]
+      if (!String(value || '').trim()) continue
+      catalogParts.push(`${field.name}: ${value}`)
+    }
+  }
   return {
     fromDate: query.date_from ? (formatDisplayDate(query.date_from) || query.date_from) : 'All',
     toDate: query.date_to ? (formatDisplayDate(query.date_to) || query.date_to) : 'All',
     orderFrom: pick(options.departments, query.order_from),
     orderTo: pick(options.departments, query.order_to),
     orderType: pick(options.order_types, query.order_type),
-    area: pick(options.areas, query.area_id),
     facility: pick(options.locations, query.facility_id || query.location_id),
     equipment: pick(options.equipment, query.equipment_id),
-    equipmentType: pick(null, query.equipment_type),
-    equipmentCapacity: pick(null, query.equipment_capacity),
+    catalogSummary: catalogParts.length ? catalogParts.join('; ') : 'All',
     jobNature: pick(options.job_natures, query.job_nature),
     priority: pick(options.priorities, query.priority),
   }

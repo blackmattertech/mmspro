@@ -8,6 +8,7 @@ import {
   defaultColSpanForType,
   systemId,
 } from './formLayoutIds.js'
+import { ensureWorkOrderReliabilityFields } from '../shared/workOrderReliabilityFields.js'
 
 function field(key, label, opts = {}) {
   return {
@@ -378,7 +379,9 @@ export function buildDefaultLayout(formDef, catalogFields = []) {
   const systemLayout = formDef?.formId === 'equipment.create'
     ? { v: LAYOUT_VERSION, sections: [], fields: [], groups: [] }
     : layoutFromSections(formDef.systemSections || [])
-  if (formDef.catalogMode === 'none' || !formDef.allowCatalogFields) return systemLayout
+  if (formDef.catalogMode === 'none' || !formDef.allowCatalogFields) {
+    return ensureWorkOrderReliabilityFields(systemLayout, formDef?.formId)
+  }
 
   const sections = (catalogFields || [])
     .filter((row) => row.kind === 'section' && row.is_active !== false)
@@ -405,12 +408,13 @@ export function buildDefaultLayout(formDef, catalogFields = []) {
     })
   })
 
-  return {
+  const layout = {
     v: LAYOUT_VERSION,
     sections: [...systemLayout.sections, ...extraSections.map((item, index) => ({ ...item, order: offset + index }))],
     fields: [...systemLayout.fields, ...extraFields],
     groups: [],
   }
+  return ensureWorkOrderReliabilityFields(layout, formDef?.formId)
 }
 
 export function publicFormMeta(formDef) {

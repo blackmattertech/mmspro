@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { lazy, Suspense, useMemo, useState } from 'react'
 import DateField from '../ui/DateField'
 import FilterableSelect from '../ui/FilterableSelect'
 import VendorModal from '../vendors/VendorModal'
@@ -10,10 +10,39 @@ import { masterFieldLimit } from '../../lib/textFieldLimits'
 import { useFormLayout } from '../../hooks/useFormLayout'
 import { usePermissions } from '../../hooks/usePermissions'
 import { useAuth } from '../../hooks/useAuth'
+import { useDepartments } from '../../hooks/useDepartments'
 import OrderedFormLayout from '../forms/OrderedFormLayout'
 import { resolveFormActors } from '../../lib/formFillership'
 import { warrantyDocumentLabelText } from '../../config/warrantyDocuments'
+import { getEquipment } from '../../lib/api-equipment'
+import { getFormLayout } from '../../lib/api-form-layouts'
+import {
+  displayWarrantyLinkedSteps,
+  warrantyLinkedAssetSteps,
+} from '../../lib/warrantyLinkedAsset'
+import { WEEKDAY_OPTIONS } from '../../config/tasks'
+import EquipmentQrCode from '../equipment/EquipmentQrCode'
 import './WarrantyManager.css'
+
+const REMINDER_MODE_OPTIONS = [
+  { value: 'one_time', label: 'One-time' },
+  { value: 'recurring', label: 'Recurring until expiry' },
+]
+
+const REMINDER_FREQUENCY_OPTIONS = [
+  { value: 'daily', label: 'Daily' },
+  { value: 'weekly', label: 'Weekly' },
+  { value: 'monthly', label: 'Monthly' },
+  { value: 'custom', label: 'Custom' },
+]
+
+const REMINDER_UNIT_OPTIONS = [
+  { value: 'days', label: 'Days' },
+  { value: 'weeks', label: 'Weeks' },
+  { value: 'months', label: 'Months' },
+]
+
+const AssetPickerField = lazy(() => import('../forms/AssetPickerField'))
 
 function emptyWarrantyItem() {
   return {
@@ -31,6 +60,16 @@ function emptyWarrantyItem() {
     warranty_end: '',
     warranty_period_months: '',
     expiry_notification_days: '',
+    equipment_id: '',
+    asset_hierarchy: [],
+    equipment_qr: '',
+    reminder_mode: 'one_time',
+    reminder_frequency: 'weekly',
+    reminder_interval: 1,
+    reminder_unit: 'days',
+    reminder_weekdays: [],
+    reminder_last_sent_on: '',
+    reminder_next_at: '',
     documents: [],
     removedDocumentIds: [],
   }
@@ -62,6 +101,15 @@ function formDocument(doc) {
 }
 
 function mapItemToForm(item = {}, headerFallback = {}) {
+  const reminderMode = String(item.reminder_mode || 'one_time').toLowerCase() === 'recurring'
+    ? 'recurring'
+    : 'one_time'
+  const reminderFrequency = ['daily', 'weekly', 'monthly', 'custom'].includes(String(item.reminder_frequency || '').toLowerCase())
+    ? String(item.reminder_frequency).toLowerCase()
+    : 'weekly'
+  const reminderWeekdays = Array.isArray(item.reminder_weekdays)
+    ? item.reminder_weekdays.map(Number).filter((day) => Number.isInteger(day) && day >= 0 && day <= 6)
+    : []
   return {
     product_name: item.product_name || '',
     model_part_no: item.model_part_no || '',
@@ -83,6 +131,21 @@ function mapItemToForm(item = {}, headerFallback = {}) {
     expiry_notification_days: item.expiry_notification_days
       ?? headerFallback.expiry_notification_days
       ?? '',
+    equipment_id: item.equipment_id || '',
+    asset_hierarchy: Array.isArray(item.asset_hierarchy) ? item.asset_hierarchy : [],
+    equipment_qr: item.equipment_qr
+      || item.qr_code
+      || displayWarrantyLinkedSteps(item.asset_hierarchy).find((step) => step.field_id === 'qr' || step.field_id === 'code')?.value
+      || '',
+    reminder_mode: reminderMode,
+    reminder_frequency: reminderFrequency,
+    reminder_interval: item.reminder_interval ?? 1,
+    reminder_unit: ['days', 'weeks', 'months'].includes(String(item.reminder_unit || '').toLowerCase())
+      ? String(item.reminder_unit).toLowerCase()
+      : 'days',
+    reminder_weekdays: reminderWeekdays,
+    reminder_last_sent_on: item.reminder_last_sent_on || '',
+    reminder_next_at: item.reminder_next_at || '',
     documents: [],
     removedDocumentIds: [],
   }
@@ -266,10 +329,21 @@ export default function WarrantyForm({
   onExtraChange,
 }) {
   const [vendorDraft, setVendorDraft] = useState(null)
+  const [linkAssetIndex, setLinkAssetIndex] = useState(null)
+  const [linkAssetDraftId, setLinkAssetDraftId] = useState('')
+  const [linkAssetDepartmentId, setLinkAssetDepartmentId] = useState('')
+  const [linkAssetFieldValues, setLinkAssetFieldValues] = useState({})
+  const [linkAssetConfirming, setLinkAssetConfirming] = useState(false)
+  const [linkAssetError, setLinkAssetError] = useState(null)
   const { maxLength } = useTextFieldLimits()
   const { layout, catalogFields, isVisible, hasLayout } = useFormLayout('warranty.warranty')
+  const { layout: equipmentLayout } = useFormLayout(linkAssetIndex != null ? 'equipment.create' : null)
   const { isOrgAdmin, session, canUpdate } = usePermissions()
   const { user } = useAuth()
+  const { departments: linkAssetDepartments, loading: linkAssetDepartmentsLoading } = useDepartments('', {
+    limit: 200,
+    enabled: linkAssetIndex != null,
+  })
   const formActors = useMemo(() => resolveFormActors({
     formId: 'warranty.warranty',
     isOrgAdmin,
@@ -359,6 +433,71 @@ export default function WarrantyForm({
       return next
     })
     onChange({ ...values, items })
+  }
+
+  const setItemFields = (index, patch) => {
+    const items = values.items.map((row, i) => (i === index ? { ...row, ...patch } : row))
+    onChange({ ...values, items })
+  }
+
+  const openLinkAsset = async (index) => {
+    const item = values.items[index]
+    setLinkAssetIndex(index)
+    setLinkAssetDraftId(item?.equipment_id || '')
+    setLinkAssetFieldValues({})
+    setLinkAssetError(null)
+    let departmentId = session?.department_id || ''
+    if (item?.equipment_id) {
+      try {
+        const equipment = await getEquipment(item.equipment_id)
+        if (equipment?.department_id) departmentId = equipment.department_id
+      } catch {
+        // keep session department fallback
+      }
+    }
+    setLinkAssetDepartmentId(departmentId)
+  }
+
+  const closeLinkAsset = () => {
+    setLinkAssetIndex(null)
+    setLinkAssetDraftId('')
+    setLinkAssetDepartmentId('')
+    setLinkAssetFieldValues({})
+    setLinkAssetConfirming(false)
+    setLinkAssetError(null)
+  }
+
+  const handleLinkAssetDepartmentChange = (departmentId) => {
+    setLinkAssetDepartmentId(departmentId || '')
+    setLinkAssetDraftId('')
+    setLinkAssetFieldValues({})
+    setLinkAssetError(null)
+  }
+
+  const confirmLinkAsset = async () => {
+    if (linkAssetIndex == null || !linkAssetDraftId || !linkAssetDepartmentId) return
+    setLinkAssetConfirming(true)
+    setLinkAssetError(null)
+    try {
+      const [equipment, layoutPayload] = await Promise.all([
+        getEquipment(linkAssetDraftId),
+        equipmentLayout ? Promise.resolve({ layout: equipmentLayout }) : getFormLayout('equipment.create').catch(() => null),
+      ])
+      if (equipment?.department_id && String(equipment.department_id) !== String(linkAssetDepartmentId)) {
+        throw new Error('That asset belongs to a different department. Pick one from the selected department.')
+      }
+      const hierarchy = warrantyLinkedAssetSteps(equipment, layoutPayload?.layout || equipmentLayout)
+      const qrCaption = hierarchy.find((step) => step.field_id === 'qr' || step.field_id === 'code')
+      setItemFields(linkAssetIndex, {
+        equipment_id: linkAssetDraftId,
+        asset_hierarchy: hierarchy,
+        equipment_qr: equipment.qr_code || equipment.code || qrCaption?.value || '',
+      })
+      closeLinkAsset()
+    } catch (err) {
+      setLinkAssetError(err.message || 'Could not link this asset.')
+      setLinkAssetConfirming(false)
+    }
   }
 
   const addItemRow = () => {
@@ -492,6 +631,8 @@ export default function WarrantyForm({
                 onChange={(value) => setItemField(index, 'po_date', value)}
               />
             </label>
+          </div>
+          <div className="warranty-create__grid warranty-create__grid--3">
             <label className="company-form__field">
               <FieldLabel>Invoice Number</FieldLabel>
               <input
@@ -519,19 +660,6 @@ export default function WarrantyForm({
                 placeholder="Select date"
                 disabled={!canSave}
                 onChange={(value) => setItemField(index, 'purchase_date', value)}
-              />
-            </label>
-            <label className="company-form__field">
-              <FieldLabel>Value</FieldLabel>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                className="company-form__input"
-                value={item.value}
-                placeholder="Enter value"
-                disabled={!canSave}
-                onChange={(e) => setItemField(index, 'value', e.target.value)}
               />
             </label>
           </div>
@@ -569,6 +697,8 @@ export default function WarrantyForm({
                 maxLength={masterFieldLimit('name')}
               />
             </label>
+          </div>
+          <div className="warranty-create__grid warranty-create__grid--3">
             <label className="company-form__field">
               <FormLabel fieldType="text" limit={masterFieldLimit('name')}>Make / Brand</FormLabel>
               <SpellcheckInput
@@ -591,6 +721,87 @@ export default function WarrantyForm({
                 maxLength={masterFieldLimit('code')}
               />
             </label>
+            <label className="company-form__field">
+              <FieldLabel>Value</FieldLabel>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                className="company-form__input"
+                value={item.value}
+                placeholder="Enter value"
+                disabled={!canSave}
+                onChange={(e) => setItemField(index, 'value', e.target.value)}
+              />
+            </label>
+          </div>
+          <div className="warranty-create__linked-asset">
+            <div className="warranty-create__linked-asset-head">
+              <FieldLabel>Linked Asset</FieldLabel>
+              <div className="warranty-create__linked-asset-actions">
+                {item.equipment_id ? (
+                  <button
+                    type="button"
+                    className="company-btn company-btn--ghost company-btn--compact"
+                    disabled={!canSave}
+                    onClick={() => {
+                      setItemFields(index, { equipment_id: '', asset_hierarchy: [], equipment_qr: '' })
+                    }}
+                  >
+                    Unlink
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  className="company-btn company-btn--primary company-btn--compact"
+                  disabled={!canSave}
+                  onClick={() => openLinkAsset(index)}
+                >
+                  {item.equipment_id ? 'Change Asset' : 'Link Asset'}
+                </button>
+              </div>
+            </div>
+            {item.equipment_id ? (
+              <div className="warranty-create__linked-asset-summary">
+                {(() => {
+                  const steps = displayWarrantyLinkedSteps(item.asset_hierarchy)
+                  const qrValue = item.equipment_qr
+                    || steps.find((step) => step.field_id === 'qr' || step.field_id === 'code')?.value
+                    || ''
+                  const qrCaption = steps.find((step) => step.field_id === 'qr' || step.field_id === 'code')
+                  return (
+                    <div className={`warranty-create__linked-asset-body${qrValue ? ' has-qr' : ''}`}>
+                      {steps.length ? (
+                        <dl className="warranty-create__linked-asset-fields">
+                          {steps.map((step) => (
+                            <div key={`${step.field_id}:${step.value}`} className="warranty-create__linked-asset-row">
+                              <dt>{step.field_name}</dt>
+                              <dd>{step.value}</dd>
+                            </div>
+                          ))}
+                        </dl>
+                      ) : (
+                        <p className="warranty-create__linked-asset-id">Asset linked</p>
+                      )}
+                      {qrValue ? (
+                        <EquipmentQrCode
+                          value={qrValue}
+                          caption={{
+                            label: qrCaption?.field_name || 'QR code',
+                            value: qrCaption?.value || qrValue,
+                          }}
+                          fileName={qrCaption?.value || 'asset-qr'}
+                        />
+                      ) : null}
+                    </div>
+                  )
+                })()}
+              </div>
+            ) : (
+              <p className="warranty-create__linked-asset-hint">
+                Select a department, then link an asset from that department (Name + QR field).
+              </p>
+            )}
           </div>
         </SectionCard>
 
@@ -630,19 +841,103 @@ export default function WarrantyForm({
               </div>
             </label>
             <label className="company-form__field">
-              <FieldLabel>Reminder Before Expiry</FieldLabel>
-              <select
-                className="company-form__input company-form__input--select"
+              <FieldLabel>Reminder mode</FieldLabel>
+              <FilterableSelect
+                value={item.reminder_mode || 'one_time'}
+                options={REMINDER_MODE_OPTIONS}
+                getOptionValue={(opt) => opt.value}
+                getOptionLabel={(opt) => opt.label}
+                allowEmpty={false}
                 disabled={!canSave}
-                value={reminderValue}
-                onChange={(e) => setItemField(index, 'expiry_notification_days', e.target.value)}
-              >
-                <option value="">Select days</option>
-                {reminderOptionsFor(item).map((opt) => (
-                  <option key={opt.value} value={opt.value}>{opt.label}</option>
-                ))}
-              </select>
+                onChange={(value) => setItemField(index, 'reminder_mode', value || 'one_time')}
+              />
             </label>
+            <label className="company-form__field">
+              <FieldLabel>First alert (days before expiry)</FieldLabel>
+              <FilterableSelect
+                value={reminderValue}
+                options={reminderOptionsFor(item)}
+                getOptionValue={(opt) => opt.value}
+                getOptionLabel={(opt) => opt.label}
+                placeholder="Select days"
+                disabled={!canSave}
+                onChange={(value) => setItemField(index, 'expiry_notification_days', value || '')}
+              />
+            </label>
+            {(item.reminder_mode || 'one_time') === 'recurring' ? (
+              <>
+                <label className="company-form__field">
+                  <FieldLabel>Recurrence</FieldLabel>
+                  <FilterableSelect
+                    value={item.reminder_frequency || 'weekly'}
+                    options={REMINDER_FREQUENCY_OPTIONS}
+                    getOptionValue={(opt) => opt.value}
+                    getOptionLabel={(opt) => opt.label}
+                    allowEmpty={false}
+                    disabled={!canSave}
+                    onChange={(value) => setItemField(index, 'reminder_frequency', value || 'weekly')}
+                  />
+                </label>
+                {(item.reminder_frequency || 'weekly') === 'custom' ? (
+                  <>
+                    <label className="company-form__field">
+                      <FieldLabel>Every</FieldLabel>
+                      <input
+                        type="number"
+                        min="1"
+                        max="365"
+                        className="company-form__input"
+                        disabled={!canSave}
+                        value={item.reminder_interval ?? 1}
+                        onChange={(e) => setItemField(index, 'reminder_interval', e.target.value)}
+                      />
+                    </label>
+                    <label className="company-form__field">
+                      <FieldLabel>Unit</FieldLabel>
+                      <FilterableSelect
+                        value={item.reminder_unit || 'days'}
+                        options={REMINDER_UNIT_OPTIONS}
+                        getOptionValue={(opt) => opt.value}
+                        getOptionLabel={(opt) => opt.label}
+                        allowEmpty={false}
+                        disabled={!canSave}
+                        onChange={(value) => setItemField(index, 'reminder_unit', value || 'days')}
+                      />
+                    </label>
+                  </>
+                ) : null}
+                {(item.reminder_frequency || 'weekly') === 'weekly' ? (
+                  <div className="company-form__field warranty-create__field--full">
+                    <FieldLabel>Repeat on</FieldLabel>
+                    <div className="warranty-weekday-picker" role="group" aria-label="Weekdays">
+                      {WEEKDAY_OPTIONS.map((day) => {
+                        const selected = (item.reminder_weekdays || []).map(Number).includes(day.value)
+                        return (
+                          <button
+                            key={day.value}
+                            type="button"
+                            className={`warranty-weekday-picker__chip${selected ? ' is-selected' : ''}`}
+                            disabled={!canSave}
+                            aria-pressed={selected}
+                            onClick={() => {
+                              const current = new Set((item.reminder_weekdays || []).map(Number))
+                              if (current.has(day.value)) current.delete(day.value)
+                              else current.add(day.value)
+                              setItemField(index, 'reminder_weekdays', [...current].sort((a, b) => a - b))
+                            }}
+                          >
+                            {day.label}
+                          </button>
+                        )
+                      })}
+                    </div>
+                    <p className="warranty-create__linked-asset-hint">
+                      Leave empty to repeat every 7 days from the first alert. Pick days for “every Monday”, etc.
+                    </p>
+                  </div>
+                ) : null}
+              </>
+            ) : null}
             <label className="company-form__field warranty-create__field--full">
               <FormLabel fieldType="textarea" limit={remarksLimit}>Remarks</FormLabel>
               <SpellcheckInput
@@ -859,6 +1154,70 @@ export default function WarrantyForm({
         onSave={handleVendorSave}
       />
     )}
+    {linkAssetIndex != null ? (
+      <div className="warranty-link-asset" role="dialog" aria-modal="true" aria-labelledby="warranty-link-asset-title">
+        <button type="button" className="warranty-link-asset__backdrop" aria-label="Close" onClick={closeLinkAsset} />
+        <div className="warranty-link-asset__panel">
+          <header className="warranty-link-asset__head">
+            <h3 id="warranty-link-asset-title">Link Asset</h3>
+            <button type="button" className="company-btn company-btn--ghost company-btn--compact" onClick={closeLinkAsset}>
+              Close
+            </button>
+          </header>
+          <div className="warranty-link-asset__body">
+            <label className="company-form__field warranty-link-asset__department">
+              <FieldLabel required>Department</FieldLabel>
+              <FilterableSelect
+                value={linkAssetDepartmentId}
+                options={linkAssetDepartments
+                  .filter((row) => row.is_active !== false)
+                  .map((row) => ({
+                    value: row.id,
+                    label: row.name || row.code || row.id,
+                  }))}
+                placeholder={linkAssetDepartmentsLoading ? 'Loading departments…' : 'Select department first'}
+                disabled={!canSave || linkAssetDepartmentsLoading || linkAssetConfirming}
+                onChange={handleLinkAssetDepartmentChange}
+              />
+            </label>
+            <p className="warranty-create__linked-asset-hint">
+              {linkAssetDepartmentId
+                ? 'Only assets in this department are listed. Confirm stores Name and the QR-mapped field.'
+                : 'Choose a department to load its assets.'}
+            </p>
+            {linkAssetError ? (
+              <div className="wo-alert wo-alert--error" role="alert">{linkAssetError}</div>
+            ) : null}
+            <Suspense fallback={<p className="warranty-create__linked-asset-hint">Loading asset picker…</p>}>
+              <AssetPickerField
+                key={`warranty-link-asset:${linkAssetDepartmentId}`}
+                departmentId={linkAssetDepartmentId}
+                equipmentId={linkAssetDraftId}
+                onEquipmentIdChange={setLinkAssetDraftId}
+                fieldValues={linkAssetFieldValues}
+                onFieldValuesChange={setLinkAssetFieldValues}
+                requireDepartment
+                disabled={!canSave || !linkAssetDepartmentId || linkAssetConfirming}
+                emptyDepartmentMessage="Select a department to see assets for that department."
+              />
+            </Suspense>
+          </div>
+          <footer className="warranty-link-asset__foot">
+            <button type="button" className="company-btn company-btn--secondary" onClick={closeLinkAsset} disabled={linkAssetConfirming}>
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="company-btn company-btn--primary"
+              disabled={!canSave || !linkAssetDepartmentId || !linkAssetDraftId || linkAssetConfirming}
+              onClick={confirmLinkAsset}
+            >
+              {linkAssetConfirming ? 'Linking…' : 'Confirm link'}
+            </button>
+          </footer>
+        </div>
+      </div>
+    ) : null}
     </>
   )
 }

@@ -14,6 +14,8 @@ import {
   WARRANTY_CLONE_COMPARE_KEYS,
   WARRANTY_CLONE_UNIQUE_KEYS,
 } from './workRecordClone.js'
+import { normalizeWarrantyItems } from './warrantyItemNormalize.js'
+import { buildAssetHierarchy } from './workRequestService.js'
 
 const WARRANTY_SELECT = `
   id, org_id, serial_number,
@@ -23,19 +25,28 @@ const WARRANTY_SELECT = `
   warranty_start, warranty_end,
   warranty_period_months, expiry_notification_days,
   vendor_id, vendor, contact_name, contact_phone, contact_email,
+  created_by_profile_id,
   created_at, updated_at,
   vendor_record:vendor_id (
     id, vendor_code, name, contact_person, mobile, email
   )
 `
 
+const WARRANTY_ITEM_COLUMNS = `
+  id, line_number, product_name, model_part_no, value, remarks,
+  purchase_date, make, po_number, po_date,
+  invoice_number, invoice_date,
+  warranty_start, warranty_end,
+  warranty_period_months, expiry_notification_days,
+  equipment_id, asset_hierarchy,
+  reminder_mode, reminder_frequency,
+  reminder_interval, reminder_unit, reminder_weekdays,
+  reminder_next_at, reminder_last_sent_on
+`
+
 const WARRANTY_ITEMS_SELECT = `
   warranty_items (
-    id, line_number, product_name, model_part_no, value, remarks,
-    purchase_date, make, po_number, po_date,
-    invoice_number, invoice_date,
-    warranty_start, warranty_end,
-    warranty_period_months, expiry_notification_days
+    ${WARRANTY_ITEM_COLUMNS}
   )
 `
 
@@ -51,61 +62,36 @@ function parseDate(value) {
   return text || null
 }
 
-function parseInteger(value) {
-  if (value === '' || value == null) return null
-  const num = Number(value)
-  return Number.isFinite(num) ? Math.round(num) : null
-}
-
-function parseDecimal(value) {
-  if (value === '' || value == null) return null
-  const num = Number(value)
-  return Number.isFinite(num) ? num : null
-}
-
-function itemHasContent(item) {
-  return Boolean(
-    item.product_name
-    || item.model_part_no
-    || item.value != null
-    || item.remarks
-    || item.purchase_date
-    || item.make
-    || item.po_number
-    || item.po_date
-    || item.invoice_number
-    || item.invoice_date
-    || item.warranty_start
-    || item.warranty_end
-    || item.warranty_period_months != null
-    || item.expiry_notification_days != null
-    || item.keep_line === true,
-  )
-}
-
 function normalizeItems(items, limits = null) {
-  if (!Array.isArray(items)) return []
-  return items
-    .map((item, index) => ({
-      line_number: index + 1,
-      product_name: trimOrNull(item.product_name),
-      model_part_no: trimOrNull(item.model_part_no),
-      value: parseDecimal(item.value),
-      remarks: limits
-        ? clipTrimmedToLimit(limits, 'remarks', item.remarks)
-        : trimOrNull(item.remarks),
-      purchase_date: parseDate(item.purchase_date),
-      make: trimOrNull(item.make),
-      po_number: trimOrNull(item.po_number),
-      po_date: parseDate(item.po_date),
-      invoice_number: trimOrNull(item.invoice_number),
-      invoice_date: parseDate(item.invoice_date),
-      warranty_start: parseDate(item.warranty_start),
-      warranty_end: parseDate(item.warranty_end),
-      warranty_period_months: parseInteger(item.warranty_period_months),
-      expiry_notification_days: parseInteger(item.expiry_notification_days),
-    }))
-    .filter(itemHasContent)
+  return normalizeWarrantyItems(items, {
+    clipRemarks: limits
+      ? (text) => clipTrimmedToLimit(limits, 'remarks', text)
+      : undefined,
+  })
+}
+
+export { normalizeWarrantyItems }
+
+async function attachItemHierarchies(orgId, items) {
+  const next = []
+  for (const item of items) {
+    if (!item.equipment_id) {
+      next.push({ ...item, asset_hierarchy: [] })
+      continue
+    }
+    if (Array.isArray(item.asset_hierarchy) && item.asset_hierarchy.length) {
+      next.push(item)
+      continue
+    }
+    try {
+      const hierarchy = await buildAssetHierarchy(orgId, item.equipment_id)
+      next.push({ ...item, asset_hierarchy: hierarchy || [] })
+    } catch (err) {
+      console.warn('[warranty] asset hierarchy failed', err.message)
+      next.push(item)
+    }
+  }
+  return next
 }
 
 /** Keep header commercial fields as rollups for list/status/calendar. */
@@ -475,19 +461,30 @@ async function deleteAllWarrantyDocuments(orgId, warrantyId) {
   }
 }
 
+const WARRANTY_ITEM_COLUMNS_LEGACY = `
+  id, line_number, product_name, model_part_no, value, remarks,
+  purchase_date, make, po_number, po_date,
+  invoice_number, invoice_date,
+  warranty_start, warranty_end,
+  warranty_period_months, expiry_notification_days
+`
+
 async function loadItems(orgId, warrantyId) {
-  const { data, error } = await supabaseAdmin
+  let { data, error } = await supabaseAdmin
     .from('warranty_items')
-    .select(`
-      id, line_number, product_name, model_part_no, value, remarks,
-      purchase_date, make, po_number, po_date,
-      invoice_number, invoice_date,
-      warranty_start, warranty_end,
-      warranty_period_months, expiry_notification_days
-    `)
+    .select(WARRANTY_ITEM_COLUMNS)
     .eq('org_id', orgId)
     .eq('warranty_id', warrantyId)
     .order('line_number', { ascending: true })
+
+  if (error && /equipment_id|reminder_mode|asset_hierarchy|reminder_next_at|reminder_last_sent/i.test(error.message || '')) {
+    ;({ data, error } = await supabaseAdmin
+      .from('warranty_items')
+      .select(WARRANTY_ITEM_COLUMNS_LEGACY)
+      .eq('org_id', orgId)
+      .eq('warranty_id', warrantyId)
+      .order('line_number', { ascending: true }))
+  }
 
   if (error) throw error
   return data || []
@@ -503,7 +500,8 @@ async function replaceItems(orgId, warrantyId, items) {
   if (deleteError) throw deleteError
   if (!items.length) return []
 
-  const rows = items.map((item) => ({
+  const withHierarchy = await attachItemHierarchies(orgId, items)
+  const rows = withHierarchy.map((item) => ({
     org_id: orgId,
     warranty_id: warrantyId,
     ...item,
@@ -512,13 +510,7 @@ async function replaceItems(orgId, warrantyId, items) {
   const { data, error } = await supabaseAdmin
     .from('warranty_items')
     .insert(rows)
-    .select(`
-      id, line_number, product_name, model_part_no, value, remarks,
-      purchase_date, make, po_number, po_date,
-      invoice_number, invoice_date,
-      warranty_start, warranty_end,
-      warranty_period_months, expiry_notification_days
-    `)
+    .select(WARRANTY_ITEM_COLUMNS)
 
   if (error) throw error
   return data || []
@@ -603,36 +595,46 @@ export async function listWarranties(orgId, {
   warrantyStatus = null,
   expiring = {},
 } = {}) {
-  let query = supabaseAdmin
-    .from('warranties')
-    .select(WARRANTY_LIST_SELECT, { count: 'exact' })
-    .eq('org_id', orgId)
+  const listSelect = WARRANTY_LIST_SELECT
+  const listSelectLegacy = WARRANTY_LIST_SELECT.replace(/,\s*created_by_profile_id/, '')
 
-  const term = trimOrNull(search)
-  if (term) {
-    const q = term.replace(/%/g, '')
-    const itemWarrantyIds = await findWarrantyIdsByItemSearch(orgId, term)
-    const searchFilters = [
-      `serial_number.ilike.%${q}%`,
-      `make.ilike.%${q}%`,
-      `vendor.ilike.%${q}%`,
-      `po_number.ilike.%${q}%`,
-      `invoice_number.ilike.%${q}%`,
-      `contact_name.ilike.%${q}%`,
-      `contact_email.ilike.%${q}%`,
-    ]
-    if (itemWarrantyIds.length) {
-      searchFilters.push(`id.in.(${itemWarrantyIds.join(',')})`)
+  async function runList(selectCols) {
+    let query = supabaseAdmin
+      .from('warranties')
+      .select(selectCols, { count: 'exact' })
+      .eq('org_id', orgId)
+
+    const term = trimOrNull(search)
+    if (term) {
+      const q = term.replace(/%/g, '')
+      const itemWarrantyIds = await findWarrantyIdsByItemSearch(orgId, term)
+      const searchFilters = [
+        `serial_number.ilike.%${q}%`,
+        `make.ilike.%${q}%`,
+        `vendor.ilike.%${q}%`,
+        `po_number.ilike.%${q}%`,
+        `invoice_number.ilike.%${q}%`,
+        `contact_name.ilike.%${q}%`,
+        `contact_email.ilike.%${q}%`,
+      ]
+      if (itemWarrantyIds.length) {
+        searchFilters.push(`id.in.(${itemWarrantyIds.join(',')})`)
+      }
+      query = query.or(searchFilters.join(','))
     }
-    query = query.or(searchFilters.join(','))
+
+    query = (await applyWarrantyFieldFilters(query, orgId, filters)).query
+    query = applyWarrantyStatusFilter(query, warrantyStatus, expiring)
+    return query.order('serial_number', { ascending: false }).range(offset, offset + limit - 1)
   }
 
-  query = (await applyWarrantyFieldFilters(query, orgId, filters)).query
-  query = applyWarrantyStatusFilter(query, warrantyStatus, expiring)
-  query = query.order('serial_number', { ascending: false }).range(offset, offset + limit - 1)
+  let listResult = await runList(listSelect)
+  if (listResult.error && /created_by_profile_id/i.test(listResult.error.message || '')) {
+    listResult = await runList(listSelectLegacy)
+  }
 
   const [{ data, error, count }, status_counts] = await Promise.all([
-    query,
+    Promise.resolve(listResult),
     countWarrantyStatuses(orgId, { search }),
   ])
   if (error) throw error
@@ -645,12 +647,21 @@ export async function listWarranties(orgId, {
 }
 
 export async function getWarrantyDetail(orgId, id) {
-  const { data, error } = await supabaseAdmin
+  let { data, error } = await supabaseAdmin
     .from('warranties')
     .select(WARRANTY_SELECT)
     .eq('org_id', orgId)
     .eq('id', id)
     .maybeSingle()
+
+  if (error && /created_by_profile_id/i.test(error.message || '')) {
+    ;({ data, error } = await supabaseAdmin
+      .from('warranties')
+      .select(WARRANTY_SELECT.replace(/,\s*created_by_profile_id/, ''))
+      .eq('org_id', orgId)
+      .eq('id', id)
+      .maybeSingle())
+  }
 
   if (error) throw error
   if (!data) return null
@@ -660,7 +671,7 @@ export async function getWarrantyDetail(orgId, id) {
   return enrichWarrantyRow({ ...data, items, documents })
 }
 
-export async function createWarranty(orgId, body) {
+export async function createWarranty(orgId, body, { profileId = null } = {}) {
   // Duplicate → prefilled create: block saves that are unchanged copies of the source.
   await enforceWorkRecordClone({
     body,
@@ -676,15 +687,29 @@ export async function createWarranty(orgId, body) {
   const payload = rollupWarrantyFromItems(items, vendorPayload)
   const serial_number = await nextSerialNumber(orgId)
 
-  const { data, error } = await supabaseAdmin
+  const insertRow = {
+    org_id: orgId,
+    serial_number,
+    ...payload,
+  }
+  if (profileId) insertRow.created_by_profile_id = profileId
+
+  let data
+  let error
+  ;({ data, error } = await supabaseAdmin
     .from('warranties')
-    .insert({
-      org_id: orgId,
-      serial_number,
-      ...payload,
-    })
+    .insert(insertRow)
     .select(WARRANTY_SELECT)
-    .single()
+    .single())
+
+  if (error && /created_by_profile_id/i.test(error.message || '')) {
+    delete insertRow.created_by_profile_id
+    ;({ data, error } = await supabaseAdmin
+      .from('warranties')
+      .insert(insertRow)
+      .select(WARRANTY_SELECT.replace(/,\s*created_by_profile_id/, ''))
+      .single())
+  }
 
   if (error) throw error
 

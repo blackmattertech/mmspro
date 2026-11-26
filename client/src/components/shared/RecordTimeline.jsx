@@ -51,6 +51,17 @@ function actorDepartmentName(actor) {
   return actor?.department?.name || actor?.department_name || ''
 }
 
+const SYSTEM_ACTOR = { name: 'System' }
+
+function isSystemTimelineEvent(event) {
+  return event?.event_type === 'auto_approved'
+}
+
+function timelineEventLabel(event) {
+  if (isSystemTimelineEvent(event)) return 'Auto Approved by System'
+  return (event?.event_type || '').replace(/_/g, ' ')
+}
+
 function TimelineActor({ actor, roleLabel = '' }) {
   if (!actor) return null
   const department = actorDepartmentName(actor)
@@ -216,19 +227,22 @@ export default function RecordTimeline({
           </p>
         </li>
       ))}
-      {(events || []).map((ev) => (
-        <li key={ev.id}>
-          <TimelineActor actor={ev.actor} />
-          <span className="wr-timeline__event">
-            {(ev.event_type || '').replace(/_/g, ' ')}
-          </span>
-          {ev.message ? <p className="wr-timeline__message">{ev.message}</p> : null}
-          <TimelineAttachments files={filesFromMetadata(ev.metadata)} />
-          <time className="wr-timeline__time" dateTime={ev.created_at}>
-            {formatTimelineDate(ev.created_at)}
-          </time>
-        </li>
-      ))}
+      {(events || []).map((ev) => {
+        const actor = isSystemTimelineEvent(ev) ? SYSTEM_ACTOR : ev.actor
+        return (
+          <li key={ev.id}>
+            <TimelineActor actor={actor} />
+            <span className="wr-timeline__event">
+              {timelineEventLabel(ev)}
+            </span>
+            {ev.message ? <p className="wr-timeline__message">{ev.message}</p> : null}
+            <TimelineAttachments files={filesFromMetadata(ev.metadata)} />
+            <time className="wr-timeline__time" dateTime={ev.created_at}>
+              {formatTimelineDate(ev.created_at)}
+            </time>
+          </li>
+        )
+      })}
     </ul>
   )
 }

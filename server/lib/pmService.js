@@ -1037,7 +1037,7 @@ export async function generateScheduledWorkOrder(orgId, planId, {
   const snapshot = await snapshotChecklistTemplate(orgId, plan.checklist_template_id)
   const hierarchy = await buildAssetHierarchy(orgId, plan)
   const activityName = plan.activity_type?.name || 'Planned maintenance'
-  const woNumber = await generateWorkOrderNumber(orgId, plan.department_id)
+  const woNumber = await generateWorkOrderNumber(orgId, plan.department_id, { prefix: 'SCWO' })
   const dueIso = `${plan.next_due_at}T08:00:00`
   const technicianIds = (plan.technicians || []).map((row) => row.id)
   const assignedDepartmentId = plan.location_id ? plan.department_id : null

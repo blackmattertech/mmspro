@@ -704,8 +704,184 @@ button.wr-page__create-tab {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.warranty-create__grid--3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: 14px;
+}
+
 .warranty-create__field--full {
   grid-column: 1 / -1;
+}
+
+.warranty-create__linked-asset {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--color-border, #e5e7eb);
+}
+
+.warranty-create__linked-asset-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.warranty-create__linked-asset-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.warranty-create__linked-asset-hint,
+.warranty-create__linked-asset-id {
+  margin: 0;
+  font-size: 13px;
+  color: var(--color-gray-blue, #64748b);
+}
+
+.warranty-create__linked-asset-summary {
+  margin-top: 8px;
+}
+
+.warranty-create__linked-asset-body {
+  display: grid;
+  gap: 12px;
+  align-items: start;
+}
+
+.warranty-create__linked-asset-body.has-qr {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+@media (max-width: 720px) {
+  .warranty-create__linked-asset-body.has-qr {
+    grid-template-columns: 1fr;
+  }
+}
+
+.warranty-create__linked-asset-fields {
+  margin: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.warranty-create__linked-asset-row {
+  display: grid;
+  grid-template-columns: minmax(88px, 120px) minmax(0, 1fr);
+  gap: 8px 12px;
+  align-items: baseline;
+}
+
+.warranty-create__linked-asset-row dt {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-gray-blue, #64748b);
+}
+
+.warranty-create__linked-asset-row dd {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-dark-navy, #0f172a);
+  word-break: break-word;
+}
+
+.warranty-weekday-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.warranty-weekday-picker__chip {
+  min-width: 44px;
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--color-light-gray-2, #e5e7eb);
+  border-radius: 8px;
+  background: var(--color-white, #fff);
+  color: var(--color-dark-navy, #0f172a);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.warranty-weekday-picker__chip.is-selected {
+  border-color: var(--color-primary, #e53935);
+  background: color-mix(in srgb, var(--color-primary, #e53935) 12%, white);
+  color: var(--color-primary, #e53935);
+}
+
+.warranty-weekday-picker__chip:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.warranty-link-asset {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.warranty-link-asset__backdrop {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  background: rgba(15, 23, 42, 0.45);
+  cursor: pointer;
+}
+
+.warranty-link-asset__panel {
+  position: relative;
+  z-index: 1;
+  width: min(1080px, calc(100vw - 32px));
+  max-height: min(90vh, 960px);
+  display: flex;
+  flex-direction: column;
+  background: var(--color-surface, #fff);
+  border-radius: 12px;
+  box-shadow: 0 18px 48px rgba(15, 23, 42, 0.22);
+  overflow: hidden;
+}
+
+.warranty-link-asset__body .wr-asset-with-qr {
+  align-items: start;
+}
+
+.warranty-link-asset__head,
+.warranty-link-asset__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--color-border, #e5e7eb);
+}
+
+.warranty-link-asset__foot {
+  border-bottom: 0;
+  border-top: 1px solid var(--color-border, #e5e7eb);
+  justify-content: flex-end;
+}
+
+.warranty-link-asset__head h3 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.warranty-link-asset__body {
+  padding: 16px;
+  overflow: auto;
+}
+
+.warranty-link-asset__department {
+  display: block;
+  margin-bottom: 14px;
 }
 
 .warranty-create__period {
@@ -1294,7 +1470,8 @@ button.wr-page__create-tab {
   .warranty-create__contacts,
   .warranty-create__item-foot,
   .warranty-create__grid,
-  .warranty-create__grid--2 {
+  .warranty-create__grid--2,
+  .warranty-create__grid--3 {
     grid-template-columns: 1fr;
   }
 
