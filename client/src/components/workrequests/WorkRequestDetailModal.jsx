@@ -37,6 +37,7 @@ import EquipmentQrCode from '../equipment/EquipmentQrCode'
 import { AssetHierarchySummary } from './WorkRequestAssetFields'
 import { hierarchyDisplaySteps } from '../../lib/assetHierarchy'
 import WorkOrderAssignmentActions from '../workorders/WorkOrderAssignmentActions'
+import { canEditWorkOrderContent } from '../../lib/workOrderOrigin'
 import { useOrgStatusOptions } from '../../hooks/useOrgStatusOptions'
 import { workRequestStatusDisplay } from '../../lib/workRequestStatusLabel'
 
@@ -574,10 +575,13 @@ export default function WorkRequestDetailModal({
 
   const linkedAssignmentActions = linkedOrder?.assignment_actions || {}
   const canEditLinkedAssignment = Boolean(
-    showPostApproveAssign
-    || linkedAssignmentActions.can_assign_department_technicians
-    || linkedAssignmentActions.can_reassign_as_location_head
-    || linkedAssignmentActions.can_claim_self
+    canEditWorkOrderContent({ status: linkedOrder?.status, isOrgAdmin })
+    && (
+      showPostApproveAssign
+      || linkedAssignmentActions.can_assign_department_technicians
+      || linkedAssignmentActions.can_reassign_as_location_head
+      || linkedAssignmentActions.can_claim_self
+    )
   )
   const linkedLifecycleActors = useMemo(() => {
     if (!linkedOrder) return null
@@ -612,6 +616,7 @@ export default function WorkRequestDetailModal({
   ])
   const canEditLinkedLifecycle = Boolean(
     linkedLifecycleActors
+    && canEditWorkOrderContent({ status: linkedOrder?.status, isOrgAdmin })
     && (
       canEditWorkOrderStatusProgressRemarks(linkedLifecycleActors)
       || canEditWorkOrderSupervisorStatus(linkedLifecycleActors)

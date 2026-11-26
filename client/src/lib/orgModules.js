@@ -35,6 +35,10 @@ export const PRODUCT_MODULE_GROUPS = [
       { id: 'support_tickets', label: 'Support & Tickets', permissionKeys: ['support_tickets'] },
       { id: 'reports', label: 'Reports', permissionKeys: [
         'reports',
+        'reports_custom',
+        'reports_schedules',
+        'reports_ready',
+        'reports_send',
         'reports_daily_logs',
         'reports_plant_wise',
         'reports_open_logs',

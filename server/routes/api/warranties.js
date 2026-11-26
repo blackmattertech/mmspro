@@ -132,7 +132,9 @@ router.get('/:id', canRead, assertOrgOwnership('warranties'), async (req, res) =
 
 router.post('/', canCreate, async (req, res) => {
   try {
-    const row = await createWarranty(req.userProfile.org_id, req.body)
+    const row = await createWarranty(req.userProfile.org_id, req.body, {
+      profileId: req.userProfile.id,
+    })
     res.status(201).json(row)
   } catch (err) {
     res.status(err.status || 400).json({ error: err.message })

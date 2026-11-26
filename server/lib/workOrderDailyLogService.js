@@ -236,9 +236,10 @@ async function loadWorkOrder(orgId, workOrderId) {
   return data
 }
 
-function assertCanEditLogs(workOrder) {
+function assertCanEditLogs(workOrder, { isOrgAdmin = false } = {}) {
   if (DAILY_LOG_READONLY_STATUSES.has(workOrder.status)) {
-    throw httpError('Daily logs cannot be edited after the work order is completed.')
+    if (isOrgAdmin) return
+    throw httpError('Only a company admin can edit daily logs after the work order is completed.')
   }
   if (!DAILY_LOG_ACTIVE_STATUSES.has(workOrder.status)) {
     throw httpError('Daily logs can only be recorded while the work order is open for work.')
@@ -497,9 +498,9 @@ export async function upsertWorkOrderDaySnapshot(
   return row
 }
 
-export async function startWorkOrderDay(orgId, profileId, workOrderId, { timeZone } = {}) {
+export async function startWorkOrderDay(orgId, profileId, workOrderId, { timeZone, isOrgAdmin = false } = {}) {
   const workOrder = await loadWorkOrder(orgId, workOrderId)
-  assertCanEditLogs(workOrder)
+  assertCanEditLogs(workOrder, { isOrgAdmin })
   const logDate = todayDateString(timeZone)
   const { logs } = await listWorkOrderDailyLogs(orgId, workOrderId)
   const existingToday = logs.find((row) => row.log_date === logDate)
@@ -515,9 +516,9 @@ export async function startWorkOrderDay(orgId, profileId, workOrderId, { timeZon
   })
 }
 
-export async function updateWorkOrderDailyLog(orgId, profileId, workOrderId, logId, body = {}) {
+export async function updateWorkOrderDailyLog(orgId, profileId, workOrderId, logId, body = {}, { isOrgAdmin = false } = {}) {
   const workOrder = await loadWorkOrder(orgId, workOrderId)
-  assertCanEditLogs(workOrder)
+  assertCanEditLogs(workOrder, { isOrgAdmin })
 
   const { data: existing, error: loadError } = await supabaseAdmin
     .from('work_order_daily_logs')
@@ -585,10 +586,10 @@ export async function updateWorkOrderDailyLog(orgId, profileId, workOrderId, log
   return data
 }
 
-export async function endWorkOrderDay(orgId, profileId, workOrderId, logId, body = {}) {
+export async function endWorkOrderDay(orgId, profileId, workOrderId, logId, body = {}, { isOrgAdmin = false } = {}) {
   // Kept for API compatibility: closing a day just marks it closed after saving fields.
   const workOrder = await loadWorkOrder(orgId, workOrderId)
-  assertCanEditLogs(workOrder)
+  assertCanEditLogs(workOrder, { isOrgAdmin })
 
   const { data: existing, error: loadError } = await supabaseAdmin
     .from('work_order_daily_logs')

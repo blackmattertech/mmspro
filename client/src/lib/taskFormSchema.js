@@ -64,7 +64,6 @@ export function buildTaskPayload(values, { isEdit = false } = {}) {
     assignee_employee_ids: values.assignee_employee_ids,
     tag_ids: values.tag_ids || [],
     reminders: values.reminders || [],
-    links: values.links,
     references: (values.references || []).filter(
       (ref) => ref.reference_type && (ref.reference_number || ref.reference_entity_id || ref.reference_label),
     ),

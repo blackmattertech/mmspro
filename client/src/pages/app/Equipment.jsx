@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { VirtualTableBody } from '../../components/shared/VirtualTableBody'
 import { usePermissions } from '../../hooks/usePermissions'
 import { useOrg } from '../../hooks/useOrg'
@@ -50,6 +50,8 @@ import '../../components/workorders/WorkOrdersPage.css'
 import './Company.css'
 import '../../components/company/CompanyShared.css'
 
+const ReliabilityCalculator = lazy(() => import('../../components/reliability/ReliabilityCalculator'))
+
 function canPickAnyLocation({ isOrgAdmin, accessRole }) {
   if (isOrgAdmin) return true
   const roleName = accessRole?.name?.trim().toLowerCase() || ''
@@ -59,6 +61,11 @@ function canPickAnyLocation({ isOrgAdmin, accessRole }) {
 function equipmentLocationName(row) {
   return row?.org_locations?.name || row?.locations?.name || ''
 }
+
+const EQUIPMENT_PAGE_TABS = [
+  { id: 'assets', label: 'Assets' },
+  { id: 'reliability', label: 'Reliability Calculator' },
+]
 
 export default function Equipment() {
   const {
@@ -81,6 +88,7 @@ export default function Equipment() {
   )
   const { locations } = useLocations()
   const { departments } = useDepartments()
+  const [pageTab, setPageTab] = useState('assets')
   const [hierarchyValueOptions, setHierarchyValueOptions] = useState({})
 
   useEffect(() => {
@@ -401,9 +409,19 @@ export default function Equipment() {
       {!showingDetail && (
       <header className="company-page__header">
         <h1 className="company-page__title">Assets</h1>
-        <p className="company-page__subtitle">
-          Maintain asset records by location and department
-        </p>
+
+        <nav className="company-tabs" aria-label="Assets sections">
+          {EQUIPMENT_PAGE_TABS.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              className={`company-tabs__btn${pageTab === tab.id ? ' company-tabs__btn--active' : ''}`}
+              onClick={() => setPageTab(tab.id)}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </nav>
       </header>
       )}
 
@@ -423,7 +441,17 @@ export default function Equipment() {
           />
         )}
         <>
-            {!showingDetail && (
+            {!showingDetail && pageTab === 'reliability' && (
+              <Suspense fallback={<div className="company-panel"><div className="company-loading">Loading Reliability Calculator…</div></div>}>
+                <ReliabilityCalculator
+                  canManage={canManage}
+                  scopedLocationId={scopedLocationId || ''}
+                  scopedDepartmentId={scopedDepartmentId || ''}
+                  canPickLocation={canSelectAnyLocation}
+                />
+              </Suspense>
+            )}
+            {!showingDetail && pageTab === 'assets' && (
             <div className="company-panel">
               <div className="company-panel__toolbar company-panel__toolbar--filters">
                 <TableFilterToolbar

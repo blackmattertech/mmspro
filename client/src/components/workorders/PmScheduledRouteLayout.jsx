@@ -214,9 +214,9 @@ function PmScheduledLayoutInner() {
     : [
       {
         id: 'wo_number',
-        label: 'WO #',
+        label: 'SCWO #',
         type: 'select',
-        emptyLabel: 'All WO #',
+        emptyLabel: 'All SCWO #',
         options: uniqueNameOptions(scheduledRows, (row) => row.wo_number),
       },
       {

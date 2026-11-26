@@ -13,6 +13,7 @@ import {
   canEditFilledBy,
   canEditWorkOrderStatusProgressRemarks,
 } from './formFillership.js'
+import { assertCanEditWorkOrderContent, isScheduledWorkOrder } from './workOrderOrigin.js'
 
 export const WO_STATUSES = [
   'draft',
@@ -93,7 +94,7 @@ function sanitizeDeptCode(code) {
     .slice(0, 6) || 'GEN'
 }
 
-export async function generateWorkOrderNumber(orgId, departmentId) {
+export async function generateWorkOrderNumber(orgId, departmentId, { prefix = 'WO' } = {}) {
   const { data: dept, error: deptError } = await supabaseAdmin
     .from('departments')
     .select('code')
@@ -104,6 +105,10 @@ export async function generateWorkOrderNumber(orgId, departmentId) {
   if (deptError) throw deptError
   const code = sanitizeDeptCode(dept?.code)
   const { label, iso } = formatSeqDate()
+  const safePrefix = String(prefix || 'WO')
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, '')
+    || 'WO'
 
   const { data: existing, error: readError } = await supabaseAdmin
     .from('work_order_daily_sequences')
@@ -131,7 +136,7 @@ export async function generateWorkOrderNumber(orgId, departmentId) {
 
   if (upsertError) throw upsertError
 
-  return `WO-${code}-${label}-${String(next).padStart(4, '0')}`
+  return `${safePrefix}-${code}-${label}-${String(next).padStart(4, '0')}`
 }
 
 export async function addWorkOrderTimelineEvent(
@@ -476,6 +481,11 @@ export async function updateWorkOrderLifecycle(orgId, profileId, workOrderId, bo
     throw err
   }
 
+  assertCanEditWorkOrderContent({
+    status: existing.status,
+    isOrgAdmin: Boolean(actors?.isOrgAdmin),
+  })
+
   const nextStatus = body.status || existing.status
   if (nextStatus !== existing.status) {
     const { assertWorkOrderStatusChange } = await import('./orgStatusService.js')
@@ -644,6 +654,25 @@ export async function updateWorkOrderLifecycle(orgId, profileId, workOrderId, bo
 
   patch = computeDurations(patch, existing)
 
+  if (body.process_extras && typeof body.process_extras === 'object') {
+    const { loadRuntimeFormLayout } = await import('./orgFormLayouts.js')
+    const { validateLayoutNumberMaxBounds } = await import('../shared/workOrderReliabilityFields.js')
+    const formId = workOrderFormIdForSource(existing.source_type)
+    const layout = await loadRuntimeFormLayout(orgId, formId)
+    const reliabilityError = validateLayoutNumberMaxBounds({
+      layout,
+      values: body.process_extras,
+      breakdownStartAt: patch.breakdown_start_at ?? existing.breakdown_start_at,
+      breakdownEndAt: patch.breakdown_end_at ?? existing.breakdown_end_at,
+      breakdownDurationHours: patch.breakdown_duration_hours ?? existing.breakdown_duration_hours,
+    })
+    if (reliabilityError) {
+      const err = new Error(reliabilityError)
+      err.status = 400
+      throw err
+    }
+  }
+
   if (actors) {
     if (nextStatus !== existing.status && !canChangeWorkOrderStatus(actors, nextStatus)) {
       const err = new Error(
@@ -724,10 +753,32 @@ export async function updateWorkOrderLifecycle(orgId, profileId, workOrderId, bo
       }
 
       const { workOrderFormIdForSource, layoutForStages } = await import('./workOrderForms.js')
-      const { loadRuntimeFormLayout } = await import('./orgFormLayouts.js')
+      const { loadRuntimeFormLayout, listFormFieldValues } = await import('./orgFormLayouts.js')
+      const { validateBreakdownReliabilityHoursRequired } = await import('../shared/workOrderReliabilityFields.js')
       const formId = workOrderFormIdForSource(existing.source_type)
       const layout = layoutForStages(await loadRuntimeFormLayout(orgId, formId), ['execution', 'closeout'], { includeUnstaged: false })
       validateCompletionFields({ ...existing, ...patch, status: nextStatus }, layout)
+
+      const isBreakdown = Boolean(
+        (patch.is_breakdown != null ? patch.is_breakdown : existing.is_breakdown),
+      )
+      if (isBreakdown && ['completed', 'verified', 'closed'].includes(nextStatus)) {
+        const storedExtras = await listFormFieldValues(orgId, formId, workOrderId)
+        const extras = {
+          ...storedExtras,
+          ...(body.process_extras && typeof body.process_extras === 'object' ? body.process_extras : {}),
+        }
+        const reliabilityRequiredError = validateBreakdownReliabilityHoursRequired({
+          isBreakdown: true,
+          status: nextStatus,
+          values: extras,
+        })
+        if (reliabilityRequiredError) {
+          const err = new Error(reliabilityRequiredError)
+          err.status = 400
+          throw err
+        }
+      }
     }
     if (nextStatus === 'verified') {
       patch.verified_by = profileId
@@ -881,7 +932,12 @@ export async function updateWorkOrderLifecycle(orgId, profileId, workOrderId, bo
   return updated
 }
 
+/** PM scheduled work orders use SCWO-…; rewrite legacy WO-… for display. */
 export function displayWorkOrderNumber(row) {
-  if (row?.wo_number) return row.wo_number
-  return String(row?.id || '').slice(0, 8).toUpperCase()
+  const raw = row?.wo_number
+  if (!raw) return String(row?.id || '').slice(0, 8).toUpperCase()
+  if (isScheduledWorkOrder(row) && /^WO-/i.test(raw)) {
+    return `SCWO-${String(raw).slice(3)}`
+  }
+  return raw
 }

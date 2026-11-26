@@ -58,6 +58,11 @@
   scrollbar-width: thin;
 }
 
+/* Keep title → tabs gap when no subtitle sits between them */
+.company-page__header > .company-page__title + .company-tabs {
+  margin-top: 16px;
+}
+
 .company-tabs__btn {
   padding: 10px 20px;
   font-size: 14px;

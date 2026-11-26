@@ -273,7 +273,8 @@ function shouldEmailNotification(data = {}) {
     || type.startsWith('work_request')
     || type.startsWith('task')
     || type.startsWith('pm_')
-    || Boolean(data.work_order_id || data.work_request_id || data.task_id || data.pm_plan_id)
+    || type.startsWith('warranty')
+    || Boolean(data.work_order_id || data.work_request_id || data.task_id || data.pm_plan_id || data.warranty_id)
 }
 
 const emailDetailsCache = new Map()

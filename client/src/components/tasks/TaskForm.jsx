@@ -40,7 +40,6 @@ export const EMPTY_TASK_FORM = {
   assignee_employee_ids: [],
   tag_ids: [],
   reminders: [],
-  links: [{ title: '', url: '' }],
   references: [{ reference_type: 'work_order', reference_number: '', reference_label: '', reference_entity_id: '' }],
   follow_up_remarks: '',
   next_action: '',
@@ -299,14 +298,6 @@ export default function TaskForm({
   const removeReminder = (index) => {
     setField('reminders', (values.reminders || []).filter((_, i) => i !== index))
   }
-
-  const updateLink = (index, field, value) => {
-    const links = [...(values.links || [])]
-    links[index] = { ...links[index], [field]: value }
-    setField('links', links)
-  }
-
-  const addLink = () => setField('links', [...(values.links || []), { title: '', url: '' }])
 
   const updateReference = (index, field, value) => {
     const refs = [...(values.references || [])]
@@ -846,12 +837,12 @@ export default function TaskForm({
                   placeholder="Enter reference number"
                 />
               </FormField>
-              <FormField label="Label">
+              <FormField label="Remarks">
                 <SpellcheckInput
                   className="company-form__input"
                   value={ref.reference_label || ''}
                   onChange={(e) => updateReference(index, 'reference_label', e.target.value)}
-                  placeholder="Optional label"
+                  placeholder="Optional remarks"
                 />
               </FormField>
               <div className="task-link-row__action">
@@ -900,41 +891,6 @@ export default function TaskForm({
           </div>
         </FormSection>
       )}
-
-      <FormSection title="External links" description="Reference documents, tickets, or related resources.">
-        <div className="task-form__links">
-          {(values.links || []).map((link, index) => (
-            <div key={index} className="task-link-row">
-              <FormField label="Title">
-                <SpellcheckInput
-                  className="company-form__input"
-                  value={link.title}
-                  onChange={(e) => updateLink(index, 'title', e.target.value)}
-                  placeholder="Link title"
-                />
-              </FormField>
-              <FormField label="URL">
-                <input
-                  className="company-form__input"
-                  value={link.url}
-                  onChange={(e) => updateLink(index, 'url', e.target.value)}
-                  placeholder="https://"
-                />
-              </FormField>
-              <div className="task-link-row__action">
-                <button
-                  type="button"
-                  className="company-btn company-btn--secondary company-btn--compact"
-                  onClick={addLink}
-                  aria-label="Add another link"
-                >
-                  +
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-      </FormSection>
 
       <FormSection title="Section F — Attachments">
         <TaskAttachmentsSection

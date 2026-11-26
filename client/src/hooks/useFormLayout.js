@@ -7,6 +7,7 @@ import {
   normalizeAssetLayout,
 } from '../lib/formLayoutIds'
 import { buildDefaultLayout, getFormDef } from '../lib/formRegistry'
+import { ensureWorkOrderReliabilityFields } from '../../../shared/workOrderReliabilityFields.js'
 
 export function useFormLayout(formId, { fallbackToDefault = false } = {}) {
   const [layout, setLayout] = useState(null)
@@ -49,8 +50,9 @@ export function useFormLayout(formId, { fallbackToDefault = false } = {}) {
   const resolvedLayout = useMemo(() => {
     const base = layout || fallbackLayout
     if (!base) return null
-    return normalizeAssetLayout(base, { catalogFields })
-  }, [layout, fallbackLayout, catalogFields])
+    const normalized = normalizeAssetLayout(base, { catalogFields })
+    return ensureWorkOrderReliabilityFields(normalized, formId)
+  }, [layout, fallbackLayout, catalogFields, formId])
 
   const visibleKeys = useMemo(() => {
     if (!resolvedLayout) return null

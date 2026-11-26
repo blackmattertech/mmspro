@@ -86,6 +86,12 @@
   cursor: not-allowed;
 }
 
+.rich-text-editor__btn:focus,
+.rich-text-editor__btn:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
 .rich-text-editor__btn--bold {
   font-weight: 700;
 }
@@ -116,15 +122,32 @@
   padding: 8px 10px;
 }
 
+.rich-text-editor.company-form__input,
+.rich-text-editor.company-form__textarea {
+  font-weight: 400 !important;
+  font-style: normal !important;
+}
+
+.rich-text-editor__content,
 .rich-text-editor__content .ProseMirror {
   outline: none;
   min-height: 76px;
-  font-weight: 400;
+  font-weight: 400 !important;
+  font-style: normal !important;
 }
 
 .rich-text-editor__content .ProseMirror strong,
 .rich-text-editor__content .ProseMirror b {
-  font-weight: 700;
+  font-weight: 700 !important;
+}
+
+.rich-text-editor__content .ProseMirror em,
+.rich-text-editor__content .ProseMirror i {
+  font-style: italic !important;
+}
+
+.rich-text-editor__content .ProseMirror u {
+  text-decoration: underline;
 }
 
 .rich-text-editor__content .ProseMirror ::selection,
@@ -192,11 +215,6 @@
 .rich-text-display ol {
   margin: 0.25em 0 0.45em;
   padding-left: 1.25em;
-}
-
-.rich-text-display strong,
-.rich-text-display b {
-  font-weight: 700;
 }
 
 .rich-text-display--plain {

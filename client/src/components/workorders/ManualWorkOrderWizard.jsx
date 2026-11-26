@@ -114,9 +114,9 @@ export default function ManualWorkOrderWizard({
   onSaveCompleted,
 }) {
   const { org } = useOrg()
-  const { session, isOrgAdmin, accessRole } = usePermissions()
-  const canChangeOrderTo = isOrgAdmin
-    || String(accessRole?.name || '').trim().toLowerCase() === 'admin'
+  const { session, isOrgAdmin } = usePermissions()
+  // Company admin only — everyone else is locked to their own department.
+  const canChangeOrderTo = Boolean(isOrgAdmin)
   const form = useFormLayout('work_orders.manual', { fallbackToDefault: true })
   const extras = useFormFieldValues('work_orders.manual', record?.id || null)
   const {
@@ -499,6 +499,11 @@ export default function ManualWorkOrderWizard({
     await extras.save(recordId, uploaded)
   }, [extras, org?.id])
 
+  const setOrderFrom = useCallback((departmentId) => {
+    const field = findLayoutFieldByHint(displayLayout, ['order_from_department_id', 'orderfrom'])
+    if (field) extras.setFieldValue(field.id, departmentId || '')
+  }, [displayLayout, extras])
+
   if (draftRef) {
     draftRef.current = {
       validate,
@@ -535,10 +540,6 @@ export default function ManualWorkOrderWizard({
   )
 
   const orderFromId = readFieldValue(displayLayout, extras.values, ['order_from_department_id', 'orderfrom'])
-  const setOrderFrom = useCallback((departmentId) => {
-    const field = findLayoutFieldByHint(displayLayout, ['order_from_department_id', 'orderfrom'])
-    if (field) extras.setFieldValue(field.id, departmentId || '')
-  }, [displayLayout, extras])
 
   const renderOrderFrom = (key, className) => (
     <div key={key} className={className}>
@@ -558,7 +559,7 @@ export default function ManualWorkOrderWizard({
       <WorkOrderOrderToField
         embedded
         label="Order to"
-        hint={canChangeOrderTo ? '' : 'Locked to your department.'}
+        hint=""
         value={departmentIdForAssets}
         selected={assignedDepartment}
         onChange={canChangeOrderTo ? setDepartmentTarget : undefined}
@@ -576,7 +577,7 @@ export default function ManualWorkOrderWizard({
           <WorkOrderOrderToField
             embedded
             label="Order to"
-            hint={canChangeOrderTo ? '' : 'Locked to your department.'}
+            hint=""
             value={departmentIdForAssets}
             selected={assignedDepartment}
             onChange={canChangeOrderTo ? setDepartmentTarget : undefined}
@@ -811,13 +812,13 @@ export default function ManualWorkOrderWizard({
         invalidFieldIds={invalidFieldIds}
         onMasterChange={(id, value) => {
           clearInvalidField(id)
-          extras.setFieldValue(id, value)
           const field = (displayLayout?.fields || []).find((row) => row.id === id)
           const label = String(field?.label || '').toLowerCase()
-          if (
-            canChangeOrderTo
-            && (field?.bindKey === 'order_to_department_id' || /order\s*to/.test(label))
-          ) {
+          const isOrderTo = field?.bindKey === 'order_to_department_id' || /order\s*to/.test(label)
+          // Non-admins cannot override Order To through a generic master picker.
+          if (isOrderTo && !canChangeOrderTo) return
+          extras.setFieldValue(id, value)
+          if (isOrderTo && canChangeOrderTo) {
             setAssignedDepartmentId(value || '')
           }
           if (field?.bindKey === 'equipment_id') setEquipmentId(value || '')

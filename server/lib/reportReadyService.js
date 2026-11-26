@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { supabaseAdmin } from '../services/supabase.js'
 import { buildReportExport } from './reportDelivery.js'
 import { getReportCatalog, isMissingReportTable } from './reportConstants.js'
+import { hasModulePermission } from './orgPermissions.js'
 
 export const REPORT_READY_BUCKET = 'report-ready-assets'
 
@@ -49,7 +50,7 @@ async function removeReadyFiles(paths = []) {
   if (error) throw error
 }
 
-function serializeReadyRow(row, { profileId = null, isOrgAdmin = false } = {}) {
+function serializeReadyRow(row, { profileId = null, canDeleteAny = false } = {}) {
   if (!row) return null
   return {
     id: row.id,
@@ -69,11 +70,11 @@ function serializeReadyRow(row, { profileId = null, isOrgAdmin = false } = {}) {
     created_at: row.created_at,
     created_by: row.created_by,
     created_by_name: row.creator?.full_name || row.creator?.name || null,
-    can_delete: Boolean(isOrgAdmin || (profileId && row.created_by === profileId)),
+    can_delete: Boolean(canDeleteAny || (profileId && row.created_by === profileId)),
   }
 }
 
-export async function listReadyReports(orgId, { profileId = null, isOrgAdmin = false, reportKey = null } = {}) {
+export async function listReadyReports(orgId, { profileId = null, canDeleteAny = false, reportKey = null } = {}) {
   let query = supabaseAdmin
     .from('report_ready_reports')
     .select(`
@@ -97,7 +98,7 @@ export async function listReadyReports(orgId, { profileId = null, isOrgAdmin = f
     if (isMissingReportTable(error)) return []
     throw error
   }
-  return (data || []).map((row) => serializeReadyRow(row, { profileId, isOrgAdmin }))
+  return (data || []).map((row) => serializeReadyRow(row, { profileId, canDeleteAny }))
 }
 
 export async function getReadyReport(orgId, id) {
@@ -213,7 +214,10 @@ export async function createReadyReport({
     throw error
   }
 
-  return serializeReadyRow(data, { profileId, isOrgAdmin: Boolean(session?.is_org_admin) })
+  return serializeReadyRow(data, {
+    profileId,
+    canDeleteAny: hasModulePermission(session, 'reports_ready', 'delete'),
+  })
 }
 
 export async function downloadReadyReport(orgId, id, format = 'pdf') {
@@ -242,9 +246,9 @@ export async function downloadReadyReport(orgId, id, format = 'pdf') {
   }
 }
 
-export async function deleteReadyReport(orgId, id, { profileId = null, isOrgAdmin = false } = {}) {
+export async function deleteReadyReport(orgId, id, { profileId = null, canDeleteAny = false } = {}) {
   const row = await getReadyReport(orgId, id)
-  const allowed = isOrgAdmin || (profileId && row.created_by === profileId)
+  const allowed = canDeleteAny || (profileId && row.created_by === profileId)
   if (!allowed) throw httpError('You can only delete ready reports you generated', 403)
 
   await removeReadyFiles([row.pdf_path, row.csv_path])

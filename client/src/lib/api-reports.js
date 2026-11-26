@@ -32,12 +32,9 @@ export function getReport(key, {
   orderType,
   orderFrom,
   orderTo,
-  areaId,
   facilityId,
   equipmentId,
-  equipmentType,
-  equipmentCapacity,
-  equipmentTag,
+  catalogFilters,
   priority,
   status,
   jobNature,
@@ -45,6 +42,10 @@ export function getReport(key, {
   reportedBy,
   assignedTo,
 } = {}) {
+  const catalogJson = catalogFilters && typeof catalogFilters === 'object'
+    && Object.keys(catalogFilters).length
+    ? JSON.stringify(catalogFilters)
+    : undefined
   return reportsFetch(`/${encodeURIComponent(key)}${listQueryParams({
     date_from: dateFrom,
     date_to: dateTo,
@@ -54,11 +55,8 @@ export function getReport(key, {
     order_type: orderType || undefined,
     order_from: orderFrom || undefined,
     order_to: orderTo || undefined,
-    area_id: areaId || undefined,
     equipment_id: equipmentId || undefined,
-    equipment_type: equipmentType || undefined,
-    equipment_capacity: equipmentCapacity || undefined,
-    equipment_tag: equipmentTag || undefined,
+    catalog_filters: catalogJson,
     priority: priority || undefined,
     status: status || undefined,
     job_nature: jobNature || undefined,

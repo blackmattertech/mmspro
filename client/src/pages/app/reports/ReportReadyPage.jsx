@@ -30,7 +30,8 @@ function periodLabel(row) {
 
 export default function ReportReadyPage() {
   const { org } = useOrg()
-  const { isOrgAdmin } = usePermissions()
+  const { canDelete } = usePermissions()
+  const canDeleteAnyReady = canDelete('reports_ready')
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -131,7 +132,7 @@ export default function ReportReadyPage() {
               </thead>
               <tbody>
                 {rows.map((row) => {
-                  const canDelete = isOrgAdmin || row.can_delete
+                  const canDeleteRow = canDeleteAnyReady || row.can_delete
                   return (
                     <tr key={row.id}>
                       <td>
@@ -164,7 +165,7 @@ export default function ReportReadyPage() {
                           >
                             CSV
                           </button>
-                          {canDelete && (
+                          {canDeleteRow ? (
                             <button
                               type="button"
                               className="company-btn company-btn--danger company-btn--compact"
@@ -173,7 +174,7 @@ export default function ReportReadyPage() {
                             >
                               Delete
                             </button>
-                          )}
+                          ) : null}
                         </div>
                       </td>
                     </tr>

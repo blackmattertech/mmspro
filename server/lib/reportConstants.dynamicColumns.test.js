@@ -18,3 +18,14 @@ test('filterReportColumns keeps field:* catalog columns for work requests', () =
   ])
   assert.deepEqual(filtered, ['request_number', fieldId, 'equipment'])
 })
+
+test('filterReportColumns keeps field:* catalog columns for unified work orders', () => {
+  const fieldId = 'field:aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
+  const filtered = filterReportColumns('unified', [
+    'wo_number',
+    fieldId,
+    'equipment_type',
+    'plant',
+  ])
+  assert.deepEqual(filtered, ['wo_number', fieldId, 'plant'])
+})

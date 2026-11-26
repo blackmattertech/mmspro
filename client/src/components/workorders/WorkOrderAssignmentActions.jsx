@@ -4,6 +4,7 @@ import { useEmployees } from '../../hooks/useEmployees'
 import { useMasterOptions } from '../../hooks/useMasterOptions'
 import { usePermissions } from '../../hooks/usePermissions'
 import { useAuth } from '../../hooks/useAuth'
+import { canEditWorkOrderContent } from '../../lib/workOrderOrigin'
 import { updateWorkOrderAssignment } from '../../lib/api-work-orders'
 import { useFormFieldValues } from '../../hooks/useFormFieldValues'
 import { resolveFormActors } from '../../lib/formFillership'
@@ -69,7 +70,9 @@ export default function WorkOrderAssignmentActions({ detail, onUpdated, readOnly
     || detail?.priority
   )
   const canAct = canAssign || canClaim
-  const viewOnly = readOnly || !canAct
+  const viewOnly = readOnly
+    || !canAct
+    || !canEditWorkOrderContent({ status: detail?.status, isOrgAdmin })
 
   const [departmentId, setDepartmentId] = useState(lockedDepartmentId)
   const [employeeIds, setEmployeeIds] = useState(

@@ -63,9 +63,6 @@ function taskToForm(task) {
     assignee_employee_ids: (task.assignees || []).map((a) => a.id),
     tag_ids: (task.tags_list || []).map((t) => t.id),
     reminders: task.task_reminders || [],
-    links: (task.task_links || []).length
-      ? task.task_links.map((link) => ({ title: link.title, url: link.url }))
-      : [{ title: '', url: '' }],
     references: (task.task_references || []).length
       ? task.task_references.map((ref) => ({
         reference_type: ref.reference_type,

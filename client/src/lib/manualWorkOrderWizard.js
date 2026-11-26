@@ -15,9 +15,32 @@ export function isAssetLayoutSection(sectionId, section, layout) {
   ))
 }
 
-/** Manual WO layout — Asset picker already normalized via useFormLayout. */
+function normalizeOrderFieldBindKey(field) {
+  if (!field || field.bindKey) return field
+  const parsed = parseLayoutId(field.id)
+  if (parsed.kind === 'system') return field
+  const label = normalizeLabel(field.label)
+  if (label === 'orderto' || label === 'ordertodepartment') {
+    return { ...field, bindKey: 'order_to_department_id' }
+  }
+  if (label === 'orderfrom' || label === 'orderfromdepartment') {
+    return { ...field, bindKey: 'order_from_department_id' }
+  }
+  return field
+}
+
+/**
+ * Manual WO layout — Asset picker already normalized via useFormLayout.
+ * Also ensures Order From / Order To fields get system bindKeys so the wizard
+ * can lock Order To to the creator's department for non-admins.
+ */
 export function prepareManualLayout(layout) {
-  return layout
+  if (!layout) return layout
+  const fields = Array.isArray(layout.fields)
+    ? layout.fields.map(normalizeOrderFieldBindKey)
+    : layout.fields
+  if (fields === layout.fields) return layout
+  return { ...layout, fields }
 }
 
 function sectionHasContent(layout, section) {

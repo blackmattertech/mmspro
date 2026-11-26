@@ -143,6 +143,9 @@
 --   134-record-templates.sql                     → 134-record-templates — Org-shared record templates + storage
 --   135-org-status-phase-maps.sql                → 135-org-status-phase-maps — Status Filter pill mappings
 --   136-wr-status-count-filter-align.sql         → 136-wr-status-count-filter-align — WR pill counts match list scope
+--   137-scwo-prefix-scheduled-work-orders.sql    → 137-scwo-prefix-scheduled-work-orders — SCWO prefix for PM scheduled WOs
+--   138-warranty-item-equipment.sql              → 138-warranty-item-equipment — Linked asset + reminder schedule on warranty items
+--   139-warranty-reminder-custom.sql             → 139-warranty-reminder-custom — Custom warranty reminder cadence
 
 --
 -- OTHER:

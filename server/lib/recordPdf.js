@@ -1,6 +1,7 @@
 import PDFDocument from 'pdfkit'
 import { supabaseAdmin } from '../services/supabase.js'
 import { displayWorkOrderNumber, loadWorkOrderTimeline } from './workOrderService.js'
+import { isScheduledWorkOrder } from './workOrderOrigin.js'
 import { getWorkRequestById } from './workRequestService.js'
 import { listWorkOrderDailyLogs, sanitizeDailyLogMaterials } from './workOrderDailyLogService.js'
 import { loadOrgLetterhead } from './reportService.js'
@@ -269,10 +270,11 @@ function checklistLines(snapshot, values) {
 
 function timelineLines(events) {
   return (Array.isArray(events) ? events : []).map((event) => {
-    const actor = personName(event.actor)
+    const isAutoApproved = event?.event_type === 'auto_approved'
+    const actor = isAutoApproved ? null : personName(event.actor)
     const change = event.previous_status || event.new_status
       ? `${prettyStatus(event.previous_status || '')}${event.previous_status && event.new_status ? ' → ' : ''}${prettyStatus(event.new_status || '')}`
-      : prettyStatus(event.event_type)
+      : (isAutoApproved ? 'Auto Approved by System' : prettyStatus(event.event_type))
     const message = [event.message, event.remarks].filter(Boolean).join(' — ')
     const detail = [change, message, actor && `by ${actor}`].filter(Boolean).join(' · ')
     return line(formatWhen(event.created_at) || 'Event', detail || prettyStatus(event.event_type))
@@ -416,7 +418,10 @@ function workOrderSections(order, { includeAsset = true, statuses = [] } = {}) {
 
   return [
     section('Work order', [
-      line('WO number', displayWorkOrderNumber(order) || order.wo_number),
+      line(
+        isScheduledWorkOrder(order) ? 'SCWO number' : 'WO number',
+        displayWorkOrderNumber(order) || order.wo_number,
+      ),
       line('Status', prettyStatus(order.status)),
       line('Progress', `${progress}%`),
       maybeLine('Priority', prettyStatus(order.priority)),

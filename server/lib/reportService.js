@@ -4,13 +4,11 @@ import { cumulativeFromOffset } from '../shared/meterCycle.js'
 import { sanitizeDailyLogMaterials, rollupMaterialsFromLogs } from './workOrderDailyLogService.js'
 import { displayWorkOrderNumber } from './workOrderService.js'
 import { resolveLivePlanStatus } from './pmSchedule.js'
-import { resolveLocationFilter } from './orgPermissions.js'
-import { loadOrgFields } from './equipmentFieldService.js'
+import { resolveReportLocationFilter } from './orgPermissions.js'
 import { listOrgStatuses } from './orgStatusService.js'
 import { resolveJobNatureChoiceList } from './formFieldMasters.js'
 import { loadTimelineActors } from './timelineActors.js'
 import { attachFormFieldValueMaps, loadOrgCatalogFields } from './orgFormLayouts.js'
-import { catalogCellValue } from './csvExportColumns.js'
 import {
   agingDays,
   columnsForReport,
@@ -24,12 +22,18 @@ import {
   REPORT_PRIORITY_OPTIONS,
   UNIFIED_REPORT_KEY,
   WORK_REQUEST_REPORT_KEY,
-  PM_PLAN_REPORT_KEY,
   WO_IN_PROGRESS_STATUSES,
   WO_OPEN_STATUSES,
   WO_TERMINAL_STATUSES,
   workOrderDueAt,
 } from './reportConstants.js'
+import {
+  catalogParentFields,
+  enrichRowsWithCatalogParents,
+  matchesCatalogFilters,
+  parseCatalogFilters,
+  stripPrivateReportKeys,
+} from './reportCatalogEnrichment.js'
 import { resolveProgressPercent } from './statusProgress.js'
 import { preparePdfLogo } from './pdfLogo.js'
 import { tallyStatusCounts } from './statusCounts.js'
@@ -349,7 +353,7 @@ function resolveFilters(session, query = {}) {
   const dateFrom = isoDate(query.date_from) || defaults.date_from
   const dateTo = isoDate(query.date_to) || defaults.date_to
   if (dateFrom > dateTo) throw httpError('date_from must be on or before date_to')
-  const locationId = resolveLocationFilter(
+  const locationId = resolveReportLocationFilter(
     session,
     blankToNull(query.facility_id) || query.location_id || null,
   )
@@ -362,11 +366,8 @@ function resolveFilters(session, query = {}) {
     orderType: blankToNull(query.order_type),
     orderFromId: blankToNull(query.order_from),
     orderToId: blankToNull(query.order_to),
-    areaId: blankToNull(query.area_id),
     equipmentId: blankToNull(query.equipment_id),
-    equipmentType: blankToNull(query.equipment_type),
-    equipmentCapacity: blankToNull(query.equipment_capacity),
-    equipmentTag: blankToNull(query.equipment_tag),
+    catalogFilters: parseCatalogFilters(query.catalog_filters),
     priority: blankToNull(query.priority),
     status: blankToNull(query.status || query.job_status),
     jobNature: blankToNull(query.job_nature),
@@ -763,7 +764,7 @@ async function buildOverdueReport(orgId, filters, now) {
     listOrgStatuses(orgId, 'work_order', { includeInactive: true }),
   ])
 
-  const rows = enriched
+  const mapped = enriched
     .map((row) => {
       const dueAt = workOrderDueAt(row)
       return {
@@ -781,9 +782,19 @@ async function buildOverdueReport(orgId, filters, now) {
         assignees: row.assignees,
         equipment: row.equipment,
         pm_plan_number: row.pm_plan_number,
+        _equipment_id: row.equipment_id || null,
       }
     })
+
+  const valuesByEquipment = await loadEquipmentValuesByIds(
+    orgId,
+    mapped.map((row) => row._equipment_id).filter(Boolean),
+  )
+
+  const rows = mapped
     .filter((row) => {
+      if (filters.equipmentId && row._equipment_id !== filters.equipmentId) return false
+      if (!matchesCatalogFilters(row._equipment_id, valuesByEquipment, filters.catalogFilters)) return false
       if (!filters.search) return true
       return [
         row.wo_number,
@@ -812,15 +823,16 @@ async function buildOverdueReport(orgId, filters, now) {
     { key: 'oldest', label: 'Oldest (days)', value: rows[0]?.aging_days || 0 },
   ]
 
-  return { rows, kpis, status_counts: tallyStatusCounts(rows) }
-}
+  const withCatalog = await enrichRowsWithCatalogParents(orgId, rows, {
+    valuesByEquipment,
+    loadEquipmentValuesByIds,
+  })
 
-function equipmentFieldRole(field) {
-  const name = String(field?.name || '').trim().toLowerCase()
-  if (name.includes('equipment type') || name.includes('asset type')) return 'equipmentType'
-  if (name.includes('equipment tag') || name.includes('asset tag')) return 'equipmentTag'
-  if (name.includes('capacity')) return 'capacity'
-  return null
+  return {
+    rows: withCatalog.map((row) => stripPrivateReportKeys(row, ['_equipment_id'])),
+    kpis,
+    status_counts: tallyStatusCounts(rows),
+  }
 }
 
 function readEquipmentFieldValue(row) {
@@ -829,18 +841,6 @@ function readEquipmentFieldValue(row) {
     return row.value_json.values.map((value) => String(value || '').trim()).filter(Boolean).join(', ')
   }
   return String(row.value_text ?? '').trim()
-}
-
-function pickEquipmentRoleFields(fields) {
-  const picked = { type: null, capacity: null, tag: null }
-  for (const field of fields || []) {
-    if (field?.kind === 'section' || field?.kind === 'child' || field?.is_active === false) continue
-    const role = equipmentFieldRole(field)
-    if (role === 'equipmentType' && !picked.type) picked.type = field
-    if (role === 'capacity' && !picked.capacity) picked.capacity = field
-    if (role === 'equipmentTag' && !picked.tag) picked.tag = field
-  }
-  return picked
 }
 
 async function loadEquipmentValuesByIds(orgId, equipmentIds) {
@@ -873,8 +873,6 @@ function sameText(left, right) {
 }
 
 async function loadEquipmentCatalog(orgId, locationId) {
-  const fields = await loadOrgFields(orgId)
-  const roleFields = pickEquipmentRoleFields(fields)
   const rows = await fetchAllPages(() => {
     let query = supabaseAdmin
       .from('equipment')
@@ -896,34 +894,39 @@ async function loadEquipmentCatalog(orgId, locationId) {
       location_id: row.location_id || null,
       location_name: row.org_locations?.name || '',
       department_id: row.department_id || null,
-      equipment_type: (roleFields.type && values[roleFields.type.id]) || '',
-      equipment_capacity: (roleFields.capacity && values[roleFields.capacity.id]) || '',
-      equipment_tag: (roleFields.tag && values[roleFields.tag.id]) || '',
+      field_values: values,
     }
   })
 }
 
+function uniqueCatalogValueOptions(equipmentRows, fieldId) {
+  const seen = new Set()
+  const out = []
+  for (const row of equipmentRows || []) {
+    const text = String(row?.field_values?.[fieldId] || '').trim()
+    if (!text) continue
+    const key = text.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push({ value: text, label: text })
+  }
+  return out.sort((a, b) => a.label.localeCompare(b.label))
+}
+
 function statusEntityForReportKey(reportKey) {
   if (reportKey === WORK_REQUEST_REPORT_KEY) return 'work_request'
-  if (reportKey === PM_PLAN_REPORT_KEY) return 'pm_plan'
   if (reportKey === 'tasks') return 'task'
   return 'work_order'
 }
 
 export async function getReportFilterOptions(orgId, session, { reportKey } = {}) {
-  const locationId = resolveLocationFilter(session, null)
+  const locationId = resolveReportLocationFilter(session, null)
   const statusEntity = statusEntityForReportKey(reportKey || UNIFIED_REPORT_KEY)
-  const [locations, departmentsResult, areasResult, employeesResult, statuses, jobNatures, equipment] = await Promise.all([
+  const [locations, departmentsResult, employeesResult, statuses, jobNatures, equipment, catalogFields] = await Promise.all([
     loadLocations(orgId, locationId),
     supabaseAdmin
       .from('departments')
       .select('id, name, location_id, all_locations, is_active')
-      .eq('org_id', orgId)
-      .eq('is_active', true)
-      .order('name'),
-    supabaseAdmin
-      .from('areas')
-      .select('id, name, location_id, department_id, is_active')
       .eq('org_id', orgId)
       .eq('is_active', true)
       .order('name'),
@@ -936,18 +939,16 @@ export async function getReportFilterOptions(orgId, session, { reportKey } = {})
     listOrgStatuses(orgId, statusEntity, { includeInactive: true }),
     resolveJobNatureChoiceList(orgId),
     loadEquipmentCatalog(orgId, locationId),
+    loadOrgCatalogFields(orgId).catch(() => []),
   ])
 
   if (departmentsResult.error) throw departmentsResult.error
-  if (areasResult.error) throw areasResult.error
   if (employeesResult.error) throw employeesResult.error
 
   let departments = departmentsResult.data || []
-  let areas = areasResult.data || []
   let employees = employeesResult.data || []
   if (locationId) {
     departments = departments.filter((row) => row.all_locations || row.location_id === locationId)
-    areas = areas.filter((row) => row.location_id === locationId)
     employees = employees.filter((row) => row.location_id === locationId)
   }
 
@@ -959,6 +960,12 @@ export async function getReportFilterOptions(orgId, session, { reportKey } = {})
     createdBy.push({ value: employee.profile_id, label: employee.name })
   }
 
+  const catalog_fields = catalogParentFields(catalogFields).map((field) => ({
+    id: field.id,
+    name: field.name,
+    options: uniqueCatalogValueOptions(equipment, field.id),
+  }))
+
   return {
     report_key: reportKey || UNIFIED_REPORT_KEY,
     order_types: ORDER_TYPE_OPTIONS,
@@ -967,11 +974,7 @@ export async function getReportFilterOptions(orgId, session, { reportKey } = {})
     job_natures: jobNatures,
     departments: departments.map((row) => ({ value: row.id, label: row.name })),
     locations: locations.map((row) => ({ value: row.id, label: row.name })),
-    areas: areas.map((row) => ({
-      value: row.id,
-      label: row.name,
-      location_id: row.location_id,
-    })),
+    catalog_fields,
     created_by: createdBy,
     reported_by: createdBy,
     assigned_to: employees.map((row) => ({ value: row.id, label: row.name })),
@@ -1098,11 +1101,10 @@ async function buildWorkRequestReport(orgId, filters) {
   const deptIds = requests.flatMap((row) => [row.order_from_department_id, row.order_to_department_id])
   const reporterIds = requests.map((row) => row.requested_by)
 
-  const [eqMap, deptMap, peopleMap, fields] = await Promise.all([
+  const [eqMap, deptMap, peopleMap] = await Promise.all([
     fetchByIds('equipment', 'id, name, code, location_id, area_id', eqIds),
     fetchByIds('departments', 'id, name, location_id, all_locations', deptIds),
     loadTimelineActors(orgId, reporterIds),
-    loadOrgFields(orgId),
   ])
 
   const areaIds = [...eqMap.values()].map((row) => row.area_id)
@@ -1115,11 +1117,9 @@ async function buildWorkRequestReport(orgId, filters) {
     fetchByIds('org_locations', 'id, name', locIds),
     loadEquipmentValuesByIds(orgId, [...eqMap.keys()]),
   ])
-  const roleFields = pickEquipmentRoleFields(fields)
 
   const rows = requests.map((row) => {
     const equipment = row.equipment_id ? eqMap.get(row.equipment_id) : null
-    const values = equipment ? (valuesByEquipment.get(equipment.id) || {}) : {}
     const area = equipment?.area_id ? areaMap.get(equipment.area_id) : null
     const orderTo = row.order_to_department_id ? deptMap.get(row.order_to_department_id) : null
     const orderFrom = row.order_from_department_id ? deptMap.get(row.order_from_department_id) : null
@@ -1137,14 +1137,10 @@ async function buildWorkRequestReport(orgId, filters) {
       job_nature: row.job_nature || '',
       order_from: orderFrom?.name || '',
       order_to: orderTo?.name || '',
-      area: area?.name || '',
       plant: plant?.name || '',
       equipment: equipment
         ? (equipment.code ? `${equipment.code} — ${equipment.name}` : equipment.name)
         : '',
-      equipment_type: (roleFields.type && values[roleFields.type.id]) || '',
-      equipment_capacity: (roleFields.capacity && values[roleFields.capacity.id]) || '',
-      equipment_tag: (roleFields.tag && values[roleFields.tag.id]) || '',
       reported_by: reporter?.name || reporter?.full_name || '',
       short_description: row.short_description || '',
       problem_description: row.problem_description || '',
@@ -1153,7 +1149,6 @@ async function buildWorkRequestReport(orgId, filters) {
       is_breakdown: row.is_breakdown ? 'Yes' : 'No',
       _order_from_id: row.order_from_department_id || null,
       _order_to_id: row.order_to_department_id || null,
-      _area_id: equipment?.area_id || area?.id || null,
       _plant_id: plantId,
       _equipment_id: equipment?.id || null,
       _reported_by: row.requested_by || null,
@@ -1161,12 +1156,9 @@ async function buildWorkRequestReport(orgId, filters) {
   }).filter((row) => {
     if (filters.orderFromId && row._order_from_id !== filters.orderFromId) return false
     if (filters.orderToId && row._order_to_id !== filters.orderToId) return false
-    if (filters.areaId && row._area_id !== filters.areaId) return false
     if (filters.locationId && row._plant_id !== filters.locationId) return false
     if (filters.equipmentId && row._equipment_id !== filters.equipmentId) return false
-    if (filters.equipmentType && !sameText(row.equipment_type, filters.equipmentType)) return false
-    if (filters.equipmentCapacity && !sameText(row.equipment_capacity, filters.equipmentCapacity)) return false
-    if (filters.equipmentTag && !sameText(row.equipment_tag, filters.equipmentTag)) return false
+    if (!matchesCatalogFilters(row._equipment_id, valuesByEquipment, filters.catalogFilters)) return false
     if (filters.priority && !sameText(row.priority, filters.priority)) return false
     if (filters.status && row.status !== filters.status) return false
     if (filters.jobNature && !sameText(row.job_nature, filters.jobNature)) return false
@@ -1181,7 +1173,6 @@ async function buildWorkRequestReport(orgId, filters) {
       row.job_nature,
       row.order_from,
       row.order_to,
-      row.area,
       row.plant,
       row.equipment,
       row.reported_by,
@@ -1197,47 +1188,19 @@ async function buildWorkRequestReport(orgId, filters) {
   const rejected = rows.filter((row) => row.status === 'rejected' || row.status === 'cancelled').length
   const open = rows.filter((row) => openStatuses.has(row.status)).length
 
-  // Attach org-layout extras + catalog parents (Equipment Location, Equipment name, …)
-  // so report column prefs can use the same field:<uuid> ids as the WR list picker.
-  const [withFormValues, catalogFields] = await Promise.all([
-    attachFormFieldValueMaps(orgId, 'work_request.create', rows),
-    loadOrgCatalogFields(orgId).catch(() => []),
-  ])
-  const parentFields = (catalogFields || []).filter((field) => (
-    field?.id
-    && field?.name
-    && field.is_active !== false
-    && field.field_type !== 'file'
-    && field.field_type !== 'image'
-    && (!field.kind || field.kind === 'parent')
-  ))
-  const enrichedRows = withFormValues.map((row) => {
-    const equipmentValues = row._equipment_id
-      ? (valuesByEquipment.get(row._equipment_id) || {})
-      : {}
-    const fieldValues = {
-      ...(typeof row.field_values === 'object' && row.field_values && !Array.isArray(row.field_values)
-        ? row.field_values
-        : {}),
-      ...equipmentValues,
-    }
-    const withValues = { ...row, field_values: fieldValues }
-    const dynamic = {}
-    for (const field of parentFields) {
-      dynamic[`field:${field.id}`] = catalogCellValue(withValues, field)
-    }
-    const {
-      _order_from_id,
-      _order_to_id,
-      _area_id,
-      _plant_id,
-      _equipment_id,
-      _reported_by,
-      field_values: _fieldValues,
-      ...publicRow
-    } = withValues
-    return { ...publicRow, ...dynamic }
+  const enriched = await enrichRowsWithCatalogParents(orgId, rows, {
+    valuesByEquipment,
+    formLayoutId: 'work_request.create',
+    attachFormFieldValueMaps,
+    loadEquipmentValuesByIds,
   })
+  const enrichedRows = enriched.map((row) => stripPrivateReportKeys(row, [
+    '_order_from_id',
+    '_order_to_id',
+    '_plant_id',
+    '_equipment_id',
+    '_reported_by',
+  ]))
 
   return {
     rows: enrichedRows,
@@ -1267,7 +1230,7 @@ async function buildPmPlanReport(orgId, filters, now) {
   const creatorIds = plans.map((row) => row.created_by)
   const planIds = plans.map((row) => row.id)
 
-  const [eqMap, locMap, areaMap, deptMap, activityMap, vendorMap, peopleMap, techMap, fields] = await Promise.all([
+  const [eqMap, locMap, areaMap, deptMap, activityMap, vendorMap, peopleMap, techMap] = await Promise.all([
     fetchByIds('equipment', 'id, name, code, location_id, area_id', eqIds),
     fetchByIds('org_locations', 'id, name', locIds),
     fetchByIds('areas', 'id, name, location_id', areaIds),
@@ -1276,14 +1239,11 @@ async function buildPmPlanReport(orgId, filters, now) {
     fetchByIds('vendors', 'id, name', vendorIds),
     loadTimelineActors(orgId, creatorIds),
     loadPmTechniciansByPlan(orgId, planIds),
-    loadOrgFields(orgId),
   ])
   const valuesByEquipment = await loadEquipmentValuesByIds(orgId, [...eqMap.keys()])
-  const roleFields = pickEquipmentRoleFields(fields)
 
   const rows = plans.map((row) => {
     const equipment = row.equipment_id ? eqMap.get(row.equipment_id) : null
-    const values = equipment ? (valuesByEquipment.get(equipment.id) || {}) : {}
     const area = row.area_id ? areaMap.get(row.area_id) : (equipment?.area_id ? areaMap.get(equipment.area_id) : null)
     const plantId = row.location_id || equipment?.location_id || area?.location_id || null
     const plant = plantId ? locMap.get(plantId) : null
@@ -1307,15 +1267,11 @@ async function buildPmPlanReport(orgId, filters, now) {
       priority: row.priority || '',
       schedule_type: row.schedule_type || '',
       activity_type: activity?.name || '',
-      area: area?.name || '',
       plant: plant?.name || '',
       department: department?.name || '',
       equipment: equipment
         ? (equipment.code ? `${equipment.code} — ${equipment.name}` : equipment.name)
         : '',
-      equipment_type: (roleFields.type && values[roleFields.type.id]) || '',
-      equipment_capacity: (roleFields.capacity && values[roleFields.capacity.id]) || '',
-      equipment_tag: (roleFields.tag && values[roleFields.tag.id]) || '',
       work_center: row.work_center || '',
       next_due_at: dueAt || '',
       start_date: row.start_date || '',
@@ -1324,7 +1280,6 @@ async function buildPmPlanReport(orgId, filters, now) {
       created_by: creator?.name || creator?.full_name || '',
       estimated_labour_hours: row.estimated_labour_hours ?? '',
       contractor: contractor?.name || '',
-      _area_id: row.area_id || equipment?.area_id || area?.id || null,
       _plant_id: plantId,
       _equipment_id: equipment?.id || null,
       _created_by: row.created_by || null,
@@ -1332,12 +1287,9 @@ async function buildPmPlanReport(orgId, filters, now) {
       _overdue: overdue,
     }
   }).filter((row) => {
-    if (filters.areaId && row._area_id !== filters.areaId) return false
     if (filters.locationId && row._plant_id !== filters.locationId) return false
     if (filters.equipmentId && row._equipment_id !== filters.equipmentId) return false
-    if (filters.equipmentType && !sameText(row.equipment_type, filters.equipmentType)) return false
-    if (filters.equipmentCapacity && !sameText(row.equipment_capacity, filters.equipmentCapacity)) return false
-    if (filters.equipmentTag && !sameText(row.equipment_tag, filters.equipmentTag)) return false
+    if (!matchesCatalogFilters(row._equipment_id, valuesByEquipment, filters.catalogFilters)) return false
     if (filters.priority && !sameText(row.priority, filters.priority)) return false
     if (filters.status && row.status !== filters.status) return false
     if (filters.createdBy && row._created_by !== filters.createdBy) return false
@@ -1350,7 +1302,6 @@ async function buildPmPlanReport(orgId, filters, now) {
       row.priority,
       row.schedule_type,
       row.activity_type,
-      row.area,
       row.plant,
       row.department,
       row.equipment,
@@ -1364,16 +1315,19 @@ async function buildPmPlanReport(orgId, filters, now) {
   const overdue = rows.filter((row) => row._overdue || row.status === 'overdue').length
   const inactive = rows.filter((row) => row.status === 'inactive').length
 
+  const enriched = await enrichRowsWithCatalogParents(orgId, rows, {
+    valuesByEquipment,
+    loadEquipmentValuesByIds,
+  })
+
   return {
-    rows: rows.map(({
-      _area_id,
-      _plant_id,
-      _equipment_id,
-      _created_by,
-      _assignee_ids,
-      _overdue,
-      ...row
-    }) => row),
+    rows: enriched.map((row) => stripPrivateReportKeys(row, [
+      '_plant_id',
+      '_equipment_id',
+      '_created_by',
+      '_assignee_ids',
+      '_overdue',
+    ])),
     kpis: [
       { key: 'total', label: 'PM plans', value: rows.length },
       { key: 'open', label: 'Active', value: active },
@@ -1409,7 +1363,7 @@ async function buildUnifiedReport(orgId, filters, now) {
   ])
   const wrRequesterIds = [...wrMap.values()].map((row) => row.requested_by)
 
-  const [eqMap, locMap, deptMap, assigneeMap, fields, peopleMap, logs, woStatuses] = await Promise.all([
+  const [eqMap, locMap, deptMap, assigneeMap, peopleMap, logs, woStatuses] = await Promise.all([
     fetchByIds('equipment', 'id, name, code, location_id, area_id, department_id', [
       ...eqIds,
       ...[...wrMap.values()].map((row) => row.equipment_id),
@@ -1417,7 +1371,6 @@ async function buildUnifiedReport(orgId, filters, now) {
     fetchByIds('org_locations', 'id, name', locIds),
     fetchByIds('departments', 'id, name', [...deptIds, ...wrDeptIds]),
     loadAssigneesByWorkOrder(orgId, woIds),
-    loadOrgFields(orgId),
     loadTimelineActors(orgId, [...creatorIds, ...requesterIds, ...wrRequesterIds]),
     loadDailyLogs(orgId, { dateFrom: filters.dateFrom, dateTo: filters.dateTo }),
     listOrgStatuses(orgId, 'work_order', { includeInactive: true }),
@@ -1439,12 +1392,9 @@ async function buildUnifiedReport(orgId, filters, now) {
   ])
   for (const [id, row] of extraLocMap) locMap.set(id, row)
 
-  const roleFields = pickEquipmentRoleFields(fields)
-
   const rows = workOrders.map((row) => {
     const workRequest = row.work_request_id ? wrMap.get(row.work_request_id) : null
     const equipment = eqMap.get(row.equipment_id) || (workRequest?.equipment_id ? eqMap.get(workRequest.equipment_id) : null)
-    const values = equipment ? (valuesByEquipment.get(equipment.id) || {}) : {}
     const area = equipment?.area_id ? areaMap.get(equipment.area_id) : null
     const plantId = row.assigned_location_id || equipment?.location_id || area?.location_id || null
     const plant = plantId ? locMap.get(plantId) : null
@@ -1480,14 +1430,10 @@ async function buildUnifiedReport(orgId, filters, now) {
       order_type: orderType,
       order_from: orderFromId ? (deptMap.get(orderFromId)?.name || '') : '',
       order_to: orderToId ? (deptMap.get(orderToId)?.name || '') : '',
-      area: area?.name || '',
       plant: plant?.name || '',
       equipment: equipment
         ? (equipment.code ? `${equipment.code} — ${equipment.name}` : equipment.name)
         : '',
-      equipment_type: (roleFields.type && values[roleFields.type.id]) || '',
-      equipment_capacity: (roleFields.capacity && values[roleFields.capacity.id]) || '',
-      equipment_tag: (roleFields.tag && values[roleFields.tag.id]) || '',
       job_nature: workRequest?.job_nature || '',
       priority: row.priority || '',
       status: row.status || '',
@@ -1527,7 +1473,6 @@ async function buildUnifiedReport(orgId, filters, now) {
       execution_remarks: row.execution_remarks || '',
       _order_from_id: orderFromId,
       _order_to_id: orderToId,
-      _area_id: equipment?.area_id || area?.id || null,
       _plant_id: plantId,
       _equipment_id: equipment?.id || null,
       _created_by: row.created_by || null,
@@ -1539,12 +1484,9 @@ async function buildUnifiedReport(orgId, filters, now) {
     if (filters.orderType && row.order_type !== filters.orderType) return false
     if (filters.orderFromId && row._order_from_id !== filters.orderFromId) return false
     if (filters.orderToId && row._order_to_id !== filters.orderToId) return false
-    if (filters.areaId && row._area_id !== filters.areaId) return false
     if (filters.locationId && row._plant_id !== filters.locationId) return false
     if (filters.equipmentId && row._equipment_id !== filters.equipmentId) return false
-    if (filters.equipmentType && !sameText(row.equipment_type, filters.equipmentType)) return false
-    if (filters.equipmentCapacity && !sameText(row.equipment_capacity, filters.equipmentCapacity)) return false
-    if (filters.equipmentTag && !sameText(row.equipment_tag, filters.equipmentTag)) return false
+    if (!matchesCatalogFilters(row._equipment_id, valuesByEquipment, filters.catalogFilters)) return false
     if (filters.priority && !sameText(row.priority, filters.priority)) return false
     if (filters.status && row.status !== filters.status) return false
     if (filters.jobNature && !sameText(row.job_nature, filters.jobNature)) return false
@@ -1558,12 +1500,8 @@ async function buildUnifiedReport(orgId, filters, now) {
       row.order_type,
       row.order_from,
       row.order_to,
-      row.area,
       row.plant,
       row.equipment,
-      row.equipment_type,
-      row.equipment_capacity,
-      row.equipment_tag,
       row.priority,
       row.status,
       row.job_nature,
@@ -1599,19 +1537,22 @@ async function buildUnifiedReport(orgId, filters, now) {
     { key: 'overdue', label: 'Overdue', value: overdue },
   ]
 
+  const enriched = await enrichRowsWithCatalogParents(orgId, rows, {
+    valuesByEquipment,
+    loadEquipmentValuesByIds,
+  })
+
   return {
-    rows: rows.map(({
-      _order_from_id,
-      _order_to_id,
-      _area_id,
-      _plant_id,
-      _equipment_id,
-      _created_by,
-      _reported_by,
-      _assignee_ids,
-      _overdue,
-      ...row
-    }) => row),
+    rows: enriched.map((row) => stripPrivateReportKeys(row, [
+      '_order_from_id',
+      '_order_to_id',
+      '_plant_id',
+      '_equipment_id',
+      '_created_by',
+      '_reported_by',
+      '_assignee_ids',
+      '_overdue',
+    ])),
     kpis,
     status_counts: tallyStatusCounts(rows),
   }
@@ -1632,9 +1573,10 @@ async function buildMeterReadingReport(orgId, filters) {
   const eqMap = await fetchByIds('equipment', 'id, name, code, location_id, area_id, department_id', eqIds)
   const areaIds = [...eqMap.values()].map((row) => row.area_id)
   const locIds = [...eqMap.values()].map((row) => row.location_id)
-  const [areaMap, locMap] = await Promise.all([
+  const [areaMap, locMap, valuesByEquipment] = await Promise.all([
     fetchByIds('areas', 'id, name, location_id', areaIds),
     fetchByIds('org_locations', 'id, name', locIds),
+    loadEquipmentValuesByIds(orgId, [...eqMap.keys()]),
   ])
 
   const rows = readings.map((row) => {
@@ -1650,26 +1592,23 @@ async function buildMeterReadingReport(orgId, filters) {
       is_reset: row.is_reset ? 'Yes' : 'No',
       equipment: equipment?.name || '',
       equipment_code: equipment?.code || '',
-      area: area?.name || '',
       plant: plant?.name || '',
       logged_by: row.logged_by_name || '',
       logged_by_department: row.logged_by_department || '',
       logged_by_designation: row.logged_by_designation || '',
       _plant_id: plantId,
-      _area_id: equipment?.area_id || area?.id || null,
       _equipment_id: equipment?.id || null,
       _created_by: row.logged_by || null,
     }
   }).filter((row) => {
     if (filters.locationId && row._plant_id !== filters.locationId) return false
-    if (filters.areaId && row._area_id !== filters.areaId) return false
     if (filters.equipmentId && row._equipment_id !== filters.equipmentId) return false
+    if (!matchesCatalogFilters(row._equipment_id, valuesByEquipment, filters.catalogFilters)) return false
     if (filters.createdBy && row._created_by !== filters.createdBy) return false
     if (!filters.search) return true
     return [
       row.equipment,
       row.equipment_code,
-      row.area,
       row.plant,
       row.logged_by,
       row.reading,
@@ -1678,8 +1617,16 @@ async function buildMeterReadingReport(orgId, filters) {
   })
 
   const assetCount = new Set(rows.map((row) => row._equipment_id).filter(Boolean)).size
+  const enriched = await enrichRowsWithCatalogParents(orgId, rows, {
+    valuesByEquipment,
+    loadEquipmentValuesByIds,
+  })
   return {
-    rows: rows.map(({ _plant_id, _area_id, _equipment_id, _created_by, ...row }) => row),
+    rows: enriched.map((row) => stripPrivateReportKeys(row, [
+      '_plant_id',
+      '_equipment_id',
+      '_created_by',
+    ])),
     kpis: [
       { key: 'total', label: 'Readings', value: rows.length },
       { key: 'open', label: 'Assets', value: assetCount },
@@ -1833,69 +1780,55 @@ async function buildEquipmentReport(orgId, filters) {
       .select('id, name, code, location_id, area_id, department_id, reading_required, last_meter_reading, meter_reading_offset, last_meter_reading_at, is_active, created_at')
       .eq('org_id', orgId)
     if (filters.locationId) query = query.eq('location_id', filters.locationId)
-    if (filters.areaId) query = query.eq('area_id', filters.areaId)
     if (filters.dateFrom) query = query.gte('created_at', `${filters.dateFrom}T00:00:00.000Z`)
     if (filters.dateTo) query = query.lte('created_at', `${filters.dateTo}T23:59:59.999Z`)
     return query.order('name', { ascending: true })
   })
 
   const locIds = assets.map((row) => row.location_id)
-  const areaIds = assets.map((row) => row.area_id)
   const deptIds = assets.map((row) => row.department_id)
-  const [locMap, areaMap, deptMap, fields, valuesByEquipment] = await Promise.all([
+  const [locMap, deptMap, valuesByEquipment] = await Promise.all([
     fetchByIds('org_locations', 'id, name', locIds),
-    fetchByIds('areas', 'id, name', areaIds),
     fetchByIds('departments', 'id, name', deptIds),
-    loadOrgFields(orgId),
     loadEquipmentValuesByIds(orgId, assets.map((row) => row.id)),
   ])
-  const roleFields = pickEquipmentRoleFields(fields)
 
-  const rows = assets.map((row) => {
-    const values = valuesByEquipment.get(row.id) || {}
-    return {
-      id: row.id,
-      code: row.code || '',
-      name: row.name || '',
-      area: row.area_id ? (areaMap.get(row.area_id)?.name || '') : '',
-      plant: row.location_id ? (locMap.get(row.location_id)?.name || '') : '',
-      department: row.department_id ? (deptMap.get(row.department_id)?.name || '') : '',
-      equipment_type: (roleFields.type && values[roleFields.type.id]) || '',
-      equipment_capacity: (roleFields.capacity && values[roleFields.capacity.id]) || '',
-      equipment_tag: (roleFields.tag && values[roleFields.tag.id]) || '',
-      reading_required: row.reading_required ? 'Yes' : 'No',
-      last_meter_reading: row.last_meter_reading ?? '',
-      cumulative_reading: row.last_meter_reading == null
-        ? ''
-        : (cumulativeFromOffset(row.meter_reading_offset, row.last_meter_reading) ?? ''),
-      last_meter_reading_at: row.last_meter_reading_at || '',
-      is_active: row.is_active === false ? 'No' : 'Yes',
-      created_at: row.created_at || '',
-      _plant_id: row.location_id || null,
-      _area_id: row.area_id || null,
-      _equipment_id: row.id,
-    }
-  }).filter((row) => {
+  const rows = assets.map((row) => ({
+    id: row.id,
+    code: row.code || '',
+    name: row.name || '',
+    plant: row.location_id ? (locMap.get(row.location_id)?.name || '') : '',
+    department: row.department_id ? (deptMap.get(row.department_id)?.name || '') : '',
+    reading_required: row.reading_required ? 'Yes' : 'No',
+    last_meter_reading: row.last_meter_reading ?? '',
+    cumulative_reading: row.last_meter_reading == null
+      ? ''
+      : (cumulativeFromOffset(row.meter_reading_offset, row.last_meter_reading) ?? ''),
+    last_meter_reading_at: row.last_meter_reading_at || '',
+    is_active: row.is_active === false ? 'No' : 'Yes',
+    created_at: row.created_at || '',
+    _plant_id: row.location_id || null,
+    _equipment_id: row.id,
+  })).filter((row) => {
     if (filters.locationId && row._plant_id !== filters.locationId) return false
-    if (filters.areaId && row._area_id !== filters.areaId) return false
     if (filters.equipmentId && row._equipment_id !== filters.equipmentId) return false
-    if (filters.equipmentType && !sameText(row.equipment_type, filters.equipmentType)) return false
-    if (filters.equipmentCapacity && !sameText(row.equipment_capacity, filters.equipmentCapacity)) return false
-    if (filters.equipmentTag && !sameText(row.equipment_tag, filters.equipmentTag)) return false
+    if (!matchesCatalogFilters(row._equipment_id, valuesByEquipment, filters.catalogFilters)) return false
     if (!filters.search) return true
     return [
       row.code,
       row.name,
-      row.area,
       row.plant,
       row.department,
-      row.equipment_type,
-      row.equipment_tag,
     ].some((value) => matchesSearch(value, filters.search))
   })
 
+  const enriched = await enrichRowsWithCatalogParents(orgId, rows, {
+    valuesByEquipment,
+    loadEquipmentValuesByIds,
+  })
+
   return {
-    rows: rows.map(({ _plant_id, _area_id, _equipment_id, ...row }) => row),
+    rows: enriched.map((row) => stripPrivateReportKeys(row, ['_plant_id', '_equipment_id'])),
     kpis: [
       { key: 'total', label: 'Assets', value: rows.length },
       { key: 'open', label: 'Meter required', value: rows.filter((row) => row.reading_required === 'Yes').length },
@@ -1916,7 +1849,7 @@ export async function getReportData(orgId, session, reportKey, query = {}, now =
   return reportFetchContext.run({ maxRows }, async () => {
     const filters = resolveFilters(session, query)
     const orgName = await loadOrgName(orgId)
-    const locations = await loadLocations(orgId, resolveLocationFilter(session, null))
+    const locations = await loadLocations(orgId, resolveReportLocationFilter(session, null))
 
     let payload
     if (catalog.kind === 'plant') {
@@ -1925,6 +1858,8 @@ export async function getReportData(orgId, session, reportKey, query = {}, now =
       payload = await buildOverdueReport(orgId, filters, now)
     } else if (catalog.kind === 'unified') {
       payload = await buildUnifiedReport(orgId, filters, now)
+    } else if (catalog.kind === 'scheduled') {
+      payload = await buildUnifiedReport(orgId, { ...filters, orderType: 'scheduled' }, now)
     } else if (catalog.kind === 'work_request') {
       payload = await buildWorkRequestReport(orgId, filters)
     } else if (catalog.kind === 'pm_plan') {
@@ -1961,7 +1896,7 @@ export async function getReportData(orgId, session, reportKey, query = {}, now =
         location_id: filters.locationId,
         location_name: locationName,
         search: query.search || '',
-        can_select_location: !resolveLocationFilter(session, null),
+        can_select_location: !resolveReportLocationFilter(session, null),
       },
       locations: locations.map((loc) => ({ id: loc.id, name: loc.name })),
       kpis: payload.kpis,

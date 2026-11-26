@@ -7,6 +7,8 @@ import {
   isScheduledWorkOrder,
   excludeScheduledWorkOrders,
   onlyManualOriginWorkOrders,
+  canEditWorkOrderContent,
+  isWorkOrderAdminOnlyStatus,
 } from './workOrderOrigin.js'
 
 test('isManualOriginWorkOrder accepts only source_type=manual', () => {
@@ -43,4 +45,17 @@ test('query helpers apply the expected source_type filters', () => {
     ['neq', 'source_type', SCHEDULED_WO_SOURCE],
     ['eq', 'source_type', MANUAL_WO_SOURCE],
   ])
+})
+
+test('completed work orders are editable only by company admin', () => {
+  assert.equal(isWorkOrderAdminOnlyStatus('completed'), true)
+  assert.equal(isWorkOrderAdminOnlyStatus('verified'), true)
+  assert.equal(isWorkOrderAdminOnlyStatus('closed'), true)
+  assert.equal(isWorkOrderAdminOnlyStatus('in_progress'), false)
+
+  assert.equal(canEditWorkOrderContent({ status: 'in_progress', isOrgAdmin: false }), true)
+  assert.equal(canEditWorkOrderContent({ status: 'completed', isOrgAdmin: false }), false)
+  assert.equal(canEditWorkOrderContent({ status: 'completed', isOrgAdmin: true }), true)
+  assert.equal(canEditWorkOrderContent({ status: 'verified', isOrgAdmin: false }), false)
+  assert.equal(canEditWorkOrderContent({ status: 'closed', isOrgAdmin: true }), true)
 })

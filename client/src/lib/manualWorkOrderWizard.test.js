@@ -5,6 +5,7 @@ import {
   layoutForSections,
   manualWorkOrderPages,
   manualWorkOrderSteps,
+  prepareManualLayout,
 } from './manualWorkOrderWizard.js'
 
 const layout = {
@@ -63,4 +64,21 @@ test('layoutForSection remains a single-section helper', () => {
 
 test('manualWorkOrderSteps still returns one step per section', () => {
   assert.equal(manualWorkOrderSteps(layout).length, 6)
+})
+
+test('prepareManualLayout binds unlabeled Order To / Order From fields', () => {
+  const prepared = prepareManualLayout({
+    sections: [],
+    fields: [
+      { id: 'field:1', sectionId: 'wo_info', label: 'Order to', masterSource: 'departments' },
+      { id: 'field:2', sectionId: 'wo_info', label: 'Order From', masterSource: 'departments' },
+      { id: 'system:order_to_department_id', sectionId: 'wo_info', label: 'Order to' },
+      { id: 'field:3', sectionId: 'wo_info', label: 'Priority', bindKey: 'priority' },
+    ],
+    groups: [],
+  })
+  assert.equal(prepared.fields[0].bindKey, 'order_to_department_id')
+  assert.equal(prepared.fields[1].bindKey, 'order_from_department_id')
+  assert.equal(prepared.fields[2].bindKey, undefined)
+  assert.equal(prepared.fields[3].bindKey, 'priority')
 })

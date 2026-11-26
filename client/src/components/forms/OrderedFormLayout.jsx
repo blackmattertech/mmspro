@@ -608,6 +608,9 @@ export default function OrderedFormLayout({
               field_type: item.fieldType || 'text',
               colSpan: item.colSpan,
               is_required: required,
+              hint: item.hint || '',
+              maxBound: item.maxBound || '',
+              maxBoundFieldId: item.maxBoundFieldId || '',
               dropdown_options: selectOptionsForField(item).filter(
                 (opt) => !excludeIds.includes(String(opt.value ?? '')),
               ),

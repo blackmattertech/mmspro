@@ -47,20 +47,12 @@ function SelectField({
   )
 }
 
-const ASSET_KEYS = [
-  'area_id',
-  'facility_id',
-  'equipment_id',
-  'equipment_type',
-  'equipment_capacity',
-  'equipment_tag',
-]
-
-const OPTIONAL_FILTER_KEYS = [
+const BASE_OPTIONAL_FILTER_KEYS = [
   'order_type',
   'order_from',
   'order_to',
-  ...ASSET_KEYS,
+  'facility_id',
+  'equipment_id',
   'priority',
   'status',
   'job_nature',
@@ -70,13 +62,18 @@ const OPTIONAL_FILTER_KEYS = [
 ]
 
 export function countActiveReportFilters(filters, lockedFacilityId = '') {
-  return OPTIONAL_FILTER_KEYS.filter((key) => {
+  let count = BASE_OPTIONAL_FILTER_KEYS.filter((key) => {
     if (!filters?.[key]) return false
     if (key === 'facility_id' && lockedFacilityId && filters.facility_id === lockedFacilityId) {
       return false
     }
     return true
   }).length
+  const catalog = filters?.catalog_filters && typeof filters.catalog_filters === 'object'
+    ? filters.catalog_filters
+    : {}
+  count += Object.values(catalog).filter((value) => String(value || '').trim()).length
+  return count
 }
 
 export default function ReportsFilters({
@@ -92,13 +89,13 @@ export default function ReportsFilters({
   reportKind = 'unified',
 }) {
   const showOrderType = reportKind === 'unified'
-  const showOrderDepts = reportKind === 'unified' || reportKind === 'work_request'
-  const showJobNature = reportKind === 'unified' || reportKind === 'work_request'
+  const showOrderDepts = reportKind === 'unified' || reportKind === 'work_request' || reportKind === 'scheduled'
+  const showJobNature = reportKind === 'unified' || reportKind === 'work_request' || reportKind === 'scheduled'
   const showAssets = reportKind !== 'warranty' && reportKind !== 'plant' && reportKind !== 'task'
   const showJob = !['meter_reading', 'equipment', 'plant'].includes(reportKind)
-  const showCreatedBy = ['unified', 'pm_plan', 'meter_reading', 'task'].includes(reportKind)
-  const showReportedBy = reportKind === 'unified' || reportKind === 'work_request'
-  const showAssignedTo = ['unified', 'pm_plan', 'task'].includes(reportKind)
+  const showCreatedBy = ['unified', 'scheduled', 'pm_plan', 'meter_reading', 'task'].includes(reportKind)
+  const showReportedBy = reportKind === 'unified' || reportKind === 'work_request' || reportKind === 'scheduled'
+  const showAssignedTo = ['unified', 'scheduled', 'pm_plan', 'task'].includes(reportKind)
   const dateLabel = reportKind === 'pm_plan'
     ? 'Due date'
     : reportKind === 'work_request'
@@ -108,8 +105,11 @@ export default function ReportsFilters({
         : 'Date'
 
   const equipment = options?.equipment || []
-  const areaOptions = options?.areas || []
   const locationOptions = options?.locations || []
+  const catalogFields = options?.catalog_fields || []
+  const catalogFilters = filters.catalog_filters && typeof filters.catalog_filters === 'object'
+    ? filters.catalog_filters
+    : {}
 
   const facilityOptions = useMemo(() => {
     const seen = new Set()
@@ -119,102 +119,84 @@ export default function ReportsFilters({
       seen.add(value)
       list.push({ value, label: label || 'Plant' })
     }
-    const selectedArea = areaOptions.find((row) => row.value === filters.area_id)
-    if (selectedArea?.location_id) {
-      const loc = locationOptions.find((row) => row.value === selectedArea.location_id)
-      add(selectedArea.location_id, loc?.label)
-    }
     for (const row of equipment) {
-      if (filters.area_id && row.area_id && row.area_id !== filters.area_id) continue
       add(row.location_id, row.location_name)
     }
-    if (!filters.area_id) {
-      for (const loc of locationOptions) add(loc.value, loc.label)
-    }
+    for (const loc of locationOptions) add(loc.value, loc.label)
     if (!list.length) return locationOptions
     return list.sort((a, b) => a.label.localeCompare(b.label))
-  }, [areaOptions, equipment, filters.area_id, locationOptions])
+  }, [equipment, locationOptions])
 
   const scopedEquipment = useMemo(() => (
     equipment.filter((row) => {
-      if (filters.area_id && row.area_id && row.area_id !== filters.area_id) return false
       if (filters.facility_id && row.location_id && row.location_id !== filters.facility_id) return false
+      for (const field of catalogFields) {
+        const expected = String(catalogFilters[field.id] || '').trim()
+        if (!expected) continue
+        const actual = String(row.field_values?.[field.id] || '').trim()
+        if (actual.toLowerCase() !== expected.toLowerCase()) return false
+      }
       return true
     })
-  ), [equipment, filters.area_id, filters.facility_id])
+  ), [equipment, filters.facility_id, catalogFields, catalogFilters])
 
   const equipmentOptions = useMemo(() => (
-    scopedEquipment
-      .filter((row) => {
-        if (filters.equipment_type && row.equipment_type !== filters.equipment_type) return false
-        if (filters.equipment_capacity && row.equipment_capacity !== filters.equipment_capacity) return false
-        if (filters.equipment_tag && row.equipment_tag !== filters.equipment_tag) return false
-        return true
-      })
-      .map((row) => ({
-        value: row.id,
-        label: row.code ? `${row.code} — ${row.name}` : row.name,
-      }))
-  ), [scopedEquipment, filters.equipment_type, filters.equipment_capacity, filters.equipment_tag])
+    scopedEquipment.map((row) => ({
+      value: row.id,
+      label: row.code ? `${row.code} — ${row.name}` : row.name,
+    }))
+  ), [scopedEquipment])
 
-  const typeOptions = useMemo(
-    () => uniqueTextOptions(scopedEquipment.map((row) => row.equipment_type)),
-    [scopedEquipment],
-  )
-  const capacityOptions = useMemo(
-    () => uniqueTextOptions(
-      scopedEquipment
-        .filter((row) => !filters.equipment_type || row.equipment_type === filters.equipment_type)
-        .map((row) => row.equipment_capacity),
-    ),
-    [scopedEquipment, filters.equipment_type],
-  )
-  const tagOptions = useMemo(
-    () => uniqueTextOptions(
-      scopedEquipment
-        .filter((row) => {
-          if (filters.equipment_type && row.equipment_type !== filters.equipment_type) return false
-          if (filters.equipment_capacity && row.equipment_capacity !== filters.equipment_capacity) return false
-          return true
-        })
-        .map((row) => row.equipment_tag),
-    ),
-    [scopedEquipment, filters.equipment_type, filters.equipment_capacity],
-  )
+  const catalogFieldOptions = useMemo(() => (
+    catalogFields.map((field) => {
+      const valuesFromScoped = uniqueTextOptions(
+        scopedEquipment.map((row) => row.field_values?.[field.id]),
+      )
+      const base = Array.isArray(field.options) ? field.options : []
+      const merged = uniqueTextOptions([
+        ...base.map((opt) => opt.value || opt.label || opt),
+        ...valuesFromScoped.map((opt) => opt.value),
+      ])
+      return { ...field, options: merged.length ? merged : base }
+    })
+  ), [catalogFields, scopedEquipment])
 
   const setFilter = (key, value) => {
     const next = { ...filters, [key]: value }
-    const assetIndex = ASSET_KEYS.indexOf(key)
-    if (assetIndex >= 0) {
-      for (const child of ASSET_KEYS.slice(assetIndex + 1)) {
-        next[child] = ''
-      }
-    }
-    if (key === 'area_id' && value) {
-      const selectedArea = areaOptions.find((row) => row.value === value)
-      if (selectedArea?.location_id) next.facility_id = selectedArea.location_id
+    if (key === 'facility_id') {
+      next.equipment_id = ''
     }
     if (key === 'equipment_id' && value) {
       const selected = equipment.find((row) => row.id === value)
-      if (selected) {
-        next.equipment_type = selected.equipment_type || ''
-        next.equipment_capacity = selected.equipment_capacity || ''
-        next.equipment_tag = selected.equipment_tag || ''
-      }
-    }
-    if (['equipment_type', 'equipment_capacity', 'equipment_tag'].includes(key) && next.equipment_id) {
-      const selected = equipment.find((row) => row.id === next.equipment_id)
-      if (selected) {
-        const mismatch = (
-          (next.equipment_type && selected.equipment_type !== next.equipment_type)
-          || (next.equipment_capacity && selected.equipment_capacity !== next.equipment_capacity)
-          || (next.equipment_tag && selected.equipment_tag !== next.equipment_tag)
-        )
-        if (mismatch) next.equipment_id = ''
+      if (selected?.field_values) {
+        const nextCatalog = { ...catalogFilters }
+        for (const field of catalogFields) {
+          const text = String(selected.field_values[field.id] || '').trim()
+          if (text) nextCatalog[field.id] = text
+        }
+        next.catalog_filters = nextCatalog
       }
     }
     if (key === 'facility_id' && !canSelectLocation) {
       next.facility_id = filters.facility_id
+    }
+    onChange(next)
+  }
+
+  const setCatalogFilter = (fieldId, value) => {
+    const nextCatalog = { ...catalogFilters }
+    if (String(value || '').trim()) nextCatalog[fieldId] = value
+    else delete nextCatalog[fieldId]
+    const next = {
+      ...filters,
+      catalog_filters: nextCatalog,
+    }
+    if (next.equipment_id) {
+      const selected = equipment.find((row) => row.id === next.equipment_id)
+      const actual = String(selected?.field_values?.[fieldId] || '').trim()
+      if (value && actual && actual.toLowerCase() !== String(value).trim().toLowerCase()) {
+        next.equipment_id = ''
+      }
     }
     onChange(next)
   }
@@ -227,6 +209,7 @@ export default function ReportsFilters({
         from_date: filters.from_date,
         to_date: filters.to_date,
         facility_id: canSelectLocation ? '' : filters.facility_id,
+        catalog_filters: {},
       })
     }
   }
@@ -326,12 +309,6 @@ export default function ReportsFilters({
               <h3 className="reports-filters__group-title">Assets</h3>
               <div className="reports-filters__grid reports-filters__grid--rail">
                 <SelectField
-                  label="Area"
-                  value={filters.area_id}
-                  onChange={(value) => setFilter('area_id', value)}
-                  options={areaOptions}
-                />
-                <SelectField
                   label="Plant / Facility"
                   value={filters.facility_id}
                   onChange={(value) => setFilter('facility_id', value)}
@@ -340,29 +317,21 @@ export default function ReportsFilters({
                 />
                 {reportKind !== 'plant' && (
                   <>
+                    {catalogFieldOptions.map((field) => (
+                      <SelectField
+                        key={field.id}
+                        label={field.name}
+                        value={catalogFilters[field.id] || ''}
+                        onChange={(value) => setCatalogFilter(field.id, value)}
+                        options={field.options || []}
+                        emptyLabel={`All ${field.name}`}
+                      />
+                    ))}
                     <SelectField
                       label="Asset"
                       value={filters.equipment_id}
                       onChange={(value) => setFilter('equipment_id', value)}
                       options={equipmentOptions}
-                    />
-                    <SelectField
-                      label="Asset Type"
-                      value={filters.equipment_type}
-                      onChange={(value) => setFilter('equipment_type', value)}
-                      options={typeOptions}
-                    />
-                    <SelectField
-                      label="Asset Capacity"
-                      value={filters.equipment_capacity}
-                      onChange={(value) => setFilter('equipment_capacity', value)}
-                      options={capacityOptions}
-                    />
-                    <SelectField
-                      label="Asset Tag"
-                      value={filters.equipment_tag}
-                      onChange={(value) => setFilter('equipment_tag', value)}
-                      options={tagOptions}
                     />
                   </>
                 )}

@@ -6,6 +6,7 @@ import {
   requireModulePermission,
   requireAnyModulePermission,
 } from '../../middleware/modulePermission.js'
+import { hasModulePermission } from '../../lib/orgPermissions.js'
 import { getReportCatalog, isInteractiveReportKey } from '../../lib/reportConstants.js'
 import { getReportData, getReportFilterOptions } from '../../lib/reportService.js'
 import { REPORT_MODULE_KEYS } from '../../lib/accessModules.js'
@@ -63,28 +64,31 @@ function requireReportRead(req, res, next) {
   return requireModulePermission(catalog.moduleKey, 'read')(req, res, next)
 }
 
-function requireOrgAdmin(req, res, next) {
-  if (!req.orgPermissions?.is_org_admin) {
-    return res.status(403).json({ error: 'Only organization admins can manage custom reports and schedules' })
-  }
-  next()
-}
-
-async function requireCustomReportAdmin(req, res, next) {
-  if (!req.orgPermissions?.is_org_admin) {
-    return res.status(403).json({ error: 'Only organization admins can manage custom reports' })
-  }
-  try {
-    const row = await getCustomReport(req.userProfile.org_id, req.params.id)
-    const catalog = getReportCatalog(row.report_key)
-    if (!catalog) {
-      return res.status(404).json({ error: 'Unknown report' })
+function requireCustomReportAction(action) {
+  return async function requireCustomReportPermission(req, res, next) {
+    try {
+      if (!req.orgPermissions) {
+        return res.status(403).json({ error: 'Missing organization permissions' })
+      }
+      if (!hasModulePermission(req.orgPermissions, 'reports_custom', action)) {
+        return res.status(403).json({
+          error: `You do not have permission to ${action} custom reports`,
+        })
+      }
+      const row = await getCustomReport(req.userProfile.org_id, req.params.id)
+      const catalog = getReportCatalog(row.report_key)
+      if (!catalog) {
+        return res.status(404).json({ error: 'Unknown report' })
+      }
+      req.customReport = row
+      req.reportCatalog = catalog
+      if (isInteractiveReportKey(catalog.key)) {
+        return requireAnyModulePermission(REPORT_MODULE_KEYS.map((key) => [key, 'read']))(req, res, next)
+      }
+      return requireModulePermission(catalog.moduleKey, 'read')(req, res, next)
+    } catch (err) {
+      return sendError(res, err)
     }
-    req.customReport = row
-    req.reportCatalog = catalog
-    return requireModulePermission(catalog.moduleKey, 'read')(req, res, next)
-  } catch (err) {
-    return sendError(res, err)
   }
 }
 
@@ -98,11 +102,8 @@ function reportQueryFrom(source = {}) {
     order_type: source.order_type,
     order_from: source.order_from,
     order_to: source.order_to,
-    area_id: source.area_id,
     equipment_id: source.equipment_id,
-    equipment_type: source.equipment_type,
-    equipment_capacity: source.equipment_capacity,
-    equipment_tag: source.equipment_tag,
+    catalog_filters: source.catalog_filters,
     priority: source.priority,
     status: source.status || source.job_status,
     job_nature: source.job_nature,
@@ -139,7 +140,7 @@ router.get('/custom/:id', requireAnyModulePermission(
   }
 })
 
-router.patch('/custom/:id', requireCustomReportAdmin, async (req, res) => {
+router.patch('/custom/:id', requireCustomReportAction('update'), async (req, res) => {
   try {
     const row = await updateCustomReport(req.userProfile.org_id, req.params.id, req.body || {})
     res.json(row)
@@ -148,7 +149,7 @@ router.patch('/custom/:id', requireCustomReportAdmin, async (req, res) => {
   }
 })
 
-router.delete('/custom/:id', requireCustomReportAdmin, async (req, res) => {
+router.delete('/custom/:id', requireCustomReportAction('delete'), async (req, res) => {
   try {
     const result = await deleteCustomReport(req.userProfile.org_id, req.params.id)
     res.json(result)
@@ -157,7 +158,7 @@ router.delete('/custom/:id', requireCustomReportAdmin, async (req, res) => {
   }
 })
 
-router.patch('/schedules/:id', requireOrgAdmin, async (req, res) => {
+router.patch('/schedules/:id', requireModulePermission('reports_schedules', 'update'), async (req, res) => {
   try {
     const row = await updateReportSchedule(req.userProfile.org_id, req.params.id, req.body || {})
     res.json(row)
@@ -166,7 +167,7 @@ router.patch('/schedules/:id', requireOrgAdmin, async (req, res) => {
   }
 })
 
-router.delete('/schedules/:id', requireOrgAdmin, async (req, res) => {
+router.delete('/schedules/:id', requireModulePermission('reports_schedules', 'delete'), async (req, res) => {
   try {
     const result = await deleteReportSchedule(req.userProfile.org_id, req.params.id)
     res.json(result)
@@ -175,7 +176,7 @@ router.delete('/schedules/:id', requireOrgAdmin, async (req, res) => {
   }
 })
 
-router.post('/schedules/:id/send', requireOrgAdmin, async (req, res) => {
+router.post('/schedules/:id/send', requireModulePermission('reports_send', 'create'), async (req, res) => {
   try {
     const schedule = await getReportSchedule(req.userProfile.org_id, req.params.id)
     await deliverScheduleReport(schedule)
@@ -227,9 +228,10 @@ router.get('/ready', requireAnyModulePermission(
   REPORT_MODULE_KEYS.map((key) => [key, 'read']),
 ), async (req, res) => {
   try {
+    const canDeleteAny = hasModulePermission(req.orgPermissions, 'reports_ready', 'delete')
     const items = await listReadyReports(req.userProfile.org_id, {
       profileId: req.userProfile.id,
-      isOrgAdmin: Boolean(req.orgPermissions?.is_org_admin),
+      canDeleteAny,
       reportKey: req.query.report_key || null,
     })
     res.json({ items })
@@ -257,9 +259,10 @@ router.delete('/ready/:id', requireAnyModulePermission(
   REPORT_MODULE_KEYS.map((key) => [key, 'read']),
 ), async (req, res) => {
   try {
+    const canDeleteAny = hasModulePermission(req.orgPermissions, 'reports_ready', 'delete')
     const result = await deleteReadyReport(req.userProfile.org_id, req.params.id, {
       profileId: req.userProfile.id,
-      isOrgAdmin: Boolean(req.orgPermissions?.is_org_admin),
+      canDeleteAny,
     })
     res.json(result)
   } catch (err) {
@@ -290,7 +293,7 @@ router.get('/:key/custom', requireReportRead, async (req, res) => {
   }
 })
 
-router.post('/:key/custom', requireReportRead, requireOrgAdmin, async (req, res) => {
+router.post('/:key/custom', requireReportRead, requireModulePermission('reports_custom', 'create'), async (req, res) => {
   try {
     const row = await createCustomReport(req.userProfile.org_id, req.params.key, req.body || {})
     res.status(201).json(row)
@@ -338,7 +341,7 @@ router.post('/:key/csv', requireReportRead, async (req, res) => {
   }
 })
 
-router.post('/:key/ready', requireReportRead, async (req, res) => {
+router.post('/:key/ready', requireReportRead, requireModulePermission('reports_ready', 'create'), async (req, res) => {
   try {
     const row = await createReadyReport({
       orgId: req.userProfile.org_id,
@@ -353,7 +356,7 @@ router.post('/:key/ready', requireReportRead, async (req, res) => {
   }
 })
 
-router.post('/:key/send', requireReportRead, requireOrgAdmin, async (req, res) => {
+router.post('/:key/send', requireReportRead, requireModulePermission('reports_send', 'create'), async (req, res) => {
   try {
     const body = req.body || {}
     const emails = parseEmails(body.emails)
@@ -394,7 +397,7 @@ router.post('/:key/email-preview', requireReportRead, async (req, res) => {
   }
 })
 
-router.get('/:key/schedules', requireReportRead, requireOrgAdmin, async (req, res) => {
+router.get('/:key/schedules', requireReportRead, async (req, res) => {
   try {
     const items = await listReportSchedules(req.userProfile.org_id, req.params.key)
     res.json({ items })
@@ -403,7 +406,7 @@ router.get('/:key/schedules', requireReportRead, requireOrgAdmin, async (req, re
   }
 })
 
-router.post('/:key/schedules', requireReportRead, requireOrgAdmin, async (req, res) => {
+router.post('/:key/schedules', requireReportRead, requireModulePermission('reports_schedules', 'create'), async (req, res) => {
   try {
     const row = await createReportSchedule(req.userProfile.org_id, req.params.key, req.body || {})
     res.status(201).json(row)

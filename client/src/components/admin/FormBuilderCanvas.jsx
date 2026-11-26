@@ -143,6 +143,9 @@ function fieldPayload(extra, sectionId, order) {
     : ''
   const defaultToCurrentUser = (masterSource === 'employees' || masterSource === 'employees_multi')
     && Boolean(extra.defaultToCurrentUser)
+  const hint = typeof extra.hint === 'string' ? extra.hint.trim() : ''
+  const maxBound = typeof extra.maxBound === 'string' ? extra.maxBound.trim() : ''
+  const maxBoundFieldId = typeof extra.maxBoundFieldId === 'string' ? extra.maxBoundFieldId.trim() : ''
   return {
     id: extra.id,
     ...(sectionId ? { sectionId } : {}),
@@ -159,6 +162,9 @@ function fieldPayload(extra, sectionId, order) {
     ...(dependsOnOptions.length ? { dependsOnOptions } : {}),
     ...(filterByFieldId ? { filterByFieldId } : {}),
     ...(defaultToCurrentUser ? { defaultToCurrentUser: true } : {}),
+    ...(hint ? { hint } : {}),
+    ...(maxBound ? { maxBound } : {}),
+    ...(maxBound === 'field' && maxBoundFieldId ? { maxBoundFieldId } : {}),
   }
 }
 
@@ -225,6 +231,7 @@ function FieldEditor({
   parentCandidates,
   ruleTargetFields,
   filterByCandidates = [],
+  numberBoundCandidates = [],
   groupMode = false,
   onChange,
   onSave,
@@ -605,6 +612,57 @@ function FieldEditor({
           )}
         </div>
 
+        {!groupMode && fieldType === 'number' && (
+          <>
+            <label className="company-form__field">
+              <span className="company-form__label">Help text</span>
+              <textarea
+                className="company-form__input"
+                rows={2}
+                value={draft.hint || ''}
+                onChange={(event) => onChange({ ...draft, hint: event.target.value })}
+                placeholder="Shown under the number input for technicians"
+              />
+            </label>
+            <label className="company-form__field">
+              <span className="company-form__label">Maximum value</span>
+              <select
+                className="company-form__input"
+                value={draft.maxBound || ''}
+                onChange={(event) => {
+                  const maxBound = event.target.value
+                  onChange({
+                    ...draft,
+                    maxBound,
+                    maxBoundFieldId: maxBound === 'field' ? (draft.maxBoundFieldId || '') : '',
+                  })
+                }}
+              >
+                <option value="">No maximum</option>
+                <option value="breakdown_duration">Breakdown Hours (calculated)</option>
+                <option value="field">Another number field</option>
+              </select>
+              <p className="form-builder-editor__hint">
+                Breakdown Hours is the calendar elapsed time from Breakdown start/end.
+              </p>
+            </label>
+            {draft.maxBound === 'field' && (
+              <label className="company-form__field">
+                <span className="company-form__label">Must not exceed</span>
+                <select
+                  className="company-form__input"
+                  value={draft.maxBoundFieldId || ''}
+                  onChange={(event) => onChange({ ...draft, maxBoundFieldId: event.target.value })}
+                >
+                  <option value="">Select a field</option>
+                  {numberBoundCandidates.map((item) => (
+                    <option key={item.id} value={item.id}>{item.label}</option>
+                  ))}
+                </select>
+              </label>
+            )}
+          </>
+        )}
         {!groupMode && bindOptions.length > 0 && (
           <label className="company-form__field">
             <span className="company-form__label">Also save as</span>
@@ -2330,6 +2388,15 @@ export default function FormBuilderCanvas({
           parentCandidates={parentCandidates}
           ruleTargetFields={ruleTargetFields}
           filterByCandidates={filterByCandidates}
+          numberBoundCandidates={(layout?.fields || [])
+            .filter((field) => (
+              field.id !== editor.id
+              && String(field.fieldType || '').toLowerCase() === 'number'
+            ))
+            .map((field) => ({
+              id: field.id,
+              label: field.label || field.id,
+            }))}
           groupMode={Boolean(editor.groupId)}
           onChange={(next) => {
             if (!editor.groupId && next.masterSource !== editor.masterSource) {

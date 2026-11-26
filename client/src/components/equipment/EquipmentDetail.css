@@ -298,6 +298,97 @@
   color: var(--color-primary);
 }
 
+.equipment-detail__warranties {
+  border: 1px solid var(--color-light-gray-2, #e5e7eb);
+  border-radius: 12px;
+  padding: 14px 16px;
+  background: var(--color-white, #fff);
+}
+
+.equipment-detail__warranties-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.equipment-detail__warranties-head h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--color-dark-navy);
+}
+
+.equipment-detail__warranties-head span {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-gray-blue);
+}
+
+.equipment-detail__warranty-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.equipment-detail__warranty-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--color-light-gray-2, #e5e7eb);
+  text-decoration: none;
+  color: inherit;
+}
+
+.equipment-detail__warranty-card:hover {
+  border-color: var(--color-primary, #e53935);
+}
+
+.equipment-detail__warranty-card-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-dark-navy);
+}
+
+.equipment-detail__warranty-card-status {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  justify-self: end;
+}
+
+.equipment-detail__warranty-card-status--active {
+  color: #15803d;
+}
+
+.equipment-detail__warranty-card-status--expired {
+  color: var(--color-primary, #e53935);
+}
+
+.equipment-detail__warranty-card-status--none {
+  color: var(--color-gray-blue);
+}
+
+.equipment-detail__warranty-card-meta {
+  grid-column: 1 / -1;
+  font-size: 12px;
+  color: var(--color-gray-blue);
+}
+
+.equipment-detail__warranty-card-reminder {
+  grid-column: 1 / -1;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-dark-navy, #0f172a);
+}
+
 .equipment-detail__chevron {
   flex-shrink: 0;
   color: var(--color-medium-gray);
